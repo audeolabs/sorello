@@ -59,8 +59,9 @@ private struct Step {
     init(state: SessionState, settings: SessionSettings) {
         self.state = state
         self.settings = settings
-        // The double tap belongs to prompt mode; turning the setting off forgets the arm and the hold in progress.
-        if !settings.promptMode {
+        // Rule 5: set to nothing, the double tap forgets the arm and the hold in progress. A toggle recording, a
+        // hands-free one included, is not part of the double tap and is left as it is.
+        if settings.doubleTap == .off {
             self.state.tap = nil
             self.withdrawTap(enrolment: true)
         }
@@ -255,8 +256,11 @@ private struct Step {
             state.capture = .idle
             // A press that was released, abandoned or cancelled cleared the intent: it is never revived.
             if let intent, admitsStart() {
-                begin(intent.mode, style: .plain, pressTime: intent.pressTime, tapEnrolled: intent.tapEnrolled,
-                      mayArmTap: false)
+                let keys: LiveKeys = switch intent.mode {
+                case .hold: .hold(intent.tapEnrolled ? .enrolled : .outside)
+                case .toggle: .toggle(holdKey: nil)
+                }
+                begin(keys, style: .plain, pressTime: intent.pressTime)
             }
         case .denied:
             state.capture = .idle
@@ -297,19 +301,13 @@ private struct Step {
     }
 
     /// Rule 5: a hold interrupted by another trigger can no longer arm the double tap. With `enrolment`, as when
-    /// prompt mode is turned off, it leaves the double tap altogether and is released like any other hold.
+    /// the double tap is set to nothing, it leaves the double tap altogether and is released like any other hold.
     mutating func withdrawTap(enrolment: Bool) {
-        func withdrawn(_ live: LiveDictation) -> LiveDictation {
-            var live = live
-            live.mayArmTap = false
-            if enrolment { live.tapEnrolled = false }
-            return live
-        }
         switch state.capture {
-        case .starting(let live, let stopRequested):
-            state.capture = .starting(withdrawn(live), stopRequested: stopRequested)
-        case .recording(let live):
-            state.capture = .recording(withdrawn(live))
+        case .starting(var live, _), .recording(var live):
+            guard case .hold(let role) = live.keys else { return }
+            live.keys = .hold(enrolment ? .outside : role == .arming ? .enrolled : role)
+            replaceLive(live)
         case .awaitingPermission(var intent?) where enrolment:
             intent.tapEnrolled = false
             state.capture = .awaitingPermission(intent)
@@ -327,8 +325,12 @@ private struct Step {
             // Rule 2: a new press replaces the intent.
             state.capture = .awaitingPermission(intent(.hold, at: time))
             return true
-        case .starting, .recording:
-            // Rule 7: a hold press during a toggle recording is ignored (and a hold cannot be pressed twice).
+        case .starting(var live, _), .recording(var live):
+            // Rule 7: a hold cannot be pressed twice. Rule 5: during a toggle recording the press starts nothing; it
+            // is remembered, so that its release can stop the recording.
+            guard case .toggle = live.keys else { return false }
+            live.keys = .toggle(holdKey: .stopping)
+            replaceLive(live)
             return false
         }
     }
@@ -351,15 +353,32 @@ private struct Step {
     }
 
     mutating func holdReleased(_ origin: ReleaseOrigin, at time: TimeInterval) -> Bool {
-        if let live = state.capture.live, live.mode == .hold {
-            if live.tapEnrolled && time < live.pressTime + SessionTiming.tapHold {
-                // Rule 5: a tap. It is discarded whether it was starting or recording.
-                discardLive(live, firedTimer: nil)
-                if live.mayArmTap && origin == .keyUp { state.tap = TapArm(releaseTime: time) }
-            } else {
+        if var live = state.capture.live {
+            switch live.keys {
+            case .hold(let role):
+                if role != .outside && time < live.pressTime + SessionTiming.tapHold {
+                    // Rule 5: a tap. It is discarded whether it was starting or recording.
+                    discardLive(live, firedTimer: nil)
+                    if role == .arming && origin == .keyUp { state.tap = TapArm(releaseTime: time) }
+                } else {
+                    requestStop(live)
+                }
+                return true
+            case .toggle(holdKey: .stopping) where origin == .keyUp:
+                // Rule 5: Hold to Talk tapped during a toggle recording stops it, at the release.
+                live.keys = .toggle(holdKey: nil)
                 requestStop(live)
+                return true
+            case .toggle(holdKey: .some):
+                // Rule 5: the press that started a hands-free recording coming up, or a press that ended without a
+                // genuine release. The recording goes on.
+                live.keys = .toggle(holdKey: nil)
+                replaceLive(live)
+                return false
+            case .toggle(holdKey: nil):
+                // Rule 7: no press of Hold to Talk belongs to this recording.
+                return false
             }
-            return true
         }
         if case .awaitingPermission(let intent?) = state.capture, intent.mode == .hold {
             state.capture = .awaitingPermission(nil)
@@ -370,10 +389,21 @@ private struct Step {
     }
 
     mutating func holdAbandoned() -> Bool {
-        // Rule 7: the hold was the start of a chord. Discard it like a cancel, with no notice.
-        if let live = state.capture.live, live.mode == .hold {
-            discardLive(live, firedTimer: nil)
-            return true
+        if var live = state.capture.live {
+            switch live.keys {
+            case .hold, .toggle(holdKey: .starting):
+                // Rules 5 and 7: the press that started the dictation was the start of a chord. Discard it like a
+                // cancel, with no notice.
+                discardLive(live, firedTimer: nil)
+                return true
+            case .toggle(holdKey: .stopping):
+                // Rule 5: a press during a toggle recording that turned out to be a chord stops nothing.
+                live.keys = .toggle(holdKey: nil)
+                replaceLive(live)
+                return false
+            case .toggle(holdKey: nil):
+                return false
+            }
         }
         if case .awaitingPermission(let intent?) = state.capture, intent.mode == .hold {
             state.capture = .awaitingPermission(nil)
@@ -443,15 +473,29 @@ private struct Step {
             emit(.requestMicrophoneAccess)
             return
         }
-        let doubleTap = mode == .hold && settings.promptMode && nothingInProgress && arm?.admits(time) == true
-        let mayArmTap = mode == .hold && settings.promptMode && nothingInProgress && !doubleTap
-        begin(mode, style: doubleTap ? .prompt : .plain, pressTime: time,
-              tapEnrolled: mode == .hold && settings.promptMode, mayArmTap: mayArmTap)
+        guard mode == .hold else {
+            begin(.toggle(holdKey: nil), style: .plain, pressTime: time)
+            return
+        }
+        let enrolled = settings.doubleTap != .off
+        let secondPress = enrolled && nothingInProgress && arm?.admits(time) == true
+        switch settings.doubleTap {
+        case .handsFree where secondPress:
+            // Rule 5: a hands-free dictation is a toggle recording whose starting press is still down.
+            begin(.toggle(holdKey: .starting), style: .plain, pressTime: time)
+        case .prompt where secondPress:
+            // Rule 5: a prompt is a hold in prompt style. A quick release discards it but never arms another tap.
+            begin(.hold(.enrolled), style: .prompt, pressTime: time)
+        default:
+            // Rule 5: a first press. Only from idle can its quick release arm the double tap.
+            let role: TapRole = !enrolled ? .outside : nothingInProgress ? .arming : .enrolled
+            begin(.hold(role), style: .plain, pressTime: time)
+        }
     }
 
-    /// Rule 2: the press to honour when access is granted. A hold remembers whether prompt mode was on.
+    /// Rule 2: the press to honour when access is granted. A hold remembers whether it takes part in the double tap.
     func intent(_ mode: TriggerMode, at time: TimeInterval) -> PermissionIntent {
-        PermissionIntent(mode: mode, pressTime: time, tapEnrolled: mode == .hold && settings.promptMode)
+        PermissionIntent(mode: mode, pressTime: time, tapEnrolled: mode == .hold && settings.doubleTap != .off)
     }
 
     /// Rule 1's refusals. Shows the notice and returns false when a dictation may not start.
@@ -472,17 +516,24 @@ private struct Step {
     }
 
     /// Rule 1: allocate the id and ask for the microphone and the stream. Starting dismisses the notice (rule 12).
-    mutating func begin(_ mode: TriggerMode, style: DictationStyle, pressTime: TimeInterval, tapEnrolled: Bool,
-                        mayArmTap: Bool) {
+    mutating func begin(_ keys: LiveKeys, style: DictationStyle, pressTime: TimeInterval) {
         let id = DictationID(state.nextDictation)
         state.nextDictation += 1
         dismissNotice()
-        let live = LiveDictation(id: id, mode: mode, style: style, pressTime: pressTime, tapEnrolled: tapEnrolled,
-                                 mayArmTap: mayArmTap)
+        let live = LiveDictation(id: id, style: style, pressTime: pressTime, keys: keys)
         state.capture = .starting(live, stopRequested: false)
         emit(.startCapture(id, CaptureRequest(deviceID: settings.microphoneID)))
         emit(.openStream(id, retainForCorrection: settings.retainForCorrection))
         emit(.setTimer(.captureStart(id), after: SessionTiming.captureStart))
+    }
+
+    /// Writes back the dictation holding the microphone, changed, in the phase it is in.
+    mutating func replaceLive(_ live: LiveDictation) {
+        switch state.capture {
+        case .starting(_, let stopRequested): state.capture = .starting(live, stopRequested: stopRequested)
+        case .recording: state.capture = .recording(live)
+        case .idle, .awaitingPermission: break
+        }
     }
 
     /// A stop asked for by the user: applied now while recording, remembered while starting (rule 3).

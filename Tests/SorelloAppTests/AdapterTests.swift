@@ -60,7 +60,7 @@ private struct NoLayout: KeyboardLayout {
         settings.restoreClipboard = false
         settings.microphoneID = "mic-7"
         let session = SessionSettings(settings: settings, dictionaryEditable: true, accessibilityTrusted: true)
-        #expect(session == SessionSettings(promptMode: true, restoreClipboard: false, microphoneID: "mic-7",
+        #expect(session == SessionSettings(doubleTap: .prompt, restoreClipboard: false, microphoneID: "mic-7",
                                            retainForCorrection: true))
     }
 

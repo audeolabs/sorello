@@ -18,9 +18,9 @@ public enum SessionTiming {
     public static let minimumAudio: TimeInterval = 0.15
     /// A recording at least this long that produced no text shows the "nothing heard" notice (rule 8).
     public static let nothingHeardAfter: TimeInterval = 1
-    /// With prompt mode on, a hold released sooner than this after its press is a tap (rule 5).
+    /// Unless the double tap is set to nothing, a hold released sooner than this after its press is a tap (rule 5).
     public static let tapHold: TimeInterval = 0.3
-    /// How soon after a tap the next Hold to Talk press must come to start a prompt dictation (rule 5).
+    /// How soon after a tap the next Hold to Talk press must come to be the double tap's second press (rule 5).
     public static let tapWindow: TimeInterval = 0.4
     /// How long an information notice stays (rule 12).
     public static let informationNotice: TimeInterval = 1.4
@@ -67,11 +67,22 @@ public enum TimerID: Hashable, Sendable {
 
 // MARK: - Settings
 
+/// What a double tap of Hold to Talk starts (rule 5). The user chooses it; a hands-free dictation is the default.
+public enum DoubleTapAction: Sendable, Equatable, CaseIterable {
+    /// A toggle recording in plain style: it goes on with no key held until Hold to Talk is tapped once more, or
+    /// anything else that stops a toggle recording stops it.
+    case handsFree
+    /// A hold in prompt style: the second press is held, and the text starts with the prompt tag.
+    case prompt
+    /// Nothing: a quick hold is an ordinary hold, and two taps start nothing special.
+    case off
+}
+
 /// The user's settings that the session reads. The runtime takes a fresh copy for every event, so a change applies
 /// from the next event on; what a dictation needs to keep (its style, its text rules) is fixed when it starts.
 public struct SessionSettings: Sendable, Equatable {
-    /// Prompt mode: a double tap of Hold to Talk starts a dictation in prompt style (rule 5). Off by default.
-    public var promptMode: Bool
+    /// What a double tap of Hold to Talk starts (rule 5). A hands-free dictation by default.
+    public var doubleTap: DoubleTapAction
     /// Put the previous clipboard back after a paste.
     public var restoreClipboard: Bool
     /// The chosen microphone's unique identifier, or nil for the system default.
@@ -80,9 +91,9 @@ public struct SessionSettings: Sendable, Equatable {
     /// dictionary is readable and Accessibility is trusted (docs/dictionary/DESIGN.md, section 3.4).
     public var retainForCorrection: Bool
 
-    public init(promptMode: Bool = false, restoreClipboard: Bool = true, microphoneID: String? = nil,
+    public init(doubleTap: DoubleTapAction = .handsFree, restoreClipboard: Bool = true, microphoneID: String? = nil,
                 retainForCorrection: Bool = false) {
-        self.promptMode = promptMode
+        self.doubleTap = doubleTap
         self.restoreClipboard = restoreClipboard
         self.microphoneID = microphoneID
         self.retainForCorrection = retainForCorrection
@@ -199,8 +210,8 @@ public struct PermissionIntent: Sendable, Equatable {
     public let mode: TriggerMode
     /// When the press arrived, on `SessionClock`'s timeline.
     public let pressTime: TimeInterval
-    /// Whether the hold takes part in the double tap once it starts: prompt mode was on at the press and has not
-    /// been seen off since (rule 5).
+    /// Whether the hold takes part in the double tap once it starts: the double tap was not set to nothing at the
+    /// press and has not been seen set to nothing since (rule 5).
     var tapEnrolled: Bool
 
     public init(mode: TriggerMode, pressTime: TimeInterval) {
@@ -217,17 +228,54 @@ public struct PermissionIntent: Sendable, Equatable {
 /// The dictation that holds the microphone, while it starts or records.
 public struct LiveDictation: Sendable, Equatable {
     public let id: DictationID
-    public let mode: TriggerMode
     public let style: DictationStyle
     /// When the press that started it arrived, on `SessionClock`'s timeline. The pill counts elapsed time from
     /// here, and the double tap measures the hold from here.
     public let pressTime: TimeInterval
-    /// Whether this hold takes part in the double tap at all: prompt mode was on when it was pressed and has not
-    /// been seen off since. Only such a hold is discarded when released quickly (rule 5).
-    var tapEnrolled: Bool
-    /// Whether a quick release of this hold arms the double tap: it is enrolled, nothing at all was in progress at
-    /// the press, it is not itself a prompt dictation, and no other trigger has arrived since (rule 5).
-    var mayArmTap: Bool
+    /// How it records, and what the session remembers about the keys for it (rule 5).
+    var keys: LiveKeys
+
+    /// Hold to Talk records while its key is down; a toggle recording, hands-free ones included, until it is stopped.
+    public var mode: TriggerMode {
+        switch keys {
+        case .hold: .hold
+        case .toggle: .toggle
+        }
+    }
+}
+
+/// How the live dictation records, and what the session remembers about the keys for it. A hold carries its part in
+/// the double tap; a toggle recording carries what Hold to Talk's key is doing during it. Neither can carry the
+/// other's, so a hold that stops itself at a tap, or a toggle recording discarded as a quick release, cannot be
+/// written down.
+enum LiveKeys: Sendable, Equatable {
+    /// Hold to Talk: it records while the key is down and stops when the key comes up.
+    case hold(TapRole)
+    /// A toggle recording, started by Tap to Toggle or by a hands-free double tap. `holdKey` is nil while Hold to
+    /// Talk's key is up, as far as this recording is concerned.
+    case toggle(holdKey: HoldKey?)
+}
+
+/// How a hold takes part in the double tap (rule 5).
+enum TapRole: Sendable, Equatable {
+    /// Not at all: the double tap was set to nothing when it was pressed, or has been seen set to nothing since.
+    /// A quick release stops it like any hold.
+    case outside
+    /// A quick release discards it as a tap but arms nothing: something was in progress at the press, it is the
+    /// held second press of a prompt double tap, it waited for permission, or another trigger has arrived since.
+    case enrolled
+    /// A quick release discards it and arms the double tap.
+    case arming
+}
+
+/// Hold to Talk's key while it is down during a toggle recording (rule 5).
+enum HoldKey: Sendable, Equatable {
+    /// The second press of the double tap that started this hands-free recording. Its release does nothing; if it
+    /// turns out to be the start of a chord, the recording is discarded like any abandoned hold.
+    case starting
+    /// A press that arrived during the recording. Released with a genuine key-up, it stops the recording; abandoned
+    /// as a chord or ended without a key-up, it does nothing.
+    case stopping
 }
 
 /// The microphone slot. One case, so two captures, or a capture without a dictation, cannot be written down.

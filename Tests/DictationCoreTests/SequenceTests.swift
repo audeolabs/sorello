@@ -8,7 +8,9 @@ import Testing
 @Suite("Sequences")
 struct SequenceTests {
     @Test func aQuickTap() {
-        var machine = Machine()
+        // With the double tap on, a hold this short is discarded at its release as a tap (rule 5; see
+        // `HandsFreeTests`). Set to nothing, the hold is recorded and its too-short audio is dropped (rule 4).
+        var machine = Machine(settings: SessionSettings(doubleTap: .off))
         machine.press(.hold, at: 10)
         machine.started(id1)
         machine.release(at: 10.08)

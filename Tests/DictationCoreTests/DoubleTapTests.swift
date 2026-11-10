@@ -2,16 +2,15 @@ import DictationCore
 import Foundation
 import Testing
 
-/// Rule 5, the prompt double tap. Ported from the double-tap detector's tests in the reference material, restated
-/// as triggers into `Session.reduce`: the detector's state is now the session's `tap` and the live dictation.
-/// Tests of the old app's queued arrival stamps, capture tickets and audio files are not ported: here every
-/// trigger is reduced in arrival order and capture work is the runtime's.
-@Suite("Rule 5: Double tap")
+/// Rule 5 with the double tap set to a prompt. Ported from the double-tap detector's tests in the reference
+/// material, restated as triggers into `Session.reduce`: the detector's state is now the session's `tap` and the
+/// live dictation. Tests of the old app's queued arrival stamps, capture tickets and audio files are not ported:
+/// here every trigger is reduced in arrival order and capture work is the runtime's. "Off" below is the setting
+/// that makes a double tap do nothing; the hands-free setting is in `HandsFreeTests`.
+@Suite("Rule 5: Double tap for a prompt")
 struct DoubleTapTests {
-    private static let on = SessionSettings(promptMode: true)
-
-    private func machine(promptMode: Bool = true) -> Machine {
-        Machine(settings: SessionSettings(promptMode: promptMode))
+    private func machine(_ doubleTap: DoubleTapAction = .prompt) -> Machine {
+        Machine(settings: SessionSettings(doubleTap: doubleTap))
     }
 
     /// The style of the dictation a press started, or nil if it started none.
@@ -94,7 +93,7 @@ struct DoubleTapTests {
     }
 
     @Test func withPromptModeOffNothingChanges() {
-        var machine = machine(promptMode: false)
+        var machine = machine(.off)
         _ = pressStyle(&machine, at: 10)
         machine.started(id1)
         #expect(!releaseDiscards(&machine, at: 10.05), "no minimum hold when off")
@@ -194,18 +193,18 @@ struct DoubleTapTests {
         var machine = machine()
         _ = pressStyle(&machine, at: 10)
         _ = releaseDiscards(&machine, at: 10.1)
-        machine.settings.promptMode = false
+        machine.settings.doubleTap = .off
         machine.send(.engine(.ready))
-        machine.settings.promptMode = true
+        machine.settings.doubleTap = .prompt
         #expect(machine.state.tap == nil)
         #expect(pressStyle(&machine, at: 10.2) == .plain)
     }
 
     @Test func aHoldPressedWithPromptModeOffIsNotATapWhenTheSettingComesOn() {
-        var machine = machine(promptMode: false)
+        var machine = machine(.off)
         _ = pressStyle(&machine, at: 10)
         machine.started(id1)
-        machine.settings.promptMode = true
+        machine.settings.doubleTap = .prompt
         #expect(!releaseDiscards(&machine, at: 10.2), "this hold never took part in the double tap")
         #expect(machine.state.tap == nil)
     }
@@ -213,31 +212,31 @@ struct DoubleTapTests {
     @Test func turningPromptModeOffDuringAHoldTakesItOutOfTheDoubleTap() {
         var machine = machine()
         _ = pressStyle(&machine, at: 10)
-        machine.settings.promptMode = false
+        machine.settings.doubleTap = .off
         machine.send(.engine(.ready))
-        machine.settings.promptMode = true
+        machine.settings.doubleTap = .prompt
         #expect(!releaseDiscards(&machine, at: 10.1), "released like any other hold")
         #expect(machine.state.tap == nil, "and it arms nothing")
     }
 
     @Test func aHoldWaitingForPermissionKeepsThePromptModeItWasPressedWith() {
-        var pressedOff = Machine(microphone: .unknown, settings: SessionSettings(promptMode: false))
+        var pressedOff = Machine(microphone: .unknown, settings: SessionSettings(doubleTap: .off))
         pressedOff.press(.hold, at: 10)
-        pressedOff.settings.promptMode = true
+        pressedOff.settings.doubleTap = .prompt
         pressedOff.send(.microphoneAccess(.granted))
         #expect(!releaseDiscards(&pressedOff, at: 10.2), "pressed with prompt mode off: not a tap")
 
-        var pressedOn = Machine(microphone: .unknown, settings: SessionSettings(promptMode: true))
+        var pressedOn = Machine(microphone: .unknown, settings: SessionSettings(doubleTap: .prompt))
         pressedOn.press(.hold, at: 10)
         pressedOn.send(.microphoneAccess(.granted))
         #expect(releaseDiscards(&pressedOn, at: 10.2), "pressed with prompt mode on: a tap")
         #expect(pressedOn.state.tap == nil, "but a permission request never arms")
 
-        var turnedOff = Machine(microphone: .unknown, settings: SessionSettings(promptMode: true))
+        var turnedOff = Machine(microphone: .unknown, settings: SessionSettings(doubleTap: .prompt))
         turnedOff.press(.hold, at: 10)
-        turnedOff.settings.promptMode = false
+        turnedOff.settings.doubleTap = .off
         turnedOff.send(.engine(.ready))
-        turnedOff.settings.promptMode = true
+        turnedOff.settings.doubleTap = .prompt
         turnedOff.send(.microphoneAccess(.granted))
         #expect(!releaseDiscards(&turnedOff, at: 10.2), "prompt mode was seen off while it waited")
     }

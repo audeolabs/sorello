@@ -76,12 +76,24 @@ struct PillContentTests {
     }
 
     @Test func promptStyleIsShown() {
-        var machine = Machine(settings: SessionSettings(promptMode: true))
+        var machine = Machine(settings: SessionSettings(doubleTap: .prompt))
         machine.press(.hold, at: 1)
         machine.release(at: 1.1)
         machine.press(.hold, at: 1.2)
         #expect(PillContent(machine.state) == .listening(ListeningPill(id: id2, mode: .hold, style: .prompt,
                                                                        since: 1.2)))
+    }
+
+    @Test func aHandsFreeRecordingIsTheListeningPillInToggleMode() {
+        var machine = Machine()
+        machine.press(.hold, at: 1)
+        machine.release(at: 1.1)
+        machine.press(.hold, at: 1.3)
+        let listening = PillContent.listening(ListeningPill(id: id2, mode: .toggle, style: .plain, since: 1.3))
+        #expect(PillContent(machine.state) == listening)
+        machine.started(id2)
+        machine.release(at: 1.4)
+        #expect(PillContent(machine.state) == listening, "after the second press comes up too")
     }
 
     @Test func everyNoticeHasText() {

@@ -9,17 +9,18 @@ import Testing
 /// exactly once, and stale events changing nothing. Each sequence then settles and must leave nothing in flight.
 @Suite("Invariants")
 struct InvariantTests {
-    @Test(arguments: 0..<120)
-    func randomSequencesKeepTheInvariants(seed: UInt64) {
+    /// Each sequence starts with one double-tap setting and switches it now and then, as a user might.
+    @Test(arguments: DoubleTapAction.allCases, 0..<120)
+    func randomSequencesKeepTheInvariants(doubleTap: DoubleTapAction, seed: UInt64) {
         var random = SplitMix64(seed: seed)
         var machine = Machine(microphone: random.pick([.granted, .granted, .unknown, .denied]),
                               engine: random.pick([.ready, .ready, .preparing]),
-                              settings: SessionSettings(promptMode: random.chance(0.5)))
+                              settings: SessionSettings(doubleTap: doubleTap))
         var time: TimeInterval = 100
         var replays: [ReplayID] = []
         for _ in 0..<400 {
             time += random.chance(0.4) ? random.uniform(0.01, 0.35) : random.uniform(0.3, 3)
-            if random.chance(0.03) { machine.settings.promptMode.toggle() }
+            if random.chance(0.03) { machine.settings.doubleTap = random.pick(DoubleTapAction.allCases) }
             let effects = machine.send(nextEvent(&random, machine.state, time: time, replays: replays))
             for case .reinsert(let replay, _, _) in effects { replays.append(replay) }
         }
@@ -34,6 +35,11 @@ struct InvariantTests {
         func someID() -> DictationID {
             if !held.isEmpty && random.chance(0.85) { return random.pick(held) }
             return DictationID(UInt64(random.below(8)) + 1)
+        }
+        // Hold to Talk pressed, released and abandoned during toggle recordings, which it can stop (rule 5).
+        if state.capture.live?.mode == .toggle, random.chance(0.25) {
+            return .trigger(random.pick([.holdPressed, .holdReleased(.keyUp), .holdReleased(.keyUp),
+                                         .holdReleased(.interrupted), .holdAbandoned]), at: time)
         }
         switch random.below(100) {
         case 0..<34:
