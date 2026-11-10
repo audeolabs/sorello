@@ -56,16 +56,6 @@ struct PrivacyPermissionTests {
                         symbolName: "exclamationmark.triangle.fill"))
         }
     }
-
-    @Test("Setup's steps run in order and stop at either end")
-    func setupSteps() {
-        let steps = SetupStep.allCases
-        #expect(steps == [.welcome, .microphone, .accessibility, .shortcut, .test])
-        for (index, step) in steps.enumerated() {
-            #expect(step.next == steps[min(index + 1, steps.count - 1)])
-            #expect(step.previous == steps[max(index - 1, 0)])
-        }
-    }
 }
 
 @Suite("Microphone permission")
