@@ -7,6 +7,12 @@ import Testing
 /// kept current while it is open. Nothing here opens a menu or puts anything on the screen.
 @MainActor
 @Suite struct StatusMenuControllerTests {
+    /// A menu sends an item's action through the application, so there has to be one. The app always has it; a test
+    /// process has it only once something has made it, which another suite may or may not have done by now.
+    init() {
+        _ = NSApplication.shared
+    }
+
     static let failed = AppStatus(model: .failed(.couldNotLoad), microphone: .granted, accessibility: .granted)
     static let preparing = AppStatus(model: .preparing, microphone: .granted, accessibility: .granted)
 
