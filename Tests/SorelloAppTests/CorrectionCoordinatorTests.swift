@@ -306,6 +306,8 @@ final class CorrectionHarness {
         let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
         let harness = try CorrectionHarness(directory: directory.url, defaults: suite.defaults)
         harness.dictate(1)
+        // Any timer the coordinator set for the watch is armed before time moves on.
+        try await Task.sleep(for: .milliseconds(20))
         // However late the watch reports its last edit, the coordinator has not let the audio go: a watch that ends
         // without a word keeps it until the engine's own expiry.
         harness.clock.advance(by: 85)
