@@ -60,7 +60,7 @@ public struct AboutScreen: View {
     public var body: some View {
         ScreenPage(String(localized: "About")) {
             VStack(alignment: .leading, spacing: 6) {
-                IslandEmblem()
+                MarkEmblem()
                     .padding(.bottom, 12)
                 Text(model.appName)
                     .font(.display(40))
