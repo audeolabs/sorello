@@ -10,7 +10,7 @@ are in `Resources/ModelNotices` and ship inside the app beside the model.
 
 ## Urbanist
 
-The display typeface is Urbanist Medium, Copyright 2021 The Urbanist Project Authors
+The display typeface is Urbanist Medium, Copyright 2024 The Urbanist Project Authors
 (https://github.com/coreyhu/Urbanist), licensed under the SIL Open Font License, Version 1.1. The licence text
 ships with the font in `Resources/Fonts/Urbanist-OFL.txt`.
 

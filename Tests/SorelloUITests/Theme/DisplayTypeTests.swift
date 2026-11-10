@@ -27,8 +27,13 @@ struct DisplayTypeTests {
         let names = descriptors.compactMap { CTFontDescriptorCopyAttribute($0, kCTFontNameAttribute) as? String }
         #expect(names == ["Urbanist-Medium"])
 
+        // The licence carries the copyright notice the font itself carries.
         let licence = try String(contentsOf: fonts.appendingPathComponent("Urbanist-OFL.txt"), encoding: .utf8)
-        #expect(licence.contains("Copyright 2021 The Urbanist Project Authors"))
+        let descriptor = try #require(descriptors.first)
+        let font = CTFontCreateWithFontDescriptor(descriptor, 12, nil)
+        let copyright = try #require(CTFontCopyName(font, kCTFontCopyrightNameKey) as String?)
+        #expect(copyright.contains("The Urbanist Project Authors"))
+        #expect(licence.split(separator: "\n").first.map(String.init) == copyright)
         #expect(licence.contains("SIL OPEN FONT LICENSE Version 1.1"))
     }
 
