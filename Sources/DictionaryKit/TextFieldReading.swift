@@ -5,7 +5,8 @@ import Foundation
 // is bounded and never touches a secure field. The macOS implementation is in MacPlatform; tests use a fake.
 
 /// The process in front and its focused text element. Only the adapter that implements `TextFieldReading` makes
-/// these and looks inside them.
+/// these and looks inside them. Whoever makes one must wrap only an immutable reference that is safe to use from
+/// any thread; wrapping an arbitrary mutable object is a bug.
 public struct TextFieldTarget: @unchecked Sendable {
     // Safe: `element` is an immutable Accessibility reference (an AXUIElement on macOS), which may be used from any
     // thread. This value never mutates it, and nothing but the adapter that created it reads it.

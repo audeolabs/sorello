@@ -99,6 +99,9 @@ public enum TriggerEvent: Sendable, Equatable {
     case pasteAgainPressed
     case pillStopClicked
     case pillCancelClicked
+    /// The session was locked or switched to another user, or the Mac is about to sleep. Whatever the shortcut
+    /// mode, a recording stops here and nothing resumes by itself afterwards.
+    case systemInterrupted
 }
 
 /// Receives triggers on the main actor, in the order they happened.
@@ -179,16 +182,21 @@ public protocol AudioCapture: Sendable {
     /// Stops the microphone, delivers what remains (including the converter's tail), then finishes `events`.
     /// Safe to call more than once. After `abort()` it does nothing.
     func stop() async
-    /// Stops the microphone and discards what was not yet delivered. Wins over a `stop()` in progress. Safe to
-    /// call more than once, from any thread; the teardown completes on the adapter's own queue.
+    /// Finishes `events` at once and stops the microphone. Chunks already yielded into `events` stay there for
+    /// the consumer to read; samples not yet yielded are discarded. Wins over a `stop()` in progress. Safe to
+    /// call more than once, from any thread; it returns immediately and the teardown completes on the adapter's
+    /// own queue, before any later capture gets the microphone.
     func abort()
 }
 
 /// Hears every chunk as it is captured, to show the voice. Called off the main actor, often; must not block.
+///
+/// The picture follows the newest dictation only. Once a chunk from a dictation has been accepted, `heard` and
+/// `captureEnded` for any older dictation are ignored, and a dictation that has ended cannot be revived by a
+/// late chunk. This is a filter for the display: the audio itself still goes to speech and the Run Log.
 public protocol LevelSink: Sendable {
     func heard(_ samples: [Float], at time: TimeInterval, dictation: DictationID)
-    /// That dictation's capture ended or was discarded: the level falls to rest, unless a newer dictation has
-    /// been heard since.
+    /// That dictation's capture ended or was discarded: the level falls to rest.
     func captureEnded(dictation: DictationID)
 }
 
@@ -305,6 +313,23 @@ public protocol TranscriptProcessing: Sendable {
     func process(_ transcript: String, style: DictationStyle, context: InsertionContext?) -> ProcessedDictation
 }
 
+/// The field and selection the inserter read its context from, for the app's correction watch. Only the adapter
+/// that made it, and the app code that wires that adapter up, look inside; the session passes it along unopened.
+public struct DestinationField: Sendable {
+    public let value: any Sendable
+
+    public init(_ value: any Sendable) { self.value = value }
+}
+
+/// Where an insertion's text is going, as `compose` is told.
+public enum InsertionDestination: Sendable {
+    /// To the cursor in the app in front. `context` is nil when the field could not be read; the paste still
+    /// goes ahead. `field` is present only when the field and its selection were read.
+    case cursor(context: InsertionContext?, field: DestinationField?)
+    /// Only to the clipboard. Nothing will be posted and no field was read.
+    case clipboard(ClipboardReason)
+}
+
 /// What `compose` hands back to the inserter once the destination is known.
 public struct ComposedInsertion: Sendable, Equatable {
     public var text: String
@@ -318,7 +343,8 @@ public struct ComposedInsertion: Sendable, Equatable {
 }
 
 public enum InsertionOutcome: Sendable, Equatable {
-    /// The paste (or the lone Return) was posted. The system does not say whether the app accepted it.
+    /// The paste (or the lone Return) was posted. The system does not say whether the app accepted it. A Return
+    /// that was skipped after a posted paste is still `inserted`.
     case inserted
     /// `compose` returned no text and no Return.
     case nothingToInsert
@@ -333,23 +359,33 @@ public enum ClipboardReason: Sendable, Equatable {
     /// A modifier key was still held after the wait: a paste posted then would be a different shortcut.
     case modifiersStillDown
     case screenLocked
+    /// The app in front, its focused field or its selection changed while the text was being composed.
+    case targetChanged
 }
 
 public enum InsertionFailure: Sendable, Equatable {
     case pasteboardUnavailable
     case eventPostFailed
+    /// The dictation was only a command (Return) and it could not be posted. Nothing went to the clipboard.
+    case commandNotPosted
+    /// The caller was cancelled before any key was posted. Anything written to the clipboard was put back.
+    case cancelled
 }
 
 public protocol TextInserting: Sendable {
     /// Runs one insertion transaction (ARCHITECTURE.md, section 6, "Text insertion"). Transactions run one at a
     /// time in the order asked.
     ///
-    /// `compose` is called at most once, and before anything is pasted: with the text around the cursor once the
-    /// destination is known (nil when it could not be read), or with nil when the text is only going to the
-    /// clipboard. It returns what to insert. The call returns when the keys have been posted; restoring the
-    /// clipboard finishes afterwards, before the next transaction begins.
+    /// `compose` is called exactly once per transaction that gets as far as needing the text, and before
+    /// anything is pasted or written. It is told where the text is going and returns what to insert. After it
+    /// returns, the adapter checks the destination again before posting.
+    ///
+    /// The call returns when the outcome of posting is known. Return and restoring the clipboard finish
+    /// afterwards on the adapter's own account, whatever happens to the caller, and before the next transaction
+    /// begins. If the caller's task is cancelled before any key is posted the outcome is `failed(.cancelled)`;
+    /// after a key is posted, cancellation changes nothing and nothing is ever posted twice.
     func insert(restoreClipboard: Bool,
-                compose: @escaping @Sendable (InsertionContext?) async -> ComposedInsertion) async -> InsertionOutcome
+                compose: @escaping @Sendable (InsertionDestination) async -> ComposedInsertion) async -> InsertionOutcome
 }
 
 // MARK: - Permissions and the app in front
