@@ -1,12 +1,12 @@
-LocalFlow speech model
-Its name in LocalFlow is kea-b-0.1. Renaming does not change the trained
+Sorello speech model
+Its name in Sorello is kea-b-0.1. Renaming does not change the trained
 weights, original model attribution, or CC-BY-4.0 license below.
 
 kea-b-0.1
 
 Model weights (the Core ML encoder, front-end constants, decoder and joint
 weights and vocabulary in this directory): CC-BY-4.0, see LICENSE.
-Software (the adapted native inference code in LocalFlow): MIT License, see
+Software (the adapted native inference code in Sorello): MIT License, see
 Software-LICENSE.
 
 This model is a modified version of nvidia/parakeet-tdt-0.6b-v2
@@ -32,7 +32,7 @@ Changes made to the original model:
   fine-tune's and quantized to 8-bit integers with one scale per output
   channel, as was the subsampling output projection (pre_encode.out). The
   binary row scales are stored in FP16.
-- For LocalFlow, the encoder was converted to a Core ML model holding only
+- For Sorello, the encoder was converted to a Core ML model holding only
   the 15-second input size: each binary matrix is stored as 1-bit codes with
   its FP16 row scale. The 8-bit weights are stored as the FP16 values the
   model computes with, and the prediction and joint networks are widened to
