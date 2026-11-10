@@ -10,6 +10,7 @@ enum PillType {
     static let action = NSFont.systemFont(ofSize: 12, weight: .semibold)
     static let symbolSize: CGFloat = 14
     static let tagSize: CGFloat = 10
+    static let tagSymbol = "tag.fill"
     /// The gap between the prompt tag and the time.
     static let tagGap: CGFloat = 5
     /// A capsule action: its height and the padding either side of its title.
@@ -18,6 +19,15 @@ enum PillType {
 
     static func width(of text: String, font: NSFont) -> CGFloat {
         ceil((text as NSString).size(withAttributes: [.font: font]).width)
+    }
+
+    /// The room the prompt tag takes before the time: the symbol as drawn, which is wider than its point size, and the
+    /// gap.
+    static var tagRoom: CGFloat {
+        let configuration = NSImage.SymbolConfiguration(pointSize: tagSize, weight: .semibold)
+        let symbol = NSImage(systemSymbolName: tagSymbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(configuration)
+        return ceil(symbol?.size.width ?? tagSize) + tagGap
     }
 
     /// The height of one line of `font`, from its descender to its ascender.
@@ -105,7 +115,7 @@ struct PillScene: Equatable {
     static func timeContentWidth(elapsed: TimeInterval, prompt: Bool) -> CGFloat {
         let widest = String(elapsedText(elapsed).map { $0.isNumber ? "0" : $0 })
         let time = PillType.width(of: widest, font: PillType.time)
-        return prompt ? time + PillType.tagSize + PillType.tagGap + 2 : time
+        return prompt ? time + PillType.tagRoom : time
     }
 
     /// The next moment, in seconds since listening began, at which the time shown gains a digit: ten minutes in, then

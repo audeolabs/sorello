@@ -283,6 +283,13 @@ final class PillView: NSView {
                        height: box.height), Double(fill.opacity))
     }
 
+    /// Where the lines and symbols of what the pill shows are drawn now, in screen points (top left, y down).
+    var drawnContent: [CGRect] {
+        (current?.drawnFrames ?? []).map {
+            CGRect(x: $0.minX + origin.x, y: bounds.height + origin.y - $0.maxY, width: $0.width, height: $0.height)
+        }
+    }
+
     var scale: CGFloat { CGFloat(screen?.scale ?? 2) }
     var reduceMotion: Bool { look.reduceMotion }
     var increaseContrast: Bool { look.increaseContrast }
@@ -441,9 +448,9 @@ final class PillView: NSView {
         timeTimer = timer
     }
 
-    /// The elapsed time for a listening display, at the clock's now (snapshots: twelve seconds in).
+    /// The elapsed time for a listening display, at the clock's now.
     func elapsed(since started: TimeInterval) -> TimeInterval {
-        fixedMotionTime == nil ? clock() - started : 12
+        clock() - started
     }
 }
 

@@ -40,7 +40,8 @@ final class PillContent {
     private let text = CALayer()
     private var actions: [(id: String, capsule: CALayer, title: CALayer)] = []
     private var images: [ObjectIdentifier: PillImage] = [:]
-    private var shownTime: String?
+    /// The time drawn, and the room it was drawn in.
+    private var shownTime: (text: String, room: CGFloat)?
     /// The scale and contrast the cached images were drawn for.
     private var drawnFor: (scale: CGFloat, contrast: Bool)?
 
@@ -86,6 +87,12 @@ final class PillContent {
     /// Whether it is fading in or out at `now`.
     func isFading(at now: CFTimeInterval) -> Bool { !fade.isSettled(at: now) }
 
+    /// The frames of the lines and symbols it draws, in the view's coordinates.
+    var drawnFrames: [CGRect] {
+        ([time, tag, words, symbol, text] + actions.map(\.title)).filter { !$0.isHidden && $0.contents != nil }
+            .map(\.frame)
+    }
+
     func dim(_ alpha: Float, action: String?) {
         if inner.opacity != alpha { inner.opacity = alpha }
         for entry in actions {
@@ -112,13 +119,16 @@ final class PillContent {
         switch scene.display {
         case .listening(let listening):
             let shown = PillScene.elapsedText(view.elapsed(since: listening.started))
-            if shown != shownTime {
-                shownTime = shown
-                set(time, PillImage.text(shown, font: PillType.time, color: NSColor(Palette.ink), maxWidth: 200,
-                                         scale: scale))
+            // Its box, less the tag's room: on a screen too narrow for the time it is truncated there.
+            let tagRoom = listening.promptStyle ? PillType.tagRoom : 0
+            let room = max((scene.layout.trailing?.width ?? 0) - tagRoom, 0)
+            if shownTime.map({ $0.text != shown || $0.room != room }) ?? true {
+                shownTime = (shown, room)
+                set(time, room > 0 ? PillImage.text(shown, font: PillType.time, color: NSColor(Palette.ink),
+                                                    maxWidth: room, scale: scale) : nil)
             }
             if listening.promptStyle, images[ObjectIdentifier(tag)] == nil {
-                set(tag, PillImage.symbol("tag.fill", pointSize: PillType.tagSize, weight: .semibold, color: secondary,
+                set(tag, PillImage.symbol(PillType.tagSymbol, pointSize: PillType.tagSize, weight: .semibold, color: secondary,
                                           scale: scale))
             }
         case .waiting(.preparingModel):

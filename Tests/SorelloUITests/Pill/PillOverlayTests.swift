@@ -81,6 +81,30 @@ import Testing
         #expect(PillScene.elapsedText(.nan) == "0:00")
     }
 
+    /// What the pill draws stays in its regions: the time, and the prompt tag before it, lie in their box on every
+    /// screen, early on and past ten minutes, and on a screen too narrow for them the time is truncated there rather
+    /// than drawn over the wave.
+    @Test func theTimeIsDrawnInItsBox() throws {
+        let narrow = ScreenTopology(frame: CGRect(x: 0, y: 0, width: 180, height: 400), safeAreaTop: 0, housing: nil,
+                                    menuBarHeight: 24, scale: 1)
+        for screen in Self.screens + [narrow] {
+            for elapsed in [12.0, 600] {
+                for display in [PillDisplay.listening(.init(trigger: .toggle, started: 0)),
+                                .listening(.init(trigger: .hold, promptStyle: true, started: 0))] {
+                    let view = PillView(levels: nil, clock: { elapsed }, fixedMotionTime: 0)
+                    view.frame = CGRect(x: 0, y: 0, width: screen.width, height: screen.height)
+                    let scene = PillScene(display: display, screen: screen, elapsed: elapsed)
+                    view.update(scene, appearance: PillAppearance(), animated: false)
+                    let box = try #require(scene.layout.trailing).insetBy(dx: -1e-6, dy: -1e-6)
+                    #expect(!view.drawnContent.isEmpty)
+                    for frame in view.drawnContent {
+                        #expect(box.contains(frame), "\(frame) is drawn outside \(box) on \(screen)")
+                    }
+                }
+            }
+        }
+    }
+
     /// The words of the wait fit their box on every screen, and a hidden pill is at its rest under the band.
     @Test func theWaitsWordsFitAndHiddenRests() throws {
         for screen in Self.screens {
