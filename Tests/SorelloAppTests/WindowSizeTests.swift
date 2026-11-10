@@ -28,11 +28,22 @@ import Testing
         window.layoutIfNeeded()
     }
 
-    /// Records an issue, naming `where`, unless `window` has its chrome's default size and minimum.
+    /// Records an issue, naming `place`, unless `window`'s content is `size` with `minimum` as its minimum, and what it
+    /// shows fills it.
+    private func expect(_ window: NSWindow, size: CGSize, minimum: CGSize, at place: String,
+                        sourceLocation: SourceLocation = #_sourceLocation) {
+        #expect(contentSize(of: window) == size, "size at \(place)", sourceLocation: sourceLocation)
+        #expect(window.contentMinSize == minimum, "minimum at \(place)", sourceLocation: sourceLocation)
+        let content = window.contentView
+        #expect(content?.frame.size == size, "content at \(place)", sourceLocation: sourceLocation)
+        #expect(content?.subviews.allSatisfy { $0.frame == content?.bounds } == true, "filled at \(place)",
+                sourceLocation: sourceLocation)
+    }
+
+    /// Records an issue, naming `place`, unless `window` has its chrome's default size and minimum.
     private func expectChrome(_ window: NSWindow, _ kind: WindowChrome.Kind, at place: String,
                               sourceLocation: SourceLocation = #_sourceLocation) {
-        #expect(contentSize(of: window) == kind.defaultSize, "size at \(place)", sourceLocation: sourceLocation)
-        #expect(window.contentMinSize == kind.minimumSize, "minimum at \(place)", sourceLocation: sourceLocation)
+        expect(window, size: kind.defaultSize, minimum: kind.minimumSize, at: place, sourceLocation: sourceLocation)
     }
 
     // MARK: Setup
@@ -91,6 +102,21 @@ import Testing
         }
     }
 
+    @Test func theMainWindowKeepsTheSizeItIsGivenAtEverySection() async {
+        let kind = WindowChrome.Kind.main
+        let model = MainWindowModel.sample(section: .general)
+        let window = WindowPresenter.mainWindow(model, title: "Sorello")
+        defer { window.close() }
+        for size in [kind.minimumSize, CGSize(width: 1040, height: 760)] {
+            window.setContentSize(size)
+            for section in MainSection.allCases {
+                model.section = section
+                await settle(window)
+                expect(window, size: size, minimum: kind.minimumSize, at: "\(section), \(size.width) x \(size.height)")
+            }
+        }
+    }
+
     // MARK: Notices
 
     @Test(arguments: [true, false])
@@ -102,8 +128,11 @@ import Testing
                                                                               encoding: .utf8)
         let window = WindowPresenter.noticeWindow(title: "Invented Notice", files: withText ? [file] : [])
         defer { window.close() }
+        let minimum = WindowPresenter.noticeMinimumSize
         await settle(window)
-        #expect(contentSize(of: window) == WindowPresenter.noticeSize)
-        #expect(window.contentMinSize == WindowPresenter.noticeMinimumSize)
+        expect(window, size: WindowPresenter.noticeSize, minimum: minimum, at: "opening")
+        window.setContentSize(minimum)
+        await settle(window)
+        expect(window, size: minimum, minimum: minimum, at: "its minimum")
     }
 }
