@@ -552,8 +552,9 @@ in the meantime. Insertion sits behind `TextInserting` so another strategy
   card to drag in (adapted from Scrawl and AskForPermission, MIT, notices
   in `ThirdPartyNotices.md`). The card's surface is Liquid Glass on
   macOS 26 and later and the system's blurred material before that. Its
-  shape, frost, shadows and motion are the same on both. That choice is
-  the only thing Sorello's own code does differently on an older system.
+  shape, frost, shadows and motion are the same on both. Below macOS 26
+  that choice is the only thing Sorello's own code does differently from
+  macOS 26.
 
 ## 7. Persistence
 
@@ -774,12 +775,15 @@ Review does.
   "Sorello", `com.audeolabs.sorello`. Minimum system: macOS 15, on Apple
   silicon or Intel.
 - An executable records the SDK it was linked against as well as its
-  minimum system, and AppKit and SwiftUI give it that SDK's design and
-  behaviour: one that records macOS 15 gets the controls, windows and menus
-  of macOS 15 on a later system. SwiftPM records the minimum system in
-  place of the SDK unless the link is told the SDK
-  (swiftlang/swift-package-manager#10696), so `Package.swift` tells it,
-  from the `SDKROOT` that `swift` sets.
+  minimum system, and AppKit and SwiftUI keep older behaviour for an app
+  that records an older SDK: measured on macOS 27, one that records
+  macOS 15 gets the control sizes, title bar and window buttons of
+  macOS 15. SwiftPM records the minimum system in place of the SDK unless
+  the link is told the SDK (swiftlang/swift-package-manager#10696), so
+  `Package.swift` tells it, from the `SDKROOT` that `swift`, Xcode's
+  command-line tool and the one `make` runs, sets. A toolchain's own
+  `swift` sets none, and what it builds records the minimum system;
+  `scripts/build-app.sh` refuses such an app.
 - A development build is made for the Mac that builds it. A
   `CHANNEL=release` build is universal (arm64 and x86_64). `ARCHS` chooses
   otherwise, for example `ARCHS="arm64 x86_64"` for a universal
