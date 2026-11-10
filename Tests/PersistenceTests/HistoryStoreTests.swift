@@ -90,6 +90,23 @@ import Testing
         #expect(store.entries.count == 1)
     }
 
+    @Test func entriesAreInRecordingOrderWhicheverSaveFinishesFirst() async throws {
+        let temporary = try TemporaryDirectory()
+        let directory = historyDirectory(in: temporary)
+        let store = HistoryStore(directory: directory) { true }
+        // The older recording is much longer, so its conversion finishes after the newer one's.
+        let older = draft(1, samples: tone(seconds: 60))
+        let newer = draft(2, samples: tone(seconds: 0.1))
+        let first = Task { await store.record(older) }
+        let second = Task { await store.record(newer) }
+        await first.value
+        await second.value
+        #expect(store.entries.map(\.heard) == ["Synthetic sentence 2.", "Synthetic sentence 1."])
+
+        await store.record(draft(0))
+        #expect(store.entries.map(\.heard).last == "Synthetic sentence 0.", "an older recording goes below")
+    }
+
     // MARK: The cap
 
     @Test func aTwentyFirstEntryEvictsTheOldestAndItsAudio() async throws {
@@ -110,6 +127,17 @@ import Testing
         #expect(wavFiles(in: directory).count == 20)
     }
 
+    @Test func aRecordingOlderThanAFullLogIsNotKept() async throws {
+        let temporary = try TemporaryDirectory()
+        let directory = historyDirectory(in: temporary)
+        let store = HistoryStore(directory: directory) { true }
+        for number in 11...30 { await store.record(draft(number)) }
+        let before = store.entries
+        await store.record(draft(1))
+        #expect(store.entries == before)
+        #expect(wavFiles(in: directory).count == 20, "its audio is not left behind")
+    }
+
     @Test func concurrentSavesAllLandAndRespectTheCap() async throws {
         let temporary = try TemporaryDirectory()
         let directory = historyDirectory(in: temporary)
@@ -120,8 +148,8 @@ import Testing
                 group.addTask { await store.record(draft) }
             }
         }
-        #expect(store.entries.count == 20)
-        #expect(Set(store.entries.map(\.id)).count == 20)
+        #expect(store.entries.map(\.heard) == (11...30).reversed().map { "Synthetic sentence \($0)." },
+                "the twenty newest recordings are kept, newest first")
         let named = Set(try store.entries.map { try #require(store.audioURL(for: $0.id)).lastPathComponent })
         #expect(Set(wavFiles(in: directory)) == named)
 
@@ -193,6 +221,27 @@ import Testing
         #expect(store.entries.map(\.heard) == ["Synthetic sentence 4."], "a save after a clear is kept")
     }
 
+    @Test func aClearThatCannotDeleteSaysSoAndShowsWhatIsLeft() async throws {
+        let temporary = try TemporaryDirectory()
+        let directory = historyDirectory(in: temporary)
+        let store = HistoryStore(directory: directory) { true }
+        for number in 1...2 { await store.record(draft(number)) }
+        let recorded = store.entries
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+
+        #expect(await store.clear() == false)
+        #expect(store.entries == recorded, "the log does not claim to be empty")
+        let reopened = HistoryStore(directory: directory) { true }
+        await reopened.load()
+        #expect(reopened.entries == recorded)
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        #expect(await store.clear())
+        #expect(store.entries.isEmpty)
+        #expect(((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []).isEmpty)
+    }
+
     @Test func clearCancelsSavesThatBeganBeforeIt() async throws {
         let temporary = try TemporaryDirectory()
         let directory = historyDirectory(in: temporary)
@@ -204,7 +253,7 @@ import Testing
         }
         let clearing = Task { await store.clear() }
         for save in saves { await save.value }
-        await clearing.value
+        #expect(await clearing.value)
 
         #expect(store.entries.isEmpty)
         #expect(((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []).isEmpty)
@@ -298,6 +347,27 @@ import Testing
         #expect(try permissions(of: directory) == 0o700)
         let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
         #expect(names.count == 20) // 19 entries and the index
+        for name in names {
+            #expect(try permissions(of: directory.appendingPathComponent(name)) == 0o600, "\(name)")
+        }
+    }
+
+    @Test func aRestoredLogOpenToOthersIsClosedWhenRead() async throws {
+        let temporary = try TemporaryDirectory()
+        let directory = historyDirectory(in: temporary)
+        let store = HistoryStore(directory: directory) { true }
+        await store.record(draft(1))
+        let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        for name in names {
+            try FileManager.default.setAttributes([.posixPermissions: 0o644],
+                                                  ofItemAtPath: directory.appendingPathComponent(name).path)
+        }
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+
+        let reopened = HistoryStore(directory: directory) { true }
+        await reopened.load()
+        #expect(reopened.entries.count == 1)
+        #expect(try permissions(of: directory) == 0o700)
         for name in names {
             #expect(try permissions(of: directory.appendingPathComponent(name)) == 0o600, "\(name)")
         }

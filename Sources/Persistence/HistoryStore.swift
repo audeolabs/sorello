@@ -105,11 +105,15 @@ public final class HistoryStore: HistoryRecording {
     }
 
     /// Deletes every entry, every audio file and every temporary file, and cancels every save that began before this
-    /// call. `entries` is empty as soon as this is called.
-    public func clear() async {
+    /// call. `entries` is empty as soon as this is called. Returns false if some files could not be deleted; `entries`
+    /// then shows again whatever is still on disk, so the log never claims to be empty when it is not.
+    @discardableResult
+    public func clear() async -> Bool {
         clearCount += 1
         entries = []
-        show(await writer.clear(clearCount: clearCount))
+        let (snapshot, complete) = await writer.clear(clearCount: clearCount)
+        show(snapshot)
+        return complete
     }
 
     /// The entry's audio file, for playback. Nil when there is no such entry.
@@ -181,6 +185,8 @@ actor HistoryWriter {
     private var entries: [HistoryEntry]?
     private var revision = 0
     private var clearCount = 0
+    /// Whether the latest clear deleted everything it should have.
+    private var lastClearComplete = true
 
     nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
 
@@ -216,15 +222,19 @@ actor HistoryWriter {
             Diagnostics.record("history.audioWriteFailed")
             return nil
         }
-        let updated = [entry] + current
-        guard writeIndex(Array(updated.prefix(capacity))) else {
+        // Newest recording first, whatever order the saves finished converting in. A recording older than every kept
+        // entry in a full log is evicted at once.
+        var updated = current
+        updated.insert(entry, at: updated.firstIndex { $0.date <= entry.date } ?? updated.endIndex)
+        let kept = Array(updated.prefix(capacity))
+        guard writeIndex(kept) else {
             try? FileManager.default.removeItem(at: audioURL)
             return nil
         }
         for evicted in updated.dropFirst(capacity) {
             try? FileManager.default.removeItem(at: Self.audioURL(for: evicted.id, in: directory))
         }
-        return snapshot(Array(updated.prefix(capacity)))
+        return snapshot(kept)
     }
 
     func delete(id: UUID, clearCount: Int) -> Snapshot? {
@@ -247,9 +257,10 @@ actor HistoryWriter {
         return snapshot(updated)
     }
 
-    func clear(clearCount: Int) -> Snapshot {
+    /// The snapshot after the clear, and whether the clear deleted everything.
+    func clear(clearCount: Int) -> (Snapshot, Bool) {
         catchUp(to: clearCount)
-        return snapshot(loaded())
+        return (snapshot(loaded()), lastClearComplete)
     }
 
     func samples(for id: UUID, clearCount: Int) -> [Float]? {
@@ -266,7 +277,7 @@ actor HistoryWriter {
     private func catchUp(to requested: Int) {
         guard requested > clearCount else { return }
         clearCount = requested
-        wipe()
+        lastClearComplete = wipe()
     }
 
     /// The index, read on first use. An unreadable index is deleted; audio and temporary files that no entry names
@@ -299,6 +310,7 @@ actor HistoryWriter {
             if (try? manager.removeItem(at: directory.appendingPathComponent(name))) != nil { removed += 1 }
         }
         if removed > 0 { Diagnostics.record("history.orphansRemoved", ["count": Double(removed)]) }
+        if !found.isEmpty { tightenPermissions(of: named.union([Self.indexName])) }
         entries = found
         return found
     }
@@ -327,17 +339,47 @@ actor HistoryWriter {
         return true
     }
 
-    /// Removes everything in the directory: the index, every audio file and every temporary file.
-    private func wipe() {
+    /// A log restored from a backup or copied in may be open to others: close the directory and the files it keeps.
+    private func tightenPermissions(of names: Set<String>) {
         let manager = FileManager.default
-        let names = (try? manager.contentsOfDirectory(atPath: directory.path)) ?? []
+        var failed = 0
+        if (try? manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)) == nil { failed += 1 }
+        for name in names {
+            let path = directory.appendingPathComponent(name).path
+            if (try? manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)) == nil { failed += 1 }
+        }
+        if failed > 0 { Diagnostics.record("history.permissionsNotTightened", ["count": Double(failed)]) }
+    }
+
+    /// Removes everything in the directory, the index first: the index, every audio file and every temporary file.
+    /// Returns whether everything went. If something stayed, the index is read again on next use, so the entries
+    /// shown are the ones still on disk and leftover audio is retried as orphans.
+    private func wipe() -> Bool {
+        let manager = FileManager.default
+        var names: [String]
+        do {
+            names = try manager.contentsOfDirectory(atPath: directory.path)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            names = []
+        } catch {
+            Diagnostics.record("history.clearUnlisted")
+            entries = nil
+            revision += 1
+            return false
+        }
+        if let index = names.firstIndex(of: Self.indexName) { names.swapAt(0, index) }
         var failed = 0
         for name in names where (try? manager.removeItem(at: directory.appendingPathComponent(name))) == nil {
             failed += 1
         }
-        if failed > 0 { Diagnostics.record("history.clearIncomplete", ["count": Double(failed)]) }
-        entries = []
         revision += 1
+        guard failed == 0 else {
+            Diagnostics.record("history.clearIncomplete", ["count": Double(failed)])
+            entries = nil
+            return false
+        }
+        entries = []
+        return true
     }
 
     private func snapshot(_ entries: [HistoryEntry]) -> Snapshot {
