@@ -23,12 +23,18 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STRING_OPEN = re.compile(r'(#*)("""|")')
 EXTENDED_REGEX_OPEN = re.compile(r"(#+)/")
-# A bare regex literal starts where an expression may start. That is anywhere except after something that ends an
-# expression: a name, a number, a closing bracket, the end of a string or regex literal, or a postfix `!` or `?`.
-# These words are followed by an expression although they look like names.
-EXPRESSION_END = set(")]}\"`#.")
+# A bare regex literal starts where an expression may start: at the start of a line, after an opening bracket, a
+# separator or an operator, or after one of these words. After anything else (a name, a number, a closing bracket,
+# the end of a literal, a postfix `!` or `?`, or a character this scanner does not know) a slash is division.
+OPENS_EXPRESSION = set("([{,;:=+-*%<>&|^~")
 BEFORE_EXPRESSION = ("return", "in", "case", "else", "try", "await", "throw", "if", "guard", "while", "where",
                      "switch", "yield", "do", "repeat", "is", "as")
+
+
+def is_name_character(character):
+    """Whether `character` can be part of a Swift name. Every character outside ASCII counts: Swift allows
+    most of them in names, combining marks included, and taking one for a name is the safe mistake."""
+    return character == "_" or character.isalnum() or ord(character) > 0x7F
 
 
 def scan(src):
@@ -69,11 +75,18 @@ def scan(src):
         blank(start, j)
         return j
 
-    def word_ending_at(k):
+    def keyword_ending_at(k):
+        """The word that ends at `k` if it is one of `BEFORE_EXPRESSION` used as a keyword, else an empty string.
+        After a dot the word is a member's name (`schedule.repeat`), which ends an expression like any name."""
         m = k
-        while m >= 0 and (out[m].isalnum() or out[m] == "_"):
+        while m >= 0 and is_name_character(out[m]):
             m -= 1
-        return "".join(out[m + 1:k + 1])
+        word = "".join(out[m + 1:k + 1])
+        while m >= 0 and out[m] in " \t\n":
+            m -= 1
+        if word not in BEFORE_EXPRESSION or (m >= 0 and out[m] == "."):
+            return ""
+        return word
 
     def may_start_expression(i):
         """Whether an expression may start at `i`, judged by what comes before it on the line."""
@@ -90,10 +103,10 @@ def scan(src):
                 r -= 1
             if r < 0 or out[r] in " \t\n":
                 return True
-            return word_ending_at(r) == "try"
-        if out[k].isalnum() or out[k] == "_":
-            return word_ending_at(k) in BEFORE_EXPRESSION
-        return out[k] not in EXPRESSION_END
+            return keyword_ending_at(r) == "try"
+        if is_name_character(out[k]):
+            return keyword_ending_at(k) != ""
+        return out[k] in OPENS_EXPRESSION
 
     def bare_regex_end(i):
         """The index just past the bare regex literal whose opening slash is at `i`, or None if it is not one."""
@@ -299,6 +312,16 @@ def self_test():
         ("TextRules", "let t = a /* c */ / b; print(t / 2)", ["log"]),
         ("TextRules", "foo(combine: /, initial: 1); print(a/b)", ["log"]),
         ("TextRules", "static func / (lhs: V, rhs: V) -> V { print(lhs); return lhs }", ["log"]),
+        # A member named like a keyword, and a name that ends in a combining mark, are names: division follows.
+        ("TextRules", 'if schedule.repeat/2 > 0 && path.contains("/") { print(path) }', ["log"]),
+        ("TextRules", 'let pair = (schedule.repeat/2, "URLSession/")', []),
+        ("TextRules", 'let half = schedule.\n    repeat/2 + size("/"); print(half)', ["log"]),
+        ("TextRules", 'if order.in/2 > 0 && path.contains("/") { print(path) }', ["log"]),
+        ("TextRules", 'let n = plan.try!/2 + size("/"); print(n)', ["log"]),
+        ("TextRules", 'if x̂/2 > 0 && path.contains("/") { print(path) }', ["log"]),
+        ("TextRules", 'let pair = (x̂/2, "URLSession/")', []),
+        ("TextRules", 'let pair = (größe/2, "URLSession/")', []),
+        ("TextRules", 'let m = try? /a"b/.firstMatch(in: s); let k = `in`/2; print(k)', ["log"]),
         ("TextRules", "let ok = a / b // print(1)", []),
         ("TextRules", "let f: (Double, Double) -> Double = (/); print(f(a, b)/2)", ["log"]),
         ("TextRules", "let x = a / b / c", []),
