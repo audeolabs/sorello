@@ -18,9 +18,11 @@ can use them unchanged.
 ## 1. What the app does
 
 - **Dictate.** A global shortcut starts a dictation. *Hold to Talk* records
-  while the shortcut is down. *Tap to Toggle* starts on one press and stops
-  on the next. Audio is transcribed while it is recorded, in 15 second
-  chunks, so the wait after release covers only the last chunk.
+  while the shortcut is down. Tapping it twice starts a hands-free
+  dictation instead, which goes on until it is tapped once more. *Tap to
+  Toggle* starts on one press and stops on the next. Audio is transcribed
+  while it is recorded, in 15 second chunks, so the wait after release
+  covers only the last chunk.
 - **Show it.** A black pill at the top of the screen shows the voice as a
   row of dots while recording and a shimmer while the last words are
   transcribed (section 8). It drops down just below the menu bar, under
@@ -33,9 +35,10 @@ can use them unchanged.
   lowercased and loses redundant final punctuation. Nothing read is kept.
 - **Rules, not a language model.** Spoken numbers become digits. Voice
   macros replace a complete spoken phrase with saved text. A trailing
-  "press enter" presses Return after the paste. Prompt mode (double-tap
-  Hold to Talk, off by default) prefixes the text with a tag so an AI agent
-  knows it was dictated. All of these are small deterministic rules.
+  "press enter" presses Return after the paste. Prompt style prefixes the
+  text with a tag so an AI agent knows it was dictated; the double tap of
+  Hold to Talk can be set to start one, in place of a hands-free dictation.
+  All of these are small deterministic rules.
 - **Dictionary.** Names and terms bias the recognizer, each with its own
   strength, optionally limited to chosen apps. When the user corrects a
   word right after a dictation, Sorello can offer to add it.
@@ -186,8 +189,9 @@ cancels that phase's timer.
 3. **Recording.** `capture.started` moves `starting` to `recording`,
    cancels the start timer and sets `captureLimit(id)` for 15 minutes. A
    stop that was asked for during `starting` is applied now.
-4. **Stop.** Releasing Hold to Talk, pressing Tap to Toggle again, clicking
-   the pill in toggle mode, the limit timer, `systemInterrupted`,
+4. **Stop.** Releasing Hold to Talk, pressing Tap to Toggle again, tapping
+   Hold to Talk during a toggle recording (rule 5), clicking the pill in
+   toggle mode, the limit timer, `systemInterrupted`,
    `stalled`, `interrupted` and `capture.failed` while recording all do
    the same thing: `stopCapture`, cancel the limit timer, set
    `captureDrain(id)` for 2 s, move the dictation into the pipeline as
@@ -204,14 +208,29 @@ cancels that phase's timer.
    already delivered, and `capture.ended` then arrives as usual. A
    capture event for a dictation that is not `starting`, `recording` or
    `draining` does nothing, even though the dictation still exists.
-5. **Double tap.** With prompt mode on, a hold released within 0.3 s of
-   its press, by the triggers' own timestamps and whether it was
-   `starting` or `recording`, is discarded and arms the tap. A Hold to
-   Talk press within 0.4 s of that release starts a dictation in prompt
-   style and uses the arm up. The tap arms only if nothing at all was in
-   progress when it was pressed and it ended with a genuine `keyUp`. Any
-   other trigger, an abandoned hold, or a permission request clears the
-   arm.
+5. **Double tap.** What a double tap of Hold to Talk does is a setting:
+   a hands-free dictation (the default), a prompt, or nothing. Unless it
+   is nothing, a hold released within 0.3 s of its press, by the triggers'
+   own timestamps and whether it was `starting` or `recording`, is
+   discarded and arms the tap. A Hold to Talk press within 0.4 s of that
+   release uses the arm up and starts what the setting says at that
+   moment: hands-free starts a toggle recording, prompt starts a hold in
+   prompt style. The tap arms only if nothing at all was in progress when
+   it was pressed and it ended with a genuine `keyUp`. Any other trigger,
+   an abandoned hold, or a permission request clears the arm.
+
+   A hands-free recording is a toggle recording like one Tap to Toggle
+   started. Releasing the press that started it does nothing, and whatever
+   stops or cancels a toggle recording stops or cancels it. If that press
+   turns out to be the start of a chord (`holdAbandoned`), the recording
+   is discarded like any abandoned hold.
+
+   Hold to Talk stops a toggle recording, however it was started. A press
+   that arrives while the recording is `starting` or `recording`, and is
+   then released with a genuine `keyUp` while the recording is still
+   there, stops it as in rule 4, at the release. If that press is
+   abandoned as a chord or ends `interrupted`, nothing happens and the
+   recording goes on. Such a press never arms the tap.
 6. **Cancel.** Escape, or the pill's cancel button:
    - with a dictation `starting` or `recording`, discards that dictation
      and leaves the pipeline alone;
@@ -223,8 +242,9 @@ cancels that phase's timer.
 
    `handle` reports true, and Escape is consumed, only if something was
    cancelled.
-7. **Other triggers.** A toggle press during a hold recording, and a hold
-   press during a toggle recording, are ignored. `holdAbandoned` discards
+7. **Other triggers.** A toggle press during a hold recording is ignored.
+   A hold press during a toggle recording starts nothing: it can only stop
+   that recording (rule 5). `holdAbandoned` discards
    the hold's dictation like a cancel, with no notice. A hold release with
    no hold in progress is ignored, so a key still down after the 15 minute
    limit starts nothing until it is pressed again. `systemInterrupted`
@@ -631,9 +651,10 @@ States:
 - **Listening.** The dot wave (`DotWave`, ported with its tests): one row
   of white dots 6.2 pt apart showing the last 0.75 s of the voice, newest
   beside the aurora dot, which swells with the voice now. Levels come from
-  `LevelMeter`, which follows the speaker's own range. In toggle mode a
-  small cancel button buds off the pill and the pill itself is Stop. Prompt
-  style shows a small tag glyph before the time.
+  `LevelMeter`, which follows the speaker's own range. In toggle mode,
+  hands-free included, a small cancel button buds off the pill and the
+  pill itself is Stop. Prompt style shows a small tag glyph before the
+  time.
 - **Waiting.** The row at rest in glacier white with a brighter spot
   sweeping it every 1.1 s. With the model still preparing, the words
   "Preparing model" follow the row.
@@ -785,10 +806,11 @@ Review does.
   `--cpu`. That the app runs on an Intel Mac is checked by hand on one.
 - What tests cannot show is checked by hand on a Mac, on the installed
   build: grant, deny and revoke each permission; rebuild and relaunch;
-  hold, toggle, cancel and Paste Again into a native text field, a browser
-  field and a terminal; a second dictation begun while the first is still
-  being transcribed; a clipboard manager running; the built-in microphone
-  and a Bluetooth headset; secure input (a password field) during a hold;
+  hold, double tap, toggle, cancel and Paste Again into a native text
+  field, a browser field and a terminal; a second dictation begun while
+  the first is still being transcribed; a clipboard manager running; the
+  built-in microphone and a Bluetooth headset; secure input (a password
+  field) during a hold;
   lock and sleep during a recording; the pill on the built-in display, an
   external display and a full-screen Space, and while the system is
   showing something in the camera island; and no network activity during
