@@ -550,7 +550,10 @@ in the meantime. Insertion sits behind `TextInserting` so another strategy
 - Microphone access is requested the first time a dictation needs it.
   Accessibility is granted in System Settings; setup opens the pane with a
   card to drag in (adapted from Scrawl and AskForPermission, MIT, notices
-  in `ThirdPartyNotices.md`).
+  in `ThirdPartyNotices.md`). The card's surface is Liquid Glass on
+  macOS 26 and later and the system's blurred material before that. Its
+  shape, frost, shadows and motion are the same on both. That choice is
+  the only thing Sorello's own code does differently on an older system.
 
 ## 7. Persistence
 
@@ -768,7 +771,7 @@ Review does.
   `CODESIGN_IDENTITY` defaults to ad hoc.
 - Identity is one file, `Config/identity.conf`. Development builds are
   "Sorello Dev", `com.audeolabs.sorello.dev`; `CHANNEL=release` builds are
-  "Sorello", `com.audeolabs.sorello`. Minimum system: macOS 26, on Apple
+  "Sorello", `com.audeolabs.sorello`. Minimum system: macOS 15, on Apple
   silicon or Intel.
 - A development build is made for the Mac that builds it. A
   `CHANNEL=release` build is universal (arm64 and x86_64). `ARCHS` chooses
@@ -817,6 +820,13 @@ Review does.
   release build, but it cannot run on the Apple silicon Macs Sorello is
   built on. What it does differently, the fallback, is proved there with
   `--cpu`. That the app runs on an Intel Mac is checked by hand on one.
+- Sorello is built and checked on macOS 26 or later, so nothing is run on
+  macOS 15 there. The build fails unless the app's executable declares
+  the minimum system `Config/identity.conf` names. The older surface of
+  the permission card can be forced, and is drawn and tested that way.
+  Every system symbol Sorello names is checked to exist on the minimum
+  system. That the app runs on macOS 15 is checked by hand on a Mac that
+  has it.
 - What tests cannot show is checked by hand on a Mac, on the installed
   build: grant, deny and revoke each permission; rebuild and relaunch;
   hold, double tap, toggle, cancel and Paste Again into a native text
