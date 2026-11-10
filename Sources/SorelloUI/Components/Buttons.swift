@@ -75,7 +75,7 @@ private struct PillButtonBody: View {
             .islandSurface()
             .contentShape(Capsule())
             .focusRing(Pill(), isFocused: isFocused)
-            .opacity(isEnabled ? 1 : 0.45)
+            .dimmedWhenUnusable()
             .onHover { hovering = $0 }
             .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: hovering)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.08), value: configuration.isPressed)
@@ -120,7 +120,7 @@ private struct QuietButtonBody: View {
             .background(Capsule().fill(hovering && isEnabled ? Theme.hover : .clear))
             .contentShape(Capsule())
             .focusRing(Pill(), isFocused: isFocused)
-            .opacity(configuration.isPressed ? 0.6 : (isEnabled ? 1 : 0.45))
+            .opacity(configuration.isPressed ? 0.6 : (isEnabled ? 1 : ThemeColors.unusableAlpha))
             .onHover { hovering = $0 }
     }
 }

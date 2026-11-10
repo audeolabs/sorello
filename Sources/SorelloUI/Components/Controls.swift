@@ -118,7 +118,8 @@ private struct PresetSegment: View {
 }
 
 /// A text field on the island's surface, with a white edge while it has focus and an ember edge while what it
-/// holds has a problem. The placeholder is secondary ink, so it stays legible.
+/// holds has a problem. The placeholder is secondary ink, so it stays legible. While it cannot be used, the whole field
+/// is dimmed, its placeholder and text with it, as Sorello's buttons are.
 public struct SorelloTextField: View {
     private let placeholder: String
     @Binding private var text: String
@@ -150,6 +151,7 @@ public struct SorelloTextField: View {
             RoundedRectangle(cornerRadius: Metrics.fieldRadius, style: .continuous)
                 .strokeBorder(edge, lineWidth: focused || hasProblem ? 1 : 0.5)
         }
+        .dimmedWhenUnusable()
         .contentShape(Rectangle())
         .onTapGesture { focused = true }
     }
