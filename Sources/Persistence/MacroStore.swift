@@ -17,7 +17,8 @@ public final class MacroStore {
     public private(set) var macros: [VoiceMacro]
 
     @ObservationIgnored private let fileURL: URL
-    /// An unreadable file that could not yet be moved aside. Nothing is written over it until it has been.
+    /// A file that could not be read and has not yet been moved aside. Nothing is written over it until it has been
+    /// moved, or is confirmed gone.
     @ObservationIgnored private var unreadableFilePending = false
 
     private struct File: Codable {
@@ -42,6 +43,11 @@ public final class MacroStore {
             } else {
                 unreadableFilePending = true
             }
+        case .inaccessible:
+            // Possibly a good file behind a permission problem: leave it where it is, and protect it from a save.
+            macros = []
+            Diagnostics.record("macros.inaccessible")
+            unreadableFilePending = true
         }
     }
 
@@ -98,7 +104,7 @@ public final class MacroStore {
         if unreadableFilePending {
             // The file may have become readable or gone since; only a file still there is moved, and nothing is
             // written over one that could not be.
-            if FileManager.default.fileExists(atPath: fileURL.path), !StoredFile.moveAside(fileURL) {
+            guard StoredFile.isConfirmedMissing(fileURL) || StoredFile.moveAside(fileURL) else {
                 Diagnostics.record("macros.saveFailed")
                 throw .saveFailed
             }

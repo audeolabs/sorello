@@ -242,6 +242,23 @@ import Testing
         #expect(((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []).isEmpty)
     }
 
+    @Test func aClearInAFolderThatCannotBeListedKeepsShowingTheEntries() async throws {
+        let temporary = try TemporaryDirectory()
+        let directory = historyDirectory(in: temporary)
+        let store = HistoryStore(directory: directory) { true }
+        for number in 1...2 { await store.record(draft(number)) }
+        let recorded = store.entries
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+
+        #expect(await store.clear() == false)
+        #expect(store.entries == recorded)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        let reopened = HistoryStore(directory: directory) { true }
+        await reopened.load()
+        #expect(reopened.entries == recorded)
+    }
+
     @Test func clearCancelsSavesThatBeganBeforeIt() async throws {
         let temporary = try TemporaryDirectory()
         let directory = historyDirectory(in: temporary)
@@ -285,6 +302,42 @@ import Testing
                 "the index is deleted, not kept, and the audio it named goes with it")
         await reopened.record(draft(3))
         #expect(reopened.entries.count == 1)
+    }
+
+    @Test func anIndexThatCannotBeOpenedIsKeptForLater() async throws {
+        let temporary = try TemporaryDirectory()
+        let directory = historyDirectory(in: temporary)
+        let store = HistoryStore(directory: directory) { true }
+        await store.record(draft(1))
+        let index = directory.appendingPathComponent("index.json")
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: index.path)
+
+        let blocked = HistoryStore(directory: directory) { true }
+        await blocked.load()
+        #expect(blocked.entries.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: index.path), "a file that may be good is not deleted")
+        #expect(wavFiles(in: directory).count == 1, "nor is the audio it names")
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: index.path)
+        await blocked.load()
+        #expect(blocked.entries == store.entries)
+    }
+
+    @Test func aRestoredFolderWithoutWritePermissionIsStillTidied() async throws {
+        let temporary = try TemporaryDirectory()
+        let directory = historyDirectory(in: temporary)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let orphan = directory.appendingPathComponent("\(UUID().uuidString.lowercased()).wav")
+        try WAVAudio.encode(tone()).write(to: orphan)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: orphan.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+
+        let store = HistoryStore(directory: directory) { true }
+        await store.load()
+        #expect(store.entries.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: orphan.path))
+        #expect(try permissions(of: directory) == 0o700)
     }
 
     @Test func orphanedAudioAndTemporaryFilesAreRemovedAtLaunch() async throws {

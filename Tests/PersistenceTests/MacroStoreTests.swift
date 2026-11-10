@@ -146,6 +146,42 @@ import TextRules
         #expect(MacroStore(fileURL: url).macros == [added])
     }
 
+    @Test func theProtectionOutlivesAFolderThatCannotBeSearched() throws {
+        let directory = try TemporaryDirectory()
+        let url = directory.url.appendingPathComponent("macros.json")
+        let original = Data("not json".utf8)
+        try original.write(to: url)
+        let manager = FileManager.default
+        try manager.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.url.path)
+        defer { try? manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.url.path) }
+        let store = MacroStore(fileURL: url)
+
+        try manager.setAttributes([.posixPermissions: 0o000], ofItemAtPath: directory.url.path)
+        #expect(throws: MacroStoreError.saveFailed) { try store.add(command: "alpha", text: "one") }
+        try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.url.path)
+        try store.add(command: "beta", text: "two")
+        let aside = try #require(directory.contents().first { $0.hasPrefix("macros.json.unreadable-") })
+        #expect(try Data(contentsOf: directory.url.appendingPathComponent(aside)) == original)
+    }
+
+    @Test func aFileThatCannotBeOpenedIsKeptNotReplaced() throws {
+        let directory = try TemporaryDirectory()
+        let url = directory.url.appendingPathComponent("macros.json")
+        let first = MacroStore(fileURL: url)
+        let saved = try first.add(command: "alpha", text: "one")
+        let original = try Data(contentsOf: url)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: url.path)
+
+        let store = MacroStore(fileURL: url)
+        #expect(store.macros.isEmpty)
+        try store.add(command: "beta", text: "two")
+        let aside = try #require(directory.contents().first { $0.hasPrefix("macros.json.unreadable-") })
+        let asideURL = directory.url.appendingPathComponent(aside)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: asideURL.path)
+        #expect(try Data(contentsOf: asideURL) == original, "the unopenable file is moved, not overwritten")
+        #expect(try JSONDecoder().decode(StoredFile.self, from: original).macros == [saved])
+    }
+
     @Test func aChangeThatCannotBeSavedChangesNothing() throws {
         let directory = try TemporaryDirectory()
         let url = directory.url.appendingPathComponent("macros.json")

@@ -10,6 +10,9 @@ enum StoredFile {
         case value(Value)
         /// The file exists but is damaged, truncated, not JSON, or from a newer version of the app.
         case unreadable
+        /// The file could not be opened, or whether it exists could not be told (a permission problem). It may be
+        /// perfectly good, so it must be neither replaced nor treated as absent.
+        case inaccessible
     }
 
     private struct Header: Decodable {
@@ -65,15 +68,26 @@ enum StoredFile {
         let data: Data
         do {
             data = try Data(contentsOf: url)
-        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
-            return .missing
         } catch {
-            return FileManager.default.fileExists(atPath: url.path) ? .unreadable : .missing
+            return isConfirmedMissing(url) ? .missing : .inaccessible
         }
         let decoder = JSONDecoder()
         guard let header = try? decoder.decode(Header.self, from: data), header.version == version,
               let value = try? decoder.decode(Value.self, from: data) else { return .unreadable }
         return .value(value)
+    }
+
+    /// Whether the system says nothing is at `url`. A path that cannot be examined (for example inside a directory
+    /// the user cannot search) is not confirmed missing.
+    static func isConfirmedMissing(_ url: URL) -> Bool {
+        do {
+            _ = try FileManager.default.attributesOfItem(atPath: url.path)
+            return false
+        } catch let error as CocoaError {
+            return error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile
+        } catch {
+            return false
+        }
     }
 
     /// Encodes `value` and writes it atomically.

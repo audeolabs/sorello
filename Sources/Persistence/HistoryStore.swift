@@ -181,8 +181,13 @@ actor HistoryWriter {
     private let directory: URL
     private let capacity: Int
     private let queue = DispatchSerialQueue(label: "sorello.history-writer")
-    /// Nil until the index has been read.
-    private var entries: [HistoryEntry]?
+    /// Nil until the index has been read, and again after a clear that left files behind.
+    private var entries: [HistoryEntry]? {
+        didSet { if let entries { lastKnown = entries } }
+    }
+    /// The entries last read or written, shown while the index cannot be read at all, so a permission problem never
+    /// makes the log look empty.
+    private var lastKnown: [HistoryEntry] = []
     private var revision = 0
     private var clearCount = 0
     /// Whether the latest clear deleted everything it should have.
@@ -284,6 +289,13 @@ actor HistoryWriter {
     /// are removed.
     private func loaded() -> [HistoryEntry] {
         if let entries { return entries }
+        let manager = FileManager.default
+        // The directory is the app's own. Closing it first also lets the cleanup below work in a restored directory
+        // that was left without write permission.
+        let directoryExists = !StoredFile.isConfirmedMissing(directory)
+        if directoryExists, (try? manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)) == nil {
+            Diagnostics.record("history.permissionsNotTightened", ["count": 1])
+        }
         var found: [HistoryEntry]
         switch StoredFile.readVersioned(Index.self, from: indexURL, version: Index.currentVersion) {
         case .value(let index):
@@ -294,8 +306,11 @@ actor HistoryWriter {
             Diagnostics.record("history.indexUnreadable")
             try? FileManager.default.removeItem(at: indexURL)
             found = []
+        case .inaccessible:
+            // Not read, so not cached: the next operation tries again.
+            Diagnostics.record("history.indexInaccessible")
+            return lastKnown
         }
-        let manager = FileManager.default
         // An entry whose audio has gone cannot be played or retried; keep the index true to the disk.
         let kept = Array(found.filter { Self.hasAudio($0.id, in: directory) }
             .prefix(capacity))
@@ -310,8 +325,12 @@ actor HistoryWriter {
             if (try? manager.removeItem(at: directory.appendingPathComponent(name))) != nil { removed += 1 }
         }
         if removed > 0 { Diagnostics.record("history.orphansRemoved", ["count": Double(removed)]) }
-        if !found.isEmpty { tightenPermissions(of: named.union([Self.indexName])) }
+        if directoryExists {
+            // Whatever is left, including anything that could not be removed.
+            tightenPermissions(of: Set((try? manager.contentsOfDirectory(atPath: directory.path)) ?? []))
+        }
         entries = found
+        revision += 1
         return found
     }
 
@@ -339,11 +358,10 @@ actor HistoryWriter {
         return true
     }
 
-    /// A log restored from a backup or copied in may be open to others: close the directory and the files it keeps.
+    /// A log restored from a backup or copied in may be open to others: close the files in it.
     private func tightenPermissions(of names: Set<String>) {
         let manager = FileManager.default
         var failed = 0
-        if (try? manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)) == nil { failed += 1 }
         for name in names {
             let path = directory.appendingPathComponent(name).path
             if (try? manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)) == nil { failed += 1 }
