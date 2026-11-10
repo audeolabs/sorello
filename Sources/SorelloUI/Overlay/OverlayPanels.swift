@@ -53,7 +53,7 @@ final class ControlPanels {
         }
         for (index, entry) in panels.enumerated() {
             guard index < controls.count else {
-                entry.target.control = PillControl(kind: .stop, frame: .zero, label: "")
+                entry.target.control = nil
                 entry.panel.orderOut(nil)
                 continue
             }
@@ -72,11 +72,13 @@ final class ControlPanels {
 /// One clickable control of the pill: a button to VoiceOver, with the pill's label for it. A click acts on the first
 /// mouse-down's release inside it, so it works although its window never becomes key.
 final class ControlTarget: NSView {
-    var control = PillControl(kind: .stop, frame: .zero, label: "") {
+    /// The control this target stands for; nil while its panel is off the screen.
+    var control: PillControl? {
         didSet {
-            setAccessibilityLabel(control.label)
-            // A press belongs to the control it began on: if this target now stands for another, it is abandoned.
-            if control.kind != oldValue.kind, tracking {
+            setAccessibilityLabel(control?.label)
+            // A press belongs to the control it began on: if this target now stands for another, or for none, the
+            // press is abandoned.
+            if control?.kind != oldValue?.kind, tracking {
                 tracking = false
                 onPress(nil)
             }
@@ -99,23 +101,25 @@ final class ControlTarget: NSView {
     override var mouseDownCanMoveWindow: Bool { false }
 
     override func mouseDown(with event: NSEvent) {
+        guard let control else { return }
         tracking = true
         onPress(control.kind)
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard tracking else { return }
+        guard tracking, let control else { return }
         onPress(contains(event) ? control.kind : nil)
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard tracking else { return }
+        guard tracking, let control else { return }
         tracking = false
         onPress(nil)
         if contains(event) { onActivate(control.kind) }
     }
 
     override func accessibilityPerformPress() -> Bool {
+        guard let control else { return false }
         onActivate(control.kind)
         return true
     }

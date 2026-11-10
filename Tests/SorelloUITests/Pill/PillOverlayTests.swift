@@ -19,7 +19,7 @@ import Testing
     @Test func toggleModeOffersStopAndCancel() throws {
         for screen in Self.screens {
             let toggle = Self.scene(.listening(.init(trigger: .toggle, started: 0)), on: screen)
-            #expect(toggle.controls.map(\.kind) == [.stop, .cancel])
+            #expect(toggle.controls.map(\.kind) == [.stop(dictation: 0), .cancel(dictation: 0)])
             let stop = try #require(toggle.controls.first), cancel = try #require(toggle.controls.last)
             #expect(stop.frame == toggle.layout.body.frame)
             #expect(cancel.frame == toggle.layout.cancel)
@@ -103,7 +103,7 @@ import Testing
             #expect(target.accessibilityLabel() == control.label)
             _ = target.accessibilityPerformPress()
         }
-        #expect(activated == [.stop, .cancel])
+        #expect(activated == [.stop(dictation: 0), .cancel(dictation: 0)])
 
         let pill = PillView(levels: LevelFeed(), clock: { 0 })
         pill.update(display: .listening(.init(trigger: .hold, started: 0)), screen: Self.island,
@@ -143,6 +143,19 @@ import Testing
         target.mouseUp(with: up)
         #expect(activated == [first.kind], "a press carried over to the next notice")
         #expect(pressed.last == .some(nil))
+        // Stop held as one dictation ends and the next begins, its Stop in the same place: the release stops nothing.
+        let stopA = PillControl(kind: .stop(dictation: 10), frame: first.frame, label: "Stop dictation")
+        let stopB = PillControl(kind: .stop(dictation: 20), frame: first.frame, label: "Stop dictation")
+        target.control = stopA
+        target.mouseDown(with: down)
+        target.control = stopB
+        target.mouseUp(with: up)
+        target.control = stopA
+        target.mouseDown(with: down)
+        target.control = nil
+        target.control = stopA
+        target.mouseUp(with: up)
+        #expect(activated == [first.kind], "a press survived its dictation or its panel leaving")
     }
 
     /// The overlay chooses a screen when a dictation starts, even if the pill never left the last one, and keeps it
