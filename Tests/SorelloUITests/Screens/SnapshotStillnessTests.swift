@@ -7,7 +7,7 @@ import Testing
 /// dot) render the same at any moment.
 @MainActor
 struct SnapshotStillnessTests {
-    @Test(arguments: ["main-runlog", "main-general-preparing", "menu-panel-preparing", "setup-test-preparing"])
+    @Test(arguments: ["main-runlog", "main-general-preparing", "setup-test-preparing"])
     func aSceneRendersTheSameAtAnyMoment(name: String) async throws {
         let scene = try #require(SnapshotCatalog.all.first { $0.name == name })
         let first = try #require(SnapshotRenderer.png(of: scene, scale: 1))

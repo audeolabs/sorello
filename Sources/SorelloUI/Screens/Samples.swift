@@ -20,17 +20,6 @@ public extension AppStatus {
     static let sampleReady = AppStatus(model: .ready, microphone: .granted, accessibility: .granted)
 }
 
-/// Sample menu panels.
-public extension MenuPanelModel {
-    static func sample(status: AppStatus = .sampleReady, lastDictation: String? = "Sphinx of black quartz, judge my vow. The five boxing wizards jump quickly over the lazy dog.") -> MenuPanelModel {
-        MenuPanelModel(appName: "Sorello", status: status,
-                       shortcuts: [.holdToTalk: .function,
-                                   .tapToToggle: KeyCombo(modifiers: [.control(.either), .option(.either)],
-                                                          key: KeyName(label: "Space"))],
-                       lastDictation: lastDictation)
-    }
-}
-
 /// Sample menus for the menu-bar item.
 public extension StatusMenuModel {
     static func sample(status: AppStatus = .sampleReady, lastDictation: String? = "Sphinx of black quartz, judge my vow. The five boxing wizards jump quickly over the lazy dog.") -> StatusMenuModel {

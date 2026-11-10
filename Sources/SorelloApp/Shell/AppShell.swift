@@ -4,7 +4,7 @@ import Persistence
 import SorelloUI
 import SpeechEngine
 
-/// The menu-bar app (ARCHITECTURE.md, section 8, "Windows"): no Dock icon, a status item with the menu panel, the main
+/// The menu-bar app (ARCHITECTURE.md, section 8, "Windows"): no Dock icon, a status item with its menu, the main
 /// window and setup, one running instance. It builds the composition at launch, starts the model's preparation,
 /// takes permission changes made in System Settings without a relaunch, and lets go of the microphone and any stream
 /// before it quits, whether by Quit, `osascript … quit` or SIGTERM.
@@ -146,13 +146,11 @@ final class AppShell: NSObject, NSApplicationDelegate {
 
     private func showMain(at section: MainSection?) {
         guard let models, let app else { return }
-        statusItem?.close()
         windows.showMain(models.main, section: section, title: app.info.name)
     }
 
     private func showSetup() {
         guard let models, let app else { return }
-        statusItem?.close()
         models.setup.step = models.setupStartStep
         windows.showSetup(models.setup, title: app.info.name)
     }

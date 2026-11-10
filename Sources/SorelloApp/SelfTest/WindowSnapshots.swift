@@ -9,12 +9,13 @@ import SorelloUI
 import SpeechEngine
 import SwiftUI
 
-/// `Sorello --snapshots <dir>`: the menu-bar item, the menu panel, every main window section and every setup step as
-/// the app draws them, wired to real stores, rendered to PNG files. SorelloUI's own snapshots draw invented models;
-/// these draw the models the app builds, so what is reviewed is what ships.
+/// `Sorello --snapshots <dir>`: the menu-bar item, every main window section and every setup step as the app draws
+/// them, wired to real stores, rendered to PNG files, and the menu-bar item's menu as the app builds it, listed as
+/// text in `app-menu.txt` (the system draws the menu, so there is no picture of it). SorelloUI's own snapshots draw
+/// invented models; these draw the models the app builds, so what is reviewed is what ships.
 ///
 /// The stores are real and live in a temporary directory, filled with invented words, macros and Run Log entries,
-/// and one dictation is run through the session so the menu panel has a last dictation. The engine and the
+/// and one dictation is run through the session so the menu has a last dictation. The engine and the
 /// platform are stand-ins that report ready and granted, so the pictures show the app as it is when all is well.
 @MainActor
 enum WindowSnapshots {
@@ -65,10 +66,6 @@ enum WindowSnapshots {
             SnapshotScene(name: "app-menu-bar", size: CGSize(width: 220, height: 24 * 2 + 12), background: Palette.screen) {
                 MenuBarStrip()
             },
-            SnapshotScene(name: "app-menu-panel", size: CGSize(width: WindowChrome.menuPanelWidth + 24, height: 440),
-                          background: RGB(0.16, 0.17, 0.19)) {
-                MenuPanelPreview(model: models.menu)
-            },
         ]
         let size = WindowChrome.Kind.main.defaultSize
         for section in MainSection.allCases {
@@ -90,6 +87,14 @@ enum WindowSnapshots {
             })
         }
         var passed = true
+        let menu = StatusMenuController(model: models.menu)
+        if (try? menu.text.write(to: output.appendingPathComponent("app-menu.txt"), atomically: true,
+                                 encoding: .utf8)) != nil {
+            Console.line("app-menu.txt")
+        } else {
+            Console.line("FAILED app-menu.txt")
+            passed = false
+        }
         for scene in scenes {
             guard let png = SnapshotRenderer.png(of: scene),
                   (try? png.write(to: output.appendingPathComponent(scene.name + ".png"))) != nil else {
@@ -129,7 +134,7 @@ enum WindowSnapshots {
             await app.history.record(HistoryDraft(date: now.addingTimeInterval(-offset), heard: heard, text: text,
                                                   outcome: outcome, samples: tone))
         }
-        // One dictation through the session, so the menu panel has a last dictation.
+        // One dictation through the session, so the menu has a last dictation.
         guard await waitFor({ app.runtime.state.engine == .ready }) else { return }
         capture.queue(tone)
         app.relay.handle(.holdPressed, at: clock.now)
@@ -191,22 +196,6 @@ private struct MenuBarStrip: View {
         .padding(.horizontal, 10)
         .frame(height: 24)
         .background(background)
-    }
-}
-
-/// The menu panel as it opens: on its rounded surface, over a desktop.
-private struct MenuPanelPreview: View {
-    let model: MenuPanelModel
-
-    var body: some View {
-        MenuPanelView(model: model)
-            .environment(\.frozenAnimationPhase, ScreenSnapshots.frozenPhase)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color(Palette.edge).opacity(0.6), lineWidth: 0.5))
-            .shadow(color: .black.opacity(0.45), radius: 14, y: 6)
-            .frame(maxHeight: .infinity, alignment: .top)
-            .padding(12)
     }
 }
 

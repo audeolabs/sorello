@@ -29,9 +29,6 @@ public enum WindowChrome {
         }
     }
 
-    /// The menu panel's width, about that of a menu.
-    public static let menuPanelWidth: CGFloat = 300
-
     /// Gives `window` the chrome its screens are drawn for. Setup cannot be resized and can be dragged by its
     /// background, as a setup assistant can.
     public static func apply(to window: NSWindow, kind: Kind) {

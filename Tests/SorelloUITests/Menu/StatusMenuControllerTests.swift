@@ -212,6 +212,7 @@ import Testing
         #expect(texts.map(\.name) == ["menu-ready", "menu-preparing", "menu-microphone-needed",
                                       "menu-accessibility-needed", "menu-model-failed", "menu-paused"])
         #expect(texts.allSatisfy { !$0.text.isEmpty })
+        #expect(!SnapshotCatalog.all.contains { $0.name.hasPrefix("menu") })
     }
 
     static func fields(_ text: String) -> [[String]] {
