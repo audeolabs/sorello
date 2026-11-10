@@ -220,6 +220,28 @@ struct DoubleTapTests {
         #expect(machine.state.tap == nil, "and it arms nothing")
     }
 
+    @Test func aHoldWaitingForPermissionKeepsThePromptModeItWasPressedWith() {
+        var pressedOff = Machine(microphone: .unknown, settings: SessionSettings(promptMode: false))
+        pressedOff.press(.hold, at: 10)
+        pressedOff.settings.promptMode = true
+        pressedOff.send(.microphoneAccess(.granted))
+        #expect(!releaseDiscards(&pressedOff, at: 10.2), "pressed with prompt mode off: not a tap")
+
+        var pressedOn = Machine(microphone: .unknown, settings: SessionSettings(promptMode: true))
+        pressedOn.press(.hold, at: 10)
+        pressedOn.send(.microphoneAccess(.granted))
+        #expect(releaseDiscards(&pressedOn, at: 10.2), "pressed with prompt mode on: a tap")
+        #expect(pressedOn.state.tap == nil, "but a permission request never arms")
+
+        var turnedOff = Machine(microphone: .unknown, settings: SessionSettings(promptMode: true))
+        turnedOff.press(.hold, at: 10)
+        turnedOff.settings.promptMode = false
+        turnedOff.send(.engine(.ready))
+        turnedOff.settings.promptMode = true
+        turnedOff.send(.microphoneAccess(.granted))
+        #expect(!releaseDiscards(&turnedOff, at: 10.2), "prompt mode was seen off while it waited")
+    }
+
     @Test func thePromptStyleStaysWithItsDictationAndTheNextOneIsPlain() {
         var machine = machine()
         _ = pressStyle(&machine, at: 10)

@@ -249,8 +249,8 @@ private struct Step {
             state.capture = .idle
             // A press that was released, abandoned or cancelled cleared the intent: it is never revived.
             if let intent, admitsStart() {
-                begin(intent.mode, style: .plain, pressTime: intent.pressTime,
-                      tapEnrolled: intent.mode == .hold && settings.promptMode, mayArmTap: false)
+                begin(intent.mode, style: .plain, pressTime: intent.pressTime, tapEnrolled: intent.tapEnrolled,
+                      mayArmTap: false)
             }
         case .denied:
             state.capture = .idle
@@ -304,6 +304,9 @@ private struct Step {
             state.capture = .starting(withdrawn(live), stopRequested: stopRequested)
         case .recording(let live):
             state.capture = .recording(withdrawn(live))
+        case .awaitingPermission(var intent?) where enrolment:
+            intent.tapEnrolled = false
+            state.capture = .awaitingPermission(intent)
         case .idle, .awaitingPermission:
             break
         }
@@ -316,7 +319,7 @@ private struct Step {
             return true
         case .awaitingPermission:
             // Rule 2: a new press replaces the intent.
-            state.capture = .awaitingPermission(PermissionIntent(mode: .hold, pressTime: time))
+            state.capture = .awaitingPermission(intent(.hold, at: time))
             return true
         case .starting, .recording:
             // Rule 7: a hold press during a toggle recording is ignored (and a hold cannot be pressed twice).
@@ -331,8 +334,7 @@ private struct Step {
             return true
         case .awaitingPermission(let intent):
             // Rule 2: a second toggle press clears the intent; any other press replaces it.
-            state.capture = .awaitingPermission(
-                intent?.mode == .toggle ? nil : PermissionIntent(mode: .toggle, pressTime: time))
+            state.capture = .awaitingPermission(intent?.mode == .toggle ? nil : self.intent(.toggle, at: time))
             return true
         case .starting(let live, _), .recording(let live):
             // Rule 7: a toggle press during a hold recording is ignored.
@@ -431,7 +433,7 @@ private struct Step {
         let nothingInProgress = state.pipeline.isEmpty && state.output == .free
         guard admitsStart() else { return }
         if state.microphone == .unknown {
-            state.capture = .awaitingPermission(PermissionIntent(mode: mode, pressTime: time))
+            state.capture = .awaitingPermission(intent(mode, at: time))
             emit(.requestMicrophoneAccess)
             return
         }
@@ -439,6 +441,11 @@ private struct Step {
         let mayArmTap = mode == .hold && settings.promptMode && nothingInProgress && !doubleTap
         begin(mode, style: doubleTap ? .prompt : .plain, pressTime: time,
               tapEnrolled: mode == .hold && settings.promptMode, mayArmTap: mayArmTap)
+    }
+
+    /// Rule 2: the press to honour when access is granted. A hold remembers whether prompt mode was on.
+    func intent(_ mode: TriggerMode, at time: TimeInterval) -> PermissionIntent {
+        PermissionIntent(mode: mode, pressTime: time, tapEnrolled: mode == .hold && settings.promptMode)
     }
 
     /// Rule 1's refusals. Shows the notice and returns false when a dictation may not start.

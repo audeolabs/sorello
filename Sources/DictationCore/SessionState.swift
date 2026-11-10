@@ -199,10 +199,18 @@ public struct PermissionIntent: Sendable, Equatable {
     public let mode: TriggerMode
     /// When the press arrived, on `SessionClock`'s timeline.
     public let pressTime: TimeInterval
+    /// Whether the hold takes part in the double tap once it starts: prompt mode was on at the press and has not
+    /// been seen off since (rule 5).
+    var tapEnrolled: Bool
 
     public init(mode: TriggerMode, pressTime: TimeInterval) {
+        self.init(mode: mode, pressTime: pressTime, tapEnrolled: false)
+    }
+
+    init(mode: TriggerMode, pressTime: TimeInterval, tapEnrolled: Bool) {
         self.mode = mode
         self.pressTime = pressTime
+        self.tapEnrolled = tapEnrolled
     }
 }
 
