@@ -28,6 +28,8 @@ public enum ScreenSnapshots {
                  window(.general) { $0.generalReplaced(.sample(status: preparing, hardware: .processor)) }),
             main("shortcuts", height: 720, .sample(section: .shortcuts)),
             main("shortcuts-recording", height: 760, window(.shortcuts) { $0.shortcutsReplaced(.sample(recording: true)) }),
+            main("shortcuts-prompt", height: 720, window(.shortcuts) { $0.shortcutsReplaced(.sample(doubleTap: .prompt)) }),
+            main("shortcuts-off", height: 720, window(.shortcuts) { $0.shortcutsReplaced(.sample(doubleTap: .off)) }),
             main("dictionary", height: 940, .sample(section: .dictionary)),
             main("dictionary-refusing", height: 960, window(.dictionary) { $0.dictionaryReplaced(.sampleRefusing()) }),
             main("dictionary-needs-model", height: 960, window(.dictionary) { $0.dictionaryReplaced(.sampleNeedsModel()) }),

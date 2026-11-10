@@ -4,18 +4,18 @@ import Persistence
 import SorelloUI
 
 extension WindowModels {
-    /// Shortcuts: a recorder per action, prompt mode, and the fn key's note. Recording reads the next keys from the
+    /// Shortcuts: a recorder per action, what the double tap does, and the fn key's note. Recording reads the next keys from the
     /// monitor's own tap; what it captures is checked by `ShortcutValidation` before it is saved, and a refusal is
     /// shown under the recorder until the next attempt.
     func connectShortcuts() {
         let shortcuts = main.shortcuts, app = self.app
         follow { [unowned self] in
             shortcuts.recorders = recorders()
-            shortcuts.promptModeEnabled = app.settings.doubleTap == .prompt
+            shortcuts.doubleTap = DoubleTapChoice(app.settings.doubleTap)
             shortcuts.promptTag = app.settings.promptTag
         }
         shortcuts.recorderActions = recorderActions
-        shortcuts.setPromptMode = { app.settings.doubleTap = $0 ? .prompt : .handsFree }
+        shortcuts.setDoubleTap = { app.settings.doubleTap = DoubleTapAction($0) }
         shortcuts.openKeyboardSettings = { if let pane = SettingsPane.keyboard { app.platform.system.open(pane) } }
     }
 
@@ -128,5 +128,27 @@ extension WindowModels {
         if status.microphone == .denied { return .microphone }
         if status.accessibility == .missing { return .accessibility }
         return .welcome
+    }
+}
+
+extension DoubleTapChoice {
+    /// The Shortcuts screen's name for the session's double-tap setting.
+    init(_ action: DoubleTapAction) {
+        switch action {
+        case .handsFree: self = .handsFree
+        case .prompt: self = .prompt
+        case .off: self = .off
+        }
+    }
+}
+
+extension DoubleTapAction {
+    /// The session's setting for what the Shortcuts screen offers.
+    init(_ choice: DoubleTapChoice) {
+        switch choice {
+        case .handsFree: self = .handsFree
+        case .prompt: self = .prompt
+        case .off: self = .off
+        }
     }
 }

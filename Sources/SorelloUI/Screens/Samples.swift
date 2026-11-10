@@ -46,7 +46,7 @@ public extension GeneralModel {
 
 /// A sample Shortcuts screen; `recording` shows a recorder listening and a refusal.
 public extension ShortcutsModel {
-    static func sample(recording: Bool = false) -> ShortcutsModel {
+    static func sample(recording: Bool = false, doubleTap: DoubleTapChoice = .handsFree) -> ShortcutsModel {
         ShortcutsModel(
             recorders: [
                 .holdToTalk: ShortcutRecorderState(keys: .function),
@@ -58,7 +58,7 @@ public extension ShortcutsModel {
                                                            .option(.right), .shift(.left)]) : nil,
                     refusal: recording ? .alreadyUsed(by: .holdToTalk) : nil),
             ],
-            promptModeEnabled: true, promptTag: "[dictated]")
+            doubleTap: doubleTap, promptTag: "[dictated]")
     }
 }
 
