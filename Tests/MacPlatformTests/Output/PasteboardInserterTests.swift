@@ -285,6 +285,18 @@ import Testing
         #expect(h.log.posts.isEmpty)
     }
 
+    /// A change while composing leaves the text for the user; if the system refuses that plain copy, the outcome is
+    /// a failure, not a clipboard that claims to hold the text, and the previous clipboard comes back.
+    @Test func aRefusedPlainCopyAfterAChangeIsAFailure() async {
+        let h = Harness()
+        h.pasteboard.update { $0.refusedWrite = 2 }
+        let outcome = await h.run(ComposedInsertion(text: Self.words)) { h.frontmost.pid.withLock { $0 = 999 } }
+        await h.idle()
+        #expect(outcome == .failed(.pasteboardUnavailable))
+        #expect(h.log.posts.isEmpty)
+        #expect(h.pasteboard.items == Self.original)
+    }
+
     @Test func eventsThatCannotBeMadeFailAndPutTheClipboardBack() async {
         let h = Harness()
         h.keys.update { $0.refusePosting = true }

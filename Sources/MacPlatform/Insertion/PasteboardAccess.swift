@@ -69,9 +69,11 @@ public final class SystemPasteboard: PasteboardAccess {
 
     public func readItems(byteLimit: Int) -> PasteboardRead {
         pasteboard.withLock { pasteboard in
+            // Nil is a retrieval error, not an empty clipboard: a copy taken from it would be incomplete.
+            guard let pasteboardItems = pasteboard.pasteboardItems else { return .unreadable }
             var items: [PasteboardItemData] = []
             var total = 0
-            for item in pasteboard.pasteboardItems ?? [] {
+            for item in pasteboardItems {
                 var representations: [PasteboardRepresentation] = []
                 for type in item.types {
                     guard let data = item.data(forType: type) else { return .unreadable }

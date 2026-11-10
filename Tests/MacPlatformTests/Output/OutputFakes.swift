@@ -71,6 +71,9 @@ final class FakePasteboard: PasteboardAccess {
         var items: [PasteboardItemData] = []
         var unreadable = false
         var refuseWrites = false
+        /// Refuses only the write with this number, counting from 1.
+        var refusedWrite: Int?
+        var writeCount = 0
         /// Runs during the snapshot read, as if another app wrote meanwhile.
         var onRead: (@Sendable () -> Void)?
         /// Runs after each successful write, once the items are on the pasteboard.
@@ -117,7 +120,8 @@ final class FakePasteboard: PasteboardAccess {
     func write(_ items: [PasteboardItemData]) -> Bool {
         log.append(.write(items))
         let hook = state.withLock { state -> (@Sendable () -> Void)?? in
-            guard !state.refuseWrites else { return nil }
+            state.writeCount += 1
+            guard !state.refuseWrites, state.refusedWrite != state.writeCount else { return nil }
             state.items += items
             return .some(state.onWrite)
         }

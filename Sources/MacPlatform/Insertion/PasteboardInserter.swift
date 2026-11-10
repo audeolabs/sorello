@@ -155,7 +155,8 @@ public final class PasteboardInserter: TextInserting {
             clipboard.restore()
             return (.failed(.cancelled), nil)
         case .blocked(let reason):
-            _ = clipboard.keepForUser()
+            // Left on the clipboard only if it really is there for the user to paste.
+            guard clipboard.keepForUser() else { return (.failed(.pasteboardUnavailable), nil) }
             return (.leftOnClipboard(reason), nil)
         case .eventsUnavailable:
             clipboard.restore()

@@ -123,45 +123,34 @@ import Testing
 
     @Test func aRefusedWriteIsReportedAndPutBack() {
         let pasteboard = pasteboard(holding: original)
-        #expect(ClipboardTransaction.write("Invented words", to: RefuseOnce(pasteboard), restoring: true) == nil)
+        pasteboard.update { $0.refusedWrite = 1 }
+        #expect(ClipboardTransaction.write("Invented words", to: pasteboard, restoring: true) == nil)
         #expect(pasteboard.items == original)
     }
 
     @Test func keepingTheTextForTheUserWritesItPlainly() throws {
         let pasteboard = pasteboard(holding: original)
         let transaction = try #require(ClipboardTransaction.write("Invented words", to: pasteboard, restoring: true))
-        let kept = transaction.keepForUser()
-        #expect(!kept.willRestore)
+        #expect(transaction.keepForUser())
+        #expect(pasteboard.items == Self.plain("Invented words"))
+        #expect(!transaction.restore(), "Kept text is not taken away again")
         #expect(pasteboard.items == Self.plain("Invented words"))
 
         // Once the user has copied something else, keeping changes nothing.
         let other = self.pasteboard(holding: original)
         let second = try #require(ClipboardTransaction.write("Invented words", to: other, restoring: true))
         other.userCopies(Self.plain("Something else"))
-        _ = second.keepForUser()
+        #expect(!second.keepForUser())
         #expect(other.items == Self.plain("Something else"))
     }
-}
 
-/// A pasteboard that refuses only the first write, then behaves like the one it wraps.
-private final class RefuseOnce: PasteboardAccess {
-    private let base: FakePasteboard
-    private let refused = Flag()
-
-    init(_ base: FakePasteboard) {
-        self.base = base
-    }
-
-    var changeCount: Int { base.changeCount }
-    func readItems(byteLimit: Int) -> PasteboardRead { base.readItems(byteLimit: byteLimit) }
-    func clear() -> Int { base.clear() }
-
-    func write(_ items: [PasteboardItemData]) -> Bool {
-        guard refused.isSet else {
-            refused.set()
-            return false
-        }
-        return base.write(items)
+    /// If the plain copy is refused, the user gets their previous clipboard back rather than an empty one.
+    @Test func aRefusedPlainCopyPutsThePreviousClipboardBack() throws {
+        let pasteboard = pasteboard(holding: original)
+        let transaction = try #require(ClipboardTransaction.write("Invented words", to: pasteboard, restoring: true))
+        pasteboard.update { $0.refusedWrite = 2 }
+        #expect(!transaction.keepForUser())
+        #expect(pasteboard.items == original)
     }
 }
 
