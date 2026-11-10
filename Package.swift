@@ -1,7 +1,7 @@
 // swift-tools-version: 6.2
 import PackageDescription
 
-// Every module is Swift 6 and warning-free. ARCHITECTURE.md, section 2, says what each one holds and may import.
+// Every module, tests included, is Swift 6 and warning-free. ARCHITECTURE.md, section 2, says what each one holds and may import.
 let strict: [SwiftSetting] = [
     .enableUpcomingFeature("ExistentialAny"),
     .treatAllWarnings(as: .error),
@@ -41,16 +41,16 @@ let package = Package(
                           swiftSettings: strict),
 
         // Tests.
-        .target(name: "TestSupport", path: "Tests/TestSupport"),
-        .testTarget(name: "DictationCoreTests", dependencies: ["DictationCore", "TestSupport"]),
-        .testTarget(name: "TextRulesTests", dependencies: ["TextRules", "TestSupport"]),
-        .testTarget(name: "DictionaryKitTests", dependencies: ["DictionaryKit", "TestSupport"]),
-        .testTarget(name: "DesignCoreTests", dependencies: ["DesignCore", "TestSupport"]),
-        .testTarget(name: "SpeechEngineTests", dependencies: ["SpeechEngine", "DictionaryKit", "DictationCore", "TestSupport"]),
-        .testTarget(name: "PersistenceTests", dependencies: ["Persistence", "DictationCore", "TextRules", "TestSupport"]),
-        .testTarget(name: "MacPlatformTests", dependencies: ["MacPlatform", "DictationCore", "DictionaryKit", "TestSupport"]),
-        .testTarget(name: "SorelloUITests", dependencies: ["SorelloUI", "DesignCore", "TestSupport"]),
-        .testTarget(name: "SorelloAppTests", dependencies: ["SorelloApp", "TestSupport"]),
+        .target(name: "TestSupport", path: "Tests/TestSupport", swiftSettings: strict),
+        .testTarget(name: "DictationCoreTests", dependencies: ["DictationCore", "TestSupport"], swiftSettings: strict),
+        .testTarget(name: "TextRulesTests", dependencies: ["TextRules", "TestSupport"], swiftSettings: strict),
+        .testTarget(name: "DictionaryKitTests", dependencies: ["DictionaryKit", "TestSupport"], swiftSettings: strict),
+        .testTarget(name: "DesignCoreTests", dependencies: ["DesignCore", "TestSupport"], swiftSettings: strict),
+        .testTarget(name: "SpeechEngineTests", dependencies: ["SpeechEngine", "DictionaryKit", "DictationCore", "TestSupport"], swiftSettings: strict),
+        .testTarget(name: "PersistenceTests", dependencies: ["Persistence", "DictationCore", "TextRules", "TestSupport"], swiftSettings: strict),
+        .testTarget(name: "MacPlatformTests", dependencies: ["MacPlatform", "DictationCore", "DictionaryKit", "TestSupport"], swiftSettings: strict),
+        .testTarget(name: "SorelloUITests", dependencies: ["SorelloUI", "DesignCore", "TestSupport"], swiftSettings: strict),
+        .testTarget(name: "SorelloAppTests", dependencies: ["SorelloApp", "TestSupport"], swiftSettings: strict),
     ],
     swiftLanguageModes: [.v6]
 )
