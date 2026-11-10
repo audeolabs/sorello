@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Assembles and signs the app bundle (ARCHITECTURE.md, section 10).
-#   CHANNEL=dev|release   which identity from Config/identity.env (default dev)
+#   CHANNEL=dev|release   which identity from Config/identity.conf (default dev)
 #   SORELLO_MODEL_DIR     the pinned model bundle; required for CHANNEL=release
 #   CODESIGN_IDENTITY     default "-" (ad hoc)
 #   BUILD_DIR             default build
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # shellcheck disable=SC1091
-source Config/identity.env
+source Config/identity.conf
 
 CHANNEL=${CHANNEL:-dev}
 case "$CHANNEL" in
@@ -52,12 +52,26 @@ if [ -n "${SORELLO_MODEL_DIR:-}" ]; then
   MODEL="$APP/Contents/Resources/Model"
   mkdir -p "$MODEL"
   cp "$manifest" "$MODEL/"
-  # Only the files the manifest lists: the bundle directory may hold others the app never loads.
-  /usr/bin/python3 -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1]))["files"]))' "$manifest" |
-    while IFS= read -r file; do
-      mkdir -p "$MODEL/$(dirname "$file")"
-      cp "$SORELLO_MODEL_DIR/$file" "$MODEL/$file"
-    done
+  # Copy only the files the manifest lists, each checked against its hash first: the bundle directory may hold
+  # others the app never loads, and a release must not ship a file the app will refuse.
+  /usr/bin/python3 - "$manifest" "$SORELLO_MODEL_DIR" "$MODEL" <<'PY'
+import hashlib, json, os, shutil, sys
+
+manifest, source, destination = sys.argv[1:4]
+for name, expected in json.load(open(manifest))["files"].items():
+    if os.path.isabs(name) or ".." in name.split("/"):
+        sys.exit(f"build-app: the model manifest names a path outside the bundle: {name}")
+    path = os.path.join(source, name)
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    if digest.hexdigest() != expected:
+        sys.exit(f"build-app: {name} does not match the model manifest")
+    target = os.path.join(destination, name)
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    shutil.copyfile(path, target)
+PY
   cp Resources/ModelNotices/* "$MODEL/"
 else
   echo "build-app: built without the model; dictation cannot run in this bundle" >&2

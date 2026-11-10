@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# The rules a compiler cannot check (ARCHITECTURE.md, sections 2 and 9). Fails with the offending lines.
+# A lint for the rules a compiler cannot check (ARCHITECTURE.md, sections 2 and 9). It catches the obvious
+# mistakes and fails with the offending lines; it does not prove the invariants. Review does.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 status=0
