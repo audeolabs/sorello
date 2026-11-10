@@ -7,8 +7,10 @@ public struct MacrosActions {
     public var validate: (_ phrase: String, _ text: String, _ id: String?) -> MacroProblem?
     /// Saves a new macro (nil `id`) or replaces one. Returns why it was refused, or nil.
     public var save: (_ id: String?, _ phrase: String, _ text: String) -> MacroProblem?
+    /// Removes a macro.
     public var delete: (_ id: String) -> Void
 
+    /// Actions that accept everything and change nothing unless given.
     public init(validate: @escaping (String, String, String?) -> MacroProblem? = { _, _, _ in nil },
                 save: @escaping (String?, String, String) -> MacroProblem? = { _, _, _ in nil },
                 delete: @escaping (String) -> Void = { _ in }) {
@@ -22,9 +24,12 @@ public struct MacrosActions {
 public struct MacroDraft: Equatable, Sendable {
     /// The macro being edited, or nil for a new one.
     public var id: String?
+    /// What is said.
     public var phrase: String
+    /// What is pasted.
     public var text: String
 
+    /// A draft; with no `id`, a new macro.
     public init(id: String? = nil, phrase: String = "", text: String = "") {
         self.id = id
         self.phrase = phrase
@@ -35,13 +40,18 @@ public struct MacroDraft: Equatable, Sendable {
 /// The Macros screen's values.
 @Observable
 public final class MacrosModel {
+    /// The macros, in the order they are kept.
     public var macros: [MacroItem]
-    /// The macro open in the editor, if any.
-    public var editing: MacroDraft?
+    /// The macro open in the editor, if any. Opening, closing or changing it clears `refusal`.
+    public var editing: MacroDraft? {
+        didSet { if editing != oldValue { refusal = nil } }
+    }
     /// Why the last save was refused, until the editor changes.
     public var refusal: MacroProblem?
+    /// What the screen asks of the app layer.
     public var actions: MacrosActions
 
+    /// The Macros screen's values.
     public init(macros: [MacroItem], editing: MacroDraft? = nil, actions: MacrosActions = MacrosActions()) {
         self.macros = macros
         self.editing = editing
@@ -54,6 +64,7 @@ public struct MacrosScreen: View {
     @Bindable private var model: MacrosModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// The Macros screen drawn from `model`.
     public init(model: MacrosModel) {
         self.model = model
     }
@@ -93,7 +104,6 @@ public struct MacrosScreen: View {
     }
 
     private func open(_ draft: MacroDraft) {
-        model.refusal = nil
         model.editing = draft
     }
 }
@@ -203,10 +213,7 @@ private struct MacroEditor: View {
 
     private func binding(_ keyPath: WritableKeyPath<MacroDraft, String>) -> Binding<String> {
         Binding(get: { draft[keyPath: keyPath] },
-                set: { value in
-                    model.refusal = nil
-                    model.editing?[keyPath: keyPath] = value
-                })
+                set: { value in model.editing?[keyPath: keyPath] = value })
     }
 
     private func save() {

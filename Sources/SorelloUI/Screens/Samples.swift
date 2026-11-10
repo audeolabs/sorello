@@ -14,11 +14,13 @@ nonisolated let sampleCalendar: Calendar = {
 }()
 nonisolated let sampleLocale = Locale(identifier: "en_US")
 
+/// Sample statuses.
 public extension AppStatus {
     /// Everything ready.
     static let sampleReady = AppStatus(model: .ready, microphone: .granted, accessibility: .granted)
 }
 
+/// Sample menu panels.
 public extension MenuPanelModel {
     static func sample(status: AppStatus = .sampleReady, lastDictation: String? = "Sphinx of black quartz, judge my vow. The five boxing wizards jump quickly over the lazy dog.") -> MenuPanelModel {
         MenuPanelModel(appName: "Sorello", status: status,
@@ -29,6 +31,7 @@ public extension MenuPanelModel {
     }
 }
 
+/// A sample General screen.
 public extension GeneralModel {
     static func sample(status: AppStatus = .sampleReady) -> GeneralModel {
         GeneralModel(modelName: "kea-b-0.1", status: status,
@@ -41,6 +44,7 @@ public extension GeneralModel {
     }
 }
 
+/// A sample Shortcuts screen; `recording` shows a recorder listening and a refusal.
 public extension ShortcutsModel {
     static func sample(recording: Bool = false) -> ShortcutsModel {
         ShortcutsModel(
@@ -49,12 +53,16 @@ public extension ShortcutsModel {
                 .tapToToggle: ShortcutRecorderState(keys: KeyCombo(modifiers: [.control(.either), .option(.either)],
                                                                    key: KeyName(label: "Space")),
                                                     isRecording: recording),
-                .pasteAgain: ShortcutRecorderState(keys: nil, refusal: recording ? .alreadyUsed(by: .holdToTalk) : nil),
+                .pasteAgain: ShortcutRecorderState(
+                    keys: recording ? KeyCombo(modifiers: [.command(.left), .command(.right), .option(.left),
+                                                           .option(.right), .shift(.left)]) : nil,
+                    refusal: recording ? .alreadyUsed(by: .holdToTalk) : nil),
             ],
             promptModeEnabled: true, promptTag: "[dictated]")
     }
 }
 
+/// Sample dictionaries.
 public extension DictionaryModel {
     static let sampleApps = [AppLimit(id: "com.example.notes", name: "Notes"),
                              AppLimit(id: "com.example.terminal", name: "Terminal")]
@@ -93,6 +101,7 @@ public extension DictionaryModel {
     }
 }
 
+/// A sample Macros screen; `editing` opens one macro in the editor.
 public extension MacrosModel {
     static func sample(editing: Bool = false) -> MacrosModel {
         let macros = [
@@ -108,6 +117,7 @@ public extension MacrosModel {
     }
 }
 
+/// A sample Run Log with an entry of every kind.
 public extension RunLogModel {
     static func sample() -> RunLogModel {
         RunLogModel(
@@ -131,6 +141,7 @@ public extension RunLogModel {
     }
 }
 
+/// A sample About screen.
 public extension AboutModel {
     static func sample() -> AboutModel {
         AboutModel(
@@ -145,6 +156,7 @@ public extension AboutModel {
     }
 }
 
+/// A sample main window at `section`.
 public extension MainWindowModel {
     static func sample(section: MainSection = .general, status: AppStatus = .sampleReady) -> MainWindowModel {
         MainWindowModel(section: section, general: .sample(status: status), shortcuts: .sample(),
@@ -152,6 +164,7 @@ public extension MainWindowModel {
     }
 }
 
+/// A sample setup at `step`.
 public extension SetupModel {
     static func sample(step: SetupStep, microphone: MicrophoneStatus = .notDetermined,
                        accessibility: AccessibilityStatus = .missing, model: ModelStatus = .ready,

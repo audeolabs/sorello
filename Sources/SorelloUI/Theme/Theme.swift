@@ -47,6 +47,7 @@ public enum Theme {
     /// The hairline around the island's surfaces.
     public static let edge = Color(Palette.edge)
 
+    /// Primary text and glyphs.
     public static let ink = Color.white
     /// Details, captions and quiet actions.
     public static let secondaryInk = Color.white.opacity(Palette.secondaryInkAlpha)
@@ -64,9 +65,13 @@ public enum Theme {
     /// A switch that is on.
     public static let toggle = Color(Palette.toggle)
 
+    /// The lift under the pointer.
     public static let hover = Color.white.opacity(ThemeColors.hoverAlpha)
+    /// The chosen row or segment.
     public static let selection = Color.white.opacity(ThemeColors.selectionAlpha)
+    /// The fill of key caps, chips and tracks.
     public static let controlFill = Color.white.opacity(ThemeColors.controlFillAlpha)
+    /// The hairline between rows.
     public static let separator = Color.white.opacity(ThemeColors.separatorAlpha)
 }
 
@@ -84,6 +89,7 @@ public enum Metrics {
     public static let glyphGap: CGFloat = 12
     /// Where a row's words start when it has a glyph; the hairlines between such rows start here too.
     public static let wordsInset: CGFloat = rowInset + glyphWidth + glyphGap
+    /// A card's corner radius.
     public static let cardRadius: CGFloat = 12
     /// Between a group's title and its card, and between stacked controls.
     public static let tight: CGFloat = 8
@@ -95,11 +101,15 @@ public enum Metrics {
     public static let contentMaxWidth: CGFloat = 620
     /// The room a transparent title bar's window controls need above the content.
     public static let titleBarClearance: CGFloat = 40
+    /// The main window's sidebar.
     public static let sidebarWidth: CGFloat = 196
+    /// A text field's height.
     public static let fieldHeight: CGFloat = 28
+    /// A text field's corner radius.
     public static let fieldRadius: CGFloat = 7
 }
 
+/// Sorello's text styles.
 public extension Font {
     /// Geist Serif, the display face: window titles and headlines only. It has one weight and is never bolded.
     /// Without the font the system face stands in.

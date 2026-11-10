@@ -46,12 +46,16 @@ nonisolated public enum AccessibilityStatus: Equatable, Sendable {
 
 /// Everything the state line is drawn from.
 nonisolated public struct AppStatus: Equatable, Sendable {
+    /// The speech model.
     public var model: ModelStatus
+    /// Microphone access.
     public var microphone: MicrophoneStatus
+    /// Accessibility access.
     public var accessibility: AccessibilityStatus
     /// Secure input is on (a password field has the keyboard), so the shortcuts are paused.
     public var shortcutsPaused: Bool
 
+    /// A status; shortcuts are not paused unless said.
     public init(model: ModelStatus, microphone: MicrophoneStatus, accessibility: AccessibilityStatus,
                 shortcutsPaused: Bool = false) {
         self.model = model
@@ -126,10 +130,14 @@ nonisolated public struct StatusLine: Equatable, Sendable {
         }
     }
 
+    /// A few words: "Ready", "Microphone access needed".
     public var text: String
+    /// The mark before the words.
     public var indicator: Indicator
+    /// What fixes it, when something is wrong and the user can fix it.
     public var remedy: Remedy?
 
+    /// A line.
     public init(text: String, indicator: Indicator, remedy: Remedy?) {
         self.text = text
         self.indicator = indicator

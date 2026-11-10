@@ -2,16 +2,20 @@ import SwiftUI
 
 /// What the General screen does when its controls are used.
 public struct GeneralActions {
+    /// Load the speech model again after a failure.
     public var retryModel: () -> Void
     /// Ask for the microphone; the system shows its prompt.
     public var requestMicrophone: () -> Void
+    /// Open the microphone pane of System Settings, after access was denied.
     public var openMicrophoneSettings: () -> Void
     /// Lead the user to grant Accessibility: System Settings, with the card to drag in.
     public var openAccessibilitySettings: () -> Void
     /// Nil chooses the system default.
     public var selectMicrophone: (String?) -> Void
+    /// A switch was flipped; the model already shows the new value.
     public var setToggle: (GeneralToggle, Bool) -> Void
 
+    /// Actions that each do nothing unless given.
     public init(retryModel: @escaping () -> Void = {}, requestMicrophone: @escaping () -> Void = {},
                 openMicrophoneSettings: @escaping () -> Void = {}, openAccessibilitySettings: @escaping () -> Void = {},
                 selectMicrophone: @escaping (String?) -> Void = { _ in },
@@ -30,15 +34,20 @@ public struct GeneralActions {
 public final class GeneralModel {
     /// The speech model's name, as its bundle gives it.
     public var modelName: String
+    /// The model and permissions, as every window shows them.
     public var status: AppStatus
+    /// The microphones connected now.
     public var microphones: [MicrophoneOption]
     /// The chosen microphone's identifier; nil follows the system default.
     public var selectedMicrophoneID: String?
     /// The system default's name, shown beside "System default".
     public var defaultMicrophoneName: String?
+    /// Each switch's value.
     public var toggles: [GeneralToggle: Bool]
+    /// What the screen asks of the app layer.
     public var actions: GeneralActions
 
+    /// The General screen's values.
     public init(modelName: String, status: AppStatus, microphones: [MicrophoneOption], selectedMicrophoneID: String?,
                 defaultMicrophoneName: String?, toggles: [GeneralToggle: Bool], actions: GeneralActions = GeneralActions()) {
         self.modelName = modelName
@@ -58,6 +67,7 @@ public final class GeneralModel {
 public struct GeneralScreen: View {
     @Bindable private var model: GeneralModel
 
+    /// The General screen drawn from `model`.
     public init(model: GeneralModel) {
         self.model = model
     }

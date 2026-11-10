@@ -7,6 +7,7 @@ public struct StatusIndicator: View {
     private let indicator: StatusLine.Indicator
     private let size: CGFloat
 
+    /// The mark for `indicator`, its dot `size` points across.
     public init(_ indicator: StatusLine.Indicator, size: CGFloat = 8) {
         self.indicator = indicator
         self.size = size
@@ -62,6 +63,7 @@ public struct GlacierBar: View {
     private let fraction: Double?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// A line filled to `fraction` from 0 to 1, or travelling without one.
     public init(fraction: Double? = nil) {
         self.fraction = fraction
     }
@@ -98,6 +100,7 @@ public struct StatusLabel: View {
     private let line: StatusLine
     private let font: Font
 
+    /// `line`'s mark and words, in `font`.
     public init(_ line: StatusLine, font: Font = .system(size: 12, weight: .medium)) {
         self.line = line
         self.font = font

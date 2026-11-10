@@ -9,6 +9,7 @@ public enum MainSection: CaseIterable, Hashable, Sendable {
     case runLog
     case about
 
+    /// The section's name, in the sidebar.
     public var title: String {
         switch self {
         case .general: String(localized: "General")
@@ -40,14 +41,22 @@ public enum MainSection: CaseIterable, Hashable, Sendable {
 /// The main window's values: which section shows, and each section's model.
 @Observable
 public final class MainWindowModel {
+    /// The section showing. The app layer sets it to open the window at a section.
     public var section: MainSection
+    /// General's values.
     public let general: GeneralModel
+    /// Shortcuts' values.
     public let shortcuts: ShortcutsModel
+    /// Dictionary's values.
     public let dictionary: DictionaryModel
+    /// Macros' values.
     public let macros: MacrosModel
+    /// The Run Log's values.
     public let runLog: RunLogModel
+    /// About's values.
     public let about: AboutModel
 
+    /// The main window's values, opening at `section`.
     public init(section: MainSection = .general, general: GeneralModel, shortcuts: ShortcutsModel,
                 dictionary: DictionaryModel, macros: MacrosModel, runLog: RunLogModel, about: AboutModel) {
         self.section = section
@@ -65,6 +74,7 @@ public final class MainWindowModel {
 public struct MainWindowView: View {
     @Bindable private var model: MainWindowModel
 
+    /// The main window drawn from `model`.
     public init(model: MainWindowModel) {
         self.model = model
     }

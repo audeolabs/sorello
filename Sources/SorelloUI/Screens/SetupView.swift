@@ -4,15 +4,20 @@ import SwiftUI
 public struct SetupActions {
     /// Ask for the microphone; the system shows its prompt.
     public var requestMicrophone: () -> Void
+    /// Open the microphone pane of System Settings, after access was denied.
     public var openMicrophoneSettings: () -> Void
     /// Open System Settings with the card to drag into the Accessibility list.
     public var openAccessibilitySettings: () -> Void
+    /// Open the Keyboard pane of System Settings, for the fn key's own action.
     public var openKeyboardSettings: () -> Void
+    /// Load the speech model again after a failure.
     public var retryModel: () -> Void
+    /// Record Hold to Talk's shortcut.
     public var recorder: ShortcutRecorderActions
     /// Setup is done; the window closes.
     public var finish: () -> Void
 
+    /// Actions that each do nothing unless given.
     public init(requestMicrophone: @escaping () -> Void = {}, openMicrophoneSettings: @escaping () -> Void = {},
                 openAccessibilitySettings: @escaping () -> Void = {}, openKeyboardSettings: @escaping () -> Void = {},
                 retryModel: @escaping () -> Void = {}, recorder: ShortcutRecorderActions = ShortcutRecorderActions(),
@@ -30,16 +35,24 @@ public struct SetupActions {
 /// Setup's values.
 @Observable
 public final class SetupModel {
+    /// The app's name as installed.
     public var appName: String
+    /// The step showing. The view moves it; the app layer may set it.
     public var step: SetupStep
+    /// Microphone access, kept current by the app layer.
     public var microphone: MicrophoneStatus
+    /// Accessibility access, kept current by the app layer.
     public var accessibility: AccessibilityStatus
+    /// The speech model, for the live test.
     public var model: ModelStatus
+    /// Hold to Talk's recorder.
     public var holdToTalk: ShortcutRecorderState
     /// What the live test's field holds: what the user dictated into it, or typed.
     public var testText: String
+    /// What setup asks of the app layer.
     public var actions: SetupActions
 
+    /// Setup's values, starting at `step`.
     public init(appName: String, step: SetupStep = .welcome, microphone: MicrophoneStatus,
                 accessibility: AccessibilityStatus, model: ModelStatus, holdToTalk: ShortcutRecorderState,
                 testText: String = "", actions: SetupActions = SetupActions()) {
@@ -60,6 +73,7 @@ public struct SetupView: View {
     @Bindable private var model: SetupModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// Setup drawn from `model`.
     public init(model: SetupModel) {
         self.model = model
     }

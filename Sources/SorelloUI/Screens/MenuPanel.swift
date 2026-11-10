@@ -2,15 +2,22 @@ import SwiftUI
 
 /// What the menu panel does when its controls are used. The app layer supplies each.
 public struct MenuPanelActions {
+    /// Put the last dictation on the clipboard.
     public var copyLastDictation: () -> Void
+    /// Load the speech model again after a failure.
     public var retryModel: () -> Void
     /// Open the main window's General screen, where a missing permission is fixed.
     public var openGeneral: () -> Void
+    /// Open the main window at Dictionary.
     public var openDictionary: () -> Void
+    /// Open the main window at the Run Log.
     public var openRunLog: () -> Void
+    /// Open the main window, at the section it last showed.
     public var openSettings: () -> Void
+    /// Quit the app.
     public var quit: () -> Void
 
+    /// Actions that each do nothing unless given.
     public init(copyLastDictation: @escaping () -> Void = {}, retryModel: @escaping () -> Void = {},
                 openGeneral: @escaping () -> Void = {}, openDictionary: @escaping () -> Void = {},
                 openRunLog: @escaping () -> Void = {}, openSettings: @escaping () -> Void = {},
@@ -30,13 +37,16 @@ public struct MenuPanelActions {
 public final class MenuPanelModel {
     /// The app's name as installed, from the bundle.
     public var appName: String
+    /// The model and permissions, for the state line.
     public var status: AppStatus
     /// The shortcuts, in the order of `ShortcutKind.allCases`. An unset one shows "Not set".
     public var shortcuts: [ShortcutKind: KeyCombo]
     /// The last dictation's text, for Paste Again and copying; nil when there is none.
     public var lastDictation: String?
+    /// What the panel asks of the app layer.
     public var actions: MenuPanelActions
 
+    /// The menu panel's values.
     public init(appName: String, status: AppStatus, shortcuts: [ShortcutKind: KeyCombo], lastDictation: String?,
                 actions: MenuPanelActions = MenuPanelActions()) {
         self.appName = appName
@@ -54,6 +64,7 @@ public struct MenuPanelView: View {
     @State private var copied = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// The menu panel drawn from `model`.
     public init(model: MenuPanelModel) {
         self.model = model
     }

@@ -37,10 +37,12 @@ public enum ButtonSize: Sendable {
 /// The main action: the island's near-black capsule with its hairline and white words, the accent only on its
 /// glyph. It lifts a little under the pointer, dims while pressed, and dims to 45% when disabled.
 public struct PrimaryButtonStyle: ButtonStyle {
+    /// How tall the button is.
     public var size: ButtonSize
     /// The glyph's colour, when the label has one and it shows a state.
     public var accent: Color?
 
+    /// A primary button of `size`, its glyph in `accent` if given.
     public init(size: ButtonSize = .regular, accent: Color? = nil) {
         self.size = size
         self.accent = accent
@@ -83,9 +85,12 @@ private struct PillButtonBody: View {
 /// A quieter action beside the main one: words only, in secondary ink, turning white under the pointer. With
 /// `destructive`, the words are coral, the one place that colour appears.
 public struct QuietButtonStyle: ButtonStyle {
+    /// How tall the button is.
     public var size: ButtonSize
+    /// Coral words, for an action that deletes.
     public var destructive: Bool
 
+    /// A quiet button of `size`; coral when `destructive`.
     public init(size: ButtonSize = .regular, destructive: Bool = false) {
         self.size = size
         self.destructive = destructive
@@ -124,10 +129,14 @@ private struct QuietButtonBody: View {
 /// draws it on the island's surface, for the one glyph that leads a row; `destructive` turns the glyph coral under
 /// the pointer. Every use gives it an accessibility label, because the glyph has no words.
 public struct IconButtonStyle: ButtonStyle {
+    /// The round target's width and height in points.
     public var diameter: CGFloat
+    /// Drawn on the island's surface, for the glyph that leads a row.
     public var island: Bool
+    /// The glyph turns coral under the pointer, for an action that deletes.
     public var destructive: Bool
 
+    /// A glyph-only button `diameter` points across.
     public init(diameter: CGFloat = 26, island: Bool = false, destructive: Bool = false) {
         self.diameter = diameter
         self.island = island

@@ -2,17 +2,22 @@ import SwiftUI
 
 /// What the Run Log asks of the app layer.
 public struct RunLogActions {
+    /// Play an entry's recording; the app layer sets `playingID`.
     public var play: (_ id: String) -> Void
+    /// Stop playing.
     public var stop: () -> Void
     /// Transcribes the entry's audio again with today's dictionary and rules and replaces its text. Never pastes.
     public var retry: (_ id: String) -> Void
+    /// Put an entry's text, or what was heard for a command alone, on the clipboard.
     public var copy: (_ id: String) -> Void
+    /// Delete an entry and its audio.
     public var delete: (_ id: String) -> Void
     /// Deletes every entry and its audio; the session forgets the last dictation.
     public var clearAll: () -> Void
     /// Turns the Run Log back on, from its "off" state.
     public var turnOn: () -> Void
 
+    /// Actions that each do nothing unless given.
     public init(play: @escaping (String) -> Void = { _ in }, stop: @escaping () -> Void = {},
                 retry: @escaping (String) -> Void = { _ in }, copy: @escaping (String) -> Void = { _ in },
                 delete: @escaping (String) -> Void = { _ in }, clearAll: @escaping () -> Void = {},
@@ -40,11 +45,14 @@ public final class RunLogModel {
     public var isEnabled: Bool
     /// The time relative labels are measured from; nil follows the clock, minute by minute. Snapshots fix it.
     public var referenceDate: Date?
-    /// The calendar and locale times are written in: the user's, except in snapshots.
+    /// The calendar times are written in: the user's, except in snapshots.
     public var calendar: Calendar
+    /// The locale times are written in: the user's, except in snapshots.
     public var locale: Locale
+    /// What the screen asks of the app layer.
     public var actions: RunLogActions
 
+    /// The Run Log's values; times follow the user's calendar and locale unless given.
     public init(items: [RunLogItem], playingID: String? = nil, retryingIDs: Set<String> = [], isEnabled: Bool = true,
                 referenceDate: Date? = nil, calendar: Calendar = .autoupdatingCurrent,
                 locale: Locale = .autoupdatingCurrent, actions: RunLogActions = RunLogActions()) {
@@ -65,6 +73,7 @@ public struct RunLogScreen: View {
     private let model: RunLogModel
     @State private var confirmingClear = false
 
+    /// The Run Log drawn from `model`.
     public init(model: RunLogModel) {
         self.model = model
     }

@@ -4,6 +4,7 @@ import SwiftUI
 /// The label sits on the leading side and the switch on the trailing side, as in the Mac's Settings. The switch
 /// keeps the system toggle's meaning for VoiceOver and the keyboard: Space flips it when it has focus.
 public struct SorelloSwitchStyle: ToggleStyle {
+    /// Sorello's switch.
     public init() {}
 
     public func makeBody(configuration: Configuration) -> some View {
@@ -55,6 +56,7 @@ private struct SwitchKnob: View {
     }
 }
 
+/// `.toggleStyle(.sorello)`.
 public extension ToggleStyle where Self == SorelloSwitchStyle {
     /// Sorello's switch.
     static var sorello: SorelloSwitchStyle { SorelloSwitchStyle() }

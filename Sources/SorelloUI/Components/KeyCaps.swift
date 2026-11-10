@@ -6,6 +6,7 @@ public struct KeyCaps: View {
     private let combo: KeyCombo?
     private let size: KeyCapSize
 
+    /// Key caps for `combo`, or "Not set" without one.
     public init(_ combo: KeyCombo?, size: KeyCapSize = .regular) {
         self.combo = combo
         self.size = size

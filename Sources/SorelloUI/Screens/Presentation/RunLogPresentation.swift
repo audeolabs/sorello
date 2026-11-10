@@ -31,17 +31,21 @@ nonisolated public enum RunLogOutcome: Equatable, Sendable {
 
 /// One dictation in the Run Log.
 nonisolated public struct RunLogItem: Identifiable, Equatable, Sendable {
+    /// The entry's identifier, for the actions.
     public var id: String
+    /// When the dictation was made.
     public var date: Date
     /// What the recognizer heard, before any text rule; empty when transcription failed.
     public var heard: String
     /// What was inserted. Empty when transcription failed, and when the dictation was only a command such as
     /// "press enter", which inserts nothing but Return.
     public var text: String
+    /// How it ended.
     public var outcome: RunLogOutcome
     /// The recording's length in seconds.
     public var duration: TimeInterval
 
+    /// An entry.
     public init(id: String, date: Date, heard: String, text: String, outcome: RunLogOutcome, duration: TimeInterval) {
         self.id = id
         self.date = date
@@ -62,6 +66,7 @@ nonisolated public struct RunLogItem: Identifiable, Equatable, Sendable {
         case none
     }
 
+    /// What the row shows: the text, what was heard for a command alone, or nothing.
     public var display: Display {
         if !text.isEmpty { return .text(text) }
         if !heard.isEmpty { return .commandOnly(heard: heard) }

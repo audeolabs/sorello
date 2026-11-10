@@ -11,7 +11,9 @@ nonisolated public enum SetupStep: Int, CaseIterable, Sendable {
     case shortcut
     case test
 
+    /// The step after this one; nil after the last.
     public var next: SetupStep? { SetupStep(rawValue: rawValue + 1) }
+    /// The step before this one; nil before the first.
     public var previous: SetupStep? { SetupStep(rawValue: rawValue - 1) }
 
     /// "Step 2 of 5", for VoiceOver.
@@ -35,9 +37,12 @@ nonisolated public enum SetupAction: Equatable, Sendable {
 
 /// A setup button: its title and what it does.
 nonisolated public struct SetupButton: Equatable, Sendable {
+    /// The button's words.
     public var title: String
+    /// What it does.
     public var action: SetupAction
 
+    /// A button titled `title` that does `action`.
     public init(_ title: String, _ action: SetupAction) {
         self.title = title
         self.action = action
@@ -46,7 +51,9 @@ nonisolated public struct SetupButton: Equatable, Sendable {
 
 /// The main button of a step, and the quieter one beside it, if any.
 nonisolated public struct SetupButtons: Equatable, Sendable {
+    /// The step's main action, on the island's surface.
     public var primary: SetupButton
+    /// A quieter way on, beside it.
     public var secondary: SetupButton?
 
     /// Every step can be left without granting anything: a permission that is missing is offered again from the
@@ -84,6 +91,7 @@ nonisolated public struct SetupButtons: Equatable, Sendable {
         }
     }
 
+    /// A step's buttons.
     public init(primary: SetupButton, secondary: SetupButton? = nil) {
         self.primary = primary
         self.secondary = secondary

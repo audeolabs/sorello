@@ -9,6 +9,7 @@ public struct ShortcutRecorderActions {
     /// Leave the action without a shortcut (Tap to Toggle and Paste Again), or put Hold to Talk back to fn.
     public var clear: (ShortcutKind) -> Void
 
+    /// Actions that each do nothing unless given.
     public init(record: @escaping (ShortcutKind) -> Void = { _ in }, cancel: @escaping (ShortcutKind) -> Void = { _ in },
                 clear: @escaping (ShortcutKind) -> Void = { _ in }) {
         self.record = record
@@ -24,6 +25,7 @@ public struct ShortcutRecorderRow: View {
     private let state: ShortcutRecorderState
     private let actions: ShortcutRecorderActions
 
+    /// The recorder for `kind` in `state`.
     public init(_ kind: ShortcutKind, state: ShortcutRecorderState, actions: ShortcutRecorderActions) {
         self.kind = kind
         self.state = state
@@ -44,6 +46,10 @@ public struct ShortcutRecorderRow: View {
             }
         }
         .rowPadding()
+        // A recorder left listening would keep every shortcut silent after its screen or step has gone.
+        .onDisappear {
+            if state.isRecording { actions.cancel(kind) }
+        }
     }
 
     /// ✕ for an action that can be unset; for Hold to Talk, a way back to fn once it is something else.
@@ -89,12 +95,13 @@ private struct RecorderWell: View {
                         .foregroundStyle(Theme.secondaryInk)
                         .accessibilityHidden(true)
                 } else {
-                    KeyCaps(state.keys)
+                    KeyCaps(state.keys, size: (state.keys?.caps.count ?? 0) > 4 ? .small : .regular)
                     Spacer(minLength: 0)
                 }
             }
             .padding(.horizontal, 6)
-            .frame(width: 148, height: 30)
+            .frame(minWidth: 148, minHeight: 30, maxHeight: 30)
+            .fixedSize(horizontal: true, vertical: false)
             .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(hovering && !state.isRecording ? Color.white.opacity(0.05) : .clear))
             .background(Theme.pill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))

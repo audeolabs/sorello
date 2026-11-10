@@ -2,10 +2,14 @@ import SwiftUI
 
 /// A notice the About screen lists: a title, one line on what it covers, and the full text the app layer opens.
 public struct NoticeItem: Identifiable, Equatable, Sendable {
+    /// What `showNotice` is called with.
     public var id: String
+    /// The notice's name: the work it covers.
     public var title: String
+    /// One line: who made it and under which licence.
     public var detail: String
 
+    /// A notice.
     public init(id: String, title: String, detail: String) {
         self.id = id
         self.title = title
@@ -16,11 +20,13 @@ public struct NoticeItem: Identifiable, Equatable, Sendable {
 /// The About screen's values. Name, version and copyright come from the bundle.
 @Observable
 public final class AboutModel {
+    /// The app's name as installed.
     public var appName: String
     /// "0.0.1".
     public var version: String
     /// "1".
     public var build: String
+    /// The bundle's copyright line, under the notices.
     public var copyright: String?
     /// The speech model's licence and attribution, first.
     public var modelNotice: NoticeItem
@@ -29,6 +35,7 @@ public final class AboutModel {
     /// Opens a notice's full text.
     public var showNotice: (String) -> Void
 
+    /// The About screen's values; `showNotice` does nothing unless given.
     public init(appName: String, version: String, build: String, copyright: String?, modelNotice: NoticeItem,
                 thirdPartyNotices: [NoticeItem], showNotice: @escaping (String) -> Void = { _ in }) {
         self.appName = appName
@@ -45,6 +52,7 @@ public final class AboutModel {
 public struct AboutScreen: View {
     private let model: AboutModel
 
+    /// The About screen drawn from `model`.
     public init(model: AboutModel) {
         self.model = model
     }

@@ -1,6 +1,7 @@
 import DesignCore
 import SwiftUI
 
+/// The surfaces and focus ring every window's controls are drawn with.
 public extension View {
     /// The island's surface, as the pill and the iPhone app's buttons have it: the near-black pill colour with a
     /// grey hairline, a full point wide with Increase Contrast.
@@ -44,13 +45,16 @@ private struct IslandSurface<S: InsettableShape>: ViewModifier {
 nonisolated public struct Pill: InsettableShape {
     private var inset: CGFloat = 0
 
+    /// A pill filling its frame.
     public init() {}
 
+    /// The outline: `rect`, inset, with ends rounded by half its shorter side.
     public func path(in rect: CGRect) -> Path {
         let rect = rect.insetBy(dx: inset, dy: inset)
         return RoundedRectangle(cornerRadius: min(rect.width, rect.height) / 2, style: .circular).path(in: rect)
     }
 
+    /// The same pill, `amount` smaller on every side.
     public func inset(by amount: CGFloat) -> Pill {
         var shape = self
         shape.inset += amount

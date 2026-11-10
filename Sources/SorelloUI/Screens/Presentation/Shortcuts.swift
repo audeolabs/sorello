@@ -78,6 +78,7 @@ nonisolated public struct KeyName: Hashable, Sendable {
     /// What VoiceOver says: "D", "Space", "F5", "Right Arrow".
     public var spoken: String
 
+    /// A key shown as `label` and spoken as `spoken`, or as `label` without it.
     public init(label: String, spoken: String? = nil) {
         self.label = label
         self.spoken = spoken ?? label
@@ -88,8 +89,10 @@ nonisolated public struct KeyName: Hashable, Sendable {
 nonisolated public struct KeyCombo: Hashable, Sendable {
     /// Sorted into the Mac's order, without repeats.
     public let modifiers: [ModifierCap]
+    /// The key that is not a modifier, if any.
     public let key: KeyName?
 
+    /// A shortcut of `modifiers` and `key`, in any order; repeats are dropped.
     public init(modifiers: [ModifierCap], key: KeyName? = nil) {
         var seen = Set<ModifierCap>()
         self.modifiers = modifiers.filter { seen.insert($0).inserted }.sorted { $0.order < $1.order }
@@ -148,6 +151,7 @@ nonisolated public enum ShortcutKind: CaseIterable, Hashable, Sendable {
     case tapToToggle
     case pasteAgain
 
+    /// The action's name.
     public var title: String {
         switch self {
         case .holdToTalk: String(localized: "Hold to Talk")
@@ -200,6 +204,7 @@ nonisolated public struct ShortcutRecorderState: Equatable, Sendable {
     /// Shown under the recorder until the next attempt.
     public var refusal: ShortcutRefusal?
 
+    /// A recorder showing `keys`.
     public init(keys: KeyCombo?, isRecording: Bool = false, refusal: ShortcutRefusal? = nil) {
         self.keys = keys
         self.isRecording = isRecording

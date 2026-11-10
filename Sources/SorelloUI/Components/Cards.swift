@@ -7,6 +7,7 @@ public struct Card<Content: View>: View {
     /// Where the hairlines start, from the card's leading edge.
     private let dividerInset: CGFloat
 
+    /// A card of the rows `content` builds; hairlines start `dividerInset` from the leading edge.
     public init(dividerInset: CGFloat = Metrics.rowInset, @ViewBuilder content: () -> Content) {
         self.content = content()
         self.dividerInset = dividerInset
@@ -34,6 +35,7 @@ public struct CardGroup<Content: View, Footer: View>: View {
     private let content: Content
     private let footer: Footer
 
+    /// A group titled `title`, with `footer` under its card.
     public init(_ title: String? = nil, @ViewBuilder content: () -> Content, @ViewBuilder footer: () -> Footer) {
         self.title = title
         self.content = content()
@@ -59,6 +61,7 @@ public struct CardGroup<Content: View, Footer: View>: View {
     }
 }
 
+/// A group without a footnote.
 public extension CardGroup where Footer == EmptyView {
     init(_ title: String? = nil, @ViewBuilder content: () -> Content) {
         self.init(title, content: content, footer: { EmptyView() })
@@ -74,6 +77,7 @@ public struct SettingRow<Accessory: View>: View {
     private let symbolTint: Color
     private let accessory: Accessory
 
+    /// A row with `title`, an optional `detail` line and glyph, and `accessory` on the trailing side.
     public init(_ title: String, detail: String? = nil, symbol: String? = nil, symbolTint: Color = Theme.secondaryInk,
                 @ViewBuilder accessory: () -> Accessory) {
         self.title = title
@@ -96,6 +100,7 @@ public struct SettingRow<Accessory: View>: View {
     }
 }
 
+/// A row with nothing on its trailing side.
 public extension SettingRow where Accessory == EmptyView {
     init(_ title: String, detail: String? = nil, symbol: String? = nil, symbolTint: Color = Theme.secondaryInk) {
         self.init(title, detail: detail, symbol: symbol, symbolTint: symbolTint) { EmptyView() }
@@ -109,6 +114,7 @@ public struct ToggleRow: View {
     private let symbol: String?
     @Binding private var isOn: Bool
 
+    /// A switch row bound to `isOn`.
     public init(_ title: String, detail: String? = nil, symbol: String? = nil, isOn: Binding<Bool>) {
         self.title = title
         self.detail = detail
@@ -156,6 +162,7 @@ public struct RowGlyph: View {
     private let symbol: String
     private let tint: Color
 
+    /// The SF Symbol `symbol` in `tint`.
     public init(_ symbol: String, tint: Color = Theme.secondaryInk) {
         self.symbol = symbol
         self.tint = tint
@@ -187,6 +194,7 @@ public struct ScreenPage<Content: View, Trailing: View>: View {
     private let content: Content
     private let trailing: Trailing
 
+    /// A page titled `title`, with `trailing` beside the title (a count, a button) and `content` under it.
     public init(_ title: String, subtitle: String? = nil, @ViewBuilder trailing: () -> Trailing,
                 @ViewBuilder content: () -> Content) {
         self.title = title
@@ -228,6 +236,7 @@ public struct ScreenPage<Content: View, Trailing: View>: View {
     }
 }
 
+/// A page with nothing beside its title.
 public extension ScreenPage where Trailing == EmptyView {
     init(_ title: String, subtitle: String? = nil, @ViewBuilder content: () -> Content) {
         self.init(title, subtitle: subtitle, trailing: { EmptyView() }, content: content)

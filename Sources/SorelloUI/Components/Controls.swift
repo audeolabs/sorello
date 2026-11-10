@@ -8,6 +8,7 @@ public struct Chip: View {
     private let onRemove: (() -> Void)?
     @State private var hovering = false
 
+    /// A chip naming `title`, with an optional glyph and ✕.
     public init(_ title: String, symbol: String? = nil, onRemove: (() -> Void)? = nil) {
         self.title = title
         self.symbol = symbol
@@ -54,6 +55,7 @@ public struct PresetPicker<Value: Hashable>: View {
     @Namespace private var namespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// A picker named `title` for VoiceOver, showing each option by `label` and speaking it by `spokenLabel`.
     public init(_ title: String, options: [Value], selection: Binding<Value>, label: @escaping (Value) -> String,
                 spokenLabel: ((Value) -> String)? = nil) {
         self.title = title
@@ -124,6 +126,7 @@ public struct SorelloTextField: View {
     private let onSubmit: () -> Void
     @FocusState private var focused: Bool
 
+    /// A field bound to `text`; Return calls `onSubmit`.
     public init(_ placeholder: String, text: Binding<String>, hasProblem: Bool = false, onSubmit: @escaping () -> Void = {}) {
         self.placeholder = placeholder
         _text = text
@@ -161,6 +164,7 @@ public struct SorelloTextField: View {
 public struct InlineMessage: View {
     private let text: String
 
+    /// A message saying `text`.
     public init(_ text: String) {
         self.text = text
     }
@@ -187,6 +191,7 @@ public struct EmptyState<Action: View>: View {
     private let message: String
     private let action: Action
 
+    /// An empty state with a glyph, a title, a sentence and `action` under them.
     public init(symbol: String, title: String, message: String, @ViewBuilder action: () -> Action) {
         self.symbol = symbol
         self.title = title
@@ -219,6 +224,7 @@ public struct EmptyState<Action: View>: View {
     }
 }
 
+/// An empty state without an action.
 public extension EmptyState where Action == EmptyView {
     init(symbol: String, title: String, message: String) {
         self.init(symbol: symbol, title: title, message: message) { EmptyView() }

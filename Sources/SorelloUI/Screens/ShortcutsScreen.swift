@@ -3,16 +3,20 @@ import SwiftUI
 /// The Shortcuts screen's values.
 @Observable
 public final class ShortcutsModel {
+    /// Each action's recorder.
     public var recorders: [ShortcutKind: ShortcutRecorderState]
     /// Double-tapping Hold to Talk starts a dictation whose text begins with the prompt tag.
     public var promptModeEnabled: Bool
     /// The tag prompt mode puts before the text, as the text rules write it.
     public var promptTag: String
+    /// Record, cancel and clear a shortcut.
     public var recorderActions: ShortcutRecorderActions
+    /// Prompt mode was switched; the model already shows the new value.
     public var setPromptMode: (Bool) -> Void
     /// Open the Keyboard pane of System Settings, where the fn key's own action is chosen.
     public var openKeyboardSettings: () -> Void
 
+    /// The Shortcuts screen's values.
     public init(recorders: [ShortcutKind: ShortcutRecorderState], promptModeEnabled: Bool, promptTag: String,
                 recorderActions: ShortcutRecorderActions = ShortcutRecorderActions(),
                 setPromptMode: @escaping (Bool) -> Void = { _ in }, openKeyboardSettings: @escaping () -> Void = {}) {
@@ -40,6 +44,7 @@ public struct ShortcutsScreen: View {
     @Bindable private var model: ShortcutsModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// The Shortcuts screen drawn from `model`.
     public init(model: ShortcutsModel) {
         self.model = model
     }
@@ -98,7 +103,7 @@ struct FunctionKeyNote: View {
                 Text("If fn opens the emoji picker or changes the input source")
                     .font(.rowTitle)
                     .foregroundStyle(Theme.ink)
-                Text("In System Settings, Keyboard, set what the fn or 🌐 key does to “Do Nothing”.")
+                Text("In System Settings, Keyboard, set what the fn or Globe key does to “Do Nothing”.")
                     .font(.rowDetail)
                     .foregroundStyle(Theme.secondaryInk)
                     .fixedSize(horizontal: false, vertical: true)

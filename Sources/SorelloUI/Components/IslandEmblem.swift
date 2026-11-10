@@ -5,6 +5,7 @@ import SwiftUI
 public struct IslandEmblem: View {
     private let scale: CGFloat
 
+    /// The emblem at `scale` times its natural size (40 points tall).
     public init(scale: CGFloat = 1) {
         self.scale = scale
     }

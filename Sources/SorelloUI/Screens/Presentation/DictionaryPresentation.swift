@@ -7,6 +7,7 @@ import Foundation
 
 /// The strengths a word can be given, from 0.5 to 8, each about √2 above the one before.
 nonisolated public enum StrengthPresets {
+    /// The presets, weakest first.
     public static let values: [Double] = [0.5, 1, 1.41, 2, 2.83, 4, 5.66, 8]
     /// A new word's strength.
     public static let defaultValue: Double = 1
@@ -45,6 +46,7 @@ nonisolated public enum DictionaryProblem: Equatable, Sendable {
     /// Without the speech model's vocabulary nothing can be checked, so nothing can be edited.
     case needsModel
 
+    /// One sentence that says what to do.
     public var message: String {
         switch self {
         case .empty: String(localized: "Enter a word or phrase.")
@@ -77,6 +79,7 @@ nonisolated public enum DictionaryProblem: Equatable, Sendable {
 
 /// "12 of 1,000 words".
 nonisolated public enum DictionaryCount {
+    /// The count of `count` against `capacity`, with numbers written for `locale`.
     public static func label(count: Int, capacity: Int, locale: Locale = .autoupdatingCurrent) -> String {
         let count = count.formatted(.number.locale(locale))
         let capacity = capacity.formatted(.number.locale(locale))
@@ -88,8 +91,10 @@ nonisolated public enum DictionaryCount {
 nonisolated public struct AppLimit: Identifiable, Hashable, Sendable {
     /// The bundle identifier.
     public var id: String
+    /// The app's last known name.
     public var name: String
 
+    /// An app.
     public init(id: String, name: String) {
         self.id = id
         self.name = name
@@ -100,11 +105,14 @@ nonisolated public struct AppLimit: Identifiable, Hashable, Sendable {
 nonisolated public struct DictionaryWord: Identifiable, Equatable, Sendable {
     /// The entry's identity key.
     public var id: String
+    /// The word or phrase as stored.
     public var text: String
+    /// Its strength, normally one of the presets.
     public var strength: Double
     /// Empty when the word applies everywhere.
     public var apps: [AppLimit]
 
+    /// A word; with no apps, it applies everywhere.
     public init(id: String, text: String, strength: Double, apps: [AppLimit] = []) {
         self.id = id
         self.text = text
@@ -117,8 +125,10 @@ nonisolated public struct DictionaryWord: Identifiable, Equatable, Sendable {
 nonisolated public struct IgnoredWord: Identifiable, Equatable, Sendable {
     /// The ignored identity key.
     public var id: String
+    /// The word as the suggestion offered it.
     public var text: String
 
+    /// An ignored word.
     public init(id: String, text: String) {
         self.id = id
         self.text = text

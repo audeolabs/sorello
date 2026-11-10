@@ -5,6 +5,7 @@ import SwiftUI
 /// invented data and its empty and error states, and each setup step. Main window sections are drawn tall enough to
 /// show all their content, and again at the window's minimum size, where nothing may be clipped.
 public enum ScreenSnapshots {
+    /// Every window scene, in the order the tool writes them.
     public static var scenes: [SnapshotScene] {
         menuPanel + mainWindow + setup
     }

@@ -12,6 +12,7 @@ nonisolated public enum GeneralToggle: CaseIterable, Hashable, Sendable {
     case correctionSuggestions
     case keepRunLog
 
+    /// The switch's name.
     public var title: String {
         switch self {
         case .launchAtLogin: String(localized: "Open at login")
@@ -56,8 +57,10 @@ nonisolated public enum GeneralToggle: CaseIterable, Hashable, Sendable {
 nonisolated public struct MicrophoneOption: Identifiable, Hashable, Sendable {
     /// The device's unique identifier.
     public var id: String
+    /// The device's name.
     public var name: String
 
+    /// A microphone.
     public init(id: String, name: String) {
         self.id = id
         self.name = name
@@ -66,12 +69,14 @@ nonisolated public struct MicrophoneOption: Identifiable, Hashable, Sendable {
 
 /// A voice macro: a complete spoken phrase replaced with saved text.
 nonisolated public struct MacroItem: Identifiable, Equatable, Sendable {
+    /// The macro's identifier, for the actions.
     public var id: String
     /// What is said.
     public var phrase: String
     /// What is pasted instead. May be empty, in which case nothing is pasted.
     public var text: String
 
+    /// A macro.
     public init(id: String, phrase: String, text: String) {
         self.id = id
         self.phrase = phrase
@@ -87,6 +92,7 @@ nonisolated public enum MacroProblem: Equatable, Sendable {
     case phraseTooLong(limit: Int)
     case textTooLong(limit: Int)
 
+    /// One sentence that says what to do.
     public var message: String {
         switch self {
         case .emptyPhrase: String(localized: "Enter what you’ll say.")

@@ -6,16 +6,19 @@ public struct DictionaryActions {
     public var validate: (String) -> DictionaryProblem?
     /// Adds a word limited to the given apps (none: everywhere). Returns why it was refused, or nil.
     public var add: (_ text: String, _ strength: Double, _ apps: [String]) -> DictionaryProblem?
+    /// Sets a word's strength to one of the presets.
     public var setStrength: (_ wordID: String, _ strength: Double) -> Void
     /// Sets the apps a word is limited to; empty makes it apply everywhere.
     public var setApps: (_ wordID: String, _ apps: [String]) -> Void
     /// Lets the user choose another app, from those running or in Applications, and limits the word to it. With a
     /// nil word, the app is added to the add field's choice.
     public var chooseApp: (_ wordID: String?) -> Void
+    /// Removes a word and its app limits.
     public var delete: (_ wordID: String) -> Void
     /// Takes a word off the ignore list, so it can be suggested again.
     public var unignore: (_ ignoredID: String) -> Void
 
+    /// Actions that accept everything and change nothing unless given.
     public init(validate: @escaping (String) -> DictionaryProblem? = { _ in nil },
                 add: @escaping (String, Double, [String]) -> DictionaryProblem? = { _, _, _ in nil },
                 setStrength: @escaping (String, Double) -> Void = { _, _ in },
@@ -35,11 +38,14 @@ public struct DictionaryActions {
 
 /// The word being typed into the add field.
 public struct DictionaryDraft: Equatable, Sendable {
+    /// What is typed.
     public var text: String
+    /// The preset chosen for it.
     public var strength: Double
     /// Bundle identifiers; empty means everywhere.
     public var apps: [String]
 
+    /// An empty draft at the default strength, everywhere.
     public init(text: String = "", strength: Double = StrengthPresets.defaultValue, apps: [String] = []) {
         self.text = text
         self.strength = strength
@@ -50,7 +56,9 @@ public struct DictionaryDraft: Equatable, Sendable {
 /// The Dictionary screen's values.
 @Observable
 public final class DictionaryModel {
+    /// The entries, in the dictionary's order.
     public var words: [DictionaryWord]
+    /// Words that are never suggested.
     public var ignored: [IgnoredWord]
     /// Apps words can be limited to: every app already used for a limit, and any the user has added.
     public var knownApps: [AppLimit]
@@ -58,11 +66,16 @@ public final class DictionaryModel {
     public var capacity: Int
     /// False without the speech model's vocabulary: nothing can be checked, so nothing can be changed.
     public var canEdit: Bool
-    public var draft: DictionaryDraft
+    /// The add field's contents. Changing any part of it clears `refusal`.
+    public var draft: DictionaryDraft {
+        didSet { if draft != oldValue { refusal = nil } }
+    }
     /// Why the last add was refused, until the draft changes.
     public var refusal: DictionaryProblem?
+    /// What the screen asks of the app layer.
     public var actions: DictionaryActions
 
+    /// The Dictionary screen's values.
     public init(words: [DictionaryWord], ignored: [IgnoredWord], knownApps: [AppLimit], capacity: Int = 1000,
                 canEdit: Bool = true, draft: DictionaryDraft = DictionaryDraft(), actions: DictionaryActions = DictionaryActions()) {
         self.words = words
@@ -91,6 +104,7 @@ public final class DictionaryModel {
 public struct DictionaryScreen: View {
     @Bindable private var model: DictionaryModel
 
+    /// The Dictionary screen drawn from `model`.
     public init(model: DictionaryModel) {
         self.model = model
     }
@@ -192,7 +206,6 @@ private struct AddWordCard: View {
         .padding(Metrics.rowInset)
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardSurface()
-        .onChange(of: model.draft.text) { model.refusal = nil }
     }
 
     private func add() {
