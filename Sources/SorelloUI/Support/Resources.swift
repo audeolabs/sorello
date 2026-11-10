@@ -9,11 +9,13 @@ public enum Resources {
 
     public static var directory: URL? {
         let manager = FileManager.default
+        // An app bundle loads only what it ships, so a missing resource shows up instead of being papered over by a
+        // developer's checkout.
+        if Bundle.main.bundleURL.pathExtension == "app" {
+            return Bundle.main.resourceURL
+        }
         if let override = ProcessInfo.processInfo.environment["SORELLO_RESOURCES"] {
             return URL(fileURLWithPath: override, isDirectory: true)
-        }
-        if let bundled = Bundle.main.resourceURL, manager.fileExists(atPath: bundled.appendingPathComponent("Fonts").path) {
-            return bundled
         }
         let repository = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

@@ -106,6 +106,9 @@ public enum TriggerEvent: Sendable, Equatable {
 public protocol TriggerHandling: AnyObject {
     /// `time` is monotonic seconds on `SessionClock`'s timeline, taken when the event arrived. Returns whether the
     /// trigger did something; the shortcut adapter consumes Escape only when this is true.
+    ///
+    /// This is called from inside the keyboard event tap, so it decides and returns: it never waits for
+    /// Accessibility, capture, speech or the disk. Whatever the trigger sets in motion happens after it returns.
     @discardableResult
     func handle(_ trigger: TriggerEvent, at time: TimeInterval) -> Bool
 }
@@ -153,29 +156,40 @@ public enum CaptureEvent: Sendable, Equatable {
     case chunk(AudioChunk)
     /// No audio arrived for 2 s. Sent once; the capture keeps running until stopped.
     case stalled
+    /// The device went away or the system took the audio session. The capture keeps what it has until stopped.
     case interrupted(CaptureInterruption)
+    /// The capture broke for another reason. It keeps what it has until stopped.
+    case failed(CaptureFailure)
 }
 
 public protocol AudioCapturing: Sendable {
-    /// Starts the microphone and returns once it is running. Throws `CaptureFailure`; gives up after 2 s.
+    /// Starts the microphone and returns once it is running. Throws `CaptureFailure`; gives up after 3 s.
+    ///
+    /// Honours task cancellation: it either throws after releasing the microphone or returns one live capture,
+    /// never both and never neither. Starts and teardowns run one at a time in the order asked, so `start` may be
+    /// called while an earlier capture is still being torn down.
     func start(_ request: CaptureRequest) async throws -> any AudioCapture
 }
 
-/// One running capture. The microphone is in use from `start` until `stop` or `abort` returns.
+/// One running capture. The microphone is held from `start` until `stop` or `abort` has torn it down.
 public protocol AudioCapture: Sendable {
-    /// Events in recording order. Finishes after `stop()` has delivered the last samples, or at once after `abort()`.
+    /// Events in recording order, for exactly one consumer. Nothing is dropped: the stream buffers without limit.
+    /// It finishes after `stop()` has delivered the last samples, or at once after `abort()`.
     var events: AsyncStream<CaptureEvent> { get }
-    /// Stops the microphone, delivers what remains, then finishes `events`. Safe to call more than once.
+    /// Stops the microphone, delivers what remains (including the converter's tail), then finishes `events`.
+    /// Safe to call more than once. After `abort()` it does nothing.
     func stop() async
-    /// Stops the microphone and discards what was not yet delivered. Safe to call more than once.
+    /// Stops the microphone and discards what was not yet delivered. Wins over a `stop()` in progress. Safe to
+    /// call more than once, from any thread; the teardown completes on the adapter's own queue.
     func abort()
 }
 
 /// Hears every chunk as it is captured, to show the voice. Called off the main actor, often; must not block.
 public protocol LevelSink: Sendable {
-    func heard(_ samples: [Float], at time: TimeInterval)
-    /// The capture ended or was discarded: the level falls to rest.
-    func captureEnded()
+    func heard(_ samples: [Float], at time: TimeInterval, dictation: DictationID)
+    /// That dictation's capture ended or was discarded: the level falls to rest, unless a newer dictation has
+    /// been heard since.
+    func captureEnded(dictation: DictationID)
 }
 
 // MARK: - Speech
@@ -226,21 +240,28 @@ public enum SpeechFailure: Error, Sendable, Equatable {
 
 public protocol SpeechTranscribing: Sendable {
     /// Loads and warms the model, or tries again after a failure. Returns when the engine is ready or has failed.
+    /// Concurrent calls share one attempt.
     func prepare() async
-    /// The current readiness, then every change.
+    /// The current readiness, then every change. Each call is an independent subscription that ends when its
+    /// consumer stops iterating.
     func readiness() -> AsyncStream<EngineReadiness>
-    /// Opens a stream for one dictation. Cheap, and never waits for the model.
+    /// Opens a stream for one dictation. Cheap, synchronous, and never waits for the model.
     func openStream(_ options: SpeechStreamOptions) -> any SpeechStreaming
 }
 
 /// One dictation's audio on its way to text. Chunks are transcribed as they fill, while recording continues.
+///
+/// A stream is an object of its own with a synchronized ingress in front of the engine's single model queue, which
+/// is why these are plain synchronous calls from any thread.
 public protocol SpeechStreaming: Sendable {
-    /// Adds samples in recording order. Never waits for model work.
+    /// Adds samples; they are transcribed in the order `append` was called. Never waits for model work. Ignored
+    /// after `finish` or `cancel`.
     func append(_ samples: [Float])
-    /// Ends the audio and returns the transcript, waiting for preparation if the engine is not ready yet.
-    /// Throws `SpeechFailure`.
+    /// Ends the audio and returns the transcript, waiting for preparation if the engine is not ready yet. Call
+    /// once. Throws `SpeechFailure`: `engineUnavailable` as soon as preparation has failed, `cancelled` promptly
+    /// if `cancel` is called or the calling task is cancelled.
     func finish() async throws -> SpeechResult
-    /// Drops the audio and any partial result, and keeps nothing. Safe to call more than once.
+    /// Drops the audio and any partial result, and keeps nothing. Wins over `finish`. Safe to call more than once.
     func cancel()
 }
 
@@ -257,25 +278,20 @@ public struct InsertionContext: Sendable, Equatable {
     }
 }
 
-public protocol InsertionContextReading: Sendable {
-    /// Up to 16 characters each side of the cursor in the focused field. Nil when unknown, for a secure field, or
-    /// when the app in front has not answered within 0.3 s.
-    func read() async -> InsertionContext?
-}
-
 /// A transcript after the text rules.
 public struct ProcessedDictation: Sendable, Equatable {
-    /// What was heard, for the Run Log.
-    public var raw: String
-    /// What to insert. Empty when nothing was said.
+    /// The recognizer's transcript, unchanged: what the Run Log shows as heard.
+    public var heard: String
+    /// What to insert. Empty when the dictation was only a command ("press enter") or a macro with no text.
     public var text: String
+    /// Press Return after the text. May be true with empty `text`.
     public var pressEnter: Bool
     public var usedMacro: Bool
     public var addedPromptTag: Bool
 
-    public init(raw: String, text: String, pressEnter: Bool = false, usedMacro: Bool = false,
+    public init(heard: String, text: String, pressEnter: Bool = false, usedMacro: Bool = false,
                 addedPromptTag: Bool = false) {
-        self.raw = raw
+        self.heard = heard
         self.text = text
         self.pressEnter = pressEnter
         self.usedMacro = usedMacro
@@ -283,27 +299,29 @@ public struct ProcessedDictation: Sendable, Equatable {
     }
 }
 
+/// The user's text rules as they were when a dictation started. A value of this type never changes, so editing a
+/// macro while a dictation waits does not change that dictation.
 public protocol TranscriptProcessing: Sendable {
-    /// Applies the user's text rules. Pure: the same input gives the same output until the settings change.
     func process(_ transcript: String, style: DictationStyle, context: InsertionContext?) -> ProcessedDictation
 }
 
-public struct InsertionPlan: Sendable, Equatable {
+/// What `compose` hands back to the inserter once the destination is known.
+public struct ComposedInsertion: Sendable, Equatable {
     public var text: String
-    /// Press Return after the text.
+    /// Press Return after the text. With empty `text`, Return is posted alone and the clipboard is not touched.
     public var pressEnter: Bool
-    /// Put the previous clipboard back afterwards.
-    public var restoreClipboard: Bool
 
-    public init(text: String, pressEnter: Bool = false, restoreClipboard: Bool = true) {
+    public init(text: String, pressEnter: Bool = false) {
         self.text = text
         self.pressEnter = pressEnter
-        self.restoreClipboard = restoreClipboard
     }
 }
 
 public enum InsertionOutcome: Sendable, Equatable {
+    /// The paste (or the lone Return) was posted. The system does not say whether the app accepted it.
     case inserted
+    /// `compose` returned no text and no Return.
+    case nothingToInsert
     /// The text could not be pasted for the user, so it was left on the clipboard for them to paste.
     case leftOnClipboard(ClipboardReason)
     case failed(InsertionFailure)
@@ -312,6 +330,9 @@ public enum InsertionOutcome: Sendable, Equatable {
 public enum ClipboardReason: Sendable, Equatable {
     /// Without Accessibility no key can be posted.
     case accessibilityMissing
+    /// A modifier key was still held after the wait: a paste posted then would be a different shortcut.
+    case modifiersStillDown
+    case screenLocked
 }
 
 public enum InsertionFailure: Sendable, Equatable {
@@ -320,52 +341,15 @@ public enum InsertionFailure: Sendable, Equatable {
 }
 
 public protocol TextInserting: Sendable {
-    func insert(_ plan: InsertionPlan) async -> InsertionOutcome
-}
-
-// MARK: - Reading the focused text field
-
-/// The process in front and its focused text element. Opaque outside the adapter that made it.
-public struct TextFieldTarget: @unchecked Sendable {
-    // Safe: `element` is an immutable Accessibility reference (an AXUIElement on macOS), which may be used from any
-    // thread; this value never mutates it.
-    public let pid: Int32
-    public let element: AnyObject
-
-    public init(pid: Int32, element: AnyObject) {
-        self.pid = pid
-        self.element = element
-    }
-}
-
-/// UTF-16 offsets, as Accessibility reports them.
-public struct TextFieldRange: Equatable, Sendable {
-    public let location: Int
-    public let length: Int
-
-    public init(location: Int, length: Int) {
-        self.location = location
-        self.length = length
-    }
-}
-
-public enum TextFieldCheck: Equatable, Sendable {
-    case ok, focusChanged, secure, failed
-}
-
-/// Bounded reads of one text field in another app. Implementations never read a whole value, and never a secure
-/// field (ARCHITECTURE.md, section 9).
-public protocol TextFieldReading: AnyObject, Sendable {
-    func isTrusted() -> Bool
-    /// The focused element of the app in front, if it is another app's editable text area, text field or combo box
-    /// and not a secure field.
-    func captureFocusedTextField() -> TextFieldTarget?
-    /// Whether `target` is still the same process's focused element, and still not secure.
-    func check(_ target: TextFieldTarget) -> TextFieldCheck
-    func characterCount(_ target: TextFieldTarget) -> Int?
-    func selectedRange(_ target: TextFieldTarget) -> TextFieldRange?
-    /// The text in `range`, or nil when unsupported or on any error.
-    func string(_ target: TextFieldTarget, range: TextFieldRange) -> String?
+    /// Runs one insertion transaction (ARCHITECTURE.md, section 6, "Text insertion"). Transactions run one at a
+    /// time in the order asked.
+    ///
+    /// `compose` is called at most once, and before anything is pasted: with the text around the cursor once the
+    /// destination is known (nil when it could not be read), or with nil when the text is only going to the
+    /// clipboard. It returns what to insert. The call returns when the keys have been posted; restoring the
+    /// clipboard finishes afterwards, before the next transaction begins.
+    func insert(restoreClipboard: Bool,
+                compose: @escaping @Sendable (InsertionContext?) async -> ComposedInsertion) async -> InsertionOutcome
 }
 
 // MARK: - Permissions and the app in front
@@ -397,17 +381,17 @@ public enum DictationOutcome: String, Codable, Sendable, Equatable {
 
 public struct HistoryDraft: Sendable, Equatable {
     public var date: Date
-    /// What was heard; empty when transcription failed.
-    public var raw: String
+    /// The recognizer's transcript; empty when transcription failed.
+    public var heard: String
     /// What was inserted; empty when transcription failed.
     public var text: String
     public var outcome: DictationOutcome
     /// The recording, 16 kHz mono.
     public var samples: [Float]
 
-    public init(date: Date, raw: String, text: String, outcome: DictationOutcome, samples: [Float]) {
+    public init(date: Date, heard: String, text: String, outcome: DictationOutcome, samples: [Float]) {
         self.date = date
-        self.raw = raw
+        self.heard = heard
         self.text = text
         self.outcome = outcome
         self.samples = samples

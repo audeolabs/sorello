@@ -21,14 +21,14 @@ let package = Package(
         // Neutral modules: nothing here imports a macOS-only framework.
         .target(name: "DictationCore", swiftSettings: strict),
         .target(name: "TextRules", swiftSettings: strict),
-        .target(name: "DictionaryKit", dependencies: ["DictationCore"], swiftSettings: strict),
+        .target(name: "DictionaryKit", swiftSettings: strict),
         .target(name: "DesignCore", swiftSettings: strict),
         .target(name: "SpeechEngine", dependencies: ["DictationCore", "DictionaryKit"], swiftSettings: strict),
         .target(name: "Persistence", dependencies: ["DictationCore", "TextRules"], swiftSettings: strict),
 
         // macOS.
         .target(name: "SorelloUI", dependencies: ["DesignCore"], swiftSettings: mainActor),
-        .target(name: "MacPlatform", dependencies: ["DictationCore"], swiftSettings: strict),
+        .target(name: "MacPlatform", dependencies: ["DictationCore", "DictionaryKit"], swiftSettings: strict),
         .target(
             name: "SorelloApp",
             dependencies: ["DictationCore", "TextRules", "DictionaryKit", "DesignCore", "SpeechEngine", "Persistence",
@@ -48,7 +48,7 @@ let package = Package(
         .testTarget(name: "DesignCoreTests", dependencies: ["DesignCore", "TestSupport"]),
         .testTarget(name: "SpeechEngineTests", dependencies: ["SpeechEngine", "DictionaryKit", "DictationCore", "TestSupport"]),
         .testTarget(name: "PersistenceTests", dependencies: ["Persistence", "DictationCore", "TextRules", "TestSupport"]),
-        .testTarget(name: "MacPlatformTests", dependencies: ["MacPlatform", "DictationCore", "TestSupport"]),
+        .testTarget(name: "MacPlatformTests", dependencies: ["MacPlatform", "DictationCore", "DictionaryKit", "TestSupport"]),
         .testTarget(name: "SorelloUITests", dependencies: ["SorelloUI", "DesignCore", "TestSupport"]),
         .testTarget(name: "SorelloAppTests", dependencies: ["SorelloApp", "TestSupport"]),
     ],
