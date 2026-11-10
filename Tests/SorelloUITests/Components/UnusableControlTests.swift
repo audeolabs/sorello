@@ -31,6 +31,14 @@ enum UnusableControl: String, CaseIterable, CustomTestStringConvertible {
     case fieldPlaceholder
     /// The same field holding a word.
     case fieldText
+    /// The add card's strength presets.
+    case strengthPresets
+    /// A word's strength menu.
+    case strengthMenu
+    /// The add card's "Use in" menu.
+    case appsMenu
+    /// A word's apps menu, as its glyph.
+    case appsGlyphMenu
     /// The main action beside a field.
     case primaryButton
     /// A quieter action.
@@ -53,6 +61,15 @@ enum UnusableControl: String, CaseIterable, CustomTestStringConvertible {
             SorelloTextField("Word or phrase", text: .constant("")).frame(width: Self.field.width)
         case .fieldText:
             SorelloTextField("Word or phrase", text: .constant("Quillmoor")).frame(width: Self.field.width)
+        case .strengthPresets:
+            PresetPicker("Strength", options: StrengthPresets.values, selection: .constant(StrengthPresets.defaultValue),
+                         label: StrengthPresets.label)
+        case .strengthMenu:
+            StrengthMenu(strength: 2) { _ in }
+        case .appsMenu:
+            AppLimitMenu(selected: [], knownApps: [], set: { _ in }, chooseOther: {})
+        case .appsGlyphMenu:
+            AppLimitMenu(selected: [], knownApps: [], compact: true, set: { _ in }, chooseOther: {})
         case .primaryButton:
             Button("Add") {}.buttonStyle(PrimaryButtonStyle())
         case .quietButton:
