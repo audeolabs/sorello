@@ -29,6 +29,15 @@ public struct GeneralActions {
     }
 }
 
+/// Where speech is recognised on this Mac, as the General screen says it. The app layer reads it from the engine,
+/// which reads it from the hardware.
+nonisolated public enum ModelHardware: Sendable, Equatable {
+    /// The Neural Engine, which every Apple silicon Mac has.
+    case neuralEngine
+    /// The Mac's processor, on a Mac without a Neural Engine, which is every Intel Mac.
+    case processor
+}
+
 /// The General screen's values.
 @Observable
 public final class GeneralModel {
@@ -36,6 +45,8 @@ public final class GeneralModel {
     public var modelName: String
     /// The model and permissions, as every window shows them.
     public var status: AppStatus
+    /// Where the model runs on this Mac.
+    public var hardware: ModelHardware
     /// The microphones connected now.
     public var microphones: [MicrophoneOption]
     /// The chosen microphone's identifier; nil follows the system default.
@@ -47,11 +58,13 @@ public final class GeneralModel {
     /// What the screen asks of the app layer.
     public var actions: GeneralActions
 
-    /// The General screen's values.
-    public init(modelName: String, status: AppStatus, microphones: [MicrophoneOption], selectedMicrophoneID: String?,
+    /// The General screen's values. `hardware` is the Neural Engine until the app layer says otherwise.
+    public init(modelName: String, status: AppStatus, hardware: ModelHardware = .neuralEngine,
+                microphones: [MicrophoneOption], selectedMicrophoneID: String?,
                 defaultMicrophoneName: String?, toggles: [GeneralToggle: Bool], actions: GeneralActions = GeneralActions()) {
         self.modelName = modelName
         self.status = status
+        self.hardware = hardware
         self.microphones = microphones
         self.selectedMicrophoneID = selectedMicrophoneID
         self.defaultMicrophoneName = defaultMicrophoneName
@@ -76,7 +89,10 @@ public struct GeneralScreen: View {
         ScreenPage(String(localized: "General"),
                    subtitle: String(localized: "Speech is recognised on this Mac. Nothing you say is sent anywhere.")) {
             CardGroup(String(localized: "Speech model")) {
-                Card { ModelRow(name: model.modelName, status: model.status.model, retry: model.actions.retryModel) }
+                Card {
+                    ModelRow(name: model.modelName, status: model.status.model, hardware: model.hardware,
+                             retry: model.actions.retryModel)
+                }
             }
             CardGroup(String(localized: "Permissions")) {
                 Card(dividerInset: Metrics.wordsInset) {
@@ -123,10 +139,12 @@ public struct GeneralScreen: View {
     }
 }
 
-/// The model's state: ready, preparing with a travelling glacier line, or failed with the reason and Retry.
+/// The model's state: ready, preparing with a travelling glacier line, or failed with the reason and Retry. Ready and
+/// preparing say where the model runs, because that decides how long preparing takes.
 struct ModelRow: View {
     let name: String
     let status: ModelStatus
+    let hardware: ModelHardware
     let retry: () -> Void
 
     var body: some View {
@@ -137,7 +155,7 @@ struct ModelRow: View {
                     Text(name)
                         .font(.rowTitle)
                         .foregroundStyle(Theme.ink)
-                    Text(detail)
+                    Text(Self.detail(status, on: hardware))
                         .font(.rowDetail)
                         .foregroundStyle(Theme.secondaryInk)
                         .fixedSize(horizontal: false, vertical: true)
@@ -175,18 +193,24 @@ struct ModelRow: View {
         }
     }
 
-    private var detail: String {
-        switch status {
-        case .ready: String(localized: "On this Mac, on the Neural Engine.")
-        case .preparing: String(localized: "The first time on a Mac can take a few minutes. You can dictate meanwhile.")
-        case .failed(let problem): problem.explanation
+    /// The line under the model's name. The Neural Engine compiles the model for itself the first time, which can
+    /// take minutes; the processor compiles nothing, so loading is quick every time.
+    nonisolated static func detail(_ status: ModelStatus, on hardware: ModelHardware) -> String {
+        switch (status, hardware) {
+        case (.ready, .neuralEngine): String(localized: "On this Mac, on the Neural Engine.")
+        case (.ready, .processor): String(localized: "On this Mac, on its processor.")
+        case (.preparing, .neuralEngine):
+            String(localized: "The first time on a Mac can take a few minutes. You can dictate meanwhile.")
+        case (.preparing, .processor):
+            String(localized: "Loading takes a moment each time the app opens. You can dictate meanwhile.")
+        case (.failed(let problem), _): problem.explanation
         }
     }
 
     private var spokenState: String {
         switch status {
-        case .ready: String(localized: "Ready")
-        case .preparing: String(localized: "Preparing")
+        case .ready: String(localized: "Ready. \(Self.detail(status, on: hardware))")
+        case .preparing: String(localized: "Preparing. \(Self.detail(status, on: hardware))")
         case .failed(let problem): String(localized: "Unavailable. \(problem.explanation)")
         }
     }

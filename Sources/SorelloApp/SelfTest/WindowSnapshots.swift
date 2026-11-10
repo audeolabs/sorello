@@ -199,9 +199,10 @@ private struct MenuBarStrip: View {
     }
 }
 
-/// An engine that is ready and hears one sentence.
+/// An engine that is ready on the Neural Engine and hears one sentence.
 nonisolated private struct ReadySpeech: AppSpeech {
     let transcript: String
+    let compute = SpeechCompute.neuralEngine
 
     struct Stream: SpeechStreaming {
         let transcript: String

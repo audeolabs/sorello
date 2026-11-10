@@ -33,8 +33,8 @@ public extension StatusMenuModel {
 
 /// A sample General screen.
 public extension GeneralModel {
-    static func sample(status: AppStatus = .sampleReady) -> GeneralModel {
-        GeneralModel(modelName: "kea-b-0.1", status: status,
+    static func sample(status: AppStatus = .sampleReady, hardware: ModelHardware = .neuralEngine) -> GeneralModel {
+        GeneralModel(modelName: "kea-b-0.1", status: status, hardware: hardware,
                      microphones: [MicrophoneOption(id: "sample-builtin", name: "Built-in Microphone"),
                                    MicrophoneOption(id: "sample-headset", name: "Sample Headset")],
                      selectedMicrophoneID: nil, defaultMicrophoneName: "Built-in Microphone",

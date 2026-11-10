@@ -5,6 +5,7 @@ import MacPlatform
 import Observation
 import Persistence
 import SorelloUI
+import SpeechEngine
 import Synchronization
 import Testing
 @testable import SorelloApp
@@ -213,7 +214,7 @@ final class SystemLog {
 @MainActor
 final class Harness {
     let capture = FakeCapture()
-    let speech = FakeSpeech()
+    let speech: FakeSpeech
     let inserter = FakeInserter()
     let frontmost = FakeFrontmost()
     let shortcuts = FakeShortcuts()
@@ -226,7 +227,10 @@ final class Harness {
 
     /// `model`: a model directory for the vocabulary (`makeModelDirectory`); without one the dictionary cannot be
     /// edited and nothing is kept for a suggestion. `fontLicence`: where the app says the display font's licence is.
-    init(directory: URL, defaults: UserDefaults, model: URL? = nil, trusted: Bool = true, fontLicence: URL? = nil) {
+    /// `compute`: where the fake engine says it runs.
+    init(directory: URL, defaults: UserDefaults, model: URL? = nil, trusted: Bool = true, fontLicence: URL? = nil,
+         compute: SpeechCompute = .neuralEngine) {
+        speech = FakeSpeech(compute: compute)
         let info = AppInfo(name: "Sorello Test", version: "0.0.1", build: "1", modelDirectory: model,
                            modelName: model.flatMap(AppInfo.modelName(in:)), fontLicence: fontLicence)
         let system = self.system
