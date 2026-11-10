@@ -8,6 +8,12 @@ let strict: [SwiftSetting] = [
 ]
 // The UI and the composition root run on the main actor unless they say otherwise.
 let mainActor: [SwiftSetting] = strict + [.defaultIsolation(MainActor.self)]
+// An executable records the SDK it was linked against, and AppKit and SwiftUI give it that SDK's design and
+// behaviour. SwiftPM's link records the minimum system instead unless clang is told the SDK, which `swift` passes in
+// SDKROOT (swiftlang/swift-package-manager#10696). scripts/build-app.sh fails if the app records anything else.
+let linkedSDK: [LinkerSetting] = Context.environment["SDKROOT"].map {
+    [.unsafeFlags(["-Xclang-linker", "-isysroot", "-Xclang-linker", $0])]
+} ?? []
 
 let package = Package(
     name: "Sorello",
@@ -35,10 +41,12 @@ let package = Package(
                            "SorelloUI", "MacPlatform"],
             swiftSettings: mainActor
         ),
-        .executableTarget(name: "Sorello", dependencies: ["SorelloApp"], swiftSettings: mainActor),
-        .executableTarget(name: "SorelloSnapshots", dependencies: ["SorelloUI"], swiftSettings: mainActor),
+        .executableTarget(name: "Sorello", dependencies: ["SorelloApp"], swiftSettings: mainActor,
+                          linkerSettings: linkedSDK),
+        .executableTarget(name: "SorelloSnapshots", dependencies: ["SorelloUI"], swiftSettings: mainActor,
+                          linkerSettings: linkedSDK),
         .executableTarget(name: "SorelloTranscribe", dependencies: ["SpeechEngine", "DictionaryKit", "DictationCore"],
-                          swiftSettings: strict),
+                          swiftSettings: strict, linkerSettings: linkedSDK),
 
         // Tests.
         .target(name: "TestSupport", path: "Tests/TestSupport", swiftSettings: strict),
