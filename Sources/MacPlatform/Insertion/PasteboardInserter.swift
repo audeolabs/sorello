@@ -134,6 +134,9 @@ public final class PasteboardInserter: TextInserting {
             guard ClipboardTransaction.write(composed.text, to: pasteboard, restoring: false) != nil else {
                 return (.failed(.pasteboardUnavailable), nil)
             }
+            // No key is ever posted on this path, so a cancellation that arrived during the write still wins. The
+            // plain text has no copy to put back and stays.
+            guard !Task.isCancelled else { return (.failed(.cancelled), nil) }
             return (.leftOnClipboard(reason), nil)
         case .cursor(let app, let probed):
             if composed.text.isEmpty {

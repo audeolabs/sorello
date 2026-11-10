@@ -383,6 +383,17 @@ import Testing
         #expect(h.pasteboard.items == Self.plain("Copied meanwhile"))
     }
 
+    @Test func cancelledDuringAClipboardOnlyWrite() async {
+        let h = Harness()
+        h.keys.update { $0.mayPost = false }
+        h.cancelOnFirstWrite()
+        let outcome = await h.run(ComposedInsertion(text: Self.words))
+        await h.idle()
+        #expect(outcome == .failed(.cancelled))
+        #expect(h.log.pasteboardEvents == [.clear, .write(Self.plain(Self.words))], "No further write")
+        #expect(h.log.posts.isEmpty)
+    }
+
     @Test func cancelledAfterThePasteChangesNothing() async {
         let h = Harness()
         h.keys.update { state in
