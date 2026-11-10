@@ -99,7 +99,7 @@ final class WindowModels {
             case "geist":
                 app.navigation.showNotice("Geist Serif", app.info.fontLicence.map { [$0] } ?? [])
             default:
-                app.navigation.showNotice(String(localized: "Accessibility card"),
+                app.navigation.showNotice(String(localized: "Permission card"),
                                           app.info.thirdPartyNotices.map { [$0] } ?? [])
             }
         }
@@ -117,7 +117,7 @@ final class WindowModels {
         [NoticeItem(id: "geist", title: "Geist Serif",
                     detail: String(localized: "Vercel, SIL Open Font License 1.1.",
                                    comment: "About: the display font's notice")),
-         NoticeItem(id: "permission-card", title: String(localized: "Accessibility card"),
+         NoticeItem(id: "permission-card", title: String(localized: "Permission card"),
                     detail: String(localized: "Adapted from Scrawl and AskForPermission, MIT License.",
                                    comment: "About: the permission card's notice"))]
     }

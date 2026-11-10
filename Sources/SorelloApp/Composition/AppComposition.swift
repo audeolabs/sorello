@@ -153,6 +153,7 @@ final class AppComposition {
         let history = self.history
         watching.append(Task { await history.load() })
         runtime.start()
+        platform.shortcuts.setBindings(settings.shortcutBindings)
         platform.shortcuts.start()
         follow()
         watchSystem()

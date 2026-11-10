@@ -89,8 +89,9 @@ struct AppPlatform {
     var system: SystemActions
 
     /// The real adapters. Building them prompts for nothing and starts nothing: the event tap is created by
-    /// `ShortcutService.start()`, the microphone by a dictation.
-    static func system(bindings: [ShortcutAction: ShortcutBinding]) -> AppPlatform {
+    /// `ShortcutService.start()`, the microphone by a dictation. The shortcuts get their bindings from the settings
+    /// when the composition starts.
+    static func system() -> AppPlatform {
         let clock = SystemSessionClock()
         let reader = AccessibilityTextFieldReader()
         let microphone = MicrophonePermission()
@@ -99,7 +100,7 @@ struct AppPlatform {
             capture: MicrophoneCapture(clock: clock), microphone: microphone, frontmostApp: FrontmostApp(),
             inserter: PasteboardInserter.system(reader: reader), fieldReader: reader,
             accessibility: AccessibilityPermission(clock: clock),
-            shortcuts: ShortcutMonitor(bindings: bindings, clock: clock), loginItem: LoginItem(),
+            shortcuts: ShortcutMonitor(bindings: [:], clock: clock), loginItem: LoginItem(),
             microphones: AudioInputDevices(),
             keyboard: { ShortcutFormatter(layout: KeyboardLayoutSnapshot.current()) }, clock: clock,
             system: SystemActions(
