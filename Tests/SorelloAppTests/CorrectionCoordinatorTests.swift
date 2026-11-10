@@ -302,17 +302,17 @@ final class CorrectionHarness {
         #expect(harness.speech.released == [77])
     }
 
-    @Test func aWatchThatEndsQuietlyLetsItsAudioGo() async throws {
+    @Test func aWatchIsNeverCutShortByTheApp() async throws {
         let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
         let harness = try CorrectionHarness(directory: directory.url, defaults: suite.defaults)
         harness.dictate(1)
-        #expect(harness.watcher.started.count == 1)
-        await eventually { harness.clock.sleeperCount == 1 }
-        harness.clock.advance(by: CorrectionCoordinator.watchLimit - 1)
+        // However late the watch reports its last edit, the coordinator has not let the audio go: a watch that ends
+        // without a word keeps it until the engine's own expiry.
+        harness.clock.advance(by: 85)
         try await Task.sleep(for: .milliseconds(20))
         #expect(harness.speech.released.isEmpty)
-        harness.clock.advance(by: 1.1)
-        await eventually { harness.speech.released == [77] }
+        await harness.edit(finding: "Okonkwo", isLast: true)
+        await eventually { harness.coordinator.notice != nil }
     }
 
     @Test func clearingTheRunLogStopsACheckAboutToShowASuggestion() async throws {

@@ -83,22 +83,6 @@ final class CorrectionCoordinator {
     @ObservationIgnored private var shown: Shown?
     @ObservationIgnored private var noticeIDs = AppNoticeID()
     @ObservationIgnored private var expiry: Task<Void, Never>?
-    /// Ends the bookkeeping of a watch that is over on its own (it never began, or ran its 60 s without an edit to
-    /// report): the watcher says nothing then, so the coordinator keeps its own deadline.
-    @ObservationIgnored private var watchEnd: Task<Void, Never>?
-    /// A check is running for the watched dictation.
-    @ObservationIgnored private var checking = false
-    /// The watch's deadline passed while a check was running; its audio goes when the check ends.
-    @ObservationIgnored private var watchOver = false
-
-    /// How long after it starts a watch can still report anything. Its window is 60 s from the moment it begins
-    /// (DESIGN §3.5), and it begins at its last start attempt (2 s) at the latest, plus however long the attempts'
-    /// Accessibility reads took; each read gives up after 0.25 s, so four attempts of a few reads stay well inside
-    /// the 10 s allowed for them here. The deadline is a backstop for a watch that ends without a word: being late
-    /// only keeps the audio a little longer, still inside the engine's own 90 s expiry, while being early would drop
-    /// an edit the watch is about to report.
-    static let watchLimit: TimeInterval = (CorrectionWatcher.startAttempts.last ?? 2) + 10 + 60
-        + 2 * CorrectionWatcher.pollInterval
 
     /// `makeWatcher` builds the watch with the coordinator's own callbacks.
     init(settings: SettingsStore, dictionary: DictionaryLibrary, engine: any CorrectionEngine, clock: any SessionClock,
@@ -160,21 +144,9 @@ final class CorrectionCoordinator {
         }
         if let earlier = watched, earlier.correctionID != correctionID { engine.releaseCorrection(earlier.correctionID) }
         watched = Watched(correctionID: correctionID, app: dictation.app)
+        // A watch that never begins, or runs its 60 s without an edit to report, ends without a word from the
+        // watcher; its audio then stays until the engine's own 90 s expiry, as DESIGN §3.4 allows.
         watcher.start(anchor, pasted: processed.text, correctionID: correctionID)
-        endWatch(correctionID, after: Self.watchLimit)
-    }
-
-    /// Releases the watched dictation's audio once its watch can no longer report anything, or as soon as the check
-    /// running then ends.
-    private func endWatch(_ correctionID: UInt64, after seconds: TimeInterval) {
-        watchEnd?.cancel()
-        watchOver = false
-        let clock = self.clock
-        watchEnd = Task { [weak self] in
-            do { try await clock.sleep(for: seconds) } catch { return }
-            guard let self, self.watched?.correctionID == correctionID else { return }
-            if self.checking { self.watchOver = true } else { self.finishWatch() }
-        }
     }
 
     // MARK: - Checks
@@ -208,7 +180,6 @@ final class CorrectionCoordinator {
         let work = engine.correctionCheck(typed: edit.typed, edited: edit.edited, correctionID: edit.correctionID,
                                           ignore: dictionary.ignoredKeys, isLast: isLast)
         check?.cancel()
-        checking = true
         check = Task { [weak self] in
             let suggestion = await work()
             guard !Task.isCancelled else { return }
@@ -219,13 +190,9 @@ final class CorrectionCoordinator {
 
     private func checked(_ suggestion: DictionarySuggestion?, edit: CorrectionEdit, isLast: Bool, watch: UInt64,
                          requestedAt: UInt64, app: DictionaryApp?) {
-        checking = false
         // After the last check the engine has let the audio go itself.
         if isLast && watched?.correctionID == edit.correctionID { forgetWatch() }
-        guard let suggestion else {
-            if watchOver { finishWatch() }
-            return
-        }
+        guard let suggestion else { return }
         // A word that already applies where the dictation went needs no suggestion (DESIGN §3.6, "Suggestions").
         guard !dictionary.dictionary.applies(DictionaryKey(suggestion.word), in: app?.id),
               requestedAt == gate.withdrawals, mayPresent, let watcher, watcher.claim(watch) else { return }
@@ -240,7 +207,6 @@ final class CorrectionCoordinator {
     private func abandoned() {
         check?.cancel()
         check = nil
-        checking = false
         finishWatch()
     }
 
@@ -253,9 +219,6 @@ final class CorrectionCoordinator {
     /// No dictation is watched any more.
     private func forgetWatch() {
         watched = nil
-        watchOver = false
-        watchEnd?.cancel()
-        watchEnd = nil
     }
 
     // MARK: - Cancelling
@@ -295,7 +258,6 @@ final class CorrectionCoordinator {
         watcher?.cancel()
         check?.cancel()
         check = nil
-        checking = false
         forgetWatch()
     }
 
