@@ -507,7 +507,11 @@ private struct Step {
         for item in items {
             if item.phase == .draining(drainTimerArmed: true) { emit(.cancelTimer(.captureDrain(item.id))) }
             emit(.discard(item.id))
-            complete(item.id, .discarded)
+            if case .ready(let speech) = item.phase {
+                complete(item.id, .discarded, speech: speech)
+            } else {
+                complete(item.id, .discarded)
+            }
         }
         return !items.isEmpty
     }

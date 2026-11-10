@@ -46,7 +46,8 @@ struct RuleCancelTests {
         let outcome = machine.trigger(.cancelPressed, at: 17.5)
         #expect(outcome.acted)
         #expect(outcome.effects == [
-            .discard(ready), .complete(DictationCompletion(id: ready, ending: .discarded)),
+            .discard(ready), .complete(DictationCompletion(id: ready, ending: .discarded,
+                                                           speech: SpeechResult(text: "Second invented line"))),
             .cancelTimer(.captureDrain(id3)), .discard(id3), .complete(DictationCompletion(id: id3, ending: .discarded)),
         ])
         #expect(machine.state.pipeline.isEmpty)

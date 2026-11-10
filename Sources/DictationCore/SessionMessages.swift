@@ -153,8 +153,9 @@ public struct DictationCompletion: Sendable, Equatable {
 
 /// How a dictation ended.
 public enum DictationEnding: Sendable, Equatable {
-    /// Thrown away before it produced a transcript: cancelled, abandoned, a tap, too little audio, interrupted
-    /// while starting, or the microphone did not start.
+    /// Thrown away before it was inserted: cancelled, abandoned, a tap, too little audio, interrupted while
+    /// starting, or the microphone did not start. A dictation cancelled after its transcript arrived still carries
+    /// it in `speech`.
     case discarded
     /// The transcript was empty.
     case nothingHeard
