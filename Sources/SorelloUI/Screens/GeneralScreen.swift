@@ -384,7 +384,7 @@ struct MenuLabel: View {
     }
 }
 
-/// The surface under a `MenuLabel`.
+/// The surface under a `MenuLabel`. A menu that cannot be used is dimmed, as Sorello's buttons are.
 struct MenuLabelStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         MenuLabelBody(configuration: configuration)
@@ -393,16 +393,18 @@ struct MenuLabelStyle: ButtonStyle {
 
 private struct MenuLabelBody: View {
     let configuration: ButtonStyleConfiguration
+    @Environment(\.isEnabled) private var isEnabled
     @Environment(\.isFocused) private var isFocused
     @State private var hovering = false
 
     var body: some View {
         configuration.label
-            .background(Capsule().fill(hovering ? Color.white.opacity(0.07) : .clear))
+            .background(Capsule().fill(hovering && isEnabled ? Color.white.opacity(0.07) : .clear))
             .islandSurface()
             .contentShape(Capsule())
             .focusRing(Pill(), isFocused: isFocused)
             .opacity(configuration.isPressed ? 0.7 : 1)
+            .dimmedWhenUnusable()
             .onHover { hovering = $0 }
     }
 }

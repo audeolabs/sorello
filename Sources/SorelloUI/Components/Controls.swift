@@ -45,7 +45,8 @@ public struct Chip: View {
 }
 
 /// A choice among a few values, as a row of segments on the island's track. The chosen segment is lifted in white;
-/// the others are secondary ink. Each segment is a button VoiceOver reads with its selected state.
+/// the others are secondary ink. Each segment is a button VoiceOver reads with its selected state. While it cannot be
+/// used, the whole track is dimmed.
 public struct PresetPicker<Value: Hashable>: View {
     private let options: [Value]
     @Binding private var selection: Value
@@ -77,6 +78,7 @@ public struct PresetPicker<Value: Hashable>: View {
         }
         .padding(2)
         .islandSurface()
+        .dimmedWhenUnusable()
         .animation(reduceMotion ? nil : .spring(response: 0.26, dampingFraction: 0.88), value: selection)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(title)
@@ -88,14 +90,17 @@ private struct PresetSegment: View {
     let isSelected: Bool
     let namespace: Namespace.ID
     let action: () -> Void
+    @Environment(\.isEnabled) private var isEnabled
     @State private var hovering = false
     @FocusState private var focused: Bool
+
+    private var lit: Bool { hovering && isEnabled }
 
     var body: some View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 11.5, weight: isSelected ? .semibold : .medium).monospacedDigit())
-                .foregroundStyle(isSelected || hovering ? Theme.ink : Theme.secondaryInk)
+                .foregroundStyle(isSelected || lit ? Theme.ink : Theme.secondaryInk)
                 .lineLimit(1)
                 .fixedSize()
                 .padding(.horizontal, 9)
@@ -103,13 +108,13 @@ private struct PresetSegment: View {
                 .background {
                     if isSelected {
                         Capsule().fill(Color.white.opacity(0.16)).matchedGeometryEffect(id: "selection", in: namespace)
-                    } else if hovering {
+                    } else if lit {
                         Capsule().fill(Theme.hover)
                     }
                 }
                 .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PresetSegmentStyle())
         .focused($focused)
         .focusEffectDisabled()
         .focusRing(Pill(), isFocused: focused)
@@ -117,8 +122,17 @@ private struct PresetSegment: View {
     }
 }
 
+/// A segment's face as the segment draws it. Not the system's plain style, which dims the words of a segment that
+/// cannot be used on its own account; the picker dims as a whole.
+private struct PresetSegmentStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.opacity(configuration.isPressed ? 0.6 : 1)
+    }
+}
+
 /// A text field on the island's surface, with a white edge while it has focus and an ember edge while what it
-/// holds has a problem. The placeholder is secondary ink, so it stays legible.
+/// holds has a problem. The placeholder is secondary ink, so it stays legible. While it cannot be used, the whole field
+/// is dimmed, its placeholder and text with it, as Sorello's buttons are.
 public struct SorelloTextField: View {
     private let placeholder: String
     @Binding private var text: String
@@ -150,6 +164,7 @@ public struct SorelloTextField: View {
             RoundedRectangle(cornerRadius: Metrics.fieldRadius, style: .continuous)
                 .strokeBorder(edge, lineWidth: focused || hasProblem ? 1 : 0.5)
         }
+        .dimmedWhenUnusable()
         .contentShape(Rectangle())
         .onTapGesture { focused = true }
     }

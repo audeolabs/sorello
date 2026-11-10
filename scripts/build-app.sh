@@ -119,5 +119,17 @@ if [ "$PACKAGED" != "$WANTED" ]; then
   rm -rf "$APP"
   exit 1
 fi
+# Each architecture declares the minimum system Config/identity.conf names, which is what the app runs on, and the SDK
+# this build used, whose design and behaviour AppKit and SwiftUI give the app on a newer system.
+SDK=$(xcrun --sdk macosx --show-sdk-version)
+for arch in $WANTED; do
+  DECLARED=$(xcrun vtool -arch "$arch" -show-build "$APP/Contents/MacOS/Sorello" |
+    awk '$1 == "minos" { minos = $2 } $1 == "sdk" { sdk = $2 } END { print minos " " sdk }')
+  if [ "$DECLARED" != "$MINIMUM_SYSTEM $SDK" ]; then
+    echo "build-app: the $arch executable declares minimum system and SDK $DECLARED, not $MINIMUM_SYSTEM $SDK" >&2
+    rm -rf "$APP"
+    exit 1
+  fi
+done
 echo "build-app: $NAME for $WANTED" >&2
 echo "$APP"

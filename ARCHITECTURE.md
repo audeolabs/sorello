@@ -550,7 +550,11 @@ in the meantime. Insertion sits behind `TextInserting` so another strategy
 - Microphone access is requested the first time a dictation needs it.
   Accessibility is granted in System Settings; setup opens the pane with a
   card to drag in (adapted from Scrawl and AskForPermission, MIT, notices
-  in `ThirdPartyNotices.md`).
+  in `ThirdPartyNotices.md`). The card's surface is Liquid Glass on
+  macOS 26 and later and the system's blurred material before that. Its
+  shape, frost, shadows and motion are the same on both. Below macOS 26
+  that choice is the only thing Sorello's own code does differently from
+  macOS 26.
 
 ## 7. Persistence
 
@@ -723,6 +727,11 @@ and no further. Setup cannot be resized: it is one size at every step and
 in every state, so its buttons are always where they were. A notice's
 window opens at one size and can be made no smaller than its own minimum.
 
+A control that cannot be used says so by how it looks. Sorello dims it,
+and dims a text field's placeholder and text with it. Sorello draws this
+itself: it is not left to the system, which dims some of these for an app
+that records one SDK and not for an app that records another (section 10).
+
 Every screen has VoiceOver labels on its controls, because most controls
 are icons. User-facing strings go through `String(localized:)`, so a string
 catalog can be added without touching a call site. The app's name and
@@ -768,8 +777,18 @@ Review does.
   `CODESIGN_IDENTITY` defaults to ad hoc.
 - Identity is one file, `Config/identity.conf`. Development builds are
   "Sorello Dev", `com.audeolabs.sorello.dev`; `CHANNEL=release` builds are
-  "Sorello", `com.audeolabs.sorello`. Minimum system: macOS 26, on Apple
+  "Sorello", `com.audeolabs.sorello`. Minimum system: macOS 15, on Apple
   silicon or Intel.
+- An executable records the SDK it was linked against as well as its
+  minimum system, and AppKit and SwiftUI keep older behaviour for an app
+  that records an older SDK: measured on macOS 27, one that records
+  macOS 15 gets the control sizes, title bar and window buttons of
+  macOS 15. SwiftPM records the minimum system in place of the SDK unless
+  the link is told the SDK (swiftlang/swift-package-manager#10696), so
+  `Package.swift` tells it, from the `SDKROOT` that `swift`, Xcode's
+  command-line tool and the one `make` runs, sets. A toolchain's own
+  `swift` sets none, and what it builds records the minimum system;
+  `scripts/build-app.sh` refuses such an app.
 - A development build is made for the Mac that builds it. A
   `CHANNEL=release` build is universal (arm64 and x86_64). `ARCHS` chooses
   otherwise, for example `ARCHS="arm64 x86_64"` for a universal
@@ -817,6 +836,14 @@ Review does.
   release build, but it cannot run on the Apple silicon Macs Sorello is
   built on. What it does differently, the fallback, is proved there with
   `--cpu`. That the app runs on an Intel Mac is checked by hand on one.
+- Sorello is built and checked on macOS 26 or later, so nothing is run on
+  macOS 15 there. The build fails unless every architecture of the app's
+  executable declares the minimum system `Config/identity.conf` names and
+  the SDK the build used. The older surface of
+  the permission card can be forced, and is drawn and tested that way.
+  Every system symbol Sorello names is checked to exist on the minimum
+  system. That the app runs on macOS 15 is checked by hand on a Mac that
+  has it.
 - What tests cannot show is checked by hand on a Mac, on the installed
   build: grant, deny and revoke each permission; rebuild and relaunch;
   hold, double tap, toggle, cancel and Paste Again into a native text

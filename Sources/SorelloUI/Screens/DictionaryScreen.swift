@@ -257,7 +257,7 @@ private struct WordRow: View {
 }
 
 /// A word's strength as a pop-up of the presets.
-private struct StrengthMenu: View {
+struct StrengthMenu: View {
     let strength: Double
     let set: (Double) -> Void
 
@@ -284,7 +284,7 @@ private struct StrengthMenu: View {
 }
 
 /// The apps a word is limited to: "Everywhere", or a check beside each chosen app, and a way to choose another.
-private struct AppLimitMenu: View {
+struct AppLimitMenu: View {
     let selected: [String]
     let knownApps: [AppLimit]
     var compact = false
@@ -339,7 +339,7 @@ private struct AppLimitMenu: View {
     }
 }
 
-/// A round glyph-only face for a menu, lit under the pointer.
+/// A round glyph-only face for a menu, lit under the pointer, and dimmed while it cannot be used.
 private struct IconMenuStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         IconMenuBody(configuration: configuration)
@@ -348,15 +348,18 @@ private struct IconMenuStyle: ButtonStyle {
 
 private struct IconMenuBody: View {
     let configuration: ButtonStyleConfiguration
+    @Environment(\.isEnabled) private var isEnabled
     @Environment(\.isFocused) private var isFocused
     @State private var hovering = false
 
     var body: some View {
+        let lit = hovering && isEnabled
         configuration.label
-            .foregroundStyle(hovering ? Theme.ink : Theme.secondaryInk)
-            .background(Circle().fill(hovering ? Theme.hover : .clear))
+            .foregroundStyle(lit ? Theme.ink : Theme.secondaryInk)
+            .background(Circle().fill(lit ? Theme.hover : .clear))
             .focusRing(Circle(), isFocused: isFocused)
             .opacity(configuration.isPressed ? 0.6 : 1)
+            .dimmedWhenUnusable()
             .onHover { hovering = $0 }
     }
 }

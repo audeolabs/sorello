@@ -1,8 +1,8 @@
 import Foundation
 
 /// The two privacy permissions Sorello needs, with the words and System Settings links that go with them. Pane
-/// names change across macOS versions (Accessibility is "Device Control and Data Access" on macOS 27), while the
-/// Settings URL anchors stay the same.
+/// names change across macOS versions (Accessibility is "Device Control and Data Access" on macOS 27, and
+/// "Accessibility" from macOS 15 to 26), while the Settings URL anchors stay the same.
 public enum PrivacyPermission: CaseIterable, Sendable {
     case microphone, accessibility
 

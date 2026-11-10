@@ -29,6 +29,10 @@ public enum PermissionPanel {
 
     // System Settings (macOS 26/27): a fixed 232 pt sidebar; the Privacy list
     // starts 20 pt past it and ends 20 pt before the window's right edge.
+    // They line the app row up with the list and size it, nothing more. On a
+    // system whose sidebar is another width (macOS 15's was not measured), the
+    // card sits that much off the list's column and is that much wider or
+    // narrower, and `dock` places it by the same rules, on the screen.
     static let settingsListLeading: CGFloat = 252
     static let settingsListTrailing: CGFloat = 20
 

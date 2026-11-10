@@ -14,6 +14,8 @@ nonisolated public enum ThemeColors {
     public static let controlFillAlpha = 0.08
     /// The hairline between rows.
     public static let separatorAlpha = 0.08
+    /// A control that cannot be used is drawn at this opacity, its words, surface and edge together.
+    public static let unusableAlpha = 0.45
 
     /// Every surface text is drawn on, composited as the screen shows it.
     public static var textSurfaces: [RGB] {
