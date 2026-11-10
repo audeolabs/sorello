@@ -333,7 +333,7 @@ private struct ShortcutStep: View {
 
     var body: some View {
         StepLayout(symbol: "keyboard", title: String(localized: "Choose your shortcut"),
-                   line: String(localized: "Hold it to talk and let go to paste. fn works on every Mac keyboard.")) {
+                   line: String(localized: "Hold it to talk and let go to paste. Tap it twice to talk hands-free, and once more to finish. fn works on every Mac keyboard.")) {
             VStack(spacing: 12) {
                 Card { ShortcutRecorderRow(.holdToTalk, state: model.holdToTalk, actions: model.actions.recorder) }
                 if model.holdToTalk.keys?.modifiers.contains(.function) == true {
