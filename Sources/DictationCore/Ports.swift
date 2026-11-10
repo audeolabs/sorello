@@ -359,6 +359,7 @@ public enum ClipboardReason: Sendable, Equatable {
     case accessibilityMissing
     /// A modifier key was still held after the wait: a paste posted then would be a different shortcut.
     case modifiersStillDown
+    /// The screen is locked, or this user's session is not the active one or is going to sleep.
     case screenLocked
     /// The app in front, its focused field or its selection changed while the text was being composed.
     case targetChanged
@@ -369,7 +370,9 @@ public enum InsertionFailure: Sendable, Equatable {
     case eventPostFailed
     /// The dictation was only a command (Return) and it could not be posted. Nothing went to the clipboard.
     case commandNotPosted
-    /// The caller was cancelled before any key was posted. Anything written to the clipboard was put back.
+    /// The caller was cancelled before any key was posted. If the transaction had written to the clipboard it
+    /// tried to put the previous contents back under its usual guards (a complete snapshot, an unchanged change
+    /// count); that is not guaranteed to have happened.
     case cancelled
 }
 

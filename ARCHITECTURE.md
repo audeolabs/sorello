@@ -401,7 +401,10 @@ Ported from LocalFlow's runtime, which was measured and tuned there:
   returns true.
 - Events Sorello posts itself carry a fixed tag and are ignored by the tap.
 - The shortcut recorder in Settings reads the next key or modifier set from
-  the same tap. While it records, no trigger is delivered.
+  the same tap. While it records, shortcut matches deliver no triggers.
+  `systemInterrupted` comes from system notifications, not from the tap,
+  and is still delivered while the recorder is open, while shortcuts are
+  paused, and when the tap could not be created at all.
 - The Fn key also has a system action (emoji, input source or dictation).
   Setup explains how to set it to "Do Nothing"; Sorello never changes
   system settings itself.
@@ -432,9 +435,10 @@ a time:
 1. Wait, up to 1 s, until no Command, Option, Control or Shift key is
    down.
 2. Decide where the text can go. If a modifier is still down
-   (`modifiersStillDown`), the screen is locked (`screenLocked`) or the
-   app has no Accessibility (`accessibilityMissing`), it can go only to
-   the clipboard: nothing will be posted, and no field is read.
+   (`modifiersStillDown`), the screen is locked or this user's session is
+   not the active one or is going to sleep (`screenLocked`), or the app
+   has no Accessibility (`accessibilityMissing`), it can go only to the
+   clipboard: nothing will be posted, and no field is read.
    Otherwise find the focused field of the app in front and read up to 16
    UTF-16 units each side of the selection (nothing, for a secure or
    unreadable field; the paste still goes ahead).
@@ -445,12 +449,18 @@ a time:
      `leftOnClipboard(reason)`;
    - clipboard only, with Return alone: write nothing and report
      `failed(commandNotPosted)`.
-4. Check again, because `compose` took time: the screen is unlocked, no
-   modifier is down, the same app is in front and, where it can be read,
-   the same field has the same selection. If not, text is left on the
-   clipboard as `leftOnClipboard(targetChanged)` and a lone Return is
-   `failed(commandNotPosted)`. Sorello never brings another app forward
-   to recover.
+4. Check again immediately before posting the first key, because
+   `compose` took time: this user's session is active, unlocked and not
+   going to sleep; Accessibility is trusted; no Command, Option, Control
+   or Shift key is down; the same app is in front; and, where it can be
+   read, the prepared field still has the same selection. If a check
+   fails, no key is posted and the correction anchor is released. Text is
+   left on the clipboard with the reason that applies (`screenLocked`,
+   `accessibilityMissing`, `modifiersStillDown` or `targetChanged`); a
+   lone Return is `failed(commandNotPosted)` and the clipboard is not
+   touched. A field that cannot be read still gets a best-effort paste
+   into the same app in front, without a correction watch. Sorello never
+   brings another app forward to recover.
 5. With text: if restoring, snapshot every item and type on the
    pasteboard. Write the text, marked transient when it will be restored
    so clipboard managers skip it, and remember the change count the write
@@ -458,20 +468,29 @@ a time:
    the current layout (the ANSI V key if none does). Report `inserted`
    now: it means the paste was posted, which is all the system can tell
    us.
-6. For Return: 80 ms later, if the same app is still in front and no
-   modifier is down, post Return; otherwise skip it. A dictation that is
-   only "press enter" posts Return alone, without the wait, and leaves
-   the clipboard untouched. If no key at all was posted the outcome is
-   never `inserted`.
+6. For Return after text: 80 ms after the paste, check again that the
+   session is available, Accessibility is trusted, no modifier is down,
+   the same app is in front and, where it can be read, the same field has
+   focus (its selection has moved, because the paste moved it). If a
+   check fails, skip Return; the paste that was posted is still
+   `inserted`. A dictation that is only "press enter" posts Return alone
+   under step 4's checks, without the wait, and leaves the clipboard
+   untouched. If no key at all was posted the outcome is never
+   `inserted`. Nothing is tried again on unlock, switch-back or wake.
 7. If restoring: 1 s after the paste, put the snapshot back, but only if
    the pasteboard's change count is still the one from step 5. A snapshot
    that could not be taken in full, or is larger than 32 MB, is not
    restored. The next transaction starts only after this step.
 
 If the caller is cancelled before any key is posted, the transaction
-stops, puts back anything it wrote, and reports `failed(cancelled)`. After
-a key is posted cancellation changes nothing: the adapter finishes Return
-and the restore on its own, and nothing is ever posted twice.
+stops and reports `failed(cancelled)` once. If it had already written to
+the clipboard, it puts the snapshot back only under step 7's conditions:
+a complete snapshot within the size limit, and a change count that still
+matches its own write. Otherwise it lets the clipboard be, without
+another write. The next transaction waits until that is settled. After a
+key is posted cancellation changes nothing: the adapter finishes the
+guarded Return and the guarded restore on its own, and nothing is ever
+posted twice.
 
 Pasteboard access across apps cannot be made atomic; the change count is
 what the system offers, and it is what protects something the user copies
