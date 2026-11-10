@@ -87,6 +87,7 @@ enum WindowSnapshots {
                     .preferredColorScheme(.dark))
             })
         }
+        scenes += CardSnapshots.scenes
         var passed = true
         let menu = StatusMenuController(model: models.menu)
         if (try? menu.text.write(to: output.appendingPathComponent("app-menu.txt"), atomically: true,

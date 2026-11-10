@@ -372,6 +372,32 @@ extension PermissionPanel {
     }
 }
 
+// MARK: - Picture
+
+extension PermissionPanel {
+    /// The card as it docks beside a System Settings window 740 pt wide, with room around it for its shadow, for a
+    /// picture (ARCHITECTURE.md, section 11). `forcesOlderSurface` gives it the blurred material macOS 15 draws in
+    /// place of Liquid Glass. Off screen neither material has a window behind it to blur, so a picture shows the
+    /// card's shape, frost, shadows and content on either surface, and the material itself only on a real screen.
+    @MainActor
+    public static func picture(style: PermissionCardStyle, paneTitle: String, appName: String, icon: NSImage,
+                               forcesOlderSurface: Bool) -> NSView {
+        let layout = Layout(settingsWidth: 740)
+        let content = CardContent(model: CardModel(), style: style, paneTitle: paneTitle, layout: layout, appName: appName,
+                                  icon: icon, interactive: false, dragView: { NSView() })
+        let host = NSHostingView(rootView: content)
+        host.sizingOptions = []
+        let surface = CardSurface(content: host, size: layout.cardSize, frostColor: style.surface.nsColor,
+                                  forcesOlderSurface: forcesOlderSurface)
+        let margin = Controller.margin
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: layout.cardSize.width + 2 * margin,
+                                        height: layout.cardSize.height + 2 * margin))
+        surface.frame.origin = NSPoint(x: margin, y: margin)
+        root.addSubview(surface)
+        return root
+    }
+}
+
 // MARK: - Settings window
 
 extension PermissionPanel {
@@ -442,7 +468,8 @@ extension PermissionPanel {
         let style: PermissionCardStyle
         public var onFinish: (Bool) -> Void = { _ in }
 
-        private static let margin: CGFloat = 48
+        /// Room around the docked card for its shadow.
+        static let margin: CGFloat = 48
         /// Gives up on a card left open this long.
         private static let lifetime: TimeInterval = 600
 
