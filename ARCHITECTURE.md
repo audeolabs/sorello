@@ -547,9 +547,10 @@ moved or written over, and its store works without it until it opens.
 
 ## 8. Look and motion
 
-Sorello follows the iPhone app. The app is always dark. Controls are
-monochrome: white ink on near-black with a hairline edge. Colour marks only
-small things that show a state.
+Sorello follows the iPhone app. Its windows and the pill are always dark.
+Controls are monochrome: white ink on near-black with a hairline edge.
+Colour marks only small things that show a state. The menu under the
+menu-bar item is the one exception: it is the system's own (see Windows).
 
 | Token | Value | Use |
 |---|---|---|
@@ -648,8 +649,23 @@ menu-bar icon is the same row as a template image.
 
 ### Windows
 
-- **Menu panel**: state line with its dot, the shortcut hints, the last
-  dictation with a copy button, then Dictionary, Run Log, Settings, Quit.
+- **Menu**: the menu-bar item opens an ordinary menu. The system draws
+  it, in its own material, font and light or dark appearance. Sorello
+  gives it no colours, no rows drawn by hand and no window of its own.
+  From the top:
+  - the state line with its dot, which is not a command, and under it the
+    command that mends the state when there is one (Retry for the model,
+    the General screen for a permission);
+  - under the heading Shortcuts, the three shortcuts, each with its keys
+    at the trailing edge of its row, or "Not set" there. Choosing one
+    opens the Shortcuts screen;
+  - under the heading Last Dictation, the start of the last dictation on
+    one line, which is not a command, then Copy Last Dictation. With no
+    dictation yet the line says so and Copy is unavailable;
+  - Dictionary, Run Log, Settings (⌘,) and Quit (⌘Q).
+
+  The rows are one function of the values the windows show, made again
+  each time the menu opens and kept current while it is open.
 - **Main window**: a sidebar (General, Shortcuts, Dictionary, Macros, Run
   Log, About) over the screen colour, content in cards.
 - **Setup**: welcome, microphone, Accessibility, shortcut, and a live test.
@@ -724,13 +740,16 @@ Review does.
   set. `sorello-transcribe` checks a synthetic recording end to end.
 - `SorelloSnapshots` renders each pill state under a camera island, under
   a notch and on a screen with neither, and each screen of the app, to
-  PNG. A change to anything visible is reviewed in those images.
+  PNG. A change to anything visible is reviewed in those images. The
+  menu is the system's to draw, so each of its states is written beside
+  them as text, row by row, and reviewed there.
 - `Sorello --self-test <file.wav>` runs the assembled app's own session
   with a file in place of the microphone and a recorder in place of the
   paste, and prints what would have been inserted. It needs no permission,
   so it proves the packaged app end to end from a clean location.
-- `Sorello --snapshots <dir>` renders the menu-bar item, the menu panel,
-  every window and every setup step as the app wires them to its stores.
+- `Sorello --snapshots <dir>` renders the menu-bar item, every window and
+  every setup step as the app wires them to its stores, and writes the
+  menu's rows as text.
   `Sorello --no-setup` opens the app without its setup window, so a
   packaged build can be launched and quit without touching a permission.
 - What tests cannot show is checked by hand on a Mac, on the installed
