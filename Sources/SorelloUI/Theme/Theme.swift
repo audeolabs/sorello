@@ -134,8 +134,9 @@ public struct DisplayType: Equatable {
     public var tracking: CGFloat { Self.trackingPerEm * size }
 
     /// The face at this size: Urbanist Medium once `Resources.registerFonts()` has run, and the system face at the
-    /// same weight without the font file.
-    public var face: NSFont {
+    /// same weight without the font file. Not public: outside this module display text is set only through
+    /// `displayType(_:)`, so it never goes without its tracking.
+    var face: NSFont {
         NSFont(name: Resources.displayFontName, size: size) ?? .systemFont(ofSize: size, weight: .medium)
     }
 }
