@@ -330,6 +330,51 @@ struct RuntimeTests {
         rig.expectAllReleased()
     }
 
+    @Test func aRuntimeThatGoesAwayDuringARecordingLetsGoOfTheMicrophone() async throws {
+        let capturing = FakeCapturing()
+        let speech = FakeSpeech()
+        weak var gone: SessionRuntime?
+        do {
+            let runtime = Self.bareRuntime(capturing: capturing, speech: speech)
+            gone = runtime
+            runtime.handle(.togglePressed, at: 1000)
+            await eventually("recording") { if case .recording = runtime.state.capture { true } else { false } }
+        }
+        await eventually("the runtime released") { gone == nil }
+        let capture = try #require(capturing.captures.first)
+        await eventually("the abort") { capture.aborts > 0 }
+        #expect(speech.streams.first?.isCancelled == true)
+    }
+
+    @Test func aRuntimeThatGoesAwayWhileTranscribingCancelsTheStream() async throws {
+        let capturing = FakeCapturing()
+        let speech = FakeSpeech()
+        weak var gone: SessionRuntime?
+        do {
+            let runtime = Self.bareRuntime(capturing: capturing, speech: speech)
+            gone = runtime
+            runtime.handle(.togglePressed, at: 1000)
+            await eventually("recording") { if case .recording = runtime.state.capture { true } else { false } }
+            capturing.captures.first?.deliver(seconds: 1, at: 1001)
+            runtime.handle(.togglePressed, at: 1002)
+            await eventually("finishing") { speech.streams.first?.isWaiting == true }
+        }
+        await eventually("the runtime released") { gone == nil }
+        await eventually("the cancel") { speech.streams.first?.isCancelled == true }
+        #expect(capturing.captures.first?.isReleased == true)
+    }
+
+    /// A runtime that nothing else refers to, so a test can let go of it.
+    private static func bareRuntime(capturing: FakeCapturing, speech: FakeSpeech) -> SessionRuntime {
+        let runtime = SessionRuntime(
+            ports: SessionPorts(capture: capturing, speech: speech, inserter: FakeInserter(),
+                                microphone: FakeMicrophone(), frontmostApp: FakeFrontmostApp(),
+                                history: FakeHistory(), levels: FakeLevels(), clock: ManualClock()),
+            settings: { SessionSettings() }, textRules: { LabelRules(label: "v1") })
+        runtime.start()
+        return runtime
+    }
+
     @Test func forgettingTheLastTextDisablesPasteAgain() async throws {
         let rig = Rig(autoResult: .success(SpeechResult(text: "words")))
         try await rig.dictate()

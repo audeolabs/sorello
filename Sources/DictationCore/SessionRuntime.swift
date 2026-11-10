@@ -132,7 +132,7 @@ public final class SessionRuntime: TriggerHandling {
 
     // MARK: Events and effects
 
-    private func send(_ event: SessionEvent) {
+    fileprivate func send(_ event: SessionEvent) {
         pending += Session.reduce(&state, event, settings: settings())
         flush()
     }
@@ -204,9 +204,10 @@ public final class SessionRuntime: TriggerHandling {
         dictations[id] = dictation
         let capturing = ports.capture
         let levels = ports.levels
-        dictation.task = Task { [weak self] in
-            await Self.run(id, request, capturing: capturing, levels: levels, finishRequests: finishRequests,
-                           runtime: self)
+        let runtime = RuntimeLink(self)
+        dictation.task = Task {
+            await SessionRuntime.run(id, request, capturing: capturing, levels: levels,
+                                     finishRequests: finishRequests, runtime: runtime)
         }
     }
 
@@ -216,16 +217,16 @@ public final class SessionRuntime: TriggerHandling {
     @concurrent
     private nonisolated static func run(_ id: DictationID, _ request: CaptureRequest,
                                         capturing: any AudioCapturing, levels: any LevelSink,
-                                        finishRequests: AsyncStream<Void>, runtime: SessionRuntime?) async {
+                                        finishRequests: AsyncStream<Void>, runtime: RuntimeLink) async {
         let capture: any AudioCapture
         do {
             capture = try await capturing.start(request)
         } catch {
-            await runtime?.send(.capture(id, .failed(error as? CaptureFailure ?? .failed)))
+            await runtime.send(.capture(id, .failed(error as? CaptureFailure ?? .failed)))
             return
         }
         // A capture handed over after its dictation was discarded is aborted at once.
-        guard !Task.isCancelled, let stream = await runtime?.attach(capture, to: id) else {
+        guard !Task.isCancelled, let stream = await runtime.attach(capture, to: id) else {
             capture.abort()
             return
         }
@@ -238,11 +239,11 @@ public final class SessionRuntime: TriggerHandling {
                 levels.heard(chunk.samples, at: chunk.time, dictation: id)
                 recording.append(contentsOf: chunk.samples)
             case .stalled:
-                await runtime?.send(.capture(id, .stalled))
+                await runtime.send(.capture(id, .stalled))
             case .interrupted(let reason):
-                await runtime?.send(.capture(id, .interrupted(reason)))
+                await runtime.send(.capture(id, .interrupted(reason)))
             case .failed(let failure):
-                await runtime?.send(.capture(id, .failed(failure)))
+                await runtime.send(.capture(id, .failed(failure)))
             }
         }
         levels.captureEnded(dictation: id)
@@ -252,7 +253,7 @@ public final class SessionRuntime: TriggerHandling {
             return
         }
         // Every delivered chunk has been appended: now, and only now, the capture has ended.
-        await runtime?.captureEnded(id, recording: recording)
+        await runtime.captureEnded(id, recording: recording)
 
         var requests = finishRequests.makeAsyncIterator()
         guard await requests.next() != nil, !Task.isCancelled else {
@@ -265,19 +266,19 @@ public final class SessionRuntime: TriggerHandling {
         } catch {
             result = .failure(error as? SpeechFailure ?? .failed)
         }
-        await runtime?.send(.transcript(id, result))
+        await runtime.send(.transcript(id, result))
     }
 
     /// Hands the capture to the dictation and reports that it started. Returns the stream its audio goes to, or nil
     /// if the dictation is gone, in which case the caller aborts the capture.
-    private func attach(_ capture: any AudioCapture, to id: DictationID) -> (any SpeechStreaming)? {
+    fileprivate func attach(_ capture: any AudioCapture, to id: DictationID) -> (any SpeechStreaming)? {
         guard let dictation = dictations[id], let stream = dictation.stream else { return nil }
         dictation.capture = capture
         send(.capture(id, .started))
         return stream
     }
 
-    private func captureEnded(_ id: DictationID, recording: [Float]) {
+    fileprivate func captureEnded(_ id: DictationID, recording: [Float]) {
         dictations[id]?.recording = recording
         send(.capture(id, .ended(CaptureSummary(sampleCount: recording.count))))
     }
@@ -331,6 +332,24 @@ public final class SessionRuntime: TriggerHandling {
             self.send(.timer(timer))
         }
     }
+}
+
+/// How a dictation's task reaches the runtime without keeping it alive. A runtime that goes away cancels its
+/// dictations' tasks as it goes; until they notice, whatever they report goes nowhere.
+@MainActor
+private final class RuntimeLink {
+    private weak var runtime: SessionRuntime?
+
+    init(_ runtime: SessionRuntime) { self.runtime = runtime }
+
+    func send(_ event: SessionEvent) { runtime?.send(event) }
+
+    /// Nil when the runtime is gone, so the caller aborts the capture.
+    func attach(_ capture: any AudioCapture, to id: DictationID) -> (any SpeechStreaming)? {
+        runtime?.attach(capture, to: id)
+    }
+
+    func captureEnded(_ id: DictationID, recording: [Float]) { runtime?.captureEnded(id, recording: recording) }
 }
 
 /// What the runtime holds for one dictation while it exists: what was read when it started, its task, and the
