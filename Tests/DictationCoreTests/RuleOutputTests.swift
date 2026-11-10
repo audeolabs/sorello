@@ -471,13 +471,31 @@ struct RulePasteAgainTests {
         #expect(machine.trigger(.pasteAgainPressed, at: 22.5).effects.isEmpty, "draining")
     }
 
-    @Test func aReplayReportOnlyFreesTheOutput() {
+    @Test func aReplayThatPastedOnlyFreesTheOutput() {
         var machine = Machine()
         machine.dictate("Invented", at: 1)
         machine.trigger(.pasteAgainPressed, at: 10)
-        #expect(machine.send(.reinsertion(ReplayID(1), .failed(.eventPostFailed))).isEmpty)
+        #expect(machine.send(.reinsertion(ReplayID(1), .inserted)).isEmpty)
         #expect(machine.state.output == .free)
         #expect(machine.send(.reinsertion(ReplayID(1), .inserted)).isEmpty, "a stale report is dropped")
+    }
+
+    @Test func aReplayThatDidNotReachTheCursorSaysSo() {
+        var machine = Machine()
+        machine.dictate("Invented", at: 1)
+        machine.trigger(.pasteAgainPressed, at: 10)
+        let left = machine.send(.reinsertion(ReplayID(1), .leftOnClipboard(.modifiersStillDown)))
+        #expect(left.shownNotices == 1)
+        #expect(machine.state.notice?.message == .leftOnClipboard(.modifiersStillDown))
+        #expect(machine.state.output == .free)
+        #expect(left.records.isEmpty && left.completions.isEmpty, "a replay is never recorded")
+
+        machine.trigger(.pasteAgainPressed, at: 20)
+        let failed = machine.send(.reinsertion(ReplayID(2), .failed(.eventPostFailed)))
+        #expect(failed.shownNotices == 1)
+        #expect(machine.state.notice?.message == .insertionFailed(.eventPostFailed))
+        #expect(machine.state.output == .free)
+        #expect(failed.records.isEmpty && failed.completions.isEmpty)
     }
 
     @Test func clearingTheRunLogForgetsTheText() {

@@ -91,9 +91,15 @@ private struct Step {
             transcript(id, result)
         case .insertion(let id, let report):
             insertion(id, report)
-        case .reinsertion:
-            // Rule 11: a replay is not recorded and is never watched; its report only frees the output.
+        case .reinsertion(_, let outcome):
+            // Rule 11: a replay is not recorded and is never watched. Its report frees the output, and says so
+            // when the text did not reach the cursor.
             state.output = .free
+            switch outcome {
+            case .leftOnClipboard(let reason): show(.leftOnClipboard(reason))
+            case .failed(let failure): show(.insertionFailed(failure))
+            case .inserted, .nothingToInsert: break
+            }
         case .timer(let timer):
             fire(timer)
         case .microphoneAccess(let access):
