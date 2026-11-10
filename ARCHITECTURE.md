@@ -52,9 +52,9 @@ Sendable` without a comment that says which lock or queue makes it safe.
 
 | Module | Kind | Depends on | Holds |
 |---|---|---|---|
-| `DictationCore` | neutral, pure | nothing | The session state machine, its runtime, and the ports every adapter implements |
+| `DictationCore` | neutral, pure | nothing | The session state machine, its runtime, the ports every adapter implements, and `Diagnostics` |
 | `TextRules` | neutral, pure | nothing | Numbers, spoken delimiters, macros, prompt tag, insertion-context fitting |
-| `DictionaryKit` | neutral | nothing | Entries, validation, tokenizer, bias graph, casing, correction decisions, the dictionary file |
+| `DictionaryKit` | neutral | `DictationCore` | Entries, validation, tokenizer, bias graph, casing, correction decisions and the correction watch (which reads text through `TextFieldReading`), the dictionary file |
 | `DesignCore` | neutral, pure | nothing | Palette, dot wave, level meter, pill geometry, motion constants, the mark |
 | `SpeechEngine` | neutral | `DictationCore`, `DictionaryKit` | Model store, feature front end, Core ML encoder, decoder, chunked streaming |
 | `Persistence` | neutral | `DictationCore`, `TextRules` | Settings, macros, Run Log |
@@ -188,8 +188,8 @@ plan)`, `reinsert(text)`, `setTimer(id, after)`, `cancelTimer(id)`,
 otherwise `waiting` while the pipeline is not empty (with the reason
 `preparingModel` when the engine is not ready); otherwise an information
 `notice`; otherwise `hidden`. Audio level does not pass through the state.
-The runtime hands each level, with its time, to a `LevelSink`, and the pill
-reads it from there.
+The runtime hands each captured chunk, with its time, to a `LevelSink`, and
+the pill reads the level from there.
 
 ## 4. Ports
 
@@ -207,7 +207,7 @@ test.
 | `MicrophoneAuthorizing` | `MacPlatform` | Current access, and a request |
 | `FrontmostAppReading` | `MacPlatform` | Bundle identifier and name of the app in front, read when a dictation starts |
 | `HistoryRecording` | `Persistence` | Save a Run Log entry and its samples |
-| `LevelSink` | `SorelloUI` | Receive audio levels with timestamps |
+| `LevelSink` | `SorelloApp`, over `SorelloUI`'s level feed | Hear each captured chunk with its time, to show the voice |
 | `SessionClock` | `DictationCore` | Monotonic now, and sleeping; a manual clock in tests |
 
 ## 5. Speech engine
@@ -393,7 +393,8 @@ menu-bar icon is the same row as a template image.
   that shows the pill and the words.
 
 Every screen has VoiceOver labels on its controls, because most controls
-are icons. User-facing strings live in a string catalog. The app's name and
+are icons. User-facing strings go through `String(localized:)`, so a string
+catalog can be added without touching a call site. The app's name and
 version are read from the bundle, never written in code.
 
 ## 9. Privacy and security invariants

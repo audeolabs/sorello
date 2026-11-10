@@ -21,7 +21,7 @@ let package = Package(
         // Neutral modules: nothing here imports a macOS-only framework.
         .target(name: "DictationCore", swiftSettings: strict),
         .target(name: "TextRules", swiftSettings: strict),
-        .target(name: "DictionaryKit", swiftSettings: strict),
+        .target(name: "DictionaryKit", dependencies: ["DictationCore"], swiftSettings: strict),
         .target(name: "DesignCore", swiftSettings: strict),
         .target(name: "SpeechEngine", dependencies: ["DictationCore", "DictionaryKit"], swiftSettings: strict),
         .target(name: "Persistence", dependencies: ["DictationCore", "TextRules"], swiftSettings: strict),
