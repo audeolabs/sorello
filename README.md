@@ -18,7 +18,9 @@ make app SORELLO_MODEL_DIR=/path/to/model/bundle
 open "build/Sorello Dev.app"
 ```
 
-Without `SORELLO_MODEL_DIR` the app still builds, but it cannot transcribe.
+Without `SORELLO_MODEL_DIR` the app still builds, but it cannot transcribe. A development build runs on the Mac that
+built it; `CHANNEL=release` builds a universal app for Apple silicon and Intel, and `ARCHS="arm64 x86_64"` makes any
+build universal.
 
 ## Check a build
 
