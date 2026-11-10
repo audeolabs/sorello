@@ -250,8 +250,9 @@ public protocol SpeechTranscribing: Sendable {
     /// Loads and warms the model, or tries again after a failure. Returns when the engine is ready or has failed.
     /// Concurrent calls share one attempt.
     func prepare() async
-    /// The current readiness, then every change. Each call is an independent subscription that ends when its
-    /// consumer stops iterating.
+    /// The current readiness, then every change. Each call is an independent subscription. It ends when the
+    /// consuming task is cancelled or the stream is released, so a consumer that stops reading early must let go
+    /// of the stream; merely leaving the loop does not end it.
     func readiness() -> AsyncStream<EngineReadiness>
     /// Opens a stream for one dictation. Cheap, synchronous, and never waits for the model.
     func openStream(_ options: SpeechStreamOptions) -> any SpeechStreaming
