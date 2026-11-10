@@ -1,8 +1,8 @@
 # Sorello
 
 Local dictation for macOS, by Audeo Labs. Hold a key, speak, release: the words appear at the cursor. Tap the
-key twice to dictate hands-free, and once more to finish. Speech recognition runs on your Mac with a bundled
-model. Sorello makes no network connections.
+key twice to dictate hands-free, and once more to finish. Speech recognition runs on your Mac. Sorello downloads
+its speech model once, during setup, and makes no other network connection.
 
 Sorello needs a Mac running macOS 26 or later. On a Mac with a Neural Engine, which is every Apple silicon Mac,
 recognition runs there. On an Intel Mac it runs on the processor, more slowly. It is in early development:
@@ -10,16 +10,17 @@ version 0.0.1.
 
 ## Build
 
-Install Xcode 27. Model weights are kept outside Git; point `SORELLO_MODEL_DIR` at the bundle that
-`Models/model.lock.json` pins.
+Install Xcode 27.
 
 ```sh
 make check
-make app SORELLO_MODEL_DIR=/path/to/model/bundle
+make app
 open "build/Sorello Dev.app"
 ```
 
-Without `SORELLO_MODEL_DIR` the app still builds, but it cannot transcribe. A development build runs on the Mac that
+Model weights are kept outside Git. The app downloads the model that `Models/model.lock.json` pins when it is set
+up. To build an app that carries the model and never downloads it, point `SORELLO_MODEL_DIR` at a local copy:
+`make app SORELLO_MODEL_DIR=/path/to/model/bundle`. A development build runs on the Mac that
 built it; `CHANNEL=release` builds a universal app for Apple silicon and Intel, and `ARCHS="arm64 x86_64"` makes any
 build universal.
 

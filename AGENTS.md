@@ -8,7 +8,7 @@ is the contract the code is written against, and it says where each kind of code
 ```sh
 make check        # rule checks, build, tests. Every commit passes this. Needs no model and no network.
 make snapshots    # every pill state and screen as PNG files in build/snapshots
-make app          # build/Sorello Dev.app; add SORELLO_MODEL_DIR=<pinned bundle> to include the model
+make app          # build/Sorello Dev.app, which downloads its model; SORELLO_MODEL_DIR=<copy> puts it inside
 ```
 
 The package builds only on macOS 26 or later with Xcode 27 (Swift 6.4). There is no Xcode project.
@@ -41,9 +41,11 @@ These hold for code, tests, fixtures, logs, commit messages and pull requests.
   someone's screen, or identifying filesystem paths. Do not read `.env` files.
 - Test audio is synthetic (`say`) and test text is invented.
 - No telemetry, crash reporting, persistent logging or network access without the owner's explicit approval.
-  Diagnostics go through `Diagnostics`, whose events cannot carry content.
+  The owner has approved one connection: the download of the speech model, which the user starts and which
+  sends nothing about them (ARCHITECTURE.md, section 9). Diagnostics go through `Diagnostics`, whose events
+  cannot carry content.
 - Do not trigger permission prompts or change system permissions on someone's Mac without their approval.
-- Model weights stay out of Git. `Models/model.lock.json` pins the bundle.
+- Model weights stay out of Git. `Models/model.lock.json` pins the model and says where the app downloads it.
 
 ## Provenance
 

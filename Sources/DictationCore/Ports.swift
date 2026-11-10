@@ -205,7 +205,7 @@ public protocol LevelSink: Sendable {
 // MARK: - Speech
 
 public enum EngineFailure: Error, Sendable, Equatable {
-    /// The app was built without the model.
+    /// No model is on this Mac yet: the app carries none and none has been downloaded. `prepare` looks again.
     case modelMissing
     /// A model file does not match its manifest.
     case modelCorrupt
