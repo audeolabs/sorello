@@ -22,8 +22,8 @@ can use them unchanged.
   chunks, so the wait after release covers only the last chunk.
 - **Show it.** A black pill at the top of the screen shows the voice as a
   row of dots while recording and a shimmer while the last words are
-  transcribed (section 8). On a Mac with a camera island or a notch the
-  pill grows out of the housing.
+  transcribed (section 8). It drops down just below the menu bar, under
+  the camera island or notch on a Mac that has one.
 - **Insert.** The text is pasted at the cursor. The previous clipboard is
   restored afterwards unless the user turns that off. *Paste Again* inserts
   the last dictation again.
@@ -578,32 +578,33 @@ actions) sit in a second small panel exactly the size of those controls,
 shown only while there are any, so the pill never swallows a click meant
 for the menu bar. Neither panel ever takes keyboard focus.
 
-Its shape depends on the screen's camera housing, read from `NSScreen`
-(`safeAreaInsets`, `auxiliaryTopLeftArea`, `auxiliaryTopRightArea`). A
-housing counts only if both auxiliary areas exist and leave a gap between
-them at the top of the screen; otherwise the screen has none:
+The pill is the iPhone island itself, on every screen: a capsule 36 pt
+tall in the pill colour with the hairline edge, only as wide as what it
+holds (about 160 pt while listening). It hangs 8 pt below the top band,
+which is the menu bar, or the camera housing's band where that is taller.
+Its middle is the housing's middle on a screen with a camera island or a
+notch, and the screen's middle on one without. The housing is read from
+`NSScreen` (`safeAreaInsets`, `auxiliaryTopLeftArea`,
+`auxiliaryTopRightArea`) and counts only if both auxiliary areas exist and
+leave a gap between them at the top of the screen. Its width changes
+nothing: an island and a notch get the same pill. From its leading end
+the pill holds the wave, ending in the aurora dot, then the elapsed time.
 
-- **Island** (housing narrower than 110 pt; 59 x 40 pt on the 2026 MacBook
-  Pro): a pure black capsule, 32 pt tall, centred on the housing, that
-  grows sideways out of it. Leading wing: the wave, ending in the aurora
-  dot beside the housing. Trailing wing: the elapsed time.
-- **Notch** (wider housing): the same content in two wings inside the
-  menu-bar band, drawn as one black shape flush with the top of the screen
-  with rounded lower corners, so the notch appears to widen.
-- **None** (external displays, older Macs): the iPhone island itself. A
-  36 pt capsule in the pill colour with the hairline edge, 8 pt under the
-  menu bar, centred.
+The pill never draws in the top band, so it cannot cover the menu bar,
+the camera housing or anything the system shows around it. It drops down
+from the band: it starts as a small capsule touching the foot of the
+band, under the housing, and grows down and outward to its place, fading
+in as it grows. It leaves the same way, back up.
 
-Pure black is used where the body must merge with hardware. The geometry
-is one pure function in `DesignCore`: the display (frame, top band,
-housing span, scale), the content's measured sizes and the adjustments go
-in; the body's outline, the regions for the wave, the text and each
-control, and the interactive regions come out, in whole pixels. Nothing is
-laid out under the housing. Text that does not fit is truncated, and a
-notice is placed below the band. Island height and vertical offset can be
-nudged with two hidden settings, because `NSScreen` reports the housing's
-band, not its outline; the pill must be checked against the real hardware
-by eye (`SorelloSnapshots --demo`).
+The geometry is one pure function in `DesignCore`: the display (frame, top
+band, housing span, scale) and the content's measured sizes go in; the
+body's outline, the regions for the wave, the text and each control, and
+the interactive regions come out, in whole pixels. The same content gives
+the same body on every screen wide enough for it, placed by that screen's
+band and middle. A body too wide for the screen is narrowed to fit it:
+the wave gives way first, then text is truncated. While listening the
+body holds still as the seconds tick, and widens only when the time gains
+a digit. `SorelloSnapshots --demo` shows the real pill on the real screen.
 
 States:
 
@@ -717,8 +718,9 @@ Review does.
   in `Tests/Vectors`.
 - Engine tests that need the model run only when `SORELLO_MODEL_DIR` is
   set. `sorello-transcribe` checks a synthetic recording end to end.
-- `SorelloSnapshots` renders each pill state for each housing, and each
-  screen, to PNG. A change to anything visible is reviewed in those images.
+- `SorelloSnapshots` renders each pill state under a camera island, under
+  a notch and on a screen with neither, and each screen of the app, to
+  PNG. A change to anything visible is reviewed in those images.
 - `Sorello --self-test <file.wav>` runs the assembled app's own session
   with a file in place of the microphone and a recorder in place of the
   paste, and prints what would have been inserted. It needs no permission,
@@ -734,7 +736,8 @@ Review does.
   being transcribed; a clipboard manager running; the built-in microphone
   and a Bluetooth headset; secure input (a password field) during a hold;
   lock and sleep during a recording; the pill on the built-in display, an
-  external display and a full-screen Space; and no network activity during
+  external display and a full-screen Space, and while the system is
+  showing something in the camera island; and no network activity during
   any of it.
 
 ## 12. Provenance
