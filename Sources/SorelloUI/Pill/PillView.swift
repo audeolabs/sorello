@@ -56,6 +56,10 @@ final class PillView: NSView {
     private let fill = CAShapeLayer()
     private let contentHolder = CALayer()
     private let contentMask = CAShapeLayer()
+    /// Holds what the pill shows, in the screen's points (`PillContent.plane`): its bounds are the part of the screen
+    /// the view covers, so whatever the panel does, each layer in it stays where it is on the screen, and what is
+    /// leaving, which is never placed again, fades where it was drawn.
+    private let contentPlane = CALayer()
     private let glyph = CAShapeLayer()
     private var current: PillContent?
     private var leaving: [PillContent] = []
@@ -83,6 +87,8 @@ final class PillView: NSView {
         glyph.lineWidth = 1.6
         glyph.lineCap = .round
         contentHolder.mask = contentMask
+        contentPlane.actions = ["sublayers": NSNull()]
+        contentHolder.addSublayer(contentPlane)
         for part in [fill, edge, contentHolder, glyph] as [CALayer] { root.addSublayer(part) }
         setAccessibilityElement(false)
     }
@@ -237,7 +243,7 @@ final class PillView: NSView {
         guard let key else { return }
         let content = PillContent(key: key, arrived: now)
         content.configure(next, view: self)
-        contentHolder.addSublayer(content.layer)
+        contentPlane.addSublayer(content.layer)
         if animated {
             // What leaves goes first; with Reduce Motion the two cross-fade.
             content.arrive(at: now, delay: dropping ? Motion.drop : replacing && !reduce ? Motion.handover : 0,
@@ -268,11 +274,8 @@ final class PillView: NSView {
         CGPoint(x: point.x - origin.x, y: bounds.height - (point.y - origin.y))
     }
 
-    /// The screen rectangle `rect` (top left, y down) in the layer's coordinates.
-    func local(_ rect: CGRect) -> CGRect {
-        CGRect(x: rect.minX - origin.x, y: bounds.height - (rect.maxY - origin.y), width: rect.width,
-               height: rect.height)
-    }
+    /// The part of the screen the view covers, in the coordinates the pill's content is placed in.
+    var contentArea: CGRect { PillContent.plane(CGRect(origin: origin, size: bounds.size)) }
 
     /// The body as it is drawn now: the outline's bounds in screen points (top left, y down), the bud included, and its
     /// opacity. Nil before anything has been shown.
@@ -315,7 +318,6 @@ final class PillView: NSView {
                       height: box.height)
     }
 
-
     var scale: CGFloat { CGFloat(screen?.scale ?? 2) }
     var reduceMotion: Bool { look.reduceMotion }
     var increaseContrast: Bool { look.increaseContrast }
@@ -344,6 +346,11 @@ final class PillView: NSView {
         fill.path = outline
         contentMask.path = outline
         for part in [edge, edgeMask, fill, contentHolder, contentMask, glyph] as [CALayer] { part.frame = bounds }
+        let area = contentArea
+        if contentPlane.bounds != area || contentPlane.position != CGPoint(x: bounds.midX, y: bounds.midY) {
+            contentPlane.bounds = area
+            contentPlane.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        }
         let opacity = Float(bodyOpacity.value(at: now))
         if fill.opacity != opacity {
             fill.opacity = opacity

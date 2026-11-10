@@ -180,11 +180,16 @@ final class PillContent {
         }
     }
 
-    /// Places the content for `scene` in the view's coordinates, which move when the panel does.
+    /// Places the content for `scene` in the screen's points (`plane`), over the part of the screen the view covers.
     func place(_ scene: PillScene, view: PillView) {
-        layer.frame = view.bounds
-        inner.frame = view.bounds
-        dots.parent.frame = view.bounds
+        let area = view.contentArea, centre = CGPoint(x: area.midX, y: area.midY)
+        if layer.bounds != area || layer.position != centre {
+            for part in [layer, inner, dots.parent] {
+                // Its frame and its bounds are one rectangle, so what it holds is in the same points as the plane.
+                part.bounds = area
+                part.position = centre
+            }
+        }
         let layout = scene.layout
         switch scene.display {
         case .listening:
@@ -208,7 +213,7 @@ final class PillContent {
             placeText(text, x: textBox.minX, middle: symbolBox.midY, font: PillType.notice, view: view)
             for (entry, rect) in zip(actions, inner.actions) {
                 let box = rect.offsetBy(dx: card.minX, dy: card.minY)
-                entry.capsule.frame = view.local(box)
+                entry.capsule.frame = Self.plane(box)
                 let titleWidth = images[ObjectIdentifier(entry.title)]?.size.width ?? 0
                 placeText(entry.title, x: snap(box.midX - titleWidth / 2, view.scale), middle: box.midY,
                           font: PillType.action, view: view)
@@ -222,9 +227,9 @@ final class PillContent {
     func drawWave(_ scene: PillScene, trace: DotWave.Trace, level: Double, now: Double, view: PillView) {
         guard let box = scene.layout.leading else { return }
         let wave = PillDots.wave(in: box, trace: trace, now: now, level: level, still: view.reduceMotion)
-        dots.show(wave.dots.map { local($0, view) }, color: NSColor(Palette.ink).cgColor)
+        dots.show(wave.dots.map(Self.plane), color: NSColor(Palette.ink).cgColor)
         if let dot = wave.mark {
-            let at = local(dot, view)
+            let at = Self.plane(dot)
             mark.isHidden = false
             mark.bounds = CGRect(x: 0, y: 0, width: 2 * at.radius, height: 2 * at.radius)
             mark.cornerRadius = at.radius
@@ -238,7 +243,7 @@ final class PillContent {
     func drawShimmer(_ scene: PillScene, sweep: Double, view: PillView) {
         guard let box = scene.layout.leading else { return }
         let row = PillDots.shimmer(in: box, sweep: sweep, still: view.reduceMotion)
-        dots.show(row.map { local($0, view) }, color: NSColor(Palette.shimmer).cgColor)
+        dots.show(row.map(Self.plane), color: NSColor(Palette.shimmer).cgColor)
     }
 
     // MARK: - Helpers
@@ -249,9 +254,16 @@ final class PillContent {
         layer.isHidden = image == nil
     }
 
-    private func local(_ dot: DotWave.Dot, _ view: PillView) -> DotWave.Dot {
-        let point = view.local(CGPoint(x: dot.x, y: dot.y))
-        return DotWave.Dot(x: Double(point.x), y: Double(point.y), radius: dot.radius, brightness: dot.brightness)
+    /// A screen rectangle (top left, y down) in the coordinates content is placed in: the screen's points, y up. They
+    /// do not depend on the panel, so a layer placed once stays where it is on the screen however the panel grows or
+    /// moves.
+    static func plane(_ rect: CGRect) -> CGRect {
+        CGRect(x: rect.minX, y: -rect.maxY, width: rect.width, height: rect.height)
+    }
+
+    /// A dot at a screen point, placed in the same coordinates.
+    static func plane(_ dot: DotWave.Dot) -> DotWave.Dot {
+        DotWave.Dot(x: dot.x, y: -dot.y, radius: dot.radius, brightness: dot.brightness)
     }
 
     /// A line of text with its left edge at `x`, optically centred on the screen line `middle`: the middle of its
@@ -259,7 +271,7 @@ final class PillContent {
     private func placeText(_ layer: CALayer, x: CGFloat, middle: CGFloat, font: NSFont, view: PillView) {
         guard let image = images[ObjectIdentifier(layer)] else { return }
         let baseline = snap(middle + font.capHeight / 2, view.scale)
-        layer.frame = view.local(CGRect(x: snap(x, view.scale), y: baseline - image.ascent, width: image.size.width,
+        layer.frame = Self.plane(CGRect(x: snap(x, view.scale), y: baseline - image.ascent, width: image.size.width,
                                         height: image.size.height))
     }
 
@@ -267,7 +279,7 @@ final class PillContent {
     private func placeCentred(_ layer: CALayer, x: CGFloat?, middle: CGFloat, view: PillView, within: CGRect? = nil) {
         guard let image = images[ObjectIdentifier(layer)] else { return }
         let left = x ?? (within.map { $0.midX - image.size.width / 2 } ?? 0)
-        layer.frame = view.local(CGRect(x: snap(left, view.scale), y: snap(middle - image.size.height / 2, view.scale),
+        layer.frame = Self.plane(CGRect(x: snap(left, view.scale), y: snap(middle - image.size.height / 2, view.scale),
                                         width: image.size.width, height: image.size.height))
     }
 
