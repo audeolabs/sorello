@@ -59,7 +59,7 @@ struct SystemSymbolTests {
         let record = try Record()
         let minimum = try minimumSystem()
         var named = 0
-        for (name, place) in try literals() {
+        for (name, place) in try names(in: Self.literals) {
             if let release = record.releases[name] {
                 named += 1
                 #expect(!minimum.lexicographicallyPrecedes(release),
@@ -72,6 +72,31 @@ struct SystemSymbolTests {
         #expect(named > 40, "the scan finds the symbols Sorello names")
     }
 
+    /// The scan above dates every literal the record knows, but cannot tell a misspelt name from an ordinary word. A
+    /// name written where only a symbol goes must be one the record knows, or it draws nothing on any system.
+    @Test("Every name written where a symbol goes is a symbol the system has")
+    func namesInSymbolPlacesExist() throws {
+        let record = try Record()
+        let placed = try names(in: Self.symbolPlaces)
+        for (name, place) in placed {
+            #expect(record.releases[name] != nil, "\(place) names \"\(name)\", which is not a system symbol")
+        }
+        #expect(placed.count > 40, "the scan finds the symbols Sorello names")
+    }
+
+    /// Every string literal shaped like a symbol name.
+    private static func literals(_ line: Substring) -> [String] {
+        line.matches(of: #/"([a-z0-9]+(?:\.[a-z0-9]+)*)"/#).map { String($0.1) }
+    }
+
+    /// The literals written where only a symbol's name goes: after a label that takes one, in a menu row's image or
+    /// a row's glyph, both sides of a choice included (`systemName: playing ? "stop.fill" : "play.fill"`). Names a
+    /// property returns are dated by the scan of every literal, and their misspellings show in the pictures.
+    private static func symbolPlaces(_ line: Substring) -> [String] {
+        line.matches(of: #/(?:(?:systemName|systemImage|systemSymbolName|symbolName|symbol):|\.symbol\(|RowGlyph\()\s*([^,)]*)/#)
+            .flatMap { $0.1.matches(of: #/"([^"]*)"/#).map { String($0.1) } }
+    }
+
     /// `MINIMUM_SYSTEM` from Config/identity.conf, the minimum the app's Info.plist declares.
     private func minimumSystem() throws -> [Int] {
         let identity = try String(contentsOf: Self.repository.appending(path: "Config/identity.conf"), encoding: .utf8)
@@ -79,18 +104,16 @@ struct SystemSymbolTests {
         return Self.version(String(line.dropFirst("MINIMUM_SYSTEM=".count)))
     }
 
-    /// Every string literal in Sources shaped like a symbol name, with the first file and line naming it.
-    private func literals() throws -> [(String, String)] {
+    /// The names `find` reads from each line of Sources, each with the first file and line naming it.
+    private func names(in find: (Substring) -> [String]) throws -> [(String, String)] {
         let sources = Self.repository.appending(path: "Sources")
         let files = try #require(FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil))
         var found: [String: String] = [:]
         for case let file as URL in files where file.pathExtension == "swift" {
             let lines = try String(contentsOf: file, encoding: .utf8).split(separator: "\n", omittingEmptySubsequences: false)
+            let path = file.path.replacingOccurrences(of: Self.repository.path + "/", with: "")
             for (index, line) in lines.enumerated() {
-                for match in line.matches(of: #/"([a-z0-9]+(?:\.[a-z0-9]+)*)"/#) where found[String(match.1)] == nil {
-                    let path = file.path.replacingOccurrences(of: Self.repository.path + "/", with: "")
-                    found[String(match.1)] = "\(path):\(index + 1)"
-                }
+                for name in find(line) where found[name] == nil { found[name] = "\(path):\(index + 1)" }
             }
         }
         #expect(!found.isEmpty, "Sources are where the test expects them")
