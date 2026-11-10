@@ -2,8 +2,8 @@
 """A lint for the rules a compiler cannot check (ARCHITECTURE.md, sections 2 and 9).
 
 It catches the obvious mistakes and fails with the offending lines. It does not prove the invariants; review does.
-Rules that look for API use read Swift code only: comments and the text of string literals are ignored, while code
-inside a string's interpolation is still read. Runs on Python 3.9 or later, on macOS and Linux.
+Rules that look for API use read Swift code only: comments and the text of string and regex literals are ignored,
+while code inside a string's interpolation is still read. Runs on Python 3.9 or later, on macOS and Linux.
 """
 import os
 import re
@@ -12,10 +12,15 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STRING_OPEN = re.compile(r'(#*)("""|")')
+EXTENDED_REGEX_OPEN = re.compile(r"(#+)/")
+# What a bare regex literal may follow: an opening bracket, a separator, an operator that expects a value, or one
+# of these words. After a name, a number or a closing bracket a slash is division.
+REGEX_AFTER = set("([{,;:=!&|?")
+REGEX_AFTER_WORDS = ("return", "in", "case", "else", "try", "await", "throw")
 
 
 def code_only(src):
-    """`src` with comments and string-literal text replaced by spaces. Line breaks, and so line numbers, are kept."""
+    """`src` with comments and literal text replaced by spaces. Line breaks, and so line numbers, are kept."""
     out = list(src)
     n = len(src)
 
@@ -47,6 +52,33 @@ def code_only(src):
         blank(start, j)
         return j
 
+    def bare_regex_end(i):
+        """The index just past the bare regex literal whose opening slash is at `i`, or None if it is not one."""
+        if i + 1 >= n or src[i + 1] in " \t\n":
+            return None
+        k = i - 1
+        while k >= 0 and out[k] in " \t":
+            k -= 1
+        if k >= 0 and out[k] != "\n" and out[k] not in REGEX_AFTER:
+            m = k
+            while m >= 0 and (out[m].isalnum() or out[m] == "_"):
+                m -= 1
+            if "".join(out[m + 1:k + 1]) not in REGEX_AFTER_WORDS:
+                return None
+        j, classes = i + 1, 0
+        while j < n and src[j] != "\n":
+            if src[j] == "\\":
+                j += 2
+                continue
+            if src[j] == "[":
+                classes += 1
+            elif src[j] == "]" and classes:
+                classes -= 1
+            elif src[j] == "/" and classes == 0:
+                return j + 1
+            j += 1
+        return None
+
     def scan_code(i, interpolation):
         depth = 0
         while i < n:
@@ -66,7 +98,21 @@ def code_only(src):
                         j += 1
                 blank(i, j)
                 i = j
-            elif src[i] == '"' or (src[i] == "#" and STRING_OPEN.match(src, i) and STRING_OPEN.match(src, i).group(1)):
+            elif src[i] == "/":
+                end = bare_regex_end(i)
+                if end is None:
+                    i += 1
+                else:
+                    blank(i + 1, end - 1)
+                    i = end
+            elif src[i] == "#" and EXTENDED_REGEX_OPEN.match(src, i):
+                opener = EXTENDED_REGEX_OPEN.match(src, i)
+                closer = "/" + opener.group(1)
+                end = src.find(closer, opener.end())
+                end = n if end < 0 else end
+                blank(opener.end(), end)
+                i = end + len(closer)
+            elif src[i] == '"' or (src[i] == "#" and STRING_OPEN.match(src, i)):
                 i = scan_string(i)
             elif interpolation and src[i] == "(":
                 depth, i = depth + 1, i + 1
@@ -82,12 +128,15 @@ def code_only(src):
     return "".join(out)
 
 
+# An import declaration, wherever it starts: at the start of a line or after a semicolon, with its tokens on one
+# line or several.
 IMPORT = re.compile(
-    r"^\s*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|package|internal|fileprivate|private)\s+)?import\s+"
-    r"(?:(?:struct|class|enum|protocol|typealias|func|let|var)\s+)?([A-Za-z_]\w*)")
+    r"(?:^|;)[ \t]*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|package|internal|fileprivate|private)\s+)?import\s+"
+    r"(?:(?:struct|class|enum|protocol|typealias|func|let|var)\s+)?([A-Za-z_]\w*)", re.MULTILINE)
 NETWORK = re.compile(r"\b(URLSession|NWConnection|NWListener|NWBrowser|CFNetwork|WKWebView|CFSocketCreate|getaddrinfo)\b")
+LOG_CALLS = r"(?:print|debugPrint|dump|NSLog|os_log)\s*\("
 LOGGING = re.compile(
-    r"(?<![\w.])(?:print|debugPrint|dump|NSLog|os_log)\s*\(|\bSwift\s*\.\s*(?:print|debugPrint|dump)\s*\(|\b(?:Logger|OSLog)\s*\(")
+    r"(?<![\w.])" + LOG_CALLS + r"|\b(?:Swift|Foundation|os|OSLog)\s*\.\s*" + LOG_CALLS + r"|\b(?:Logger|OSLog)\s*\(")
 UNCHECKED = re.compile(r"@unchecked\s+Sendable")
 OLD_NAMES = re.compile(r"localflow|freeflow|wilderness", re.IGNORECASE)
 WEIGHTS = re.compile(r"\.(mlmodelc|mlpackage|f32bin|f16bin|safetensors|wav|caf|m4a|dmg)(/|$)")
@@ -102,25 +151,28 @@ def lint_swift(module, name, src):
     """The (rule, line number, line) violations in one Swift source of `module`."""
     found = []
     raw = src.split("\n")
-    code = code_only(src).split("\n")
-    for number, line in enumerate(code, 1):
+    code = code_only(src)
+
+    for imported in IMPORT.finditer(code):
+        framework = imported.group(1)
+        number = code.count("\n", 0, imported.start(1)) + 1
+        text = raw[number - 1].strip()
+        if framework == "Network":
+            found.append(("Sorello makes no network connections", number, text))
+        if module in PURE and framework in UI_AND_MODEL:
+            found.append(("pure modules import only Foundation", number, text))
+        if framework in NEUTRAL.get(module, ()):
+            found.append(("neutral modules must also build for iOS", number, text))
+
+    for number, line in enumerate(code.split("\n"), 1):
         text = raw[number - 1].strip()
         if NETWORK.search(line):
             found.append(("Sorello makes no network connections", number, text))
-        imported = IMPORT.match(line)
-        if imported:
-            framework = imported.group(1)
-            if framework == "Network":
-                found.append(("Sorello makes no network connections", number, text))
-            if module in PURE and framework in UI_AND_MODEL:
-                found.append(("pure modules import only Foundation", number, text))
-            if framework in NEUTRAL.get(module, ()):
-                found.append(("neutral modules must also build for iOS", number, text))
         if LOGGING.search(line) and module not in MAY_PRINT and name != "Diagnostics.swift":
             found.append(("log only through Diagnostics, which cannot carry content", number, text))
         if UNCHECKED.search(line) and not any("Safe:" in near for near in raw[max(0, number - 4):number + 3]):
             found.append(("@unchecked Sendable needs a '// Safe:' comment naming the lock or queue", number, text))
-    return found
+    return sorted(found, key=lambda violation: violation[1])
 
 
 def self_test():
@@ -128,11 +180,14 @@ def self_test():
         return sorted({rule.split(" ")[0] for rule, _, _ in lint_swift(module, name, src)})
 
     cases = [
-        # (module, source, expected first words of the rules that fire)
+        # (module, source, the first word of each rule that should fire[, file name])
         ("SorelloApp", 'print("x")', ["log"]),
         ("SorelloApp", 'Swift.print("x")', ["log"]),
         ("SorelloApp", 'print ("x")', ["log"]),
+        ("SorelloApp", 'Foundation.NSLog("x")', ["log"]),
+        ("SorelloApp", 'os.os_log("x")', ["log"]),
         ("SorelloApp", 'let l = Logger(subsystem: "s", category: "c")', ["log"]),
+        ("SorelloApp", 'let l = os.Logger(subsystem: "s", category: "c")', ["log"]),
         ("SorelloApp", 'let s = "\\(print("x"))"', ["log"]),
         ("SorelloApp", "/// Do not call print() here; use Diagnostics.", []),
         ("SorelloApp", 'let s = "print(x) and URLSession"', []),
@@ -145,15 +200,29 @@ def self_test():
         ("DictationCore", 'print("x")', [], "Diagnostics.swift"),
         ("SorelloApp", "let s = URLSession.shared", ["Sorello"]),
         ("SorelloApp", "// URLSession is forbidden in this application.", []),
+        # Regex literals are text, and a quote inside one does not start a string.
+        ("TextRules", "let pattern = #/URLSession/#", []),
+        ("TextRules", r"let pattern = /print\(x\)/", []),
+        ("TextRules", "let found = text.firstMatch(of: /[/]print(1)/)", []),
+        ("TextRules", 'let r = value.replacing(#/"/#, with: { _ in Swift.print("x"); return "y" })', ["log"]),
+        ("TextRules", 'let m = text.firstMatch(of: /"/); print("x")', ["log"]),
+        ("TextRules", "let ratio = total / count; print(ratio)", ["log"]),
+        ("TextRules", "let ratio = (a + b) / 2 / print(c)", ["log"]),
+        ("TextRules", "let x = a / b / c", []),
+        # Imports, however they are laid out.
         ("SorelloApp", "import Network", ["Sorello"]),
         ("SorelloApp", "    @preconcurrency import Network", ["Sorello"]),
+        ("SorelloApp", "import Foundation; import Network", ["Sorello"]),
         ("DesignCore", "import AppKit", ["pure"]),
         ("DesignCore", "  #if os(macOS)\n    import AppKit\n  #endif", ["pure"]),
         ("DesignCore", "public import SwiftUI", ["pure"]),
         ("DesignCore", "@preconcurrency import AVFoundation", ["pure"]),
         ("DesignCore", "import struct AppKit.NSColor", ["pure"]),
+        ("DesignCore", "import Foundation; import AppKit", ["pure"]),
+        ("DesignCore", "import\nAppKit", ["pure"]),
         ("DesignCore", "import Foundation\nimport CoreGraphics", []),
         ("DesignCore", "// import AppKit would break the iOS build", []),
+        ("DesignCore", 'let s = "import AppKit"', []),
         ("SpeechEngine", "import CoreML\nimport Accelerate", []),
         ("SpeechEngine", "import AppKit", ["neutral"]),
         ("MacPlatform", "import AppKit", []),
@@ -168,6 +237,11 @@ def self_test():
         if got != expected:
             failures += 1
             print("check-rules self-test: %r in %s gave %s, expected %s" % (src, module, got, expected), file=sys.stderr)
+    # A violation is reported on the line it is on.
+    numbered = lint_swift("DesignCore", "File.swift", "import Foundation\n\nimport\n  AppKit\n")
+    if [number for _, number, _ in numbered] != [4]:
+        failures += 1
+        print("check-rules self-test: wrong line for a split import: %r" % (numbered,), file=sys.stderr)
     return failures
 
 
