@@ -331,19 +331,20 @@ struct EscapeTests {
         #expect(keys.take() == [.cancelPressed])
     }
 
-    @Test("Escape with Command, Option or Control belongs to the system or the app; with Shift it cancels")
+    @Test("Escape with modifiers held is still a cancel, consumed only when handled")
     func modifiedEscape() {
         var keys = Keyboard([:])
-        for key in [ModifierKey.leftCommand, .rightOption, .leftControl] {
+        for key in [ModifierKey.leftCommand, .rightOption, .leftControl, .leftShift, .function] {
             keys.press(key)
+            keys.handled = true
+            #expect(keys.down(kVK_Escape).consume)
+            #expect(keys.up(kVK_Escape).consume)
+            keys.handled = false
             #expect(keys.down(kVK_Escape).consume == false)
-            keys.up(kVK_Escape)
+            #expect(keys.up(kVK_Escape).consume == false)
             keys.release(key)
         }
-        #expect(keys.take() == [])
-        keys.press(.leftShift)
-        keys.down(kVK_Escape)
-        #expect(keys.take() == [.cancelPressed])
+        #expect(keys.take() == Array(repeating: .cancelPressed, count: 10))
     }
 }
 

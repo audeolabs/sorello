@@ -15,8 +15,8 @@ import Foundation
 /// - A hold's release always belongs to the press that started it: the hold ends when its own key comes up,
 ///   whatever happened to the other modifiers.
 /// - Auto-repeat never triggers anything; an action triggers again only after a fresh key-down.
-/// - Escape, without Command, Option or Control, is `cancelPressed`, and is consumed only if the handler says it
-///   cancelled something. It never counts as a chord's second key, so Escape during a fresh hold cancels it
+/// - Escape, with any modifiers, is `cancelPressed`, and is consumed only if the handler says it cancelled
+///   something. It never counts as a chord's second key, so Escape during a fresh hold cancels it
 ///   rather than abandoning it.
 /// - While recording a binding for Settings, nothing triggers; the keys pressed are captured and consumed.
 public struct ShortcutMatcher: Sendable {
@@ -145,9 +145,6 @@ public struct ShortcutMatcher: Sendable {
         }
 
         if code == KeyCode.escape {
-            guard ModifierFlags(event.modifiers).isDisjoint(with: [.command, .option, .control]) else {
-                return Response(consume: false)
-            }
             let cancelled = deliver(.cancelPressed)
             if cancelled { consumedKeys.insert(code) }
             return Response(consume: cancelled)
