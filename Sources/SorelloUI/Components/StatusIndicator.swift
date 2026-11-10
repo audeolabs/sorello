@@ -104,7 +104,7 @@ public struct StatusLabel: View {
     }
 
     public var body: some View {
-        HStack(spacing: 6) {
+        HStack(alignment: .top, spacing: 6) {
             StatusIndicator(line.indicator)
             Text(line.text)
                 .font(font)

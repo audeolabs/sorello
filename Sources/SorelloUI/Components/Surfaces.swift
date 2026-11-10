@@ -9,7 +9,7 @@ public extension View {
     }
 
     /// The island's surface as a capsule.
-    func islandSurface() -> some View { islandSurface(Capsule()) }
+    func islandSurface() -> some View { islandSurface(Pill()) }
 
     /// A card: the card colour behind rows, with rounded corners.
     func cardSurface(radius: CGFloat = Metrics.cardRadius) -> some View {
@@ -36,5 +36,24 @@ private struct IslandSurface<S: InsettableShape>: ViewModifier {
         content
             .background(Theme.pill, in: shape)
             .overlay(shape.strokeBorder(Theme.edge, lineWidth: Palette.edgeWidth(highContrast: contrast == .increased)))
+    }
+}
+
+/// A capsule drawn as a rectangle with fully rounded ends. SwiftUI's `Capsule` path leaves short vertical
+/// hairlines at the ends of a thin stroke; this shape does not, and is otherwise the same.
+nonisolated public struct Pill: InsettableShape {
+    private var inset: CGFloat = 0
+
+    public init() {}
+
+    public func path(in rect: CGRect) -> Path {
+        let rect = rect.insetBy(dx: inset, dy: inset)
+        return RoundedRectangle(cornerRadius: min(rect.width, rect.height) / 2, style: .circular).path(in: rect)
+    }
+
+    public func inset(by amount: CGFloat) -> Pill {
+        var shape = self
+        shape.inset += amount
+        return shape
     }
 }

@@ -82,6 +82,8 @@ public enum Metrics {
     public static let glyphWidth: CGFloat = 20
     /// Between a row's glyph and its words.
     public static let glyphGap: CGFloat = 12
+    /// Where a row's words start when it has a glyph; the hairlines between such rows start here too.
+    public static let wordsInset: CGFloat = rowInset + glyphWidth + glyphGap
     public static let cardRadius: CGFloat = 12
     /// Between a group's title and its card, and between stacked controls.
     public static let tight: CGFloat = 8

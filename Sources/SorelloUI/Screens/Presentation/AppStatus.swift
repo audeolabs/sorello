@@ -77,7 +77,7 @@ nonisolated public struct AppStatus: Equatable, Sendable {
                               remedy: .openAccessibilitySettings)
         }
         if shortcutsPaused {
-            return StatusLine(text: String(localized: "Shortcuts paused while a password field is active"),
+            return StatusLine(text: String(localized: "Shortcuts paused for a password field"),
                               indicator: .neutral, remedy: nil)
         }
         if model == .preparing {

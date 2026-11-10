@@ -31,7 +31,7 @@ private struct SwitchKnob: View {
     var body: some View {
         Capsule()
             .fill(isOn ? Theme.toggle : Color.white.opacity(hovering && isEnabled ? 0.2 : 0.14))
-            .overlay(Capsule().strokeBorder(Color.white.opacity(isOn ? 0 : 0.1), lineWidth: 0.5))
+            .overlay(Pill().strokeBorder(Color.white.opacity(isOn ? 0 : 0.1), lineWidth: 0.5))
             .overlay(alignment: isOn ? .trailing : .leading) {
                 Circle()
                     .fill(Color.white)
@@ -39,7 +39,7 @@ private struct SwitchKnob: View {
                     .padding(2)
             }
             .frame(width: width, height: height)
-            .focusRing(Capsule(), isFocused: focused)
+            .focusRing(Pill(), isFocused: focused)
             .opacity(isEnabled ? 1 : 0.4)
             .contentShape(Capsule())
             .onTapGesture { if isEnabled { isOn.toggle() } }

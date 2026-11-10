@@ -38,7 +38,7 @@ public struct Chip: View {
         .padding(.trailing, onRemove == nil ? 8 : 3)
         .frame(height: 20)
         .background(Capsule().fill(Theme.controlFill))
-        .overlay(Capsule().strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5))
+        .overlay(Pill().strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5))
         .accessibilityElement(children: .contain)
     }
 }
@@ -110,7 +110,7 @@ private struct PresetSegment: View {
         .buttonStyle(.plain)
         .focused($focused)
         .focusEffectDisabled()
-        .focusRing(Capsule(), isFocused: focused)
+        .focusRing(Pill(), isFocused: focused)
         .onHover { hovering = $0 }
     }
 }
