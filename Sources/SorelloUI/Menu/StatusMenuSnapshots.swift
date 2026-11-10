@@ -5,19 +5,19 @@ import Foundation
 public enum StatusMenuSnapshots {
     /// Each state's file name, without extension, and the menu's rows as text, in the order the tool writes them.
     public static var texts: [(name: String, text: String)] {
-        let states: [(String, AppStatus, String?)] = [
-            ("ready", .sampleReady, StatusMenuModel.sample().lastDictation),
-            ("preparing", AppStatus(model: .preparing, microphone: .granted, accessibility: .granted), nil),
-            ("microphone-needed", AppStatus(model: .ready, microphone: .denied, accessibility: .granted), nil),
-            ("accessibility-needed", AppStatus(model: .ready, microphone: .granted, accessibility: .missing),
-             "Pack my box with five dozen liquor jugs."),
+        // Copy Last Dictation is available in three states and unavailable in the others, so the listings show both.
+        let states: [(String, AppStatus, Bool)] = [
+            ("ready", .sampleReady, true),
+            ("preparing", AppStatus(model: .preparing, microphone: .granted, accessibility: .granted), false),
+            ("microphone-needed", AppStatus(model: .ready, microphone: .denied, accessibility: .granted), false),
+            ("accessibility-needed", AppStatus(model: .ready, microphone: .granted, accessibility: .missing), true),
             ("model-failed", AppStatus(model: .failed(.couldNotLoad), microphone: .granted, accessibility: .granted),
-             nil),
+             false),
             ("paused", AppStatus(model: .ready, microphone: .granted, accessibility: .granted, shortcutsPaused: true),
-             "How vexingly quick daft zebras jump."),
+             true),
         ]
-        return states.map { name, status, last in
-            ("menu-\(name)", StatusMenuController(model: .sample(status: status, lastDictation: last)).text)
+        return states.map { name, status, copyable in
+            ("menu-\(name)", StatusMenuController(model: .sample(status: status, hasLastDictation: copyable)).text)
         }
     }
 }

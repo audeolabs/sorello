@@ -16,7 +16,7 @@ import SwiftUI
 /// the main window as the app shows them, never on screen, and fails if either loses its chrome's size or minimum.
 ///
 /// The stores are real and live in a temporary directory, filled with invented words, macros and Run Log entries,
-/// and one dictation is run through the session so the menu has a last dictation. The engine and the
+/// and one dictation is run through the session so the menu's Copy Last Dictation is available. The engine and the
 /// platform are stand-ins that report ready and granted, so the pictures show the app as it is when all is well.
 @MainActor
 enum WindowSnapshots {
@@ -182,7 +182,7 @@ enum WindowSnapshots {
             await app.history.record(HistoryDraft(date: now.addingTimeInterval(-offset), heard: heard, text: text,
                                                   outcome: outcome, samples: tone))
         }
-        // One dictation through the session, so the menu has a last dictation.
+        // One dictation through the session, so the menu's Copy Last Dictation is available.
         guard await waitFor({ app.runtime.state.engine == .ready }) else { return }
         capture.queue(tone)
         app.relay.handle(.holdPressed, at: clock.now)

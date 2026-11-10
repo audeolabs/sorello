@@ -22,6 +22,7 @@ import Testing
         #expect(harness.shortcuts.handler === app.relay)
         #expect(harness.shortcuts.starts == 1)
         await eventually { app.runtime.state.engine == .ready }
+        #expect(!harness.windows.menu.hasLastDictation)
 
         await harness.dictate()
         await eventually { harness.inserter.composed.count == 1 }
@@ -36,7 +37,7 @@ import Testing
         #expect(app.history.entries.first?.heard == "hello world")
         #expect(app.history.entries.first?.text == expected.text)
         await eventually { harness.windows.main.runLog.items.count == 1 }
-        #expect(harness.windows.menu.lastDictation == expected.text)
+        #expect(harness.windows.menu.hasLastDictation)
 
         // The pill listened, waited for the words, and went away.
         await eventually { harness.pill.current == .hidden && harness.pill.shown.count >= 3 }
@@ -59,7 +60,7 @@ import Testing
         await eventually { app.history.entries.isEmpty }
         #expect(app.runtime.state.lastText == nil)
         #expect(harness.speech.discards == 1)
-        await eventually { harness.windows.menu.lastDictation == nil && harness.windows.main.runLog.items.isEmpty }
+        await eventually { !harness.windows.menu.hasLastDictation && harness.windows.main.runLog.items.isEmpty }
     }
 
     /// Copy Last Dictation, chosen in the menu the app builds, puts the last dictation's text on the clipboard. It is

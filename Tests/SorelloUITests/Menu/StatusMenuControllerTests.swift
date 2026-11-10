@@ -31,9 +31,13 @@ import Testing
         let items = controller.menu.items
         #expect(items.count == model.rows.count)
         #expect(items.map(\.title) == model.rows.map { $0.kind == .separator ? "" : $0.title })
-        #expect(items.indices.filter { items[$0].isSeparatorItem } == [1, 6, 10])
-        #expect(items.filter(\.isSectionHeader).map(\.title) == ["Shortcuts", "Last Dictation"])
-        #expect(items.indices.filter { items[$0].isSectionHeader } == [2, 7])
+        #expect(items.indices.filter { items[$0].isSeparatorItem } == [1, 6, 8])
+        #expect(items.filter(\.isSectionHeader).map(\.title) == ["Shortcuts"])
+        #expect(items.indices.filter { items[$0].isSectionHeader } == [2])
+        // Copy Last Dictation is a group of its own; the state line is the only item that is not a command.
+        #expect(items[7].title == "Copy Last Dictation")
+        #expect(items.filter { $0.action == nil && !$0.isSeparatorItem && !$0.isSectionHeader }.map(\.title)
+            == ["Ready"])
         // The system draws every row: no views, no attributed titles.
         #expect(items.allSatisfy { $0.view == nil && $0.attributedTitle == nil })
     }
@@ -57,13 +61,12 @@ import Testing
     }
 
     @Test func onlyCommandsThatCanBeUsedAreEnabled() {
-        let controller = StatusMenuController(model: .sample(status: Self.failed, lastDictation: nil))
+        let controller = StatusMenuController(model: .sample(status: Self.failed, hasLastDictation: false))
         let enabled = controller.menu.items.filter { $0.isEnabled && !$0.isSeparatorItem && !$0.isSectionHeader }
         #expect(enabled.map(\.title) == ["Retry", "Hold to Talk", "Tap to Toggle", "Paste Again", "Dictionary",
                                          "Run Log", "Settings…", "Quit Sorello"])
-        let state = controller.menu.items[0], line = controller.menu.items[9], copy = controller.menu.items[10]
+        let state = controller.menu.items[0], copy = controller.menu.items[8]
         #expect(state.title == "Speech model unavailable" && !state.isEnabled)
-        #expect(line.title == "Nothing dictated yet." && !line.isEnabled)
         #expect(copy.title == "Copy Last Dictation" && !copy.isEnabled)
     }
 
@@ -93,7 +96,7 @@ import Testing
 
     @Test func copyWithNothingDictatedReportsNothing() throws {
         var reported: [StatusMenuCommand] = []
-        let model = StatusMenuModel.sample(lastDictation: nil)
+        let model = StatusMenuModel.sample(hasLastDictation: false)
         model.actions = Self.reporting { reported.append($0) }
         let controller = StatusMenuController(model: model)
         let copy = try #require(controller.menu.items.firstIndex { $0.title == "Copy Last Dictation" })
@@ -106,31 +109,37 @@ import Testing
         let model = StatusMenuModel.sample(status: Self.preparing)
         let controller = StatusMenuController(model: model)
         model.status = .sampleReady
-        model.lastDictation = nil
+        model.hasLastDictation = false
         controller.menuNeedsUpdate(controller.menu)
         #expect(controller.menu.items[0].title == "Ready")
         #expect(controller.menu.items.first { $0.title == "Copy Last Dictation" }?.isEnabled == false)
     }
 
-    /// While the menu is open, a change in the values changes its rows where they are, without closing it.
+    /// While the menu is open, a change in the values changes its rows where they are, without closing it: a
+    /// dictation arriving makes Copy available, and clearing the Run Log makes it unavailable again.
     @Test func anOpenMenuChangesInPlace() async throws {
-        let model = StatusMenuModel.sample(status: Self.preparing, lastDictation: nil)
+        let model = StatusMenuModel.sample(status: Self.preparing, hasLastDictation: false)
         let controller = StatusMenuController(model: model)
         let menu = controller.menu
         controller.menuNeedsUpdate(menu)
         controller.menuWillOpen(menu)
         let state = menu.items[0]
         let copy = try #require(menu.items.first { $0.title == "Copy Last Dictation" })
-        let line = try #require(menu.items.first { $0.title == "Nothing dictated yet." })
+        #expect(!copy.isEnabled)
 
         model.status = .sampleReady
         await until { state.title == "Ready" }
         #expect(menu.items[0] === state)
 
-        model.lastDictation = "Pack my box with five dozen liquor jugs."
+        let items = menu.items
+        model.hasLastDictation = true
         await until { copy.isEnabled }
-        #expect(line.title == "Pack my box with five dozen liquor jugs.")
-        #expect(menu.items.contains { $0 === line } && menu.items.contains { $0 === copy })
+        #expect(menu.items.elementsEqual(items, by: ===))
+        model.hasLastDictation = false
+        await until { !copy.isEnabled }
+        #expect(menu.items.elementsEqual(items, by: ===))
+        model.hasLastDictation = true
+        await until { copy.isEnabled }
 
         model.shortcuts[.pasteAgain] = KeyCombo(modifiers: [.option(.right)])
         await until { menu.items.contains { $0.badge?.stringValue == "Right ⌥" } }
@@ -187,8 +196,6 @@ import Testing
             ["command", "Tap to Toggle", "⌃⌥Space"],
             ["command", "Paste Again", "Not set"],
             ["separator"],
-            ["heading", "Last Dictation"],
-            ["not a command", "Sphinx of black quartz, judge my vow…"],
             ["command", "doc.on.doc", "Copy Last Dictation"],
             ["separator"],
             ["command", "character.book.closed", "Dictionary"],
@@ -196,14 +203,14 @@ import Testing
             ["command", "gearshape", "Settings…", "⌘,"],
             ["command", "power", "Quit Sorello", "⌘Q"],
         ])
-        let failed = Self.fields(StatusMenuController(model: .sample(status: Self.failed, lastDictation: nil)).text)
+        let failed = Self.fields(
+            StatusMenuController(model: .sample(status: Self.failed, hasLastDictation: false)).text)
         #expect(Array(failed.prefix(2)) == [["not a command", "ember warning", "Speech model unavailable"],
                                             ["command", "Retry"]])
         #expect(failed.contains(["unavailable", "doc.on.doc", "Copy Last Dictation"]))
         // Titles start in one column, so the list reads as a table.
-        let titles = ["Ready", "Shortcuts", "Hold to Talk", "Tap to Toggle", "Paste Again", "Last Dictation",
-                      "Sphinx of black quartz, judge my vow…", "Copy Last Dictation", "Dictionary", "Run Log",
-                      "Settings…", "Quit Sorello"]
+        let titles = ["Ready", "Shortcuts", "Hold to Talk", "Tap to Toggle", "Paste Again", "Copy Last Dictation",
+                      "Dictionary", "Run Log", "Settings…", "Quit Sorello"]
         let rows = ready.split(separator: "\n").filter { $0 != "separator" }
         let starts = zip(rows, titles).compactMap { row, title in
             row.range(of: title).map { row.distance(from: row.startIndex, to: $0.lowerBound) }

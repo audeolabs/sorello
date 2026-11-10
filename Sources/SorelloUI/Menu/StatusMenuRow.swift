@@ -10,14 +10,12 @@ nonisolated public struct StatusMenuRow: Equatable, Sendable {
         case remedy
         case shortcutsHeading
         case shortcut(ShortcutKind)
-        case lastDictationHeading
-        case lastDictation
         case copyLastDictation
         case dictionary
         case runLog
         case settings
         case quit
-        /// The separator after the given group: 1 after the state, 2 after the shortcuts, 3 after the last dictation.
+        /// The separator after the given group: 1 after the state, 2 after the shortcuts, 3 after Copy Last Dictation.
         case separator(Int)
     }
 
@@ -27,7 +25,7 @@ nonisolated public struct StatusMenuRow: Equatable, Sendable {
         case heading
         /// A hairline between groups.
         case separator
-        /// Words to read that are not a command: the state line, the last dictation.
+        /// Words to read that are not a command: the state line.
         case information
         /// A row that does something when chosen.
         case command(StatusMenuCommand)
@@ -76,10 +74,11 @@ nonisolated public struct StatusMenuRow: Equatable, Sendable {
         if case .command(let command) = kind { command } else { nil }
     }
 
-    /// The menu's rows from the top: the state and its remedy, the shortcuts, the last dictation and Copy, then the
-    /// ways into the app and Quit, with separators between the four groups.
+    /// The menu's rows from the top: the state and its remedy, the shortcuts, Copy Last Dictation, then the ways into
+    /// the app and Quit, with separators between the four groups. No row carries a dictation's text; Copy can be used
+    /// when `hasLastDictation` is true.
     public static func rows(appName: String, status: AppStatus, shortcuts: [ShortcutKind: KeyCombo],
-                            lastDictation: String?) -> [StatusMenuRow] {
+                            hasLastDictation: Bool) -> [StatusMenuRow] {
         let line = status.line
         var rows = [StatusMenuRow(id: .state, kind: .information, title: line.text, image: .indicator(line.indicator),
                                   accessibilityLabel: line.text)]
@@ -102,14 +101,9 @@ nonisolated public struct StatusMenuRow: Equatable, Sendable {
         }
 
         rows.append(StatusMenuRow(id: .separator(2), kind: .separator))
-        rows.append(StatusMenuRow(id: .lastDictationHeading, kind: .heading,
-                                  title: String(localized: "Last Dictation")))
-        rows.append(StatusMenuRow(id: .lastDictation, kind: .information,
-                                  title: lastDictation.map { lastDictationLine($0) }
-                                      ?? String(localized: "Nothing dictated yet.")))
         rows.append(StatusMenuRow(id: .copyLastDictation, kind: .command(.copyLastDictation),
                                   title: String(localized: "Copy Last Dictation"), image: .symbol("doc.on.doc"),
-                                  isEnabled: lastDictation != nil))
+                                  isEnabled: hasLastDictation))
 
         rows.append(StatusMenuRow(id: .separator(3), kind: .separator))
         rows.append(StatusMenuRow(id: .dictionary, kind: .command(.openDictionary),
@@ -121,31 +115,5 @@ nonisolated public struct StatusMenuRow: Equatable, Sendable {
         rows.append(StatusMenuRow(id: .quit, kind: .command(.quit), title: String(localized: "Quit \(appName)"),
                                   keyEquivalent: "q", image: .symbol("power")))
         return rows
-    }
-
-    /// The most characters the last dictation's line has, its ellipsis included. About as wide as the menu's other
-    /// rows, so the menu stays the width of an ordinary menu.
-    public static let lastDictationLimit = 40
-
-    /// The start of `text` on one line: every run of spaces, tabs and line breaks becomes a single space. Text longer
-    /// than `lastDictationLimit` is cut, at the end of a word when one ends in the second half of the line and within
-    /// a word otherwise, and ends in an ellipsis.
-    public static func lastDictationLine(_ text: String) -> String {
-        let words = text.split(whereSeparator: \.isWhitespace)
-        guard !words.isEmpty else {
-            return String(localized: "Spaces and line breaks only",
-                          comment: "Menu: the last dictation was only spaces or line breaks")
-        }
-        let line = words.joined(separator: " ")
-        guard line.count > lastDictationLimit else { return line }
-
-        let budget = lastDictationLimit - 1
-        var cut = line.prefix(budget)
-        let endsAtWord = line[cut.endIndex] == " "
-        if !endsAtWord, let space = cut.lastIndex(of: " "), cut.distance(from: cut.startIndex, to: space) >= budget / 2 {
-            cut = cut[..<space]
-        }
-        let trimmed = cut.reversed().drop { $0.isWhitespace || ",;:.!?-–—".contains($0) }
-        return (trimmed.isEmpty ? String(cut) : String(trimmed.reversed())) + "…"
     }
 }

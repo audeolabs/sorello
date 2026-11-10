@@ -25,7 +25,7 @@ final class WindowModels {
         self.app = app
         let status = AppStatus(session: app.runtime.state, accessibilityTrusted: app.live.accessibilityTrusted,
                                shortcuts: app.platform.shortcuts.status)
-        menu = StatusMenuModel(appName: app.info.name, status: status, shortcuts: [:], lastDictation: nil)
+        menu = StatusMenuModel(appName: app.info.name, status: status, shortcuts: [:], hasLastDictation: false)
         main = MainWindowModel(
             general: GeneralModel(modelName: "", status: status, microphones: [], selectedMicrophoneID: nil,
                                   defaultMicrophoneName: nil, toggles: [:]),
@@ -78,7 +78,7 @@ final class WindowModels {
         follow { [unowned self] in
             menu.status = status
             menu.shortcuts = KeyCombo.all(app.settings.shortcutBindings, formatter: formatter)
-            menu.lastDictation = app.runtime.state.lastText
+            menu.hasLastDictation = app.runtime.state.lastText != nil
         }
         menu.actions = StatusMenuActions(
             copyLastDictation: { if let text = app.runtime.state.lastText { app.platform.system.copy(text) } },

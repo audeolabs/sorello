@@ -81,23 +81,24 @@ public final class StatusMenuModel {
     public var status: AppStatus
     /// The shortcuts. An action without one shows "Not set".
     public var shortcuts: [ShortcutKind: KeyCombo]
-    /// The last dictation's text, for its line and for Copy; nil when there is none.
-    public var lastDictation: String?
+    /// Whether there is a last dictation, so Copy Last Dictation can be used. The menu is never told what it says:
+    /// choosing Copy asks the app layer, which copies it from the session.
+    public var hasLastDictation: Bool
     /// What the menu's commands ask of the app layer.
     public var actions: StatusMenuActions
 
     /// The menu's values.
-    public init(appName: String, status: AppStatus, shortcuts: [ShortcutKind: KeyCombo], lastDictation: String?,
+    public init(appName: String, status: AppStatus, shortcuts: [ShortcutKind: KeyCombo], hasLastDictation: Bool,
                 actions: StatusMenuActions = StatusMenuActions()) {
         self.appName = appName
         self.status = status
         self.shortcuts = shortcuts
-        self.lastDictation = lastDictation
+        self.hasLastDictation = hasLastDictation
         self.actions = actions
     }
 
     /// The menu's rows, from the top, for the values as they are now.
     public var rows: [StatusMenuRow] {
-        StatusMenuRow.rows(appName: appName, status: status, shortcuts: shortcuts, lastDictation: lastDictation)
+        StatusMenuRow.rows(appName: appName, status: status, shortcuts: shortcuts, hasLastDictation: hasLastDictation)
     }
 }
