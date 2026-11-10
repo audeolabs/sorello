@@ -58,16 +58,27 @@ struct RunLogPresentationTests {
         #expect(RunLogOutcome.transcriptionFailed.isProblem)
     }
 
-    @Test func aFailedTranscriptHasNothingToCopy() {
-        let failed = RunLogItem(id: "a", date: now, text: "", outcome: .transcriptionFailed, duration: 4)
-        let pasted = RunLogItem(id: "b", date: now, text: "Pack my box with five dozen liquor jugs.",
-                                outcome: .inserted, duration: 4)
+    @Test func aFailedTranscriptHasNothingToShowOrCopy() {
+        let failed = RunLogItem(id: "a", date: now, heard: "", text: "", outcome: .transcriptionFailed, duration: 4)
+        #expect(failed.display == .none)
         #expect(!failed.canCopy)
+    }
+
+    @Test func aPastedDictationShowsWhatWasPasted() {
+        let pasted = RunLogItem(id: "b", date: now, heard: "pack my box with five dozen liquor jugs",
+                                text: "Pack my box with five dozen liquor jugs.", outcome: .inserted, duration: 4)
+        #expect(pasted.display == .text("Pack my box with five dozen liquor jugs."))
         #expect(pasted.canCopy)
     }
 
+    @Test func aCommandAloneShowsWhatWasHeard() {
+        let command = RunLogItem(id: "c", date: now, heard: "press enter", text: "", outcome: .inserted, duration: 1)
+        #expect(command.display == .commandOnly(heard: "press enter"))
+        #expect(command.canCopy)
+    }
+
     @Test func durationsAreMinutesAndSeconds() {
-        #expect(RunLogItem(id: "a", date: now, text: "", outcome: .inserted, duration: 4.4).durationLabel == "0:04")
-        #expect(RunLogItem(id: "a", date: now, text: "", outcome: .inserted, duration: 72).durationLabel == "1:12")
+        #expect(RunLogItem(id: "a", date: now, heard: "", text: "", outcome: .inserted, duration: 4.4).durationLabel == "0:04")
+        #expect(RunLogItem(id: "a", date: now, heard: "", text: "", outcome: .inserted, duration: 72).durationLabel == "1:12")
     }
 }

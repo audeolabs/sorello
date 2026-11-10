@@ -33,22 +33,43 @@ nonisolated public enum RunLogOutcome: Equatable, Sendable {
 nonisolated public struct RunLogItem: Identifiable, Equatable, Sendable {
     public var id: String
     public var date: Date
-    /// What was inserted, or what was heard when nothing was inserted; empty when transcription failed.
+    /// What the recognizer heard, before any text rule; empty when transcription failed.
+    public var heard: String
+    /// What was inserted. Empty when transcription failed, and when the dictation was only a command such as
+    /// "press enter", which inserts nothing but Return.
     public var text: String
     public var outcome: RunLogOutcome
     /// The recording's length in seconds.
     public var duration: TimeInterval
 
-    public init(id: String, date: Date, text: String, outcome: RunLogOutcome, duration: TimeInterval) {
+    public init(id: String, date: Date, heard: String, text: String, outcome: RunLogOutcome, duration: TimeInterval) {
         self.id = id
         self.date = date
+        self.heard = heard
         self.text = text
         self.outcome = outcome
         self.duration = duration
     }
 
-    /// Copy is offered only when there is text to copy.
-    public var canCopy: Bool { !text.isEmpty }
+    /// What the row shows as the dictation's words.
+    public enum Display: Equatable, Sendable {
+        /// The inserted text.
+        case text(String)
+        /// Nothing was inserted but something was heard: a command alone. The row shows what was heard, quoted
+        /// and quieter, and says that only a command ran.
+        case commandOnly(heard: String)
+        /// Nothing was heard or transcribed.
+        case none
+    }
+
+    public var display: Display {
+        if !text.isEmpty { return .text(text) }
+        if !heard.isEmpty { return .commandOnly(heard: heard) }
+        return .none
+    }
+
+    /// Copy is offered only when there are words to copy: the inserted text, or what was heard.
+    public var canCopy: Bool { display != .none }
 
     /// "0:12".
     public var durationLabel: String {
