@@ -2,16 +2,19 @@
 """A lint for the rules a compiler cannot check (ARCHITECTURE.md, sections 2 and 9).
 
 It catches the obvious mistakes and fails with the offending lines. It does not prove the invariants; review does.
-Rules that look for API use read Swift code only: comments and the text of string literals and `#/.../#` regex
-literals are ignored, while code inside a string's interpolation is still read.
+Rules that look for API use read Swift code only: comments and the text of string and regex literals are ignored,
+while code inside a string's interpolation is still read.
 
-A bare slash is ambiguous without a Swift parser: `/.../` may be a regex literal or two divisions. Where a slash
-might open a regex literal the source is therefore read both ways, and a violation in either reading counts. So a
-misjudged slash can never hide a banned call. The price is that a banned name written inside a bare regex literal
-is reported; write that literal as `#/.../#`, which is unambiguous, to have its text ignored.
+A bare `/.../` regex literal cannot be told from two divisions without a Swift parser, so it is found the way the
+compiler finds it, as nearly as a scanner can: a slash where an expression may start, not followed by a space,
+with its closing slash on the same line and no closing parenthesis left unopened. Its text is then ignored when
+reading the code after it, so a quote inside it starts no string. But because that judgement can be wrong, the
+text between the two slashes is also searched for the banned names. A banned name written inside a bare regex
+literal is therefore reported; write that literal as `#/.../#`, which is unambiguous, to have its text ignored.
 
 Runs on Python 3.9 or later, on macOS and Linux.
 """
+import bisect
 import os
 import re
 import subprocess
@@ -20,21 +23,23 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STRING_OPEN = re.compile(r'(#*)("""|")')
 EXTENDED_REGEX_OPEN = re.compile(r"(#+)/")
-# What a bare regex literal may follow: an opening bracket, a separator, an assignment or comparison, or one of
-# these words. After a name, a number or a closing bracket a slash is division.
-REGEX_AFTER = set("([{,;:=?")
-REGEX_AFTER_WORDS = ("return", "in", "case", "else", "try", "await", "throw", "if", "guard", "while", "where",
-                     "switch", "yield")
+# A bare regex literal starts where an expression may start. That is anywhere except after something that ends an
+# expression: a name, a number, a closing bracket, the end of a string or regex literal, or a postfix `!` or `?`.
+# These words are followed by an expression although they look like names.
+EXPRESSION_END = set(")]}\"`#.")
+BEFORE_EXPRESSION = ("return", "in", "case", "else", "try", "await", "throw", "if", "guard", "while", "where",
+                     "switch", "yield", "do", "repeat", "is", "as")
 
 
-def code_only(src, bare_regex=True):
-    """`src` with comments and literal text replaced by spaces. Line breaks, and so line numbers, are kept.
+def scan(src):
+    """`src` with comments and literal text replaced by spaces, and the bare regex literals found in it.
 
-    With `bare_regex` a slash in a position where a regex literal may start, and with a closing slash on its line,
-    is read as one; without it every bare slash is division.
+    Line breaks, and so line numbers, are kept in the first. The second is a list of (offset of the opening
+    slash, the text between the slashes).
     """
     out = list(src)
     n = len(src)
+    bare = []
 
     def blank(a, b):
         for k in range(a, min(b, n)):
@@ -64,19 +69,36 @@ def code_only(src, bare_regex=True):
         blank(start, j)
         return j
 
-    def bare_regex_end(i):
-        """The index just past the bare regex literal whose opening slash is at `i`, or None if it is not one."""
-        if not bare_regex or i + 1 >= n or src[i + 1] in " \t\n":
-            return None
+    def word_ending_at(k):
+        m = k
+        while m >= 0 and (out[m].isalnum() or out[m] == "_"):
+            m -= 1
+        return "".join(out[m + 1:k + 1])
+
+    def may_start_expression(i):
+        """Whether an expression may start at `i`, judged by what comes before it on the line."""
         k = i - 1
         while k >= 0 and out[k] in " \t":
             k -= 1
-        if k >= 0 and out[k] != "\n" and out[k] not in REGEX_AFTER:
-            m = k
-            while m >= 0 and (out[m].isalnum() or out[m] == "_"):
-                m -= 1
-            if "".join(out[m + 1:k + 1]) not in REGEX_AFTER_WORDS:
-                return None
+        if k < 0 or out[k] == "\n":
+            return True
+        if out[k] in "!?":
+            # Attached to what it follows, it is a postfix operator and ends an expression: `a!/2`, `b?.c`.
+            # After `try` it does not: `try? /x/`. Standing alone it is an operator: `a ? /x/ : /y/`, `a ?? /x/`.
+            r = k
+            while r >= 0 and out[r] in "!?":
+                r -= 1
+            if r < 0 or out[r] in " \t\n":
+                return True
+            return word_ending_at(r) == "try"
+        if out[k].isalnum() or out[k] == "_":
+            return word_ending_at(k) in BEFORE_EXPRESSION
+        return out[k] not in EXPRESSION_END
+
+    def bare_regex_end(i):
+        """The index just past the bare regex literal whose opening slash is at `i`, or None if it is not one."""
+        if i + 1 >= n or src[i + 1] in " \t\n" or not may_start_expression(i):
+            return None
         j, classes, groups = i + 1, 0, 0
         while j < n and src[j] != "\n":
             c = src[j]
@@ -126,6 +148,7 @@ def code_only(src, bare_regex=True):
                 if end is None:
                     i += 1
                 else:
+                    bare.append((i, src[i + 1:end - 1]))
                     blank(i + 1, end - 1)
                     i = end
             elif src[i] == "#" and EXTENDED_REGEX_OPEN.match(src, i):
@@ -151,7 +174,12 @@ def code_only(src, bare_regex=True):
         return n
 
     scan_code(0, False)
-    return "".join(out)
+    return "".join(out), bare
+
+
+def code_only(src):
+    """`src` with comments and literal text replaced by spaces."""
+    return scan(src)[0]
 
 
 # An import declaration, wherever it starts: at the start of a line or after a semicolon, with its tokens on one
@@ -176,29 +204,39 @@ MAY_PRINT = ("SorelloSnapshots", "SorelloTranscribe")
 def lint_swift(module, name, src):
     """The (rule, line number, line) violations in one Swift source of `module`."""
     raw = src.split("\n")
-    # Both readings of any ambiguous slash; a violation in either counts.
-    readings = {code_only(src, True), code_only(src, False)}
+    code, bare = scan(src)
+    may_log = module in MAY_PRINT or name == "Diagnostics.swift"
     found = set()
-    for code in readings:
-        for imported in IMPORT.finditer(code):
-            framework = imported.group(1)
-            number = code.count("\n", 0, imported.start(1)) + 1
-            text = raw[number - 1].strip()
-            if framework == "Network":
-                found.add(("Sorello makes no network connections", number, text))
-            if module in PURE and framework in UI_AND_MODEL:
-                found.add(("pure modules import only Foundation", number, text))
-            if framework in NEUTRAL.get(module, ()):
-                found.add(("neutral modules must also build for iOS", number, text))
 
-        for number, line in enumerate(code.split("\n"), 1):
-            text = raw[number - 1].strip()
-            if NETWORK.search(line):
-                found.add(("Sorello makes no network connections", number, text))
-            if LOGGING.search(line) and module not in MAY_PRINT and name != "Diagnostics.swift":
-                found.add(("log only through Diagnostics, which cannot carry content", number, text))
-            if UNCHECKED.search(line) and not any("Safe:" in near for near in raw[max(0, number - 4):number + 3]):
-                found.add(("@unchecked Sendable needs a '// Safe:' comment naming the lock or queue", number, text))
+    for imported in IMPORT.finditer(code):
+        framework = imported.group(1)
+        number = code.count("\n", 0, imported.start(1)) + 1
+        text = raw[number - 1].strip()
+        if framework == "Network":
+            found.add(("Sorello makes no network connections", number, text))
+        if module in PURE and framework in UI_AND_MODEL:
+            found.add(("pure modules import only Foundation", number, text))
+        if framework in NEUTRAL.get(module, ()):
+            found.add(("neutral modules must also build for iOS", number, text))
+
+    for number, line in enumerate(code.split("\n"), 1):
+        text = raw[number - 1].strip()
+        if NETWORK.search(line):
+            found.add(("Sorello makes no network connections", number, text))
+        if LOGGING.search(line) and not may_log:
+            found.add(("log only through Diagnostics, which cannot carry content", number, text))
+        if UNCHECKED.search(line) and not any("Safe:" in near for near in raw[max(0, number - 4):number + 3]):
+            found.add(("@unchecked Sendable needs a '// Safe:' comment naming the lock or queue", number, text))
+
+    # What was taken for a bare regex literal may have been code after all, so its text is searched too.
+    line_starts = [0] + [index + 1 for index, character in enumerate(src) if character == "\n"]
+    for offset, body in bare:
+        number = bisect.bisect_right(line_starts, offset)
+        text = raw[number - 1].strip()
+        if NETWORK.search(body):
+            found.add(("Sorello makes no network connections", number, text))
+        if LOGGING.search(body) and not may_log:
+            found.add(("log only through Diagnostics, which cannot carry content", number, text))
     return sorted(found, key=lambda violation: (violation[1], violation[0]))
 
 
@@ -235,8 +273,19 @@ def self_test():
         ("TextRules", "let pattern = #/\n  print(1)  # the call\n  URLSession\n/#\nlet x = 1", []),
         ("TextRules", 'let pattern = #/abc\\/#"def/#; print("x")', ["log"]),
         ("TextRules", 'let r = value.replacing(#/"/#, with: { _ in Swift.print("x"); return "y" })', ["log"]),
-        # A bare slash is read both ways, so neither a regex's quote nor a division can hide a call.
+        # A bare regex literal's text is ignored when reading what follows it, so its quote starts no string.
         ("TextRules", r"let pattern = /print\(x\)/", []),
+        ("TextRules", 'let replacement = text.replacing(/"/, with: "URLSession")', []),
+        ("TextRules", 'let replacement = text.replacing(/"/, with: "print(x)")', []),
+        ("TextRules", 'if enabled && /.*".*/ ~= text { print(text) }', ["log"]),
+        ("TextRules", 'if enabled || /.*".*/ ~= text { print(text) }', ["log"]),
+        ("TextRules", 'let m = name ?? /a"/; print(m)', ["log"]),
+        ("TextRules", 'let m = flag ? /a"/ : /b"/; print(m)', ["log"]),
+        ("TextRules", 'let m = try? /a"b/.wholeMatch(in: s); NSLog("x")', ["log"]),
+        ("TextRules", 'let m = try /a"b/.firstMatch(in: s); NSLog("x")', ["log"]),
+        ("TextRules", 'let parts = [/a"/, /b"/]; print(parts)', ["log"]),
+        ("TextRules", 'let r =\n    /x"/\nprint(r)', ["log"]),
+        # Division, and an operator passed as a value, are code.
         ("TextRules", 'let m = text.firstMatch(of: /"/); print("x")', ["log"]),
         ("TextRules", "let ratio = total / count; print(ratio)", ["log"]),
         ("TextRules", "let ratio = (a + b) / 2 / print(c)", ["log"]),
@@ -244,9 +293,17 @@ def self_test():
         ("TextRules", "let ratio = values.reduce(1, /); print(ratio) // Explain the ratio.", ["log"]),
         ("TextRules", "let ops = [+, -, *, /]; print(x/y)", ["log"]),
         ("TextRules", "let half = a!/2; print(b!/2)", ["log"]),
+        ("TextRules", "let n = table[key]!/2; print(n/2)", ["log"]),
+        ("TextRules", 'let n = "a/b".count/2; print(n/2)', ["log"]),
+        ("TextRules", 'let q = s.split(separator: "/"); print(q)', ["log"]),
+        ("TextRules", "let t = a /* c */ / b; print(t / 2)", ["log"]),
+        ("TextRules", "foo(combine: /, initial: 1); print(a/b)", ["log"]),
+        ("TextRules", "static func / (lhs: V, rhs: V) -> V { print(lhs); return lhs }", ["log"]),
+        ("TextRules", "let ok = a / b // print(1)", []),
         ("TextRules", "let f: (Double, Double) -> Double = (/); print(f(a, b)/2)", ["log"]),
         ("TextRules", "let x = a / b / c", []),
-        # The price of reading both ways: a banned name in a bare regex is reported. `#/.../#` is the way out.
+        # What looks like a bare regex may have been code, so its text is searched: a banned name in one is
+        # reported. `#/.../#` is the way out.
         ("TextRules", "let pattern = /URLSession/", ["Sorello"]),
         # Imports, however they are laid out.
         ("SorelloApp", "import Network", ["Sorello"]),
