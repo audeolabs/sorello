@@ -1,0 +1,3 @@
+import SorelloApp
+
+SorelloMain.run()
