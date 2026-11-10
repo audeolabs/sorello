@@ -7,6 +7,7 @@ import Testing
 /// The real model, run only when `SORELLO_MODEL_DIR` points at the pinned bundle. Audio is synthetic speech made
 /// with `say` from invented sentences, written to a temporary directory and deleted afterwards. The model store is
 /// `SORELLO_MODEL_STORE`, or a directory under /tmp, so the Neural Engine's compiled model is reused between runs.
+/// The engine runs where this Mac's hardware says, except where a test forces the CPU fallback.
 @Suite(.enabled(if: ProcessInfo.processInfo.environment["SORELLO_MODEL_DIR"] != nil), .serialized)
 struct ModelTests {
     static var bundle: URL? {
@@ -20,14 +21,27 @@ struct ModelTests {
 
     let sentence = "We moved the billing service to Vexlomar last week, and it works well."
 
+    static let library = """
+        The committee met on a quiet Tuesday morning to review the plans for the new library. \
+        Everyone agreed that the reading room should face the garden, and that the children's corner needs more \
+        light. The architect showed three drawings, each with a different roof, and the group spent an hour \
+        comparing them. After a short break they talked about the budget, the schedule for the builders, and how \
+        to keep the old trees near the entrance. Before leaving, they chose the second drawing and asked for a \
+        revised estimate by the end of the month. On the walk back, two of them stopped at the bakery on the \
+        corner and argued, kindly, about whether the library should open on Sundays. One thought families would \
+        come in the afternoon, and the other worried about the cost of extra staff. They promised to bring numbers \
+        to the next meeting, which will be held in the town hall at the start of spring.
+        """
+
     struct NoModel: Error {}
 
-    func engine(_ entries: [DictionaryEntry] = []) async throws -> SpeechEngine {
+    func engine(_ entries: [DictionaryEntry] = [], compute: SpeechCompute = .forThisMac()) async throws -> SpeechEngine {
         guard let bundle = Self.bundle else { throw NoModel() }
         let snapshot = DictionarySnapshot(revision: 1, entries: entries)
-        let engine = SpeechEngine(modelDirectory: bundle, storeDirectory: Self.store,
+        let engine = SpeechEngine(modelDirectory: bundle, storeDirectory: Self.store, compute: compute,
                                   dictionary: { _ in snapshot })
-        // The first load at a new store path compiles the model for the Neural Engine, which can take minutes.
+        // The first load at a new store path compiles the model for the Neural Engine, which can take minutes. The
+        // CPU fallback loads in seconds.
         await prepare(engine, within: 1200)
         #expect(await ReadinessLog(engine).first(1) == [.ready])
         return engine
@@ -89,21 +103,33 @@ struct ModelTests {
     /// Over 30 s: three chunks and two seams, joined without lost or doubled words.
     @Test func longRecordingIsJoinedAtSeams() async throws {
         let engine = try await engine()
-        let text = """
-            The committee met on a quiet Tuesday morning to review the plans for the new library. \
-            Everyone agreed that the reading room should face the garden, and that the children's corner needs more \
-            light. The architect showed three drawings, each with a different roof, and the group spent an hour \
-            comparing them. After a short break they talked about the budget, the schedule for the builders, and how \
-            to keep the old trees near the entrance. Before leaving, they chose the second drawing and asked for a \
-            revised estimate by the end of the month. On the walk back, two of them stopped at the bakery on the \
-            corner and argued, kindly, about whether the library should open on Sundays. One thought families would \
-            come in the afternoon, and the other worried about the cost of extra staff. They promised to bring numbers \
-            to the next meeting, which will be held in the town hall at the start of spring.
-            """
-        let samples = try speech(text)
+        let samples = try speech(Self.library)
         #expect(samples.count > 30 * 16_000, "The clip must be longer than two chunks")
         let heard = try #require(await transcribe(engine, samples, within: 120)).get()
-        #expect(errorRate(heard, text) <= 0.08, "Heard \(heard)")
+        #expect(errorRate(heard, Self.library) <= 0.08, "Heard \(heard)")
+    }
+
+    /// The fallback (ARCHITECTURE.md, section 5): Core ML's CPU kernels, forced here, hear what the Neural Engine
+    /// hears, through the app's streaming path, from a short phrase to three chunks joined at two seams. On a Mac
+    /// without a Neural Engine both engines run on the CPU and this still holds.
+    @Test func theCPUFallbackHearsWhatTheNeuralEngineHears() async throws {
+        let neural = try await engine(compute: .neuralEngine)
+        let cpu = try await engine(compute: .cpu)
+        #expect(cpu.compute == .cpu)
+        for text in ["The quick brown fox jumps over the lazy dog.", sentence, Self.library] {
+            let samples = try speech(text)
+            var heard: [String] = []
+            for engine in [neural, cpu] {
+                let stream = engine.openStream(SpeechStreamOptions())
+                for start in stride(from: 0, to: samples.count, by: 1600) {
+                    stream.append(Array(samples[start..<min(start + 1600, samples.count)]))
+                }
+                heard.append(try #require(await finish(stream, within: 120)).get().text)
+            }
+            #expect(heard[0] == heard[1], "The Neural Engine heard \(heard[0]); the CPU heard \(heard[1])")
+            #expect(errorRate(heard[1], text) <= 0.15, "Heard \(heard[1])")
+        }
+        #expect(await transcribe(cpu, Signals.zeros(2)) == .success(""), "Silence is empty text on the CPU too")
     }
 
     /// A made-up product name the model mishears on its own is recognized once the dictionary holds it.

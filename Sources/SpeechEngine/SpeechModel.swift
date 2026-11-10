@@ -30,23 +30,27 @@ protocol SpeechModel: AnyObject {
     func decode(_ projection: Projection, offset: Int, bias: BiasGraph?, check: () throws -> Void) throws -> [HeardWord]
 }
 
-/// The bundled model: a Core ML encoder holding the 15 s function, run on the Neural Engine, with the native front end
-/// and decoder. Every file is checked against the manifest's SHA-256 before anything is loaded.
+/// The bundled model: a Core ML encoder holding the 15 s function, run where `compute` says, with the native front end
+/// and decoder. Every file is checked against the manifest's SHA-256 before anything is loaded. The manifest's
+/// `compute_units` says how the bundle was exported; it is not read.
 final class CoreMLSpeechModel: SpeechModel {
     /// The files every bundle must list, beside the encoder.
     static let requiredFiles = ["frontend.json", "frontend.f32bin", "decoder_joint.json", "decoder_joint.f32bin",
                                 "vocabulary.json"]
 
     let directory: URL
+    let compute: SpeechCompute
     let encoder: BPEEncoder
     private let frontend: VDSPFrontEnd
     private let math: NativeMath
     private let vocabulary: [String]
     private let models = ModelCache<MLModel>()
 
-    /// Verifies the bundle at `directory` and reads its native parts. The encoder is loaded by `prepare`.
-    init(directory: URL) throws(EngineFailure) {
+    /// Verifies the bundle at `directory` and reads its native parts. The encoder is loaded by `prepare`, on
+    /// `compute`.
+    init(directory: URL, compute: SpeechCompute) throws(EngineFailure) {
         self.directory = directory
+        self.compute = compute
         guard let data = try? Data(contentsOf: directory.appendingPathComponent("bundle.json")) else {
             throw .modelMissing
         }
@@ -77,7 +81,7 @@ final class CoreMLSpeechModel: SpeechModel {
         encoder = BPEEncoder(pieces: vocabulary)
     }
 
-    /// Loads the 15 s encoder function on the Neural Engine and warms it with invented zero features. No audio or
+    /// Loads the 15 s encoder function where `compute` says and warms it with invented zero features. No audio or
     /// user content is read.
     func prepare() throws(EngineFailure) {
         do {
@@ -89,7 +93,7 @@ final class CoreMLSpeechModel: SpeechModel {
 
     private func loadEncoder(seconds: Int) throws -> MLModel {
         let configuration = MLModelConfiguration()
-        configuration.computeUnits = .cpuAndNeuralEngine
+        configuration.computeUnits = compute.computeUnits
         configuration.functionName = "b\(seconds)"
         return try MLModel(contentsOf: directory.appendingPathComponent("Encoder.mlmodelc"), configuration: configuration)
     }
