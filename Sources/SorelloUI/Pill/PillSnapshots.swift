@@ -39,12 +39,13 @@ public enum PillSnapshots {
             }
         }
 
-        /// The 2026 MacBook Pro, a 14-inch 2021 MacBook Pro at its default scale, and an external display.
+        /// The 2026 MacBook Pro (whose menu bar, at 45 pt, is taller than its camera's 40 pt band), a 14-inch 2021
+        /// MacBook Pro at its default scale, and an external display.
         var topology: ScreenTopology {
             switch self {
             case .island:
                 ScreenTopology(frame: CGRect(x: 0, y: 0, width: 1736, height: 1133), safeAreaTop: 40,
-                               leftAreaWidth: 838.5, rightAreaWidth: 838.5, menuBarHeight: 40, scale: 2)
+                               leftAreaWidth: 838.5, rightAreaWidth: 838.5, menuBarHeight: 45, scale: 2)
             case .notch:
                 ScreenTopology(frame: CGRect(x: 0, y: 0, width: 1512, height: 982), safeAreaTop: 32,
                                leftAreaWidth: 663.5, rightAreaWidth: 663.5, menuBarHeight: 32, scale: 2)

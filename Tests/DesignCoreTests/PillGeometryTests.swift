@@ -6,9 +6,10 @@ import Testing
 /// ARCHITECTURE.md, section 8, "The pill": one pill on every screen, hung below the top band and centred on the camera
 /// housing where there is one, checked against real Macs and held to the invariants every form must keep.
 @Suite struct PillGeometryTests {
-    /// The 2026 MacBook Pro: a 59 pt island in a 40 pt band.
+    /// The 2026 MacBook Pro, as its screen reports itself: a camera housing 59 pt wide in a 40 pt band, under a menu
+    /// bar 45 pt tall. The menu bar is the taller, so the pill hangs from it.
     static let island = ScreenTopology(frame: CGRect(x: 0, y: 0, width: 1736, height: 1133), safeAreaTop: 40,
-                                       leftAreaWidth: 838.5, rightAreaWidth: 1736 - 897.5, menuBarHeight: 40,
+                                       leftAreaWidth: 838.5, rightAreaWidth: 1736 - 897.5, menuBarHeight: 45,
                                        scale: 2)
     /// A 14-inch 2021 MacBook Pro at its default scale: a notch about 185 pt wide in a 32 pt band.
     static let notch = ScreenTopology(frame: CGRect(x: 0, y: 0, width: 1512, height: 982), safeAreaTop: 32,
@@ -87,7 +88,7 @@ import Testing
 
     /// The top band is the menu bar, or the housing's band where that is taller.
     @Test func theTopBandIsTheTallerOfTheMenuBarAndTheHousingsBand() {
-        #expect(Self.island.topBand == 40)
+        #expect(Self.island.topBand == 45)
         #expect(Self.external.topBand == 24)
         #expect(Self.tallBand.topBand == 38)
         #expect(Self.tallMenuBar.topBand == 37.5)
@@ -96,26 +97,26 @@ import Testing
         #expect(odd.topBand == 0)
     }
 
-    /// On the 2026 MacBook Pro the listening pill is a 156 pt capsule 8 pt below the band, centred on the camera: the
-    /// wave, then the time. It used to be a black shape about 274 pt wide that grew sideways out of the housing.
+    /// On the 2026 MacBook Pro the listening pill is a 156 pt capsule 8 pt below the menu bar, centred on the camera:
+    /// the wave, then the time. It used to be a black shape about 274 pt wide that grew sideways out of the housing.
     @Test func onTheIslandMacThePillHangsBelowTheCamera() {
         let listening = PillGeometry.layout(.listening(trailing: 30, cancel: false), on: Self.island)
-        #expect(listening.body == PillBody(frame: CGRect(x: 790, y: 48, width: 156, height: 36), topRadius: 18,
+        #expect(listening.body == PillBody(frame: CGRect(x: 790, y: 53, width: 156, height: 36), topRadius: 18,
                                            bottomRadius: 18))
-        #expect(listening.leading == CGRect(x: 802, y: 48, width: 88, height: 36))
-        #expect(listening.trailing == CGRect(x: 904, y: 48, width: 30, height: 36))
+        #expect(listening.leading == CGRect(x: 802, y: 53, width: 88, height: 36))
+        #expect(listening.trailing == CGRect(x: 904, y: 53, width: 30, height: 36))
         #expect(listening.card == nil && listening.cancel == nil)
         // In toggle mode the bud hangs off the trailing end and the body stays where it was.
         let toggle = PillGeometry.layout(.listening(trailing: 30, cancel: true), on: Self.island)
         #expect(toggle.body == listening.body)
-        #expect(toggle.cancel == CGRect(x: 958, y: 52, width: 28, height: 28))
+        #expect(toggle.cancel == CGRect(x: 958, y: 57, width: 28, height: 28))
     }
 
     /// The drop starts from a small capsule touching the foot of the band, centred under the camera.
     @Test func theRestIsASmallCapsuleUnderTheCamera() {
         let rest = PillGeometry.layout(.rest, on: Self.island)
         let width = PillGeometry.restWidth, height = PillGeometry.restHeight
-        #expect(rest.body == PillBody(frame: CGRect(x: 868 - width / 2, y: 40, width: width, height: height),
+        #expect(rest.body == PillBody(frame: CGRect(x: 868 - width / 2, y: 45, width: width, height: height),
                                       topRadius: height / 2, bottomRadius: height / 2))
         #expect(rest.leading == nil && rest.trailing == nil && rest.card == nil && rest.cancel == nil)
         #expect(height < PillGeometry.height)
