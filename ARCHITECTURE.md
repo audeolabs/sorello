@@ -700,13 +700,16 @@ without moving anything.
   - under the heading Shortcuts, the three shortcuts, each with its keys
     at the trailing edge of its row, or "Not set" there. Choosing one
     opens the Shortcuts screen;
-  - under the heading Last Dictation, the start of the last dictation on
-    one line, which is not a command, then Copy Last Dictation. With no
-    dictation yet the line says so and Copy is unavailable;
+  - Copy Last Dictation, which is unavailable until there is a dictation
+    to copy;
   - Dictionary, Run Log, Settings (⌘,) and Quit (⌘Q).
 
   The rows are one function of the values the windows show, made again
   each time the menu opens and kept current while it is open.
+
+  The menu never shows what was dictated. No row carries a dictation's
+  text, and the menu is told only whether there is one to copy. So it is
+  as wide as its commands and their keys need, like any other menu.
 - **Main window**: a sidebar (General, Shortcuts, Dictionary, Macros, Run
   Log, About) over the screen colour, content in cards.
 - **Setup**: welcome, microphone, Accessibility, shortcut, and a live test.
