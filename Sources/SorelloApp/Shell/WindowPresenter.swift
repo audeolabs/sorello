@@ -109,7 +109,7 @@ enum MainMenu {
         app.addItem(item(String(localized: "Settings…"), #selector(AppShell.showSettings(_:)), ",", target))
         app.addItem(.separator())
         app.addItem(item(String(localized: "Hide \(appName)"), #selector(NSApplication.hide(_:)), "h", nil))
-        app.addItem(item(String(localized: "Quit \(appName)"), #selector(NSApplication.terminate(_:)), "q", nil))
+        app.addItem(item(String(localized: "Quit \(appName)"), #selector(AppShell.quit(_:)), "q", target))
         add(app, to: menu)
 
         let edit = NSMenu(title: String(localized: "Edit"))

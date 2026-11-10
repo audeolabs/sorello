@@ -17,7 +17,12 @@ final class AppShell: NSObject, NSApplicationDelegate {
     private var windows = WindowPresenter()
     private var overlay: PillOverlayController?
     private var terminationSignal: (any DispatchSourceSignal)?
-    private var quitting = false
+    /// The shutdown, once something asked the app to quit.
+    private var shutdown: Task<Void, Never>?
+    /// The shutdown has finished: the next request to terminate goes ahead at once.
+    private var shutDown = false
+    /// AppKit is waiting for `reply(toApplicationShouldTerminate:)`.
+    private var replyPending = false
 
     private init(showsSetup: Bool) {
         self.showsSetup = showsSetup
@@ -77,7 +82,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
                 NSApp.activate()
                 alert.runModal()
             },
-            quit: { NSApp.terminate(nil) })
+            quit: { [weak self] in self?.quit(nil) })
         statusItem = StatusItemController(model: models.menu, appName: info.name)
         app.start()
         watchActivation(app)
@@ -91,18 +96,50 @@ final class AppShell: NSObject, NSApplicationDelegate {
         return false
     }
 
+    /// A quit the system asks for (an Apple event: `osascript … quit`, logging out) waits for the shutdown. AppKit
+    /// waits in a loop of its own that still runs the main queue, so the shutdown can finish inside it.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        // A second request while the first is being handled (Quit, then SIGTERM) waits for the first.
-        guard !quitting else { return .terminateCancel }
-        guard let app else { return .terminateNow }
-        quitting = true
-        models?.stop()
-        statusItem?.close()
+        if shutDown || app == nil { return .terminateNow }
+        replyPending = true
+        let shutdown = shutDownOnce()
         Task {
-            await app.shutdown()
-            NSApp.reply(toApplicationShouldTerminate: true)
+            await shutdown.value
+            finishedShuttingDown()
         }
         return .terminateLater
+    }
+
+    /// A quit from inside the app (Quit, ⌘Q, SIGTERM) shuts down first and only then terminates, so AppKit never
+    /// waits for work queued behind the very call that asked it to quit.
+    @objc func quit(_ sender: Any?) {
+        let shutdown = shutDownOnce()
+        Task {
+            await shutdown.value
+            finishedShuttingDown()
+        }
+    }
+
+    /// Lets go of everything, once, however many ways the app was asked to quit.
+    private func shutDownOnce() -> Task<Void, Never> {
+        if let shutdown { return shutdown }
+        models?.stop()
+        statusItem?.close()
+        let app = self.app
+        let task = Task<Void, Never> {
+            if let app { await app.shutdown() }
+        }
+        shutdown = task
+        return task
+    }
+
+    private func finishedShuttingDown() {
+        shutDown = true
+        if replyPending {
+            replyPending = false
+            NSApp.reply(toApplicationShouldTerminate: true)
+        } else {
+            NSApp.terminate(nil)
+        }
     }
 
     // MARK: - Windows
@@ -141,8 +178,8 @@ final class AppShell: NSObject, NSApplicationDelegate {
     private func catchTermination() {
         signal(SIGTERM, SIG_IGN)
         let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
-        source.setEventHandler {
-            MainActor.assumeIsolated { NSApp.terminate(nil) }
+        source.setEventHandler { [weak self] in
+            MainActor.assumeIsolated { self?.quit(nil) }
         }
         source.resume()
         terminationSignal = source
