@@ -128,6 +128,9 @@ final class DotLayers {
         parent.actions = ["sublayers": NSNull()]
     }
 
+    /// The dot layers showing now.
+    var showing: [CALayer] { zip(layers, shown).filter { $0.1 != nil }.map(\.0) }
+
     /// Shows `dots`, given in the parent's coordinates, in `color`; the brightness is each dot's opacity.
     func show(_ dots: [DotWave.Dot], color: CGColor) {
         let recolor = color != self.color

@@ -284,11 +284,37 @@ final class PillView: NSView {
     }
 
     /// Where the lines and symbols of what the pill shows are drawn now, in screen points (top left, y down).
-    var drawnContent: [CGRect] {
-        (current?.drawnFrames ?? []).map {
-            CGRect(x: $0.minX + origin.x, y: bounds.height + origin.y - $0.maxY, width: $0.width, height: $0.height)
+    var drawnContent: [CGRect] { (current?.lines ?? []).map(drawn) }
+
+    /// What one form of the pill's content draws now, read from its layers.
+    struct DrawnForm {
+        var key: PillContent.Key
+        /// Whether it is fading out.
+        var leaving: Bool
+        /// The opacity its fade gives it now.
+        var opacity: Double
+        /// Where each thing it draws is, in screen points (top left, y down): its lines and symbols, the actions'
+        /// capsules, the dots and the aurora dot.
+        var marks: [CGRect]
+    }
+
+    /// Every form the pill's content draws now: what it holds, then what is still leaving, oldest first.
+    var drawnForms: [DrawnForm] {
+        let held = current.map { [($0, false)] } ?? []
+        return (held + leaving.map { ($0, true) }).map { content, leaving in
+            DrawnForm(key: content.key, leaving: leaving, opacity: Double(content.layer.opacity),
+                      marks: content.marks.map(drawn))
         }
     }
+
+    /// Where the layer `part` is drawn now, through every layer above it, in screen points (top left, y down).
+    private func drawn(_ part: CALayer) -> CGRect {
+        guard let root = layer else { return .null }
+        let box = part.convert(part.bounds, to: root)
+        return CGRect(x: box.minX + origin.x, y: bounds.height + origin.y - box.maxY, width: box.width,
+                      height: box.height)
+    }
+
 
     var scale: CGFloat { CGFloat(screen?.scale ?? 2) }
     var reduceMotion: Bool { look.reduceMotion }

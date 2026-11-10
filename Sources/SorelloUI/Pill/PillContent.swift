@@ -87,10 +87,14 @@ final class PillContent {
     /// Whether it is fading in or out at `now`.
     func isFading(at now: CFTimeInterval) -> Bool { !fade.isSettled(at: now) }
 
-    /// The frames of the lines and symbols it draws, in the view's coordinates.
-    var drawnFrames: [CGRect] {
+    /// The layers that draw its lines and symbols, those showing now.
+    var lines: [CALayer] {
         ([time, tag, words, symbol, text] + actions.map(\.title)).filter { !$0.isHidden && $0.contents != nil }
-            .map(\.frame)
+    }
+
+    /// Every layer that draws something now: its lines and symbols, the actions' capsules, the dots and the aurora dot.
+    var marks: [CALayer] {
+        lines + actions.map(\.capsule) + dots.showing + (mark.isHidden ? [] : [mark])
     }
 
     func dim(_ alpha: Float, action: String?) {
