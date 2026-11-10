@@ -44,11 +44,13 @@ struct DictionaryPresentationTests {
         #expect(DictionaryProblem.inlineMessage(draft: "", problem: .full(capacity: 1000))
                 == DictionaryProblem.full(capacity: 1000).message)
         #expect(DictionaryProblem.inlineMessage(draft: "", problem: .needsModel) == DictionaryProblem.needsModel.message)
+        #expect(DictionaryProblem.inlineMessage(draft: "", problem: .notSaved) == DictionaryProblem.notSaved.message)
     }
 
     @Test func messagesNeverQuoteTheWord() {
         let problems: [DictionaryProblem] = [.empty, .tooManyWords(limit: 8), .tooLong(limit: 100), .noLetter,
-                                             .unencodable, .full(capacity: 1000), .appsFull(capacity: 32), .needsModel]
+                                             .unencodable, .full(capacity: 1000), .appsFull(capacity: 32), .needsModel,
+                                             .notSaved]
         #expect(Set(problems.map(\.message)).count == problems.count)
         #expect(DictionaryProblem.tooManyWords(limit: 8).message.contains("8"))
         #expect(DictionaryProblem.tooLong(limit: 100).message.contains("100"))
@@ -66,5 +68,13 @@ struct DictionaryPresentationTests {
                 == MacroProblem.emptyPhrase.message)
         #expect(MacroProblem.inlineMessage(phrase: "sample sign off", text: "", problem: .duplicatePhrase)
                 == MacroProblem.duplicatePhrase.message)
+    }
+
+    @Test func aSaveThatFailedIsSaidOnceSomethingIsTyped() {
+        #expect(MacroProblem.inlineMessage(phrase: "sample sign off", text: "", problem: .notSaved)
+                == MacroProblem.notSaved.message)
+        let problems: [MacroProblem] = [.emptyPhrase, .duplicatePhrase, .phraseTooLong(limit: 80),
+                                        .textTooLong(limit: 4000), .notSaved]
+        #expect(Set(problems.map(\.message)).count == problems.count)
     }
 }

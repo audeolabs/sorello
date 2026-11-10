@@ -91,6 +91,8 @@ nonisolated public enum MacroProblem: Equatable, Sendable {
     case duplicatePhrase
     case phraseTooLong(limit: Int)
     case textTooLong(limit: Int)
+    /// The macros file could not be written, or the macro was deleted meanwhile: nothing was saved.
+    case notSaved
 
     /// One sentence that says what to do.
     public var message: String {
@@ -99,6 +101,7 @@ nonisolated public enum MacroProblem: Equatable, Sendable {
         case .duplicatePhrase: String(localized: "Another macro already uses this phrase.")
         case .phraseTooLong(let limit): String(localized: "Keep the phrase under \(limit) characters.")
         case .textTooLong(let limit): String(localized: "Keep the text under \(limit.formatted()) characters.")
+        case .notSaved: String(localized: "The macro couldn’t be saved. Try again.")
         }
     }
 

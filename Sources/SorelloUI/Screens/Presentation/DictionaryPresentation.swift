@@ -45,6 +45,8 @@ nonisolated public enum DictionaryProblem: Equatable, Sendable {
     case appsFull(capacity: Int)
     /// Without the speech model's vocabulary nothing can be checked, so nothing can be edited.
     case needsModel
+    /// The change could not be written to disk, so it was not made.
+    case notSaved
 
     /// One sentence that says what to do.
     public var message: String {
@@ -57,6 +59,7 @@ nonisolated public enum DictionaryProblem: Equatable, Sendable {
         case .full(let capacity): String(localized: "The dictionary is full (\(capacity.formatted()) words).")
         case .appsFull(let capacity): String(localized: "Words can be limited to at most \(capacity) apps.")
         case .needsModel: String(localized: "The dictionary can’t be changed until the speech model is available.")
+        case .notSaved: String(localized: "The dictionary couldn’t be saved. Nothing was changed.")
         }
     }
 
@@ -64,7 +67,7 @@ nonisolated public enum DictionaryProblem: Equatable, Sendable {
     var isAboutDraft: Bool {
         switch self {
         case .empty, .tooManyWords, .tooLong, .noLetter, .unencodable: true
-        case .full, .appsFull, .needsModel: false
+        case .full, .appsFull, .needsModel, .notSaved: false
         }
     }
 
