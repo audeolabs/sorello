@@ -11,7 +11,7 @@ import Testing
     static let screens = PillSnapshots.Housing.allCases.map(\.topology)
 
     static func scene(_ display: PillDisplay, on screen: ScreenTopology = island) -> PillScene {
-        PillScene(display: display, screen: screen, adjustments: PillAdjustments())
+        PillScene(display: display, screen: screen)
     }
 
     /// In toggle mode the pill itself is Stop and the cancel bud is Cancel, named for VoiceOver; holding to talk, the
@@ -107,7 +107,7 @@ import Testing
 
         let pill = PillView(levels: LevelFeed(), clock: { 0 })
         pill.update(display: .listening(.init(trigger: .hold, started: 0)), screen: Self.island,
-                    adjustments: PillAdjustments(), appearance: PillAppearance(), animated: false)
+                    appearance: PillAppearance(), animated: false)
         #expect(pill.accessibilityChildren()?.isEmpty == true)
         #expect(!pill.isAccessibilityElement())
         #expect(pill.hitTest(NSPoint(x: 10, y: 10)) == nil)
@@ -184,7 +184,7 @@ import Testing
     }
 
     /// Hidden, the panels stay up only until the pill has come to rest, and nothing brings them back until something
-    /// is shown: not a change of screens, accessibility settings or nudges, nor a rest reported late.
+    /// is shown: not a change of screens or accessibility settings, nor a rest reported late.
     @Test func hiddenPanelsStayOffUntilSomethingIsShown() {
         var life = OverlayLifecycle()
         #expect(Self.show(&life, .hidden) == nil)

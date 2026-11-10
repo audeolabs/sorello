@@ -83,16 +83,6 @@ public final class SettingsStore {
         didSet { Keys.setupCompleted.write(setupCompleted, to: defaults) }
     }
 
-    /// Hidden: points added to the island pill's height, for matching the camera housing by eye. 0 by default.
-    public var islandHeightNudge: Double {
-        didSet { Keys.islandHeightNudge.write(islandHeightNudge, to: defaults) }
-    }
-
-    /// Hidden: points the island pill moves down, for matching the camera housing by eye. 0 by default.
-    public var islandOffsetNudge: Double {
-        didSet { Keys.islandOffsetNudge.write(islandOffsetNudge, to: defaults) }
-    }
-
     /// Reads every setting from `defaults`, using each one's default where nothing usable is stored.
     public init(defaults: UserDefaults) {
         self.defaults = defaults
@@ -110,8 +100,6 @@ public final class SettingsStore {
         launchAtLogin = Keys.launchAtLogin.read(from: defaults)
         microphoneID = Keys.microphoneID.read(from: defaults)
         setupCompleted = Keys.setupCompleted.read(from: defaults)
-        islandHeightNudge = Keys.islandHeightNudge.read(from: defaults)
-        islandOffsetNudge = Keys.islandOffsetNudge.read(from: defaults)
     }
 
     /// The shortcut bound to `action`, for screens that list the actions.
@@ -152,8 +140,6 @@ enum Keys {
     static let launchAtLogin = PlainKey("launchAtLogin", default: false)
     static let microphoneID = PlainKey<String?>("microphoneID", default: nil)
     static let setupCompleted = PlainKey("setupCompleted", default: false)
-    static let islandHeightNudge = PlainKey("islandHeightNudge", default: 0.0)
-    static let islandOffsetNudge = PlainKey("islandOffsetNudge", default: 0.0)
 }
 
 /// A value `UserDefaults` stores as a property-list object of exactly this type.
@@ -174,15 +160,6 @@ extension Bool: PlainValue {
     static func value(of object: Any?) -> Bool? {
         guard let number = object as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
         return number.boolValue
-    }
-}
-
-extension Double: PlainValue {
-    /// Any stored number, but not a Boolean, a string or a value that is not finite.
-    static func value(of object: Any?) -> Double? {
-        guard let number = object as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
-              number.doubleValue.isFinite else { return nil }
-        return number.doubleValue
     }
 }
 

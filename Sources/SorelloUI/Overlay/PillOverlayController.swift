@@ -19,13 +19,6 @@ public final class PillOverlayController {
     /// The user clicked an action of the notice with that id.
     public var onNoticeAction: (_ notice: UInt64, _ action: String) -> Void = { _, _ in }
 
-    /// The two hidden nudges for the island pill. Applied at once.
-    public var adjustments = PillAdjustments() {
-        didSet {
-            if adjustments != oldValue, lifecycle.appliesChanges { refresh(animated: false) }
-        }
-    }
-
     /// What the pill shows now.
     public private(set) var display = PillDisplay.hidden
     /// The screen the pill is on, as it was read; nil while it has never been shown.
@@ -106,12 +99,11 @@ public final class PillOverlayController {
 
     private func refresh(animated: Bool) {
         guard let topology else { return }
-        let scene = PillScene(display: display, screen: topology, adjustments: adjustments)
-        let rest = PillGeometry.layout(.rest, on: topology, adjustments: adjustments)
+        let scene = PillScene(display: display, screen: topology)
+        let rest = PillGeometry.layout(.rest, on: topology)
         place(covering: [rest.body.frame, scene.layout.body.frame, scene.layout.cancel ?? rest.body.frame,
                          view.scene?.layout.body.frame ?? rest.body.frame], on: topology)
-        view.update(display: display, screen: topology, adjustments: adjustments, appearance: appearance,
-                    animated: animated)
+        view.update(display: display, screen: topology, appearance: appearance, animated: animated)
         // Hiding may have come to rest at once; then the panel stays off the screen.
         if lifecycle.phase == .up, !drawing.isVisible { drawing.orderFrontRegardless() }
         controls.show(lifecycle.phase == .up ? scene.controls : []) { self.global($0, on: topology) }

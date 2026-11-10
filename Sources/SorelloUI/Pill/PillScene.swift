@@ -64,9 +64,9 @@ struct PillScene: Equatable {
         }
     }
 
-    init(display: PillDisplay, screen: ScreenTopology, adjustments: PillAdjustments) {
+    init(display: PillDisplay, screen: ScreenTopology) {
         self.display = display
-        layout = PillGeometry.layout(Self.form(for: display, on: screen), on: screen, adjustments: adjustments)
+        layout = PillGeometry.layout(Self.form(for: display, on: screen), on: screen)
         notice = nil
         controls = []
         switch display {

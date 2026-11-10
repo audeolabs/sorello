@@ -1,5 +1,4 @@
 import AppKit
-import DesignCore
 import DictationCore
 import Foundation
 import Persistence
@@ -211,10 +210,6 @@ private final class RecordingPill: PillPresenting {
     var onNoticeAction: (UInt64, String) -> Void {
         get { overlay.onNoticeAction }
         set { overlay.onNoticeAction = newValue }
-    }
-    var adjustments: PillAdjustments {
-        get { overlay.adjustments }
-        set { overlay.adjustments = newValue }
     }
 
     func show(_ display: PillDisplay) {

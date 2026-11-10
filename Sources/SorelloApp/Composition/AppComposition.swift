@@ -1,4 +1,3 @@
-import DesignCore
 import DictationCore
 import DictionaryKit
 import Foundation
@@ -217,10 +216,6 @@ final class AppComposition {
             } else {
                 pill.show(.hidden)
             }
-        })
-        following.append(Following {
-            pill.adjustments = PillAdjustments(islandHeight: settings.islandHeightNudge,
-                                               islandOffset: settings.islandOffsetNudge)
         })
         // The shortcuts the monitor matches follow the settings.
         let shortcuts = platform.shortcuts

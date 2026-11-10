@@ -213,8 +213,7 @@ final class PillStage: NSView {
         housingShape.fillColor = NSColor.black.cgColor
         for part in [wallpaper, glow, menuBar, housingShape] { root.addSublayer(part) }
         addSubview(pill)
-        pill.update(display: state.display, screen: topology, adjustments: PillAdjustments(),
-                    appearance: state.appearance, animated: false)
+        pill.update(display: state.display, screen: topology, appearance: state.appearance, animated: false)
     }
 
     @available(*, unavailable)

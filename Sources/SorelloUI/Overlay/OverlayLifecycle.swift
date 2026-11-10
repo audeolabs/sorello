@@ -6,7 +6,7 @@ import Foundation
 /// The pill appears on the screen with keyboard focus when a dictation starts and stays there for that dictation:
 /// its wait and the notices after it. A new dictation chooses again, even if the pill never left the screen in
 /// between. Once hidden, the panels stay on the screen only until the pill has come to rest; after that nothing (a
-/// change of screens, of accessibility settings, of the nudges) brings them back until something is shown.
+/// change of screens or of accessibility settings) brings them back until something is shown.
 struct OverlayLifecycle: Equatable {
     enum Phase: Equatable {
         /// The panels are off the screen.
@@ -53,6 +53,6 @@ struct OverlayLifecycle: Equatable {
         return true
     }
 
-    /// Changes to the screen, the accessibility settings or the nudges are drawn only while the panels are up.
+    /// Changes to the screen or the accessibility settings are drawn only while the panels are up.
     var appliesChanges: Bool { phase != .off }
 }

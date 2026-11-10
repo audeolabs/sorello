@@ -35,7 +35,6 @@ final class PillView: NSView {
     private let fixedMotionTime: CFTimeInterval?
 
     private var screen: ScreenTopology?
-    private var adjustments = PillAdjustments()
     private var look = PillAppearance()
     private var body: MovingBody?
     private var bud = CancelBud.Model()
@@ -117,18 +116,16 @@ final class PillView: NSView {
 
     /// Shows `display` on `screen`. `animated` false puts everything in place at once (a pill appearing on a new
     /// screen, snapshots); otherwise the body springs and the content hands over, or with Reduce Motion cross-fades.
-    func update(display: PillDisplay, screen: ScreenTopology, adjustments: PillAdjustments,
-                appearance: PillAppearance, animated: Bool) {
+    func update(display: PillDisplay, screen: ScreenTopology, appearance: PillAppearance, animated: Bool) {
         let now = motionNow
-        let next = PillScene(display: display, screen: screen, adjustments: adjustments)
+        let next = PillScene(display: display, screen: screen)
         let wasHidden = scene.map { $0.display == .hidden } ?? true
-        // A pill that is up and changes screens or nudges takes its new place at once; one that is appearing grows
-        // out of the new screen's housing.
-        let moved = !wasHidden && (screen != self.screen || adjustments != self.adjustments)
+        // A pill that is up and changes screens takes its new place at once; one that is appearing grows out of the
+        // new screen's housing.
+        let moved = !wasHidden && screen != self.screen
         let travels = animated && !appearance.reduceMotion && !moved
         let fades = animated && !moved
         self.screen = screen
-        self.adjustments = adjustments
         self.look = appearance
         layer?.contentsScale = screen.scale
 
@@ -162,7 +159,7 @@ final class PillView: NSView {
     private func moveBody(to next: PillScene, from wasHidden: Bool, travels: Bool, at now: CFTimeInterval) {
         guard let screen else { return }
         let target = next.layout.body
-        let rest = PillGeometry.layout(.rest, on: screen, adjustments: adjustments).body
+        let rest = PillGeometry.layout(.rest, on: screen).body
         if body == nil { body = MovingBody(wasHidden ? rest : target) }
         if travels {
             // Appearing from rest it grows out of the housing; called back while still shrinking away, it turns
