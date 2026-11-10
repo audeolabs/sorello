@@ -39,7 +39,7 @@ extension SessionSettings {
     /// section 3.4).
     @MainActor
     init(settings: SettingsStore, dictionaryEditable: Bool, accessibilityTrusted: Bool) {
-        self.init(doubleTap: settings.promptMode ? .prompt : .off, restoreClipboard: settings.restoreClipboard,
+        self.init(doubleTap: settings.doubleTap, restoreClipboard: settings.restoreClipboard,
                   microphoneID: settings.microphoneID,
                   retainForCorrection: settings.correctionSuggestions && dictionaryEditable && accessibilityTrusted)
     }

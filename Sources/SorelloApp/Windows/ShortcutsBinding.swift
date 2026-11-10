@@ -11,11 +11,11 @@ extension WindowModels {
         let shortcuts = main.shortcuts, app = self.app
         follow { [unowned self] in
             shortcuts.recorders = recorders()
-            shortcuts.promptModeEnabled = app.settings.promptMode
+            shortcuts.promptModeEnabled = app.settings.doubleTap == .prompt
             shortcuts.promptTag = app.settings.promptTag
         }
         shortcuts.recorderActions = recorderActions
-        shortcuts.setPromptMode = { app.settings.promptMode = $0 }
+        shortcuts.setPromptMode = { app.settings.doubleTap = $0 ? .prompt : .handsFree }
         shortcuts.openKeyboardSettings = { if let pane = SettingsPane.keyboard { app.platform.system.open(pane) } }
     }
 
