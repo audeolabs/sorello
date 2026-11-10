@@ -453,8 +453,9 @@ a time:
    `compose` took time: this user's session is active, unlocked and not
    going to sleep; Accessibility is trusted; no Command, Option, Control
    or Shift key is down; the same app is in front; and, where it can be
-   read, the prepared field still has the same selection. If a check
-   fails, no key is posted and the correction anchor is released. Text is
+   read, the prepared field still has focus and the same selection. If a
+   check fails, no key is posted and the correction anchor is released.
+   Text is
    left on the clipboard with the reason that applies (`screenLocked`,
    `accessibilityMissing`, `modifiersStillDown` or `targetChanged`); a
    lone Return is `failed(commandNotPosted)` and the clipboard is not
