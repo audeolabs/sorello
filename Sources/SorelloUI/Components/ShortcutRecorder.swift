@@ -32,13 +32,25 @@ public struct ShortcutRecorderRow: View {
         self.actions = actions
     }
 
+    /// A shortcut of more than five keys takes the row's full width under the words, its caps wrapping, so even
+    /// the longest (fn with both sides of every modifier) fits in setup's narrow card.
+    private var isLong: Bool { (state.keys?.caps.count ?? 0) > 5 }
+
     public var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: Metrics.glyphGap) {
+            if isLong {
                 RowWords(title: kind.title, detail: kind.detail)
-                Spacer(minLength: 12)
-                RecorderWell(kind: kind, state: state, actions: actions)
-                clearButton
+                HStack(alignment: .center, spacing: Metrics.glyphGap) {
+                    RecorderWell(kind: kind, state: state, actions: actions, stretches: true)
+                    clearButton
+                }
+            } else {
+                HStack(alignment: .center, spacing: Metrics.glyphGap) {
+                    RowWords(title: kind.title, detail: kind.detail)
+                    Spacer(minLength: 12)
+                    RecorderWell(kind: kind, state: state, actions: actions, stretches: false)
+                    clearButton
+                }
             }
             if let refusal = state.refusal {
                 InlineMessage(refusal.message)
@@ -77,6 +89,8 @@ private struct RecorderWell: View {
     let kind: ShortcutKind
     let state: ShortcutRecorderState
     let actions: ShortcutRecorderActions
+    /// Takes the width it is offered and wraps its caps, rather than growing to fit them on one line.
+    let stretches: Bool
     @State private var hovering = false
 
     var body: some View {
@@ -95,13 +109,14 @@ private struct RecorderWell: View {
                         .foregroundStyle(Theme.secondaryInk)
                         .accessibilityHidden(true)
                 } else {
-                    KeyCaps(state.keys, size: (state.keys?.caps.count ?? 0) > 4 ? .small : .regular)
+                    KeyCaps(state.keys, size: (state.keys?.caps.count ?? 0) > 4 ? .small : .regular, wraps: stretches)
                     Spacer(minLength: 0)
                 }
             }
             .padding(.horizontal, 6)
-            .frame(minWidth: 148, minHeight: 30, maxHeight: 30)
-            .fixedSize(horizontal: true, vertical: false)
+            .padding(.vertical, stretches ? 5 : 0)
+            .frame(minWidth: 148, maxWidth: stretches ? .infinity : nil, minHeight: 30, alignment: .leading)
+            .fixedSize(horizontal: !stretches, vertical: true)
             .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(hovering && !state.isRecording ? Color.white.opacity(0.05) : .clear))
             .background(Theme.pill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))

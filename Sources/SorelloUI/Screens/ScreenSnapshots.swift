@@ -88,6 +88,7 @@ public enum ScreenSnapshots {
             ("accessibility", .sample(step: .accessibility, microphone: .granted)),
             ("accessibility-granted", .sample(step: .accessibility, microphone: .granted, accessibility: .granted)),
             ("shortcut", .sample(step: .shortcut, microphone: .granted, accessibility: .granted)),
+            ("shortcut-longest", longestShortcut()),
             ("test", .sample(step: .test, microphone: .granted, accessibility: .granted)),
             ("test-preparing", .sample(step: .test, microphone: .granted, accessibility: .granted, model: preparing)),
             ("test-done", .sample(step: .test, microphone: .granted, accessibility: .granted,
@@ -99,6 +100,16 @@ public enum ScreenSnapshots {
             }
         }
     }
+}
+
+/// Setup's shortcut step holding the longest shortcut there can be: fn and both sides of every modifier.
+private func longestShortcut() -> SetupModel {
+    let model = SetupModel.sample(step: .shortcut, microphone: .granted, accessibility: .granted)
+    model.holdToTalk = ShortcutRecorderState(keys: KeyCombo(modifiers: [
+        .function, .control(.left), .control(.right), .option(.left), .option(.right), .shift(.left), .shift(.right),
+        .command(.left), .command(.right),
+    ]))
+    return model
 }
 
 private extension MainSection {

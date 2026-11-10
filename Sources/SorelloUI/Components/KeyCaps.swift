@@ -5,20 +5,26 @@ import SwiftUI
 public struct KeyCaps: View {
     private let combo: KeyCombo?
     private let size: KeyCapSize
+    private let wraps: Bool
 
-    /// Key caps for `combo`, or "Not set" without one.
-    public init(_ combo: KeyCombo?, size: KeyCapSize = .regular) {
+    /// Key caps for `combo`, or "Not set" without one. With `wraps`, caps that do not fit the width offered go on
+    /// to another line.
+    public init(_ combo: KeyCombo?, size: KeyCapSize = .regular, wraps: Bool = false) {
         self.combo = combo
         self.size = size
+        self.wraps = wraps
     }
 
     public var body: some View {
         Group {
             if let combo {
-                HStack(spacing: 3) {
-                    ForEach(Array(combo.caps.enumerated()), id: \.offset) { _, cap in
-                        KeyCapView(cap: cap, size: size)
-                    }
+                let caps = ForEach(Array(combo.caps.enumerated()), id: \.offset) { _, cap in
+                    KeyCapView(cap: cap, size: size)
+                }
+                if wraps {
+                    FlowLayout(spacing: 3, lineSpacing: 4) { caps }
+                } else {
+                    HStack(spacing: 3) { caps }
                 }
             } else {
                 Text("Not set")
