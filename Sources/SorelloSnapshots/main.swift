@@ -2,8 +2,9 @@ import AppKit
 import DesignCore
 import SorelloUI
 
-// Renders every snapshot scene to a PNG file (ARCHITECTURE.md, section 11).
-//   SorelloSnapshots <output-directory> [text the scene's name must contain]
+// Renders every snapshot scene to a PNG file, and writes the menu-bar item's menu in each state as a text file beside
+// them, since the system draws the menu (ARCHITECTURE.md, section 11).
+//   SorelloSnapshots <output-directory> [text the scene's or the menu state's name must contain]
 // Shows the real pill on the real screen, cycling through its states with a synthetic voice, then exits; it prints
 // the screen it read and the frames it used, to check the pill against the hardware by eye:
 //   SorelloSnapshots --demo [seconds]
@@ -48,6 +49,10 @@ default:
         }
         try data.write(to: directory.appendingPathComponent(scene.name + ".png"))
         print(scene.name)
+    }
+    for (name, text) in StatusMenuSnapshots.texts where filter.map({ name.contains($0) }) ?? true {
+        try text.write(to: directory.appendingPathComponent(name + ".txt"), atomically: true, encoding: .utf8)
+        print(name + ".txt")
     }
     exit(failures == 0 ? 0 : 1)
 }
