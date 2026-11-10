@@ -1,0 +1,124 @@
+import DictationCore
+import Foundation
+import MacPlatform
+import Persistence
+import SorelloUI
+
+/// Every window's model, connected to the stores and the session (ARCHITECTURE.md, section 8, "Windows"). SorelloUI
+/// draws plain values and reports actions through closures; this fills the values from the app's state, keeps them
+/// current as it changes, and gives each closure its meaning. One instance for the app's life, made by the shell.
+@MainActor
+final class WindowModels {
+    let menu: MenuPanelModel
+    let main: MainWindowModel
+    let setup: SetupModel
+
+    let app: AppComposition
+    let player = RunLogPlayer()
+    private var following: [Following] = []
+    /// Counts shortcut recordings, so a recording that ends late cannot end the one after it.
+    var recordingNumber: UInt64 = 0
+
+    init(app: AppComposition) {
+        self.app = app
+        let status = AppStatus(session: app.runtime.state, accessibilityTrusted: app.live.accessibilityTrusted,
+                               shortcuts: app.platform.shortcuts.status)
+        menu = MenuPanelModel(appName: app.info.name, status: status, shortcuts: [:], lastDictation: nil)
+        main = MainWindowModel(
+            general: GeneralModel(modelName: "", status: status, microphones: [], selectedMicrophoneID: nil,
+                                  defaultMicrophoneName: nil, toggles: [:]),
+            shortcuts: ShortcutsModel(recorders: [:], promptModeEnabled: false, promptTag: ""),
+            dictionary: DictionaryModel(words: [], ignored: [], knownApps: []),
+            macros: MacrosModel(macros: []),
+            runLog: RunLogModel(items: []),
+            about: AboutModel(appName: app.info.name, version: app.info.version, build: app.info.build,
+                              copyright: app.info.copyright, modelNotice: Self.modelNotice(app.info),
+                              thirdPartyNotices: Self.thirdPartyNotices))
+        setup = SetupModel(appName: app.info.name, microphone: status.microphone, accessibility: status.accessibility,
+                           model: status.model, holdToTalk: ShortcutRecorderState(keys: .function))
+        connectMenu()
+        connectGeneral()
+        connectShortcuts()
+        connectDictionary()
+        connectMacros()
+        connectRunLog()
+        connectAbout()
+        connectSetup()
+        player.onStop = { [weak self] in self?.app.live.playingID = nil }
+    }
+
+    /// Stops keeping the models current, as the app quits.
+    func stop() {
+        for loop in following { loop.stop() }
+        following = []
+        player.stop()
+        app.platform.shortcuts.cancelRecording()
+    }
+
+    /// Keeps `apply` current with whatever it reads.
+    func follow(_ apply: @escaping @MainActor () -> Void) {
+        following.append(Following(apply))
+    }
+
+    /// The status every window shows, from the session, the Accessibility reading and the shortcuts.
+    var status: AppStatus {
+        AppStatus(session: app.runtime.state, accessibilityTrusted: app.live.accessibilityTrusted,
+                  shortcuts: app.platform.shortcuts.status)
+    }
+
+    /// Key caps for the current keyboard layout.
+    var formatter: ShortcutFormatter { app.platform.keyboard() }
+
+    // MARK: - Menu panel
+
+    private func connectMenu() {
+        let menu = self.menu, app = self.app
+        follow { [unowned self] in
+            menu.status = status
+            menu.shortcuts = KeyCombo.all(app.settings.shortcutBindings, formatter: formatter)
+            menu.lastDictation = app.runtime.state.lastText
+        }
+        menu.actions = MenuPanelActions(
+            copyLastDictation: { if let text = app.runtime.state.lastText { app.platform.system.copy(text) } },
+            retryModel: { app.runtime.retryPreparation() },
+            openGeneral: { app.navigation.openMain(.general) },
+            openDictionary: { app.navigation.openMain(.dictionary) },
+            openRunLog: { app.navigation.openMain(.runLog) },
+            openSettings: { app.navigation.openMain(nil) },
+            quit: { app.navigation.quit() })
+    }
+
+    // MARK: - About
+
+    private func connectAbout() {
+        let app = self.app
+        main.about.showNotice = { id in
+            switch id {
+            case "model":
+                app.navigation.showNotice(app.info.modelName ?? String(localized: "Speech model"), app.info.modelNotices)
+            case "geist":
+                app.navigation.showNotice("Geist Serif", app.info.fontLicence.map { [$0] } ?? [])
+            default:
+                app.navigation.showNotice(String(localized: "Accessibility card"),
+                                          app.info.thirdPartyNotices.map { [$0] } ?? [])
+            }
+        }
+    }
+
+    /// The model's notice, first on About.
+    static func modelNotice(_ info: AppInfo) -> NoticeItem {
+        NoticeItem(id: "model", title: info.modelName ?? String(localized: "Speech model"),
+                   detail: String(localized: "Derived from NVIDIA Parakeet v2, CC-BY-4.0. Licence and attribution.",
+                                  comment: "About: the speech model's notice"))
+    }
+
+    /// Everyone else's work the app includes (ThirdPartyNotices.md).
+    static var thirdPartyNotices: [NoticeItem] {
+        [NoticeItem(id: "geist", title: "Geist Serif",
+                    detail: String(localized: "Vercel, SIL Open Font License 1.1.",
+                                   comment: "About: the display font's notice")),
+         NoticeItem(id: "permission-card", title: String(localized: "Accessibility card"),
+                    detail: String(localized: "Adapted from Scrawl and AskForPermission, MIT License.",
+                                   comment: "About: the permission card's notice"))]
+    }
+}
