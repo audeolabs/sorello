@@ -9,8 +9,8 @@ public enum SorelloMain {
         switch LaunchMode(arguments: Array(CommandLine.arguments.dropFirst())) {
         case .app(let showsSetup):
             AppShell.run(showsSetup: showsSetup)
-        case .selfTest(let files, let model):
-            SelfTest.run(files: files, model: model)
+        case .selfTest(let files, let model, let forcesCPU):
+            SelfTest.run(files: files, model: model, forcesCPU: forcesCPU)
         case .snapshots(let directory):
             WindowSnapshots.run(into: directory)
         case .usage(let message):
@@ -24,19 +24,21 @@ public enum SorelloMain {
 ///
 ///     Sorello                                      the menu-bar app
 ///     Sorello --no-setup                           the app, without opening setup (for verification)
-///     Sorello --self-test [--model <dir>] <wav>…   dictate each file through the real session; exit 0 or 1
+///     Sorello --self-test [--model <dir>] [--cpu] <wav>…
+///                                                  dictate each file through the real session; exit 0 or 1. `--cpu`
+///                                                  runs the encoder on the CPU, as on a Mac without a Neural Engine
 ///     Sorello --snapshots <dir>                    render the menu-bar item, windows and setup; list the menu
 ///
 /// The app ignores arguments it does not know, because the system can pass its own when it launches an app.
 nonisolated enum LaunchMode: Equatable {
     case app(showsSetup: Bool)
-    case selfTest(files: [URL], model: URL?)
+    case selfTest(files: [URL], model: URL?, forcesCPU: Bool)
     case snapshots(URL)
     case usage(String)
 
     static let usage = """
         usage: Sorello [--no-setup]
-               Sorello --self-test [--model <bundle-dir>] <file.wav>...
+               Sorello --self-test [--model <bundle-dir>] [--cpu] <file.wav>...
                Sorello --snapshots <output-directory>
         """
 
@@ -49,9 +51,12 @@ nonisolated enum LaunchMode: Equatable {
         case "--self-test":
             var rest = arguments.dropFirst()
             var model: URL?
+            var forcesCPU = false
             var files: [URL] = []
             while let argument = rest.popFirst() {
-                if argument == "--model" {
+                if argument == "--cpu" {
+                    forcesCPU = true
+                } else if argument == "--model" {
                     guard let path = rest.popFirst() else {
                         self = .usage(Self.usage)
                         return
@@ -64,7 +69,7 @@ nonisolated enum LaunchMode: Equatable {
                     files.append(URL(fileURLWithPath: argument))
                 }
             }
-            self = files.isEmpty ? .usage(Self.usage) : .selfTest(files: files, model: model)
+            self = files.isEmpty ? .usage(Self.usage) : .selfTest(files: files, model: model, forcesCPU: forcesCPU)
         case "--snapshots":
             guard arguments.count == 2 else {
                 self = .usage(Self.usage)

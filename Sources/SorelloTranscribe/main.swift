@@ -4,16 +4,17 @@ import Foundation
 import SpeechEngine
 
 // sorello-transcribe: transcribes audio files with the real model through the engine's streaming path, for
-// verification (ARCHITECTURE.md, section 11). Each transcript goes to standard output; preparation and transcription
-// times go to standard error. It reads only the files it is given and writes only the model store it is pointed at.
+// verification (ARCHITECTURE.md, section 11). Each transcript goes to standard output; where the encoder runs, and
+// preparation and transcription times, go to standard error. It reads only the files it is given and writes only the model store it is pointed at.
 
 let usage = """
     usage: sorello-transcribe --model <bundle-dir> [--store <dir>] [--word <text>[=<strength>]]... [--realtime] \
-    <file>...
+    [--cpu] <file>...
       --model     the model bundle (the directory holding bundle.json)
       --store     where to keep the stable copy of the model; without it the bundle is loaded in place
       --word      a dictionary word, with an optional strength (default 1); repeat for more
       --realtime  hand the audio over at the speed it would be recorded, and time only the wait after the end
+      --cpu       run the encoder on Core ML's CPU kernels, as on a Mac without a Neural Engine
     """
 
 func fail(_ message: String) -> Never {
@@ -24,6 +25,7 @@ func fail(_ message: String) -> Never {
 var model: URL?
 var store: URL?
 var realtime = false
+var forcesCPU = false
 var words: [DictionaryEntry] = []
 var files: [URL] = []
 var arguments = CommandLine.arguments.dropFirst()
@@ -48,6 +50,8 @@ while let argument = arguments.popFirst() {
         }
     case "--realtime":
         realtime = true
+    case "--cpu":
+        forcesCPU = true
     case "-h", "--help":
         print(usage)
         exit(0)
@@ -64,7 +68,10 @@ func seconds(_ duration: Duration) -> String {
 }
 
 let snapshot = DictionarySnapshot(revision: 1, entries: words)
-let engine = SpeechEngine(modelDirectory: model, storeDirectory: store, dictionary: { _ in snapshot })
+let compute = forcesCPU ? SpeechCompute.cpu : .forThisMac()
+let engine = SpeechEngine(modelDirectory: model, storeDirectory: store, compute: compute, dictionary: { _ in snapshot })
+let reason = forcesCPU ? "forced by --cpu" : "this Mac's hardware"
+FileHandle.standardError.write(Data("encoder: \(engine.compute) (\(reason))\n".utf8))
 let clock = ContinuousClock()
 let prepared = clock.now
 await engine.prepare()

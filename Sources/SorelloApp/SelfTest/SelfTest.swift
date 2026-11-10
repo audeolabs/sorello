@@ -10,23 +10,28 @@ import SpeechEngine
 /// with each file in place of the microphone and a recorder in place of the paste. Each file is one dictation,
 /// started and ended by a synthetic Hold to Talk through the same relay the keyboard uses; the real pill shows it.
 /// It prints what would have been inserted and how long each step took, and exits 0 when every file produced text.
+/// It says on standard error where the encoder runs; `--cpu` forces Core ML's CPU kernels, to prove on any Mac the
+/// fallback a Mac without a Neural Engine uses.
 ///
 /// It needs no permission and keeps nothing: settings, macros, the dictionary and the Run Log live in a temporary
 /// directory, removed at the end, with default settings except that "press enter" is on. Only the model's stable
 /// copy is kept where the app keeps it, so the app's own first launch afterwards is warm.
 @MainActor
 enum SelfTest {
-    /// How long the model may take to prepare: the first preparation on a machine compiles for the Neural Engine.
+    /// How long the model may take to prepare. The first preparation on a Mac with a Neural Engine compiles the
+    /// model for it, which can take minutes. The CPU fallback compiles nothing, but nobody has timed it on an Intel
+    /// processor, so it gets the same allowance.
     static let preparationLimit: TimeInterval = 600
     /// How long a dictation may take to come back after its audio ends.
     static let completionLimit: TimeInterval = 60
 
-    static func run(files: [URL], model: URL?) -> Never {
+    /// `forcesCPU` runs the encoder on Core ML's CPU kernels whatever the hardware offers, to prove the fallback.
+    static func run(files: [URL], model: URL?, forcesCPU: Bool) -> Never {
         let application = NSApplication.shared
         application.setActivationPolicy(.accessory)
         Resources.registerFonts()
         Task {
-            let passed = await SelfTestRun(files: files, model: model).run()
+            let passed = await SelfTestRun(files: files, model: model, forcesCPU: forcesCPU).run()
             exit(passed ? 0 : 1)
         }
         application.run()
@@ -39,6 +44,7 @@ enum SelfTest {
 private final class SelfTestRun {
     private let files: [URL]
     private let info: AppInfo
+    private let forcesCPU: Bool
     private let clock = SystemSessionClock()
     private let capture: FileCapture
     private let inserter = RecordingInserter()
@@ -47,8 +53,9 @@ private final class SelfTestRun {
     private let defaultsName = "sorello-self-test-\(UUID().uuidString)"
     private var completions: [DictationCompletion] = []
 
-    init(files: [URL], model: URL?) {
+    init(files: [URL], model: URL?, forcesCPU: Bool) {
         self.files = files
+        self.forcesCPU = forcesCPU
         let bundled = AppInfo.main()
         info = model.map { bundled.withModel(at: $0) } ?? bundled
         capture = FileCapture(clock: clock)
@@ -75,11 +82,13 @@ private final class SelfTestRun {
         let modelStore = info.bundleIdentifier.flatMap { try? AppPaths(bundleIdentifier: $0) }?.modelsDirectory
             ?? directory.appendingPathComponent("Models", isDirectory: true)
         let modelDirectory = info.modelDirectory
+        let compute = forcesCPU ? SpeechCompute.cpu : .forThisMac()
+        Console.error("encoder: \(compute) (\(forcesCPU ? "forced by --cpu" : "this Mac's hardware"))")
         let app = AppComposition(
             info: info, storage: AppStorage(paths: AppPaths(root: directory), defaults: defaults),
             platform: .quiet(capture: capture, inserter: inserter, trusted: false, clock: clock),
             speech: { store in
-                SpeechEngine(modelDirectory: modelDirectory, storeDirectory: modelStore,
+                SpeechEngine(modelDirectory: modelDirectory, storeDirectory: modelStore, compute: compute,
                              dictionary: { store.snapshot(for: $0) })
             },
             pill: pill, levels: pill.levels)

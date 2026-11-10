@@ -12,12 +12,25 @@ import Testing
 
     @Test func theSelfTestTakesFilesAndAModel() {
         #expect(LaunchMode(arguments: ["--self-test", "a.wav", "b.wav"])
-                == .selfTest(files: [URL(fileURLWithPath: "a.wav"), URL(fileURLWithPath: "b.wav")], model: nil))
+                == .selfTest(files: [URL(fileURLWithPath: "a.wav"), URL(fileURLWithPath: "b.wav")], model: nil,
+                             forcesCPU: false))
         #expect(LaunchMode(arguments: ["--self-test", "--model", "/m", "a.wav"])
-                == .selfTest(files: [URL(fileURLWithPath: "a.wav")], model: URL(fileURLWithPath: "/m", isDirectory: true)))
+                == .selfTest(files: [URL(fileURLWithPath: "a.wav")], model: URL(fileURLWithPath: "/m", isDirectory: true),
+                             forcesCPU: false))
         #expect(LaunchMode(arguments: ["--self-test"]) == .usage(LaunchMode.usage))
         #expect(LaunchMode(arguments: ["--self-test", "--model"]) == .usage(LaunchMode.usage))
         #expect(LaunchMode(arguments: ["--self-test", "--fast", "a.wav"]) == .usage(LaunchMode.usage))
+    }
+
+    /// `--cpu` forces the encoder onto the CPU, wherever it stands among the options; it is not a file.
+    @Test func theSelfTestCanForceTheCPU() {
+        let file = URL(fileURLWithPath: "a.wav"), model = URL(fileURLWithPath: "/m", isDirectory: true)
+        #expect(LaunchMode(arguments: ["--self-test", "--cpu", "a.wav"])
+                == .selfTest(files: [file], model: nil, forcesCPU: true))
+        #expect(LaunchMode(arguments: ["--self-test", "--model", "/m", "a.wav", "--cpu"])
+                == .selfTest(files: [file], model: model, forcesCPU: true))
+        #expect(LaunchMode(arguments: ["--self-test", "--cpu"]) == .usage(LaunchMode.usage), "Still needs a file")
+        #expect(LaunchMode(arguments: ["--cpu"]) == .app(showsSetup: true), "The app itself cannot be forced")
     }
 
     @Test func snapshotsTakeOneDirectory() {
