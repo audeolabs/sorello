@@ -100,8 +100,8 @@ final class PillDemo {
         }
         Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
-                print("done: drawing panel \(self?.overlay.drawingFrame.map { "\($0)" } ?? "off screen"), controls panel "
-                    + "\(self?.overlay.controlsFrame.map { "\($0)" } ?? "off screen")")
+                print("done: drawing panel \(self?.overlay.drawingFrame.map { "\($0)" } ?? "off screen"), control panels "
+                    + "\(self?.overlay.controlFrames ?? [])")
                 exit(0)
             }
         }
@@ -130,8 +130,8 @@ final class PillDemo {
             if let card = layout.card { print("  card content \(card)") }
             if let cancel = layout.cancel { print("  cancel bud \(cancel)") }
         }
-        print("  drawing panel \(overlay.drawingFrame.map { "\($0)" } ?? "off screen"), controls panel "
-            + "\(overlay.controlsFrame.map { "\($0)" } ?? "off screen")")
+        print("  drawing panel \(overlay.drawingFrame.map { "\($0)" } ?? "off screen"), control panels "
+            + "\(overlay.controlFrames)")
     }
 
     /// 50 ms of an invented voice: a 170 Hz buzz under syllables about 0.2 s long with short gaps.

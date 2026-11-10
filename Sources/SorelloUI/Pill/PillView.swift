@@ -41,6 +41,8 @@ final class PillView: NSView {
     private var bud = CancelBud.Model()
     private var recorder = DotWave.Recorder()
     private var restReported = true
+    /// Once hidden, the last fade ends at this moment on the motion clock; the pill is not at rest before it.
+    private var quietAt: CFTimeInterval = 0
 
     private let edge = CAShapeLayer()
     private let fill = CAShapeLayer()
@@ -83,14 +85,30 @@ final class PillView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    deinit {
-        MainActor.assumeIsolated {
-            link?.invalidate()
-            timeTimer?.invalidate()
-        }
+    isolated deinit {
+        link?.invalidate()
+        timeTimer?.invalidate()
     }
 
     private var motionNow: CFTimeInterval { fixedMotionTime ?? CACurrentMediaTime() }
+
+    /// Forgets what was shown, so the next display appears from rest: the pill moving to another screen for a new
+    /// dictation grows out of that screen's housing.
+    func reset() {
+        stopLink()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        current?.layer.removeFromSuperlayer()
+        for content in leaving { content.layer.removeFromSuperlayer() }
+        CATransaction.commit()
+        current = nil
+        leaving = []
+        scene = nil
+        screen = nil
+        body = nil
+        bud = CancelBud.Model()
+        restReported = true
+    }
 
     // MARK: - What to show
 
@@ -126,7 +144,11 @@ final class PillView: NSView {
         handOver(to: next, animated: fades, at: now)
         applyLook(showing: display != .hidden, fades: fades && wasHidden != (display == .hidden), at: now)
         scene = next
-        if display == .hidden, !wasHidden { restReported = false }
+        if display == .hidden, !wasHidden {
+            restReported = false
+            // What leaves fades out, and a floating body after it; the panels must stay up until both have gone.
+            quietAt = now + (fades ? (appearance.reduceMotion ? Motion.crossFade : Motion.handover + Motion.appear) : 0)
+        }
         CATransaction.commit()
 
         render(at: now)
@@ -297,7 +319,7 @@ final class PillView: NSView {
         }
         CATransaction.commit()
 
-        if scene.display == .hidden, !restReported, body.isSettled(at: now), !bud.isShowing {
+        if scene.display == .hidden, !restReported, body.isSettled(at: now), !bud.isShowing, now >= quietAt {
             restReported = true
             onRest?()
         }

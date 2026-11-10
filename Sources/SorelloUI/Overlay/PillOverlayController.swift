@@ -2,14 +2,14 @@ import AppKit
 import DesignCore
 
 /// Puts the pill on the screen (ARCHITECTURE.md, section 8, "The pill"). It draws in one panel that ignores the mouse,
-/// and offers the pill's controls (stop, cancel, a notice's actions) in a second panel exactly the size of those
-/// controls, shown only while there are any, so the pill never swallows a click meant for the menu bar. Neither panel
-/// takes keyboard focus.
+/// and offers each of the pill's controls (stop, cancel, a notice's actions) in a small panel exactly that control's
+/// size, shown only while it is, so the pill never swallows a click meant for the menu bar. No panel takes keyboard
+/// focus.
 ///
-/// The screen is chosen when the pill appears: the one with keyboard focus, else the one under the pointer. It is
-/// kept until the pill hides; if it goes away the pill moves to the main screen. Reduce Motion and Increase Contrast
-/// are read from the system and followed as they change. VoiceOver hears each notice once, and the controls as
-/// buttons; the moving level is never exposed to it.
+/// The pill appears on the screen with keyboard focus when a dictation starts (else the one under the pointer) and
+/// stays there for that dictation; if that screen goes away it moves to the main one. Reduce Motion and Increase
+/// Contrast are read from the system and followed as they change. VoiceOver hears each notice once, and the controls
+/// as buttons; the moving level is never exposed to it.
 @MainActor
 public final class PillOverlayController {
     /// The user clicked the pill while it listens in toggle mode, or pressed it with VoiceOver.
@@ -21,7 +21,9 @@ public final class PillOverlayController {
 
     /// The two hidden nudges for the island pill. Applied at once.
     public var adjustments = PillAdjustments() {
-        didSet { if adjustments != oldValue { refresh(animated: false) } }
+        didSet {
+            if adjustments != oldValue, lifecycle.appliesChanges { refresh(animated: false) }
+        }
     }
 
     /// What the pill shows now.
@@ -30,14 +32,15 @@ public final class PillOverlayController {
     public private(set) var topology: ScreenTopology?
     /// Where the pill's parts are for what it shows now, in the screen's points (top left, y down).
     public var layout: PillLayout? { view.scene?.layout }
-    /// The panels' frames in global coordinates while they are on screen.
+    /// The drawing panel's frame in global coordinates while it is on the screen.
     public var drawingFrame: CGRect? { drawing.isVisible ? drawing.frame : nil }
-    public var controlsFrame: CGRect? { controls.isVisible ? controls.frame : nil }
+    /// The control panels' frames in global coordinates, for those on the screen.
+    public var controlFrames: [CGRect] { controls.frames }
 
     private let drawing = OverlayPanel(interactive: false)
-    private let controls = OverlayPanel(interactive: true)
+    private let controls = ControlPanels()
     private let view: PillView
-    private let controlsView = PillControlsView()
+    private var lifecycle = OverlayLifecycle()
     private var screenNumber: UInt32?
     private var appearance: PillAppearance
     /// The part of the screen the drawing panel covers, in screen points; it only grows while the pill is up.
@@ -51,13 +54,12 @@ public final class PillOverlayController {
         view = PillView(levels: levels, clock: clock)
         appearance = Self.systemAppearance()
         drawing.contentView = view
-        controls.contentView = controlsView
         view.onRest = { [weak self] in self?.rested() }
-        controlsView.onPress = { [weak self] kind in self?.view.pressed = kind }
-        controlsView.onActivate = { [weak self] kind in self?.activate(kind) }
-        let center = NotificationCenter.default
-        observers.append(center.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil,
-                                            queue: .main) { [weak self] _ in
+        controls.onPress = { [weak self] kind in self?.view.pressed = kind }
+        controls.onActivate = { [weak self] kind in self?.activate(kind) }
+        observers.append(NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in
             MainActor.assumeIsolated { self?.screensChanged() }
         })
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(
@@ -67,28 +69,34 @@ public final class PillOverlayController {
         })
     }
 
-    deinit {
-        MainActor.assumeIsolated {
-            for observer in observers {
-                NotificationCenter.default.removeObserver(observer)
-                NSWorkspace.shared.notificationCenter.removeObserver(observer)
-            }
-            drawing.orderOut(nil)
-            controls.orderOut(nil)
+    isolated deinit {
+        for observer in observers {
+            NotificationCenter.default.removeObserver(observer)
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }
+        drawing.orderOut(nil)
+        controls.hide()
     }
 
-    /// Shows `display`: the pill grows, changes form or shrinks away on its spring.
+    /// Shows `display`: the pill grows out of its housing, changes form, or shrinks back into it, on its spring.
     public func show(_ display: PillDisplay) {
         guard display != self.display else { return }
-        let appearing = self.display == .hidden && !drawing.isVisible
         self.display = display
-        if display == .hidden, !drawing.isVisible { return }
-        if appearing {
-            guard let screen = Self.chooseScreen() else { return }
-            screenNumber = screen.displayNumber
-            topology = ScreenTopology(screen)
-            canvas = nil
+        // A press on a control that is about to change belongs to nothing any more.
+        view.pressed = nil
+        guard let step = lifecycle.show(display) else { return }
+        if step.chooseScreen, let screen = Self.chooseScreen() {
+            let moving = drawing.isVisible && screen.displayNumber != screenNumber
+            if moving {
+                // A new dictation on another screen: the pill leaves this one and grows out of that one's housing.
+                drawing.orderOut(nil)
+                view.reset()
+            }
+            if moving || !drawing.isVisible {
+                screenNumber = screen.displayNumber
+                topology = ScreenTopology(screen)
+                canvas = nil
+            }
         }
         refresh(animated: true)
         announce(display)
@@ -103,9 +111,10 @@ public final class PillOverlayController {
         place(covering: [rest.body.frame, scene.layout.body.frame, scene.layout.cancel ?? rest.body.frame,
                          view.scene?.layout.body.frame ?? rest.body.frame], on: topology)
         view.update(display: display, screen: topology, adjustments: adjustments, appearance: appearance,
-                    animated: animated && drawing.isVisible)
-        if !drawing.isVisible { drawing.orderFrontRegardless() }
-        placeControls(scene.controls, on: topology)
+                    animated: animated)
+        // Hiding may have come to rest at once; then the panel stays off the screen.
+        if lifecycle.phase == .up, !drawing.isVisible { drawing.orderFrontRegardless() }
+        controls.show(lifecycle.phase == .up ? scene.controls : []) { self.global($0, on: topology) }
     }
 
     /// Sizes the drawing panel to cover `frames` and room around them for the spring's give and the edge, growing it
@@ -114,24 +123,18 @@ public final class PillOverlayController {
         var wanted = frames.reduce(CGRect.null) { $0.union($1) }.insetBy(dx: -24, dy: -16)
         wanted = wanted.intersection(CGRect(x: 0, y: 0, width: screen.width, height: screen.height))
         if wanted.minY > 0 { wanted = CGRect(x: wanted.minX, y: 0, width: wanted.width, height: wanted.maxY) }
+        // Window frames land on whole points, so the canvas does too, and the pill is drawn from where the panel
+        // really is: half a point off would put it a pixel beside the housing.
+        wanted = CGRect(x: wanted.minX.rounded(.down), y: wanted.minY.rounded(.down),
+                        width: wanted.maxX.rounded(.up) - wanted.minX.rounded(.down),
+                        height: wanted.maxY.rounded(.up) - wanted.minY.rounded(.down))
         let next = canvas.map { $0.union(wanted) } ?? wanted
         guard next != canvas, !next.isEmpty else { return }
         canvas = next
         drawing.setFrame(global(next, on: screen), display: false)
-        view.frame = CGRect(origin: .zero, size: next.size)
-        view.origin = next.origin
-    }
-
-    private func placeControls(_ list: [PillControl], on screen: ScreenTopology) {
-        guard !list.isEmpty else {
-            controls.orderOut(nil)
-            return
-        }
-        let union = list.reduce(CGRect.null) { $0.union($1.frame) }
-        controls.setFrame(global(union, on: screen), display: false)
-        controlsView.frame = CGRect(origin: .zero, size: union.size)
-        controlsView.show(list, origin: union.origin)
-        controls.orderFrontRegardless()
+        let placed = drawing.frame
+        view.frame = CGRect(origin: .zero, size: placed.size)
+        view.origin = CGPoint(x: placed.minX - screen.frame.minX, y: screen.frame.maxY - placed.maxY)
     }
 
     /// A rectangle in `screen`'s points (top left, y down) in global window coordinates.
@@ -140,11 +143,11 @@ public final class PillOverlayController {
                height: rect.height)
     }
 
-    /// The pill has shrunk back into its housing (or faded): its panels leave the screen.
+    /// The pill has shrunk back into its housing, or faded: its panels leave the screen.
     private func rested() {
-        guard display == .hidden else { return }
+        guard lifecycle.rested() else { return }
         drawing.orderOut(nil)
-        controls.orderOut(nil)
+        controls.hide()
         canvas = nil
     }
 
@@ -169,11 +172,11 @@ public final class PillOverlayController {
     }
 
     private func screensChanged() {
-        guard drawing.isVisible else { return }
+        guard lifecycle.appliesChanges else { return }
         let screen = NSScreen.screens.first { $0.displayNumber == screenNumber } ?? NSScreen.main
         guard let screen else { return }
         let next = ScreenTopology(screen)
-        guard next != topology else { return }
+        guard next != topology || screen.displayNumber != screenNumber else { return }
         screenNumber = screen.displayNumber
         topology = next
         canvas = nil
@@ -184,7 +187,7 @@ public final class PillOverlayController {
         let next = Self.systemAppearance()
         guard next != appearance else { return }
         appearance = next
-        refresh(animated: false)
+        if lifecycle.appliesChanges { refresh(animated: false) }
     }
 
     private static func systemAppearance() -> PillAppearance {

@@ -27,44 +27,60 @@ final class OverlayPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-/// The controls panel's content: one target per control, where the pill draws it. It draws nothing itself.
-final class PillControlsView: NSView {
+/// The pill's controls, each in a small panel of its own exactly its size, so the gaps between them (the space between
+/// the pill and its cancel bud lies in the menu bar) never swallow a click meant for what is underneath. A panel is
+/// on the screen only while its control is.
+final class ControlPanels {
     /// A control was held down (its kind) or let go (nil): the pill dims it.
     var onPress: (PillControl.Kind?) -> Void = { _ in }
     /// A control was clicked, or pressed through VoiceOver.
     var onActivate: (PillControl.Kind) -> Void = { _ in }
 
-    private var targets: [ControlTarget] = []
+    private var panels: [(panel: OverlayPanel, target: ControlTarget)] = []
+    private var shown = 0
 
-    override var isFlipped: Bool { true }
+    /// The frames, in global coordinates, of the panels on the screen.
+    var frames: [CGRect] { panels.prefix(shown).map(\.panel.frame) }
 
-    /// Shows `controls`, whose frames are in screen points (top left, y down); `origin` is the screen point at this
-    /// view's top-left corner.
-    func show(_ controls: [PillControl], origin: CGPoint) {
-        // The stop target spans the whole pill, so it goes first and the others above it.
-        let ordered = controls.filter { $0.kind == .stop } + controls.filter { $0.kind != .stop }
-        while targets.count > ordered.count { targets.removeLast().removeFromSuperview() }
-        while targets.count < ordered.count {
-            let target = ControlTarget()
+    /// Shows `controls`, placing each at `global(control.frame)`.
+    func show(_ controls: [PillControl], global: (CGRect) -> CGRect) {
+        while panels.count < controls.count {
+            let panel = OverlayPanel(interactive: true), target = ControlTarget()
             target.onPress = { [weak self] kind in self?.onPress(kind) }
             target.onActivate = { [weak self] kind in self?.onActivate(kind) }
-            addSubview(target)
-            targets.append(target)
+            panel.contentView = target
+            panels.append((panel, target))
         }
-        for (target, control) in zip(targets, ordered) {
-            target.control = control
-            target.frame = control.frame.offsetBy(dx: -origin.x, dy: -origin.y)
+        for (index, entry) in panels.enumerated() {
+            guard index < controls.count else {
+                entry.target.control = PillControl(kind: .stop, frame: .zero, label: "")
+                entry.panel.orderOut(nil)
+                continue
+            }
+            entry.target.control = controls[index]
+            entry.panel.setFrame(global(controls[index].frame), display: false)
+            entry.panel.orderFrontRegardless()
         }
+        shown = controls.count
     }
 
-    override func accessibilityChildren() -> [Any]? { targets }
+    func hide() {
+        show([], global: { $0 })
+    }
 }
 
 /// One clickable control of the pill: a button to VoiceOver, with the pill's label for it. A click acts on the first
 /// mouse-down's release inside it, so it works although its window never becomes key.
 final class ControlTarget: NSView {
     var control = PillControl(kind: .stop, frame: .zero, label: "") {
-        didSet { setAccessibilityLabel(control.label) }
+        didSet {
+            setAccessibilityLabel(control.label)
+            // A press belongs to the control it began on: if this target now stands for another, it is abandoned.
+            if control.kind != oldValue.kind, tracking {
+                tracking = false
+                onPress(nil)
+            }
+        }
     }
     var onPress: (PillControl.Kind?) -> Void = { _ in }
     var onActivate: (PillControl.Kind) -> Void = { _ in }

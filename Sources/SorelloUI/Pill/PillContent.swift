@@ -40,6 +40,8 @@ final class PillContent {
     private var actions: [(id: String, capsule: CALayer, title: CALayer)] = []
     private var images: [ObjectIdentifier: PillImage] = [:]
     private var shownTime: String?
+    /// The scale and contrast the cached images were drawn for.
+    private var drawnFor: (scale: CGFloat, contrast: Bool)?
 
     init(key: Key, arrived: CFTimeInterval) {
         self.key = key
@@ -95,6 +97,12 @@ final class PillContent {
     func configure(_ scene: PillScene, view: PillView) {
         let scale = view.scale
         let secondary = NSColor(Palette.ink, alpha: view.increaseContrast ? 0.8 : Palette.secondaryInkAlpha)
+        if drawnFor.map({ $0.scale != scale || $0.contrast != view.increaseContrast }) ?? false {
+            // Another screen's scale, or Increase Contrast turned on or off: every image is drawn again.
+            images = [:]
+            shownTime = nil
+        }
+        drawnFor = (scale, view.increaseContrast)
         switch scene.display {
         case .listening(let listening):
             let shown = PillScene.elapsedText(view.elapsed(since: listening.started))

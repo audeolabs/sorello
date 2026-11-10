@@ -90,18 +90,19 @@ import Testing
         }
     }
 
-    /// VoiceOver sees the controls as buttons with the pill's names and can press them; the drawing, the moving
+    /// VoiceOver sees each control as a button with the pill's name for it and can press it; the drawing, the moving
     /// level included, is not exposed at all.
-    @Test func voiceOverSeesButtonsAndNoLevel() throws {
-        let view = PillControlsView()
+    @Test func voiceOverSeesButtonsAndNoLevel() {
         var activated: [PillControl.Kind] = []
-        view.onActivate = { activated.append($0) }
         let scene = Self.scene(.listening(.init(trigger: .toggle, started: 0)))
-        view.show(scene.controls, origin: .zero)
-        let children = try #require(view.accessibilityChildren() as? [ControlTarget])
-        #expect(children.map { $0.accessibilityLabel() } == ["Stop dictation", "Cancel dictation"])
-        #expect(children.allSatisfy { $0.accessibilityRole() == .button && $0.isAccessibilityElement() })
-        for child in children { _ = child.accessibilityPerformPress() }
+        for control in scene.controls {
+            let target = ControlTarget()
+            target.onActivate = { activated.append($0) }
+            target.control = control
+            #expect(target.accessibilityRole() == .button && target.isAccessibilityElement())
+            #expect(target.accessibilityLabel() == control.label)
+            _ = target.accessibilityPerformPress()
+        }
         #expect(activated == [.stop, .cancel])
 
         let pill = PillView(levels: LevelFeed(), clock: { 0 })
@@ -111,6 +112,86 @@ import Testing
         #expect(!pill.isAccessibilityElement())
         #expect(pill.hitTest(NSPoint(x: 10, y: 10)) == nil)
     }
+
+    static func mouse(_ type: NSEvent.EventType, at point: NSPoint) -> NSEvent? {
+        NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+                           eventNumber: 0, clickCount: 1, pressure: 1)
+    }
+
+    /// A click acts on release inside the control it began on. A press held while the notice changes under it is
+    /// abandoned, so the new notice's action is never taken by a press meant for the old one.
+    @Test func aPressBelongsToTheControlItBeganOn() throws {
+        let first = PillControl(kind: .action(notice: 1, id: "add"), frame: CGRect(x: 0, y: 0, width: 60, height: 26),
+                                label: "Add")
+        let next = PillControl(kind: .action(notice: 2, id: "never"), frame: first.frame, label: "Never")
+        let target = ControlTarget(frame: first.frame)
+        var activated: [PillControl.Kind] = [], pressed: [PillControl.Kind?] = []
+        target.onActivate = { activated.append($0) }
+        target.onPress = { pressed.append($0) }
+        target.control = first
+        let down = try #require(Self.mouse(.leftMouseDown, at: NSPoint(x: 10, y: 10)))
+        let up = try #require(Self.mouse(.leftMouseUp, at: NSPoint(x: 10, y: 10)))
+        let away = try #require(Self.mouse(.leftMouseUp, at: NSPoint(x: 200, y: 10)))
+        target.mouseDown(with: down)
+        target.mouseUp(with: up)
+        #expect(activated == [first.kind])
+        target.mouseDown(with: down)
+        target.mouseUp(with: away)
+        #expect(activated == [first.kind], "a release outside acted")
+        target.mouseDown(with: down)
+        target.control = next
+        target.mouseUp(with: up)
+        #expect(activated == [first.kind], "a press carried over to the next notice")
+        #expect(pressed.last == .some(nil))
+    }
+
+    /// The overlay chooses a screen when a dictation starts, even if the pill never left the last one, and keeps it
+    /// for that dictation's wait and notices.
+    /// Shows `display` and returns the step (a mutating call cannot sit inside `#expect`).
+    @discardableResult
+    static func show(_ life: inout OverlayLifecycle, _ display: PillDisplay) -> OverlayLifecycle.Step? {
+        life.show(display)
+    }
+
+    static func rest(_ life: inout OverlayLifecycle) -> Bool { life.rested() }
+
+    @Test func eachDictationChoosesItsScreen() {
+        var life = OverlayLifecycle()
+        let first = PillDisplay.listening(.init(trigger: .hold, started: 10))
+        let second = PillDisplay.listening(.init(trigger: .hold, started: 20))
+        #expect(Self.show(&life, first) == .init(chooseScreen: true, present: true))
+        #expect(Self.show(&life, .waiting(.transcribing)) == .init(chooseScreen: false, present: true))
+        #expect(Self.show(&life, Self.notice) == .init(chooseScreen: false, present: true))
+        #expect(Self.show(&life, second) == .init(chooseScreen: true, present: true))
+        #expect(Self.show(&life, .listening(.init(trigger: .hold, promptStyle: false, started: 20)))
+            == .init(chooseScreen: false, present: true))
+        // A notice shown from nothing (a microphone that is denied) chooses a screen too.
+        var idle = OverlayLifecycle()
+        #expect(Self.show(&idle, Self.notice) == .init(chooseScreen: true, present: true))
+    }
+
+    /// Hidden, the panels stay up only until the pill has come to rest, and nothing brings them back until something
+    /// is shown: not a change of screens, accessibility settings or nudges, nor a rest reported late.
+    @Test func hiddenPanelsStayOffUntilSomethingIsShown() {
+        var life = OverlayLifecycle()
+        #expect(Self.show(&life, .hidden) == nil)
+        #expect(!life.appliesChanges)
+        _ = Self.show(&life, .waiting(.transcribing))
+        #expect(life.appliesChanges && !Self.rest(&life), "a pill that is up came to rest")
+        #expect(Self.show(&life, .hidden) == .init(chooseScreen: false, present: false))
+        #expect(life.appliesChanges, "a pill shrinking away stops following the screen")
+        #expect(Self.rest(&life))
+        #expect(!life.appliesChanges && life.phase == .off)
+        #expect(!Self.rest(&life))
+        #expect(Self.show(&life, .hidden) == nil)
+        // Called back while shrinking away, it stays on its screen and does not come to rest.
+        _ = Self.show(&life, .waiting(.transcribing))
+        _ = Self.show(&life, .hidden)
+        #expect(Self.show(&life, .waiting(.preparingModel)) == .init(chooseScreen: false, present: true))
+        #expect(!Self.rest(&life))
+    }
+
+    static let notice = PillDisplay.notice(.init(id: 5, symbol: "info.circle", tone: .information, text: "Invented"))
 
     /// The snapshot tool draws every state for every housing, a contact sheet and a 1x preview per housing, and the
     /// mark's pictures, each under its own name.

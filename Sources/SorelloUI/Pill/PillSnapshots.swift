@@ -154,9 +154,9 @@ public enum PillSnapshots {
     static func pixelPreview(for housing: Housing) -> SnapshotScene {
         var topology = housing.topology
         topology.scale = 1
-        let crop = CGRect(x: housing.crop.midX - 150, y: 0, width: 300, height: 80)
+        let crop = CGRect(x: housing.crop.midX - 200, y: 0, width: 400, height: 80)
         let state = states[2]
-        return SnapshotScene(name: "pill-\(housing.name)-toggle-at-1x", size: CGSize(width: 600, height: 160)) {
+        return SnapshotScene(name: "pill-\(housing.name)-toggle-at-1x", size: CGSize(width: 800, height: 160)) {
             PixelPreview(stage: PillStage(housing: housing, state: state, topology: topology, crop: crop),
                          size: crop.size, magnification: 2)
         }
