@@ -275,6 +275,10 @@ final class PillStage: NSView {
         housingShape.fillColor = NSColor.black.cgColor
         for part in [wallpaper, glow, menuBar, housingShape] { root.addSublayer(part) }
         addSubview(pill)
+        // In its place before anything is shown: what the pill holds is laid out where the view is when it arrives,
+        // and what is leaving is not laid out again.
+        pill.frame = bounds
+        pill.origin = self.crop.origin
         if let moment {
             // Shown or hidden at moment 0 from the other, then drawn at the moment.
             let shown = PillScene(display: state.display, screen: topology, elapsed: 12)
