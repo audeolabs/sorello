@@ -354,18 +354,112 @@ struct EngineTests {
     /// A cancel that lands after the result was made, before it was handed over, keeps nothing: nobody will see it.
     @Test func cancelAfterRetainingKeepsNothing() async throws {
         let log = ModelLog()
-        let engine = engine(log)
-        await prepare(engine)
+        let streams = Mutex<[UInt64: any SpeechStreaming]>([:])
+        let engine = SpeechEngine(loader: fakeLoader(log), dictionary: { _ in .empty }, beforeDelivery: { id in
+            streams.withLock { $0[id] }?.cancel()
+        })
         let stream = engine.openStream(SpeechStreamOptions(retainForCorrection: true))
+        let id = try #require((stream as? SpeechStream)?.id)
+        streams.withLock { $0[id] = stream }
         stream.append(Self.speech(3))
-        let finishing = Task { await finish(stream) }
-        // The engine is busy with this stream on its queue; the cancel lands at some point of it. Whatever the
-        // outcome, a cancelled finish never leaves audio behind.
-        stream.cancel()
-        let outcome = await within { await finishing.value }
-        #expect(outcome == .failure(.cancelled))
-        let probe = try #require(try await retained(engine).correctionID)
-        #expect(await suggest(engine, probe &- 1) == nil, "The cancelled stream's id finds nothing")
+        #expect(await finish(stream) == .failure(.cancelled))
+        #expect(await within { await engine.heldProjections() } == 0, "The retained audio was released")
+        #expect(await suggest(engine, id) == nil)
+    }
+
+    /// Releasing voids retention at once and frees what dictations still being recorded have collected, and they
+    /// collect nothing more.
+    @Test func releasingFreesAudioStillBeingCollected() async throws {
+        for release in ["discard", "newer recording"] {
+            let log = ModelLog()
+            let engine = engine(log)
+            await prepare(engine)
+            let stream = engine.openStream(SpeechStreamOptions(retainForCorrection: true))
+            stream.append(Self.speech(30))
+            let deadline = ContinuousClock.now + .seconds(10)
+            while log.projected.count < 2 && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(5)) }
+            #expect(await within { await engine.heldProjections() } == 2, "\(release): two chunks collected")
+            if release == "discard" { engine.discardCorrection() } else { _ = engine.openStream(SpeechStreamOptions()) }
+            let freed = ContinuousClock.now + .seconds(5)
+            while ContinuousClock.now < freed {
+                let held = await within { await engine.heldProjections() }
+                if held == 0 { break }
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            #expect(await within { await engine.heldProjections() } == 0, "\(release): freed")
+            stream.append(Self.speech(15))
+            let more = ContinuousClock.now + .seconds(10)
+            while log.projected.count < 3 && ContinuousClock.now < more { try await Task.sleep(for: .milliseconds(5)) }
+            #expect(await within { await engine.heldProjections() } == 0, "\(release): nothing more is collected")
+            #expect(try #require(await finish(stream)).get().correctionID == nil)
+        }
+    }
+
+    /// Audio dropped because preparation failed is never followed by a partial transcript, even if a retry readies
+    /// the model before the stream finishes.
+    @Test func audioLostToAFailedPreparationFailsTheStream() async throws {
+        let log = ModelLog()
+        let release = DispatchSemaphore(value: 0)
+        let engine = engine(log, loader: fakeLoader(log, failures: 1, wait: release))
+        let stream = engine.openStream(SpeechStreamOptions())
+        stream.append(Self.speech(3))
+        release.signal()
+        let failed = ContinuousClock.now + .seconds(10)
+        while engine.preparation.outcome == nil && ContinuousClock.now < failed { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(engine.preparation.outcome == .failed(.loadFailed))
+        try await Task.sleep(for: .milliseconds(50))
+        release.signal()
+        await prepare(engine)
+        stream.append(Self.speech(2))
+        #expect(await finish(stream) == .failure(.engineUnavailable(.loadFailed)))
+    }
+
+    /// Someone waiting for an attempt hears how that attempt ended, even when a retry starts before they resume, and
+    /// only a caller that asks to retry starts a new attempt after a failure.
+    @Test func waitersHearTheirOwnAttempt() async {
+        let preparation = Preparation()
+        let first = Task {
+            await withCheckedContinuation { (continuation: CheckedContinuation<EngineReadiness, Never>) in
+                #expect(preparation.join(continuation, retryAfterFailure: true) == .started)
+            }
+        }
+        let started = ContinuousClock.now + .seconds(5)
+        while preparation.waiting == 0 && ContinuousClock.now < started { await Task.yield() }
+        let waiters = preparation.finish(.failed(.loadFailed))
+        // A retry begins before the first waiter has been resumed.
+        let retry = Task {
+            await withCheckedContinuation { (continuation: CheckedContinuation<EngineReadiness, Never>) in
+                #expect(preparation.join(continuation, retryAfterFailure: true) == .started)
+            }
+        }
+        let joined = ContinuousClock.now + .seconds(5)
+        while preparation.waiting == 0 && ContinuousClock.now < joined { await Task.yield() }
+        #expect(waiters.count == 1, "The failed attempt hands back only its own waiter")
+        for waiter in waiters { waiter.resume(returning: .failed(.loadFailed)) }
+        #expect(await within { await first.value } == .failed(.loadFailed))
+        for waiter in preparation.finish(.ready) { waiter.resume(returning: .ready) }
+        #expect(await within { await retry.value } == .ready)
+
+        let failed = Preparation()
+        let attempt = Task {
+            await withCheckedContinuation { (continuation: CheckedContinuation<EngineReadiness, Never>) in
+                _ = failed.join(continuation, retryAfterFailure: true)
+            }
+        }
+        let begun = ContinuousClock.now + .seconds(5)
+        while failed.waiting == 0 && ContinuousClock.now < begun { await Task.yield() }
+        for waiter in failed.finish(.failed(.modelCorrupt)) { waiter.resume(returning: .failed(.modelCorrupt)) }
+        _ = await within { await attempt.value }
+        // A stream waiting for the model reports the failure instead of starting a new attempt.
+        let decided = await within { () -> EngineReadiness in
+            await withCheckedContinuation { (continuation: CheckedContinuation<EngineReadiness, Never>) in
+                switch failed.join(continuation, retryAfterFailure: false) {
+                case .done(let outcome): continuation.resume(returning: outcome)
+                case .joined, .started: for waiter in failed.finish(.preparing) { waiter.resume(returning: .preparing) }
+                }
+            }
+        }
+        #expect(decided == .failed(.modelCorrupt))
     }
 
     /// Checks are ordered when registered, not when their work starts, and cancelling the calling task cancels its

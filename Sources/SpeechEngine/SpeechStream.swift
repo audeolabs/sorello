@@ -19,6 +19,8 @@ final class SpeechStream: SpeechStreaming {
         var drainScheduled = false
         var cancelled = false
         var finishing = false
+        /// Audio was dropped because the model could not be had; the stream can only fail now.
+        var failure: SpeechFailure?
         var waiter: CheckedContinuation<SpeechResult, any Error>?
     }
 
@@ -34,7 +36,7 @@ final class SpeechStream: SpeechStreaming {
     func append(_ samples: [Float]) {
         guard !samples.isEmpty else { return }
         let schedule = ingress.withLock { state -> Bool in
-            guard !state.cancelled, !state.finishing else { return false }
+            guard !state.cancelled, !state.finishing, state.failure == nil else { return false }
             state.inbox.append(contentsOf: samples)
             defer { state.drainScheduled = true }
             return !state.drainScheduled
@@ -83,6 +85,18 @@ final class SpeechStream: SpeechStreaming {
     var isCancelled: Bool { ingress.withLock { $0.cancelled } }
 
     var isFinishing: Bool { ingress.withLock { $0.finishing } }
+
+    /// Why the stream can no longer succeed, if something already decided that.
+    var failure: SpeechFailure? { ingress.withLock { $0.failure } }
+
+    /// Drops what was appended and makes the stream fail with `failure` when it finishes. The first failure wins.
+    func fail(_ failure: SpeechFailure) {
+        ingress.withLock { state in
+            state.inbox = []
+            state.drainScheduled = false
+            if state.failure == nil { state.failure = failure }
+        }
+    }
 
     /// Throws once the stream is cancelled; the engine calls it between model calls and decoder steps.
     var cancellationCheck: () throws -> Void {

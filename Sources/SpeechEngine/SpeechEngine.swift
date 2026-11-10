@@ -24,6 +24,7 @@ public actor SpeechEngine: SpeechTranscribing {
     private let loader: ModelLoader?
     private let dictionary: @Sendable (String?) -> DictionarySnapshot
     private let retainedLifetime: TimeInterval
+    private let beforeDelivery: (@Sendable (UInt64) -> Void)?
     private let readinessHub: ReadinessHub
     nonisolated let preparation = Preparation()
     private let gate = RetentionGate()
@@ -50,8 +51,11 @@ public actor SpeechEngine: SpeechTranscribing {
         self.init(loader: loader, dictionary: dictionary)
     }
 
+    /// `beforeDelivery` runs on the engine's executor after a stream's result is made and before it is handed over,
+    /// so tests can land a cancel there.
     init(loader: ModelLoader?, dictionary: @escaping @Sendable (String?) -> DictionarySnapshot,
-         retainedLifetime: TimeInterval = 90) {
+         retainedLifetime: TimeInterval = 90, beforeDelivery: (@Sendable (UInt64) -> Void)? = nil) {
+        self.beforeDelivery = beforeDelivery
         self.loader = loader
         self.dictionary = dictionary
         self.retainedLifetime = retainedLifetime
@@ -84,10 +88,16 @@ public actor SpeechEngine: SpeechTranscribing {
     /// the engine's executor is busy loading, and only a call made after an attempt has ended starts a new one.
     public nonisolated func prepare() async {
         guard loader != nil else { return }
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            switch preparation.join(continuation) {
-            case .done:
-                continuation.resume()
+        _ = await joinPreparation(retryAfterFailure: true)
+    }
+
+    /// Joins the attempt in progress, or starts one, and returns how that attempt ended. Without
+    /// `retryAfterFailure`, a failed last attempt is returned as it is instead of starting a new one.
+    private nonisolated func joinPreparation(retryAfterFailure: Bool) async -> EngineReadiness {
+        await withCheckedContinuation { (continuation: CheckedContinuation<EngineReadiness, Never>) in
+            switch preparation.join(continuation, retryAfterFailure: retryAfterFailure) {
+            case .done(let outcome):
+                continuation.resume(returning: outcome)
             case .joined:
                 break
             case .started:
@@ -113,18 +123,23 @@ public actor SpeechEngine: SpeechTranscribing {
             outcome = .failed(error)
         }
         readinessHub.publish(outcome)
-        for waiter in preparation.finish(outcome) { waiter.resume() }
+        for waiter in preparation.finish(outcome) { waiter.resume(returning: outcome) }
     }
 
     /// The model, once preparation has succeeded. Waits behind an attempt in progress and starts one if none was
-    /// ever made; after a failed attempt it throws until `prepare` is called again.
+    /// ever made; after a failed attempt it throws until `prepare` is called again. A caller that waited for an
+    /// attempt gets that attempt's outcome, even if a retry has started since.
     private func readyModel() async throws(SpeechFailure) -> any SpeechModel {
-        while true {
-            if let model { return model }
-            guard loader != nil else { throw .engineUnavailable(.modelMissing) }
-            if case .failed(let failure) = preparation.outcome { throw .engineUnavailable(failure) }
-            await prepare()
+        if let model { return model }
+        guard loader != nil else { throw .engineUnavailable(.modelMissing) }
+        // One step decides whether to wait, start the first attempt, or report the last failure, so a stream never
+        // starts a new attempt after one has failed.
+        if case .failed(let failure) = await joinPreparation(retryAfterFailure: false) {
+            throw .engineUnavailable(failure)
         }
+        // A successful attempt sets the model before it resumes anyone.
+        guard let model else { throw .failed }
+        return model
     }
 
     // MARK: - Streams
@@ -168,8 +183,9 @@ public actor SpeechEngine: SpeechTranscribing {
         do {
             model = try await readyModel()
         } catch {
-            // Without a model nothing will ever be transcribed; finishing reports why.
-            _ = stream.takeInbox()
+            // This audio will never be transcribed, so the stream can never succeed, even if a retry readies the
+            // model before it finishes: finishing reports why.
+            stream.fail(error)
             return
         }
         // A finishing stream's remaining audio is completed by `complete`.
@@ -177,9 +193,11 @@ public actor SpeechEngine: SpeechTranscribing {
         let work = self.work(for: stream, model: model)
         let samples = stream.takeInbox()
         guard !samples.isEmpty, work.failure == nil else { return }
-        let check = stream.cancellationCheck
+        let check = stream.cancellationCheck, gate = self.gate
         do {
-            try work.transcription.append(samples) { try Self.transcribe($0, work: work, model: model, check: check) }
+            try work.transcription.append(samples) {
+                try Self.transcribe($0, work: work, model: model, gate: gate, check: check)
+            }
         } catch {
             work.failure = Self.failure(error)
         }
@@ -195,6 +213,7 @@ public actor SpeechEngine: SpeechTranscribing {
             outcome = .failure(error)
         }
         work[stream.id] = nil
+        beforeDelivery?(stream.id)
         if !stream.deliver(outcome), case .success(let result) = outcome, let id = result.correctionID {
             release(id)
         }
@@ -206,17 +225,23 @@ public actor SpeechEngine: SpeechTranscribing {
     }
 
     private func finishWork(_ stream: SpeechStream) async throws(SpeechFailure) -> SpeechResult {
+        if let failure = stream.failure { throw failure }
         let model = try await readyModel()
         guard !stream.isCancelled else { throw .cancelled }
+        if let failure = stream.failure { throw failure }
         let work = self.work(for: stream, model: model)
         let samples = stream.takeInbox()
         if let failure = work.failure { throw failure }
-        let check = stream.cancellationCheck
+        let check = stream.cancellationCheck, gate = self.gate
         do {
             if !samples.isEmpty {
-                try work.transcription.append(samples) { try Self.transcribe($0, work: work, model: model, check: check) }
+                try work.transcription.append(samples) {
+                    try Self.transcribe($0, work: work, model: model, gate: gate, check: check)
+                }
             }
-            let raw = try work.transcription.finish { try Self.transcribe($0, work: work, model: model, check: check) }
+            let raw = try work.transcription.finish {
+                try Self.transcribe($0, work: work, model: model, gate: gate, check: check)
+            }
             try check()
             let text = CasingRestorer.apply(raw, entries: work.snapshot.entries)
             return SpeechResult(text: text, correctionID: retain(work, id: stream.id, model: model, base: text))
@@ -231,15 +256,17 @@ public actor SpeechEngine: SpeechTranscribing {
         if let existing = work[stream.id] { return existing }
         let snapshot = stream.snapshot
         let bias = graphs.graph(for: snapshot) { BiasGraph.build(entries: snapshot.entries, encoder: model.encoder) }
-        let created = StreamWork(snapshot: snapshot, bias: bias, retainsAudio: stream.retainsAudio)
+        let created = StreamWork(id: stream.id, snapshot: snapshot, bias: bias, retainsAudio: stream.retainsAudio)
         work[stream.id] = created
         return created
     }
 
     /// One chunk's words. With retention on, its projection is kept, until the dictation's projections pass the size
-    /// limit; then nothing is kept, but transcription goes on.
-    private static func transcribe(_ window: AudioWindow, work: StreamWork, model: any SpeechModel,
-                            check: () throws -> Void) throws -> [HeardWord] {
+    /// limit or its retention is voided (a newer recording, a release); then nothing more is kept, but transcription
+    /// goes on. A nil `gate` keeps everything, for find strength, which is not a recording.
+    private static func transcribe(_ window: AudioWindow, work: StreamWork, model: any SpeechModel, gate: RetentionGate?,
+                                   check: () throws -> Void) throws -> [HeardWord] {
+        if work.retained != nil, let gate, !gate.allows(work.id) { work.retained = nil }
         let projection = try model.project(window.samples, check: check)
         work.retained?.chunks.append(RetainedChunk(range: window.range, projection: projection))
         work.retained?.bytes += projection?.bytes ?? 0
@@ -329,8 +356,19 @@ public actor SpeechEngine: SpeechTranscribing {
         expiry = nil
     }
 
+    /// Frees what voided retention held: the finished dictation's audio, and what dictations still being
+    /// transcribed had collected.
     private func dropStaleRetention() {
         if let id = retained?.id, !gate.allows(id) { release(id) }
+        for (id, stream) in work where stream.retained != nil && !gate.allows(id) { stream.retained = nil }
+    }
+
+    /// The projections kept for corrections, finished or in progress, so tests can see that releasing frees them.
+    func heldProjections() -> Int {
+        let finished = retained?.chunks.count(where: { $0.projection != nil }) ?? 0
+        return work.values.reduce(finished) { held, stream in
+            held + (stream.retained?.chunks.count(where: { $0.projection != nil }) ?? 0)
+        }
     }
 
     private func liveSession(_ id: UInt64) -> RetainedCorrection? {
@@ -369,11 +407,15 @@ public actor SpeechEngine: SpeechTranscribing {
         }
         let check: () throws -> Void = { if Task.isCancelled { throw TranscriptionError.cancelled } }
         let others = dictionary(appBundleID).entries.filter { $0.key != entry.key }
-        let work = StreamWork(snapshot: DictionarySnapshot(revision: 0, entries: others),
+        let work = StreamWork(id: 0, snapshot: DictionarySnapshot(revision: 0, entries: others),
                               bias: BiasGraph.build(entries: others, encoder: model.encoder), retainsAudio: true)
         do {
-            try work.transcription.append(samples) { try Self.transcribe($0, work: work, model: model, check: check) }
-            let raw = try work.transcription.finish { try Self.transcribe($0, work: work, model: model, check: check) }
+            try work.transcription.append(samples) {
+                try Self.transcribe($0, work: work, model: model, gate: nil, check: check)
+            }
+            let raw = try work.transcription.finish {
+                try Self.transcribe($0, work: work, model: model, gate: nil, check: check)
+            }
             guard let audio = work.retained else { throw SpeechFailure.failed }
             let base = CasingRestorer.apply(raw, entries: others)
             return try StrengthProbe.find(word: entry.text, base: base) { strength in
@@ -471,13 +513,18 @@ final class RetentionGate: Sendable {
 /// The state of preparation, decided under a lock so a caller joins the attempt in progress at once, even while
 /// the engine's executor is busy loading the model.
 final class Preparation: Sendable {
-    enum Join { case done, joined, started }
+    enum Join: Equatable {
+        /// No attempt runs, and the last one ended so; the caller resumes its waiter itself.
+        case done(EngineReadiness)
+        case joined
+        case started
+    }
 
     private struct State {
         /// nil before the first attempt ends, and while one is in progress.
         var outcome: EngineReadiness?
         var running = false
-        var waiters: [CheckedContinuation<Void, Never>] = []
+        var waiters: [CheckedContinuation<EngineReadiness, Never>] = []
     }
 
     private let state = Mutex(State())
@@ -488,11 +535,15 @@ final class Preparation: Sendable {
     /// How the last attempt ended, while none is in progress.
     var outcome: EngineReadiness? { state.withLock { $0.running ? nil : $0.outcome } }
 
-    /// `done` when the model is ready (the caller resumes `waiter` itself); otherwise `waiter` waits for the
-    /// attempt in progress (`joined`), or for a new one the caller must start (`started`).
-    func join(_ waiter: CheckedContinuation<Void, Never>) -> Join {
+    /// `done` when the model is ready, or when the last attempt failed and `retryAfterFailure` is false (the caller
+    /// resumes `waiter` itself); otherwise `waiter` waits for the attempt in progress (`joined`), or for a new one the
+    /// caller must start (`started`), and is resumed with how that attempt ended.
+    func join(_ waiter: CheckedContinuation<EngineReadiness, Never>, retryAfterFailure: Bool) -> Join {
         state.withLock { state in
-            if state.outcome == .ready && !state.running { return .done }
+            if !state.running, let outcome = state.outcome {
+                if outcome == .ready { return .done(.ready) }
+                if !retryAfterFailure { return .done(outcome) }
+            }
             state.waiters.append(waiter)
             if state.running { return .joined }
             state.running = true
@@ -502,7 +553,7 @@ final class Preparation: Sendable {
     }
 
     /// Ends the attempt and hands back everyone waiting for it.
-    func finish(_ outcome: EngineReadiness) -> [CheckedContinuation<Void, Never>] {
+    func finish(_ outcome: EngineReadiness) -> [CheckedContinuation<EngineReadiness, Never>] {
         state.withLock { state in
             state.running = false
             state.outcome = outcome
@@ -590,13 +641,15 @@ struct RetainedAudio {
 
 /// A stream's state on the engine's executor.
 final class StreamWork {
+    let id: UInt64
     let snapshot: DictionarySnapshot
     let bias: BiasGraph?
     var transcription = ChunkedTranscription.recording()
     var retained: RetainedAudio?
     var failure: SpeechFailure?
 
-    init(snapshot: DictionarySnapshot, bias: BiasGraph?, retainsAudio: Bool) {
+    init(id: UInt64, snapshot: DictionarySnapshot, bias: BiasGraph?, retainsAudio: Bool) {
+        self.id = id
         self.snapshot = snapshot
         self.bias = bias
         retained = retainsAudio ? RetainedAudio() : nil
