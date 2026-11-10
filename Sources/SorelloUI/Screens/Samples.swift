@@ -31,6 +31,17 @@ public extension MenuPanelModel {
     }
 }
 
+/// Sample menus for the menu-bar item.
+public extension StatusMenuModel {
+    static func sample(status: AppStatus = .sampleReady, lastDictation: String? = "Sphinx of black quartz, judge my vow. The five boxing wizards jump quickly over the lazy dog.") -> StatusMenuModel {
+        StatusMenuModel(appName: "Sorello", status: status,
+                        shortcuts: [.holdToTalk: .function,
+                                    .tapToToggle: KeyCombo(modifiers: [.control(.either), .option(.either)],
+                                                           key: KeyName(label: "Space"))],
+                        lastDictation: lastDictation)
+    }
+}
+
 /// A sample General screen.
 public extension GeneralModel {
     static func sample(status: AppStatus = .sampleReady) -> GeneralModel {
