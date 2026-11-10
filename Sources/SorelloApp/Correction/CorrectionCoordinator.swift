@@ -91,9 +91,13 @@ final class CorrectionCoordinator {
     /// The watch's deadline passed while a check was running; its audio goes when the check ends.
     @ObservationIgnored private var watchOver = false
 
-    /// How long after it starts a watch can still report anything: its last start attempt, its longest watch
-    /// (DESIGN §3.5, 60 s) and a poll to notice the end.
-    static let watchLimit: TimeInterval = (CorrectionWatcher.startAttempts.last ?? 2) + 60
+    /// How long after it starts a watch can still report anything. Its window is 60 s from the moment it begins
+    /// (DESIGN §3.5), and it begins at its last start attempt (2 s) at the latest, plus however long the attempts'
+    /// Accessibility reads took; each read gives up after 0.25 s, so four attempts of a few reads stay well inside
+    /// the 10 s allowed for them here. The deadline is a backstop for a watch that ends without a word: being late
+    /// only keeps the audio a little longer, still inside the engine's own 90 s expiry, while being early would drop
+    /// an edit the watch is about to report.
+    static let watchLimit: TimeInterval = (CorrectionWatcher.startAttempts.last ?? 2) + 10 + 60
         + 2 * CorrectionWatcher.pollInterval
 
     /// `makeWatcher` builds the watch with the coordinator's own callbacks.
