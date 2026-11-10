@@ -29,19 +29,57 @@ public enum Motion {
     public static let crossFade = 0.15
     /// The body fading in as it drops down from the band, and out as it goes back up.
     public static let appear = 0.15
+    /// Appearing, what the pill holds and its cancel bud wait this long, until the body has nearly dropped into place,
+    /// so nothing shows through a body still too small for it and the bud buds off a body on its own line.
+    public static let drop = 0.1
 
     /// The body's fade: after what delay and for how long. Leaving, the content goes first; with Reduce Motion
     /// everything cross-fades together.
     public static func bodyFade(showing: Bool, reduceMotion: Bool) -> (delay: Double, duration: Double) {
         reduceMotion ? (0, crossFade) : (showing ? 0 : handover, appear)
     }
+}
 
-    /// How long after the pill is hidden its last fade ends, content and body: it is not at rest before then.
-    public static func hideFades(reduceMotion: Bool) -> Double {
-        let content = reduceMotion ? crossFade : handover
-        let body = bodyFade(showing: false, reduceMotion: reduceMotion)
-        return max(content, body.delay + body.duration)
+/// An opacity, 0 to 1, moving in a straight line from where it is to a target in a given time, after a delay. The
+/// pill computes its fades for each frame from one of these rather than leaving them to the render server, so a frame
+/// drawn for a moment, on the screen or in a snapshot, is exactly what the pill looks like then.
+public struct Fade: Equatable, Sendable {
+    public private(set) var target: Double
+    private var origin: Double
+    /// Long ago, until it is moved: a fade that has never moved is settled at any moment.
+    private var start = -Double.infinity
+    private var duration = 0.0
+
+    public init(_ value: Double) {
+        target = Self.clamped(value)
+        origin = target
     }
+
+    public func value(at time: TimeInterval) -> Double {
+        if time >= start + duration { return target }
+        if time <= start { return origin }
+        return origin + (target - origin) * (time - start) / duration
+    }
+
+    /// At its target and not moving any more.
+    public func isSettled(at time: TimeInterval) -> Bool { time >= start + duration }
+
+    /// From where it is at `now` towards `target`, taking `duration`, after `delay` held still. A target or a moment
+    /// that is not a number changes nothing.
+    public mutating func move(to target: Double, at now: TimeInterval, delay: Double = 0, duration: Double) {
+        guard target.isFinite, now.isFinite else { return }
+        origin = value(at: now)
+        start = now + (delay.isFinite ? max(delay, 0) : 0)
+        self.duration = duration.isFinite ? max(duration, 0) : 0
+        self.target = Self.clamped(target)
+    }
+
+    /// At `value` at once.
+    public mutating func snap(to value: Double) {
+        self = Fade(value)
+    }
+
+    private static func clamped(_ value: Double) -> Double { value.isFinite ? min(max(value, 0), 1) : 0 }
 }
 
 /// A value moving under a spring from where it was, at the speed it had, towards a target. Its value at a moment is
@@ -117,8 +155,12 @@ public struct SpringValue: Equatable, Sendable {
 /// the next (the rest into the capsule, a capsule into a card) and the outline at a moment is a pure function.
 public struct MovingBody: Equatable, Sendable {
     private var minX, minY, maxX, maxY, top, bottom: SpringValue
+    /// No part of the outline rises above this line, even while the spring overshoots on its way up: the pill sets it
+    /// to the foot of the top band, which the body never draws in.
+    public var ceiling: Double
 
-    public init(_ body: PillBody) {
+    public init(_ body: PillBody, ceiling: Double = -.infinity) {
+        self.ceiling = ceiling.isNaN ? -.infinity : ceiling
         minX = SpringValue(Double(body.frame.minX))
         minY = SpringValue(Double(body.frame.minY))
         maxX = SpringValue(Double(body.frame.maxX))
@@ -144,14 +186,15 @@ public struct MovingBody: Equatable, Sendable {
         bottom.move(to: body.bottomRadius, with: spring, at: now)
     }
 
-    /// At `body` at once.
+    /// At `body` at once, under the same ceiling.
     public mutating func snap(to body: PillBody) {
-        self = MovingBody(body)
+        self = MovingBody(body, ceiling: ceiling)
     }
 
-    /// The outline at `now`. Its width and height never go below zero, even while the spring overshoots.
+    /// The outline at `now`. Its width and height never go below zero and its top never rises above the ceiling, even
+    /// while the spring overshoots.
     public func body(at now: TimeInterval) -> PillBody {
-        let x0 = minX.value(at: now), y0 = minY.value(at: now)
+        let x0 = minX.value(at: now), y0 = max(minY.value(at: now), ceiling)
         let x1 = max(maxX.value(at: now), x0), y1 = max(maxY.value(at: now), y0)
         return PillBody(frame: CGRect(x: x0, y: y0, width: x1 - x0, height: y1 - y0),
                         topRadius: max(top.value(at: now), 0), bottomRadius: max(bottom.value(at: now), 0))

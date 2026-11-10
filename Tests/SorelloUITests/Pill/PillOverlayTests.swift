@@ -218,8 +218,8 @@ import Testing
 
     static let notice = PillDisplay.notice(.init(id: 5, symbol: "info.circle", tone: .information, text: "Invented"))
 
-    /// The snapshot tool draws every state under a camera island, under a notch and with neither, a contact sheet and
-    /// a 1x preview for each, and the mark's pictures, each under its own name.
+    /// The snapshot tool draws every state under a camera island, under a notch and with neither, a contact sheet, a
+    /// 1x preview and the drop frame by frame for each, and the mark's pictures, each under its own name.
     @Test func everyStateHasASnapshot() {
         let names = PillSnapshots.scenes.map(\.name)
         #expect(Set(names).count == names.count)
@@ -227,7 +227,7 @@ import Testing
             for state in ["listening-silent", "listening-speaking", "listening-toggle", "listening-prompt", "waiting",
                           "waiting-preparing", "notice-error", "notice-suggestion", "notice-suggestion-app",
                           "notice-suggestion-long-app", "contrast-listening",
-                          "reduce-motion-waiting", "contact-sheet", "toggle-at-1x"] {
+                          "reduce-motion-waiting", "contact-sheet", "toggle-at-1x", "drop"] {
                 #expect(names.contains("pill-\(housing)-\(state)"))
             }
         }

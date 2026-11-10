@@ -13,7 +13,7 @@ struct OverlayLifecycle: Equatable {
         case off
         /// Something is shown.
         case up
-        /// Hidden, and still shrinking or fading away.
+        /// Hidden, and still going back up or fading away.
         case leaving
     }
 

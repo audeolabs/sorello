@@ -26,8 +26,9 @@ final class PillContent {
     let arrived: CFTimeInterval
     /// When it has finished fading out, once it is leaving.
     private(set) var leftAt: CFTimeInterval?
-    /// Fades in and out.
+    /// Fades in and out, frame by frame on the motion clock.
     let layer = CALayer()
+    private var fade = Fade(1)
     /// Dims while its control is held.
     private let inner = CALayer()
     private let dots = DotLayers()
@@ -58,27 +59,32 @@ final class PillContent {
 
     // MARK: - Fading
 
+    /// Fades in from nothing at `now`, after `delay`.
     func arrive(at now: CFTimeInterval, delay: Double, duration: Double) {
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = 0
-        fade.toValue = 1
-        fade.duration = duration
-        fade.beginTime = layer.convertTime(now, from: nil) + delay
-        fade.fillMode = .backwards
-        layer.add(fade, forKey: "arrive")
+        fade = Fade(0)
+        fade.move(to: 1, at: now, delay: delay, duration: duration)
+        showFade(at: now)
     }
 
+    /// Fades out from where it is at `now`, or, not `animated`, goes at once.
     func leave(at now: CFTimeInterval, animated: Bool, duration: Double) {
         leftAt = now + (animated ? duration : 0)
         if animated {
-            let fade = CABasicAnimation(keyPath: "opacity")
-            fade.fromValue = layer.presentation()?.opacity ?? layer.opacity
-            fade.toValue = 0
-            fade.duration = duration
-            layer.add(fade, forKey: "arrive")
+            fade.move(to: 0, at: now, duration: duration)
+        } else {
+            fade.snap(to: 0)
         }
-        layer.opacity = 0
+        showFade(at: now)
     }
+
+    /// Sets the opacity the fade has at `now`.
+    func showFade(at now: CFTimeInterval) {
+        let opacity = Float(fade.value(at: now))
+        if layer.opacity != opacity { layer.opacity = opacity }
+    }
+
+    /// Whether it is fading in or out at `now`.
+    func isFading(at now: CFTimeInterval) -> Bool { !fade.isSettled(at: now) }
 
     func dim(_ alpha: Float, action: String?) {
         if inner.opacity != alpha { inner.opacity = alpha }

@@ -3,7 +3,8 @@ import DesignCore
 
 /// The pill's scenes for the snapshot tool (ARCHITECTURE.md, section 11): every state under a camera island, under a
 /// notch and on a screen with neither, over a menu bar on a wallpaper with the housing drawn in black, so the pill can
-/// be judged where it hangs; a contact sheet per screen; and the mark, the menu-bar icon and the app icon.
+/// be judged where it hangs; a contact sheet per screen, and the drop frame by frame; and the mark, the menu-bar icon
+/// and the app icon.
 public enum PillSnapshots {
     public static var scenes: [SnapshotScene] {
         Housing.allCases.flatMap { housing in
@@ -11,7 +12,7 @@ public enum PillSnapshots {
                 SnapshotScene(name: "pill-\(housing.name)-\(state.name)", size: housing.crop.size) {
                     PillStage(housing: housing, state: state)
                 }
-            } + [contactSheet(for: housing), pixelPreview(for: housing)]
+            } + [contactSheet(for: housing), pixelPreview(for: housing), dropSheet(for: housing)]
         } + MarkSnapshots.scenes
     }
 
@@ -184,6 +185,44 @@ public enum PillSnapshots {
         }
     }
 
+    /// A moment of the drop: so long after the pill was shown, or, `leaving`, after it was hidden.
+    struct Moment {
+        var time: CFTimeInterval
+        var leaving: Bool
+    }
+
+    /// The moments the drop is drawn at, from the start until it has settled.
+    static let dropMoments: [CFTimeInterval] = [0, 0.02, 0.04, 0.06, 0.08, 0.11, 0.15, 0.2, 0.28, 0.45]
+
+    /// The drop frame by frame: Hold to Talk dropping down from the band and going back up, and Tap to Toggle doing the
+    /// same with its cancel bud, at each of `dropMoments`, so the motion can be judged in one picture.
+    static func dropSheet(for housing: Housing) -> SnapshotScene {
+        let hold = states[1], toggle = states[2]
+        let rows: [(String, State, Bool)] = [("Down", hold, false), ("Up", hold, true), ("Toggle, down", toggle, false),
+                                             ("Toggle, up", toggle, true)]
+        let middle = housing.topology.middle
+        let crop = CGRect(x: middle - 130, y: 0, width: 260, height: 96)
+        let columns = 5, caption: CGFloat = 22, perRow = (dropMoments.count + columns - 1) / columns
+        let size = CGSize(width: crop.width * CGFloat(columns),
+                          height: (crop.height + caption) * CGFloat(rows.count * perRow) + 34)
+        return SnapshotScene(name: "pill-\(housing.name)-drop", size: size) {
+            let sheet = SheetView(frame: CGRect(origin: .zero, size: size))
+            sheet.title = "\(housing.title): the drop"
+            for (section, (name, state, leaving)) in rows.enumerated() {
+                for (index, time) in dropMoments.enumerated() {
+                    let column = index % columns, row = section * perRow + index / columns
+                    let origin = CGPoint(x: CGFloat(column) * crop.width,
+                                         y: 34 + CGFloat(row) * (crop.height + caption))
+                    let stage = PillStage(housing: housing, state: state, crop: crop,
+                                          moment: Moment(time: time, leaving: leaving))
+                    let frame = CGRect(origin: origin, size: CGSize(width: crop.width, height: crop.height + caption))
+                    sheet.add(stage, caption: "\(name), \(String(format: "%.2f s", time))", frame: frame)
+                }
+            }
+            return sheet
+        }
+    }
+
     /// The listening pill as a 1x display draws it, every pixel shown as a 4 x 4 block, so a reviewer can judge it
     /// without a 1x screen.
     static func pixelPreview(for housing: Housing) -> SnapshotScene {
@@ -199,7 +238,7 @@ public enum PillSnapshots {
 }
 
 /// One picture of the pill: a wallpaper, the menu bar across it, the camera housing in black, and the pill over them,
-/// in a crop of the screen.
+/// in a crop of the screen; settled, or at a moment of the drop.
 final class PillStage: NSView {
     private let wallpaper = CAGradientLayer()
     private let glow = CAGradientLayer()
@@ -211,13 +250,13 @@ final class PillStage: NSView {
     private let crop: CGRect
 
     init(housing: PillSnapshots.Housing, state: PillSnapshots.State, topology: ScreenTopology? = nil,
-         crop: CGRect? = nil) {
+         crop: CGRect? = nil, moment: PillSnapshots.Moment? = nil) {
         let topology = topology ?? housing.topology
         self.housing = housing
         self.topology = topology
         self.crop = crop ?? housing.crop
         pill = PillView(levels: nil, clock: { PillSnapshots.started + 12 }, fixedWave: state.wave,
-                        fixedMotionTime: state.motionTime)
+                        fixedMotionTime: moment == nil ? state.motionTime : 0)
         super.init(frame: CGRect(origin: .zero, size: self.crop.size))
         wantsLayer = true
         guard let root = layer else { return }
@@ -235,7 +274,16 @@ final class PillStage: NSView {
         housingShape.fillColor = NSColor.black.cgColor
         for part in [wallpaper, glow, menuBar, housingShape] { root.addSublayer(part) }
         addSubview(pill)
-        pill.update(display: state.display, screen: topology, appearance: state.appearance, animated: false)
+        if let moment {
+            // Shown or hidden at moment 0 from the other, then drawn at the moment.
+            pill.update(display: moment.leaving ? state.display : .hidden, screen: topology,
+                        appearance: state.appearance, animated: false)
+            pill.update(display: moment.leaving ? .hidden : state.display, screen: topology,
+                        appearance: state.appearance, animated: true)
+            pill.fixedMotionTime = moment.time
+        } else {
+            pill.update(display: state.display, screen: topology, appearance: state.appearance, animated: false)
+        }
     }
 
     @available(*, unavailable)
