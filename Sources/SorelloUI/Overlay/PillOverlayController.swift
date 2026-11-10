@@ -33,6 +33,9 @@ public final class PillOverlayController {
     private let drawing = OverlayPanel(interactive: false)
     private let controls = ControlPanels()
     private let view: PillView
+    private let clock: () -> TimeInterval
+    /// Fires when the listening time gains a digit, so the pill widens for it.
+    private var widening: Timer?
     private var lifecycle = OverlayLifecycle()
     private var screenNumber: UInt32?
     private var appearance: PillAppearance
@@ -45,6 +48,7 @@ public final class PillOverlayController {
     /// start times, are on (the session's).
     public init(levels: LevelFeed, clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
         view = PillView(levels: levels, clock: clock)
+        self.clock = clock
         appearance = Self.systemAppearance()
         drawing.contentView = view
         view.onRest = { [weak self] in self?.rested() }
@@ -69,6 +73,7 @@ public final class PillOverlayController {
         }
         drawing.orderOut(nil)
         controls.hide()
+        widening?.invalidate()
     }
 
     /// Shows `display`: the pill drops down from the band, changes form, or goes back up, on its spring.
@@ -99,14 +104,31 @@ public final class PillOverlayController {
 
     private func refresh(animated: Bool) {
         guard let topology else { return }
-        let scene = PillScene(display: display, screen: topology)
+        var elapsed = 0.0
+        if case .listening(let listening) = display { elapsed = clock() - listening.started }
+        let scene = PillScene(display: display, screen: topology, elapsed: elapsed)
         let rest = PillGeometry.layout(.rest, on: topology)
         place(covering: [rest.body.frame, scene.layout.body.frame, scene.layout.cancel ?? rest.body.frame,
                          view.scene?.layout.body.frame ?? rest.body.frame], on: topology)
-        view.update(display: display, screen: topology, appearance: appearance, animated: animated)
+        view.update(scene, appearance: appearance, animated: animated)
         // Hiding may have come to rest at once; then the panel stays off the screen.
         if lifecycle.phase == .up, !drawing.isVisible { drawing.orderFrontRegardless() }
         controls.show(lifecycle.phase == .up ? scene.controls : []) { self.global($0, on: topology) }
+        widenWhenTheTimeGainsADigit(after: elapsed)
+    }
+
+    /// While listening, refreshes the pill at the moment its time gains a digit, so it widens for it on its spring.
+    private func widenWhenTheTimeGainsADigit(after elapsed: TimeInterval) {
+        widening?.invalidate()
+        widening = nil
+        guard lifecycle.phase == .up, case .listening = display else { return }
+        // A moment after the digit arrives, so the clock read then is past it.
+        let wait = PillScene.timeGainsADigit(after: elapsed) - elapsed + 0.005
+        let timer = Timer(timeInterval: max(wait, 0.005), repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refresh(animated: true) }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        widening = timer
     }
 
     /// Sizes the drawing panel to cover `frames` and room around them for the spring's give and the edge, growing it

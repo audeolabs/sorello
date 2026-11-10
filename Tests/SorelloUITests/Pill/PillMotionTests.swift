@@ -15,7 +15,7 @@ import Testing
     static func view(on screen: ScreenTopology, appearance: PillAppearance = PillAppearance()) -> PillView {
         let view = PillView(levels: nil, clock: { 0 }, fixedMotionTime: 0)
         view.frame = CGRect(x: 0, y: 0, width: screen.width, height: screen.height)
-        view.update(display: .hidden, screen: screen, appearance: appearance, animated: false)
+        view.update(PillScene(display: .hidden, screen: screen), appearance: appearance, animated: false)
         return view
     }
 
@@ -36,7 +36,7 @@ import Testing
         view.onRest = { rests.append(view.fixedMotionTime ?? -1) }
         let rest = PillGeometry.layout(.rest, on: screen).body.frame
         let target = PillScene(display: Self.hold, screen: screen).layout.body.frame
-        view.update(display: Self.hold, screen: screen, appearance: PillAppearance(), animated: true)
+        view.update(PillScene(display: Self.hold, screen: screen), appearance: PillAppearance(), animated: true)
         let first = try #require(view.drawnBody)
         #expect(Self.near(first.frame, rest) && first.opacity == 0, "it does not start as the rest, unseen")
         var opacity = 0.0, highest = Double.infinity
@@ -50,7 +50,7 @@ import Testing
         let settled = try #require(view.drawnBody)
         #expect(Self.near(settled.frame, target) && settled.opacity == 1)
 
-        view.update(display: .hidden, screen: screen, appearance: PillAppearance(), animated: true)
+        view.update(PillScene(display: .hidden, screen: screen), appearance: PillAppearance(), animated: true)
         for step in 1 ... 240 {
             view.fixedMotionTime = 1 + Double(step) / 120
             let drawn = try #require(view.drawnBody)
@@ -73,7 +73,7 @@ import Testing
         let layout = PillScene(display: toggle, screen: screen).layout
         let cancel = try #require(layout.cancel)
         let view = Self.view(on: screen)
-        view.update(display: toggle, screen: screen, appearance: PillAppearance(), animated: true)
+        view.update(PillScene(display: toggle, screen: screen), appearance: PillAppearance(), animated: true)
         for step in 0 ..< 12 {
             view.fixedMotionTime = Double(step) / 120
             let drawn = try #require(view.drawnBody)
@@ -92,8 +92,8 @@ import Testing
         let toggle = PillDisplay.listening(.init(trigger: .toggle, started: 0))
         let cancel = try #require(PillScene(display: toggle, screen: screen).layout.cancel)
         let view = Self.view(on: screen)
-        view.update(display: toggle, screen: screen, appearance: PillAppearance(), animated: false)
-        view.update(display: .hidden, screen: screen, appearance: PillAppearance(), animated: true)
+        view.update(PillScene(display: toggle, screen: screen), appearance: PillAppearance(), animated: false)
+        view.update(PillScene(display: .hidden, screen: screen), appearance: PillAppearance(), animated: true)
         view.pressed = .stop(dictation: 0)
         view.origin = CGPoint(x: 0, y: 0)
         let drawn = try #require(view.drawnBody)
@@ -107,7 +107,7 @@ import Testing
         var rested = false
         view.onRest = { rested = true }
         let target = PillScene(display: Self.hold, screen: screen).layout.body.frame
-        view.update(display: Self.hold, screen: screen, appearance: still, animated: true)
+        view.update(PillScene(display: Self.hold, screen: screen), appearance: still, animated: true)
         for step in 0 ... 60 {
             view.fixedMotionTime = Double(step) / 120
             let drawn = try #require(view.drawnBody)
@@ -115,7 +115,7 @@ import Testing
             #expect(abs(drawn.opacity - min(Double(step) / 120 / Motion.crossFade, 1)) < 0.01)
         }
         view.fixedMotionTime = 1
-        view.update(display: .hidden, screen: screen, appearance: still, animated: true)
+        view.update(PillScene(display: .hidden, screen: screen), appearance: still, animated: true)
         for step in 0 ... 60 {
             view.fixedMotionTime = 1 + Double(step) / 120
             let drawn = try #require(view.drawnBody)
@@ -132,13 +132,13 @@ import Testing
         let view = Self.view(on: screen)
         var rested = false
         view.onRest = { rested = true }
-        view.update(display: Self.hold, screen: screen, appearance: PillAppearance(), animated: true)
+        view.update(PillScene(display: Self.hold, screen: screen), appearance: PillAppearance(), animated: true)
         view.fixedMotionTime = 1
-        view.update(display: .hidden, screen: screen, appearance: PillAppearance(), animated: true)
+        view.update(PillScene(display: .hidden, screen: screen), appearance: PillAppearance(), animated: true)
         view.fixedMotionTime = 1.12
         let before = try #require(view.drawnBody)
         let again = PillDisplay.listening(.init(trigger: .hold, started: 1.12))
-        view.update(display: again, screen: screen, appearance: PillAppearance(), animated: true)
+        view.update(PillScene(display: again, screen: screen), appearance: PillAppearance(), animated: true)
         let after = try #require(view.drawnBody)
         #expect(Self.near(before.frame, after.frame) && abs(before.opacity - after.opacity) < 1e-6)
         #expect(after.opacity > 0 && after.opacity < 1)

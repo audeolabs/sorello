@@ -276,13 +276,14 @@ final class PillStage: NSView {
         addSubview(pill)
         if let moment {
             // Shown or hidden at moment 0 from the other, then drawn at the moment.
-            pill.update(display: moment.leaving ? state.display : .hidden, screen: topology,
-                        appearance: state.appearance, animated: false)
-            pill.update(display: moment.leaving ? .hidden : state.display, screen: topology,
-                        appearance: state.appearance, animated: true)
+            let shown = PillScene(display: state.display, screen: topology, elapsed: 12)
+            let hidden = PillScene(display: .hidden, screen: topology)
+            pill.update(moment.leaving ? shown : hidden, appearance: state.appearance, animated: false)
+            pill.update(moment.leaving ? hidden : shown, appearance: state.appearance, animated: true)
             pill.fixedMotionTime = moment.time
         } else {
-            pill.update(display: state.display, screen: topology, appearance: state.appearance, animated: false)
+            pill.update(PillScene(display: state.display, screen: topology, elapsed: 12), appearance: state.appearance,
+                        animated: false)
         }
     }
 

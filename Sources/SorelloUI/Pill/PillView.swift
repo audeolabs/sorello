@@ -123,11 +123,11 @@ final class PillView: NSView {
 
     // MARK: - What to show
 
-    /// Shows `display` on `screen`. `animated` false puts everything in place at once (a pill appearing on a new
-    /// screen, snapshots); otherwise the body springs and the content hands over, or with Reduce Motion cross-fades.
-    func update(display: PillDisplay, screen: ScreenTopology, appearance: PillAppearance, animated: Bool) {
+    /// Shows `next`. `animated` false puts everything in place at once (a pill appearing on a new screen, snapshots);
+    /// otherwise the body springs and the content hands over, or with Reduce Motion cross-fades.
+    func update(_ next: PillScene, appearance: PillAppearance, animated: Bool) {
         let now = motionNow
-        let next = PillScene(display: display, screen: screen)
+        let display = next.display, screen = next.screen
         let wasHidden = scene.map { $0.display == .hidden } ?? true
         // A pill that is up and changes screens takes its new place at once; one that is appearing drops down on the
         // new screen.

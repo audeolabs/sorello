@@ -48,20 +48,37 @@ import Testing
         }
     }
 
-    /// The time ticking, or a longer recording, never changes the pill's size: what follows the wave is measured for
-    /// the widest time it shows.
-    @Test func theTimeNeverResizesThePill() {
-        let early = Self.scene(.listening(.init(trigger: .hold, started: 0)))
-        let late = Self.scene(.listening(.init(trigger: .hold, started: -5_000)))
-        #expect(early.layout == late.layout)
+    /// The pill holds still as the seconds tick and widens only when the time gains a digit, at ten minutes, about
+    /// the same middle: what follows the wave is measured for the widest time with as many digits as the one shown,
+    /// so it always holds the time and leaves no empty digit beside it.
+    @Test func thePillWidensOnlyWhenTheTimeGainsADigit() throws {
+        func layout(_ elapsed: Double, prompt: Bool = false) -> PillLayout {
+            PillScene(display: .listening(.init(trigger: .hold, promptStyle: prompt, started: 1_000)),
+                      screen: Self.island, elapsed: elapsed).layout
+        }
+        for prompt in [false, true] {
+            let early = layout(0, prompt: prompt), late = layout(600, prompt: prompt)
+            #expect((0 ..< 600).allSatisfy { layout(Double($0) + 0.5, prompt: prompt) == early }, "it moved early on")
+            #expect((600 ..< 900).allSatisfy { layout(Double($0) + 0.5, prompt: prompt) == late }, "it moved later on")
+            #expect(late.body.frame.width > early.body.frame.width)
+            #expect(abs(late.body.frame.midX - early.body.frame.midX) <= 0.25)
+        }
+        for second in 0 ..< 900 {
+            let text = PillScene.elapsedText(Double(second))
+            let box = try #require(layout(Double(second)).trailing)
+            #expect(PillType.width(of: text, font: PillType.time) <= box.width, "\(text) does not fit")
+        }
+        #expect(try #require(layout(12).trailing).width == PillType.width(of: "0:00", font: PillType.time))
+        #expect(PillScene.timeGainsADigit(after: 0) == 600)
+        #expect(PillScene.timeGainsADigit(after: 599.9) == 600)
+        #expect(PillScene.timeGainsADigit(after: 600) == 6_000)
+        #expect(PillScene.timeGainsADigit(after: -5) == 600 && PillScene.timeGainsADigit(after: .nan) == 600)
         #expect(PillScene.elapsedText(0) == "0:00")
         #expect(PillScene.elapsedText(7.9) == "0:07")
         #expect(PillScene.elapsedText(61) == "1:01")
         #expect(PillScene.elapsedText(14 * 60 + 59.99) == "14:59")
         #expect(PillScene.elapsedText(-3) == "0:00")
         #expect(PillScene.elapsedText(.nan) == "0:00")
-        let time = PillType.width(of: "14:59", font: PillType.time)
-        #expect(PillScene.timeContentWidth(prompt: false) >= time)
     }
 
     /// The words of the wait fit their box on every screen, and a hidden pill is at its rest under the band.
@@ -106,8 +123,8 @@ import Testing
         #expect(activated == [.stop(dictation: 0), .cancel(dictation: 0)])
 
         let pill = PillView(levels: LevelFeed(), clock: { 0 })
-        pill.update(display: .listening(.init(trigger: .hold, started: 0)), screen: Self.island,
-                    appearance: PillAppearance(), animated: false)
+        pill.update(Self.scene(.listening(.init(trigger: .hold, started: 0))), appearance: PillAppearance(),
+                    animated: false)
         #expect(pill.accessibilityChildren()?.isEmpty == true)
         #expect(!pill.isAccessibilityElement())
         #expect(pill.hitTest(NSPoint(x: 10, y: 10)) == nil)
