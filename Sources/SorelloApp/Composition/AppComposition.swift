@@ -7,6 +7,7 @@ import Observation
 import Persistence
 import SorelloUI
 import SpeechEngine
+import Synchronization
 
 /// Where the app keeps its data: the directory and the settings' defaults. The app's are under its bundle
 /// identifier; tests and the self-test pass temporary ones.
@@ -181,13 +182,23 @@ final class AppComposition {
         // way is never retracted; it finishes, and its clipboard is restored, before the wait below returns.
         runtime.handle(.cancelPressed, at: platform.clock.now)
         runtime.handle(.cancelPressed, at: platform.clock.now)
+        // Whichever comes first: the inserter idle, or the limit. The inserter's wait cannot be cancelled, so it is
+        // left behind rather than waited for.
         let inserter = platform.inserter
         let clock = platform.clock
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask { await inserter.waitUntilIdle() }
-            group.addTask { try? await clock.sleep(for: limit) }
-            await group.next()
-            group.cancelAll()
+        let first = FirstOnly()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let finish: @Sendable () -> Void = {
+                if first.claim() { continuation.resume() }
+            }
+            Task {
+                await inserter.waitUntilIdle()
+                finish()
+            }
+            Task {
+                try? await clock.sleep(for: limit)
+                finish()
+            }
         }
     }
 
@@ -243,5 +254,17 @@ final class AppComposition {
         watching.append(Task { @MainActor in
             for await list in devices { live.microphones = list }
         })
+    }
+}
+
+/// True for the first caller only, from any thread.
+nonisolated private final class FirstOnly: Sendable {
+    private let claimed = Mutex(false)
+
+    func claim() -> Bool {
+        claimed.withLock { claimed in
+            defer { claimed = true }
+            return !claimed
+        }
     }
 }

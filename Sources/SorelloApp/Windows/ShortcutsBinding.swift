@@ -46,9 +46,12 @@ extension WindowModels {
         let number = recordingNumber
         live.refusals[kind] = nil
         live.recording = kind
-        Task { [weak self] in
+        recording?.cancel()
+        recording = Task { [weak self] in
+            // Cancelled before it began: never take the keyboard.
+            guard let self, self.recordingNumber == number, !Task.isCancelled else { return }
             let binding = await monitor.recordBinding()
-            guard let self, self.recordingNumber == number else { return }
+            guard self.recordingNumber == number else { return }
             live.recording = nil
             guard let binding else { return }
             if let problem = ShortcutValidation.problem(with: binding, for: kind.action, among: settings.shortcutBindings) {
@@ -65,6 +68,8 @@ extension WindowModels {
         guard app.live.recording == kind else { return }
         recordingNumber += 1
         app.live.recording = nil
+        recording?.cancel()
+        recording = nil
         app.platform.shortcuts.cancelRecording()
     }
 

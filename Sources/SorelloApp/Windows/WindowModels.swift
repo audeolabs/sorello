@@ -18,6 +18,8 @@ final class WindowModels {
     private var following: [Following] = []
     /// Counts shortcut recordings, so a recording that ends late cannot end the one after it.
     var recordingNumber: UInt64 = 0
+    /// The shortcut recording in progress, if any.
+    var recording: Task<Void, Never>?
 
     init(app: AppComposition) {
         self.app = app

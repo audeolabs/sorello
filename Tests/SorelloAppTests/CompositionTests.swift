@@ -160,4 +160,35 @@ import Testing
         #expect(harness.inserter.idleWaits == 1)
         #expect(harness.inserter.composed.isEmpty)
     }
+
+    @Test func quittingWaitsForTheClipboardNoLongerThanItsLimit() async throws {
+        let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
+        let harness = Harness(directory: directory.url, defaults: suite.defaults)
+        harness.app.start()
+        harness.inserter.neverIdle = true
+        let sleepers = harness.clock.sleeperCount
+        var finished = false
+        Task { @MainActor in
+            await harness.app.shutdown(limit: 3)
+            finished = true
+        }
+        await eventually { harness.clock.sleeperCount > sleepers }
+        #expect(!finished)
+        harness.clock.advance(by: 3)
+        await eventually { finished }
+        harness.inserter.becomeIdle()
+    }
+
+    @Test func aRecorderCancelledBeforeItBeganNeverTakesTheKeyboard() async throws {
+        let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
+        let harness = Harness(directory: directory.url, defaults: suite.defaults)
+        harness.app.start()
+        let shortcuts = harness.windows.main.shortcuts
+        shortcuts.recorderActions.record(.pasteAgain)
+        shortcuts.recorderActions.cancel(.pasteAgain)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(!harness.shortcuts.isRecording)
+        #expect(!shortcuts.recorder(.pasteAgain).isRecording)
+    }
 }
+

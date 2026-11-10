@@ -48,6 +48,8 @@ final class FakeInserter: AppInserting {
         var destination: InsertionDestination = .cursor(context: nil, field: nil)
         var composed: [ComposedInsertion] = []
         var idleWaits = 0
+        var neverIdle = false
+        var stuck: [CheckedContinuation<Void, Never>] = []
     }
 
     private let state = Mutex(State())
@@ -68,7 +70,30 @@ final class FakeInserter: AppInserting {
         return insertion.text.isEmpty && !insertion.pressEnter ? .nothingToInsert : .inserted
     }
 
-    func waitUntilIdle() async { state.withLock { $0.idleWaits += 1 } }
+    /// A clipboard restore that never finishes, as a stuck transaction would. Its wait ignores cancellation, as the
+    /// real inserter's does.
+    var neverIdle: Bool {
+        get { state.withLock { $0.neverIdle } }
+        set { state.withLock { $0.neverIdle = newValue } }
+    }
+
+    func waitUntilIdle() async {
+        let stuck = state.withLock { state in
+            state.idleWaits += 1
+            return state.neverIdle
+        }
+        guard stuck else { return }
+        await withCheckedContinuation { continuation in state.withLock { $0.stuck.append(continuation) } }
+    }
+
+    /// Lets every stuck wait finish.
+    func becomeIdle() {
+        let waiting = state.withLock { state in
+            defer { state.stuck = [] }
+            return state.stuck
+        }
+        for continuation in waiting { continuation.resume() }
+    }
 }
 
 struct GrantedMicrophone: MicrophoneAuthorizing {
