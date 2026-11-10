@@ -5,7 +5,19 @@ import DesignCore
 /// The pill's outline as a path, in the screen's points (top left, y down): the body, and the cancel bud and the neck
 /// joining it while it buds out or is taken back, as one shape, so the edge drawn around it is one line with no seam.
 enum PillPath {
-    static func outline(_ body: PillBody, bud: CancelBud.Frame?, budY: Double) -> CGPath {
+    /// The outline, cut off at `ceiling`, the foot of the top band: a bud taken back into a body going back up is
+    /// rounder than the rest it goes into, and nothing may be drawn in the band.
+    static func outline(_ body: PillBody, bud: CancelBud.Frame?, budY: Double, ceiling: Double) -> CGPath {
+        let whole = joined(body, bud: bud, budY: budY)
+        let box = whole.boundingBoxOfPath
+        guard Double(box.minY) < ceiling, !box.isEmpty else { return whole }
+        let below = CGRect(x: box.minX - 1, y: ceiling, width: box.width + 2,
+                           height: max(Double(box.maxY) - ceiling, 0))
+        return whole.intersection(CGPath(rect: below, transform: nil))
+    }
+
+    /// The body, and the bud and its neck, as one shape.
+    private static func joined(_ body: PillBody, bud: CancelBud.Frame?, budY: Double) -> CGPath {
         let shape = rounded(body)
         guard let bud else { return shape }
         let circle = CGPath(ellipseIn: CGRect(x: bud.centre - bud.radius, y: budY - bud.radius, width: 2 * bud.radius,

@@ -174,7 +174,8 @@ final class PillView: NSView {
             // Appearing from rest it drops down from the band; called back while still going back up, it turns
             // round from where it is.
             if wasHidden, restReported { body?.snap(to: rest) }
-            body?.move(to: target, at: now)
+            // Leaving, it holds still while what it holds fades, so nothing is clipped as it goes.
+            body?.move(to: target, at: now, delay: next.display == .hidden ? Motion.handover : 0)
         } else if next.display == .hidden, !wasHidden {
             // Nothing travels: it fades where it is.
             if let shape = body?.body(at: now) { body?.snap(to: shape) }
@@ -304,7 +305,7 @@ final class PillView: NSView {
         let budY = Double(scene.layout.cancel?.midY ?? shape.frame.midY)
         let budFrame = bud.frame(at: now, end: Double(shape.frame.maxX), endRadius: endRadius, y: budY)
         var flip = CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: -origin.x, ty: bounds.height + origin.y)
-        let outline = PillPath.outline(shape, bud: budFrame, budY: budY).copy(using: &flip)
+        let outline = PillPath.outline(shape, bud: budFrame, budY: budY, ceiling: body.ceiling).copy(using: &flip)
         edge.path = outline
         edgeMask.path = outline
         fill.path = outline

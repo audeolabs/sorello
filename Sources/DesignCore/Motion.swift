@@ -176,14 +176,15 @@ public struct MovingBody: Equatable, Sendable {
                  topRadius: top.target, bottomRadius: bottom.target)
     }
 
-    /// From where it is at `now`, and as fast, towards `body`.
-    public mutating func move(to body: PillBody, at now: TimeInterval, with spring: Spring = Motion.body) {
-        minX.move(to: Double(body.frame.minX), with: spring, at: now)
-        minY.move(to: Double(body.frame.minY), with: spring, at: now)
-        maxX.move(to: Double(body.frame.maxX), with: spring, at: now)
-        maxY.move(to: Double(body.frame.maxY), with: spring, at: now)
-        top.move(to: body.topRadius, with: spring, at: now)
-        bottom.move(to: body.bottomRadius, with: spring, at: now)
+    /// From where it is at `now`, and as fast, towards `body`; or, after `delay` held still where it is, from rest.
+    public mutating func move(to body: PillBody, at now: TimeInterval, with spring: Spring = Motion.body,
+                              delay: Double = 0) {
+        minX.move(to: Double(body.frame.minX), with: spring, at: now, delay: delay)
+        minY.move(to: Double(body.frame.minY), with: spring, at: now, delay: delay)
+        maxX.move(to: Double(body.frame.maxX), with: spring, at: now, delay: delay)
+        maxY.move(to: Double(body.frame.maxY), with: spring, at: now, delay: delay)
+        top.move(to: body.topRadius, with: spring, at: now, delay: delay)
+        bottom.move(to: body.bottomRadius, with: spring, at: now, delay: delay)
     }
 
     /// At `body` at once, under the same ceiling.

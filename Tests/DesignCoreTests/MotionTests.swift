@@ -148,6 +148,10 @@ import Testing
         #expect(body.body(at: 10.1) == halfway)
         body.snap(to: to)
         #expect(body.body(at: 0) == to && body.isSettled(at: 0))
+        // Sent on after a delay, it holds still where it is until then.
+        var waiting = MovingBody(from)
+        waiting.move(to: to, at: 0, delay: 0.06)
+        #expect(waiting.body(at: 0.059) == from && waiting.body(at: 0.1) != from && waiting.target == to)
         // A ceiling holds the outline's top below it and keeps it through a snap.
         var held = MovingBody(to, ceiling: 60)
         #expect(held.body(at: 0).frame.minY == 60 && held.body(at: 0).frame.maxY == to.frame.maxY)

@@ -24,23 +24,28 @@ import Testing
     }
 
     /// Appearing, the body starts as the rest, unseen, touching the foot of the band, and drops down to its place,
-    /// fading in as it grows; hidden, it goes back up the same way and comes to rest only once it has faded. On no
-    /// frame does it reach into the band.
+    /// fading in as it grows; hidden, it holds still while what it holds fades, then goes back up the same way and
+    /// comes to rest only once it has faded. On no frame does it, or the cancel bud, reach into the band.
     @Test func thePillDropsDownAndGoesBackUp() throws {
-        for screen in Self.screens { try Self.dropsDownAndGoesBackUp(on: screen) }
+        let toggle = PillDisplay.listening(.init(trigger: .toggle, started: 0))
+        for screen in Self.screens {
+            for display in [Self.hold, toggle] { try Self.dropsDownAndGoesBackUp(display, on: screen) }
+        }
     }
 
-    static func dropsDownAndGoesBackUp(on screen: ScreenTopology) throws {
+    static func dropsDownAndGoesBackUp(_ display: PillDisplay, on screen: ScreenTopology) throws {
         let view = Self.view(on: screen)
         var rests: [Double] = []
         view.onRest = { rests.append(view.fixedMotionTime ?? -1) }
         let rest = PillGeometry.layout(.rest, on: screen).body.frame
-        let target = PillScene(display: Self.hold, screen: screen).layout.body.frame
-        view.update(PillScene(display: Self.hold, screen: screen), appearance: PillAppearance(), animated: true)
+        let layout = PillScene(display: display, screen: screen).layout
+        let target = layout.cancel.map { layout.body.frame.union($0) } ?? layout.body.frame
+        view.update(PillScene(display: display, screen: screen), appearance: PillAppearance(), animated: true)
         let first = try #require(view.drawnBody)
         #expect(Self.near(first.frame, rest) && first.opacity == 0, "it does not start as the rest, unseen")
         var opacity = 0.0, highest = Double.infinity
-        for step in 1 ... 120 {
+        // Two seconds: the bud sets out once the body has dropped, on its own softer spring.
+        for step in 1 ... 240 {
             view.fixedMotionTime = Double(step) / 120
             let drawn = try #require(view.drawnBody)
             highest = min(highest, Double(drawn.frame.minY))
@@ -51,8 +56,12 @@ import Testing
         #expect(Self.near(settled.frame, target) && settled.opacity == 1)
 
         view.update(PillScene(display: .hidden, screen: screen), appearance: PillAppearance(), animated: true)
+        view.fixedMotionTime = 2 + Motion.handover * 0.9
+        let holding = try #require(view.drawnBody).frame
+        #expect([holding.minY - target.minY, holding.minX - target.minX, holding.maxY - target.maxY]
+            .allSatisfy { abs($0) < 1e-6 }, "it moved before what it holds had faded")
         for step in 1 ... 240 {
-            view.fixedMotionTime = 1 + Double(step) / 120
+            view.fixedMotionTime = 2 + Double(step) / 120
             let drawn = try #require(view.drawnBody)
             highest = min(highest, Double(drawn.frame.minY))
             #expect(drawn.opacity <= opacity, "it brightened as it left")
@@ -62,7 +71,7 @@ import Testing
         let gone = try #require(view.drawnBody)
         #expect(Self.near(gone.frame, rest) && gone.opacity == 0)
         #expect(rests.count == 1)
-        #expect((rests.first ?? 0) >= 1 + Motion.handover + Motion.appear, "it came to rest before it had faded")
+        #expect((rests.first ?? 0) >= 2 + Motion.handover + Motion.appear, "it came to rest before it had faded")
     }
 
     /// In toggle mode the cancel bud waits until the body has dropped onto its line, then buds off its end and rests
@@ -98,6 +107,30 @@ import Testing
         view.origin = CGPoint(x: 0, y: 0)
         let drawn = try #require(view.drawnBody)
         #expect(abs(drawn.frame.maxX - cancel.maxX) < 0.01, "the bud was taken back before its moment")
+    }
+
+    /// Shown and hidden in quick succession in toggle mode, the pill turns round wherever it is, and on no frame does
+    /// any of it reach into the band.
+    @Test func quickTurnsNeverReachIntoTheBand() throws {
+        for screen in Self.screens {
+            let toggle = PillDisplay.listening(.init(trigger: .toggle, started: 0))
+            let foot = Double(PillGeometry.layout(.rest, on: screen).body.frame.minY)
+            let view = Self.view(on: screen)
+            let turns: [(Double, PillDisplay)] = [(0, toggle), (0.05, .hidden), (0.12, toggle), (0.3, .hidden),
+                                                  (0.33, toggle), (0.7, .hidden), (0.95, toggle), (1.4, .hidden)]
+            var highest = Double.infinity, next = 0
+            for step in 0 ... 600 {
+                let t = Double(step) / 240
+                view.fixedMotionTime = t
+                while next < turns.count, turns[next].0 <= t {
+                    view.update(PillScene(display: turns[next].1, screen: screen), appearance: PillAppearance(),
+                                animated: true)
+                    next += 1
+                }
+                if let drawn = view.drawnBody, drawn.opacity > 0 { highest = min(highest, Double(drawn.frame.minY)) }
+            }
+            #expect(highest >= foot - 1e-6, "it reached \(foot - highest) pt into the band on \(screen)")
+        }
     }
 
     /// With Reduce Motion nothing travels: the pill fades in at its place and, hidden, fades out there.
