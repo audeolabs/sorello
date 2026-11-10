@@ -709,7 +709,7 @@ without moving anything.
 
   The menu never shows what was dictated. No row carries a dictation's
   text, and the menu is told only whether there is one to copy. So it is
-  as wide as its commands and their keys need, like any other menu.
+  as wide as its own rows and their keys need, like any other menu.
 - **Main window**: a sidebar (General, Shortcuts, Dictionary, Macros, Run
   Log, About) over the screen colour, content in cards.
 - **Setup**: welcome, microphone, Accessibility, shortcut, and a live test.
