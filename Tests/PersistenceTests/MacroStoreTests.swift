@@ -126,6 +126,26 @@ import TextRules
         #expect(replacement.macros.isEmpty)
     }
 
+    @Test func anUnreadableFileThatCannotBeMovedIsNeverOverwritten() throws {
+        let directory = try TemporaryDirectory()
+        let url = directory.url.appendingPathComponent("macros.json")
+        let original = Data(#"{"version":9,"macros":"from a newer app"}"#.utf8)
+        try original.write(to: url)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.url.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.url.path) }
+
+        let store = MacroStore(fileURL: url)
+        #expect(store.macros.isEmpty)
+        #expect(throws: MacroStoreError.saveFailed) { try store.add(command: "alpha", text: "one") }
+        #expect(try Data(contentsOf: url) == original)
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.url.path)
+        let added = try store.add(command: "alpha", text: "one")
+        let aside = try #require(directory.contents().first { $0.hasPrefix("macros.json.unreadable-") })
+        #expect(try Data(contentsOf: directory.url.appendingPathComponent(aside)) == original, "nothing is lost")
+        #expect(MacroStore(fileURL: url).macros == [added])
+    }
+
     @Test func aChangeThatCannotBeSavedChangesNothing() throws {
         let directory = try TemporaryDirectory()
         let url = directory.url.appendingPathComponent("macros.json")

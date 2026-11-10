@@ -8,7 +8,8 @@ import TextRules
 ///
 /// Every change is written before it is published. A change that cannot be saved is undone and reported, so the
 /// list on screen is always what is on disk. A file that cannot be read is moved aside and replaced with an empty
-/// one; nothing the user made is deleted.
+/// one; nothing the user made is deleted. If it cannot even be moved, the list starts empty and no change is saved
+/// over the file until it has been moved.
 @MainActor
 @Observable
 public final class MacroStore {
@@ -16,6 +17,8 @@ public final class MacroStore {
     public private(set) var macros: [VoiceMacro]
 
     @ObservationIgnored private let fileURL: URL
+    /// An unreadable file that could not yet be moved aside. Nothing is written over it until it has been.
+    @ObservationIgnored private var unreadableFilePending = false
 
     private struct File: Codable {
         static let currentVersion = 1
@@ -36,6 +39,8 @@ public final class MacroStore {
             Diagnostics.record("macros.unreadable")
             if StoredFile.moveAside(fileURL) {
                 try? Self.write([], to: fileURL)
+            } else {
+                unreadableFilePending = true
             }
         }
     }
@@ -90,6 +95,15 @@ public final class MacroStore {
     }
 
     private func save(_ updated: [VoiceMacro]) throws(MacroStoreError) {
+        if unreadableFilePending {
+            // The file may have become readable or gone since; only a file still there is moved, and nothing is
+            // written over one that could not be.
+            if FileManager.default.fileExists(atPath: fileURL.path), !StoredFile.moveAside(fileURL) {
+                Diagnostics.record("macros.saveFailed")
+                throw .saveFailed
+            }
+            unreadableFilePending = false
+        }
         do {
             try Self.write(updated, to: fileURL)
         } catch {
