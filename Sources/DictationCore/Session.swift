@@ -59,8 +59,11 @@ private struct Step {
     init(state: SessionState, settings: SessionSettings) {
         self.state = state
         self.settings = settings
-        // The arm belongs to prompt mode; turning the setting off forgets it.
-        if !settings.promptMode { self.state.tap = nil }
+        // The double tap belongs to prompt mode; turning the setting off forgets the arm and the hold in progress.
+        if !settings.promptMode {
+            self.state.tap = nil
+            self.withdrawTap(enrolment: true)
+        }
     }
 
     mutating func emit(_ effect: SessionEffect) { effects.append(effect) }
@@ -246,7 +249,8 @@ private struct Step {
             state.capture = .idle
             // A press that was released, abandoned or cancelled cleared the intent: it is never revived.
             if let intent, admitsStart() {
-                begin(intent.mode, style: .plain, pressTime: intent.pressTime, mayArmTap: false)
+                begin(intent.mode, style: .plain, pressTime: intent.pressTime,
+                      tapEnrolled: intent.mode == .hold && settings.promptMode, mayArmTap: false)
             }
         case .denied:
             state.capture = .idle
@@ -264,7 +268,7 @@ private struct Step {
         // Rule 5: every trigger uses up or clears the arm; a hold press may use it, a quick release may set it.
         let arm = state.tap
         state.tap = nil
-        if case .holdReleased = trigger {} else { forbidTapArm() }
+        if case .holdReleased = trigger {} else { withdrawTap(enrolment: false) }
 
         switch trigger {
         case .holdPressed:
@@ -286,15 +290,20 @@ private struct Step {
         }
     }
 
-    /// Rule 5: a hold interrupted by another trigger can no longer arm the double tap.
-    mutating func forbidTapArm() {
+    /// Rule 5: a hold interrupted by another trigger can no longer arm the double tap. With `enrolment`, as when
+    /// prompt mode is turned off, it leaves the double tap altogether and is released like any other hold.
+    mutating func withdrawTap(enrolment: Bool) {
+        func withdrawn(_ live: LiveDictation) -> LiveDictation {
+            var live = live
+            live.mayArmTap = false
+            if enrolment { live.tapEnrolled = false }
+            return live
+        }
         switch state.capture {
-        case .starting(var live, let stopRequested):
-            live.mayArmTap = false
-            state.capture = .starting(live, stopRequested: stopRequested)
-        case .recording(var live):
-            live.mayArmTap = false
-            state.capture = .recording(live)
+        case .starting(let live, let stopRequested):
+            state.capture = .starting(withdrawn(live), stopRequested: stopRequested)
+        case .recording(let live):
+            state.capture = .recording(withdrawn(live))
         case .idle, .awaitingPermission:
             break
         }
@@ -335,7 +344,7 @@ private struct Step {
 
     mutating func holdReleased(_ origin: ReleaseOrigin, at time: TimeInterval) -> Bool {
         if let live = state.capture.live, live.mode == .hold {
-            if settings.promptMode && time < live.pressTime + SessionTiming.tapHold {
+            if live.tapEnrolled && time < live.pressTime + SessionTiming.tapHold {
                 // Rule 5: a tap. It is discarded whether it was starting or recording.
                 discardLive(live, firedTimer: nil)
                 if live.mayArmTap && origin == .keyUp { state.tap = TapArm(releaseTime: time) }
@@ -428,7 +437,8 @@ private struct Step {
         }
         let doubleTap = mode == .hold && settings.promptMode && nothingInProgress && arm?.admits(time) == true
         let mayArmTap = mode == .hold && settings.promptMode && nothingInProgress && !doubleTap
-        begin(mode, style: doubleTap ? .prompt : .plain, pressTime: time, mayArmTap: mayArmTap)
+        begin(mode, style: doubleTap ? .prompt : .plain, pressTime: time,
+              tapEnrolled: mode == .hold && settings.promptMode, mayArmTap: mayArmTap)
     }
 
     /// Rule 1's refusals. Shows the notice and returns false when a dictation may not start.
@@ -449,11 +459,13 @@ private struct Step {
     }
 
     /// Rule 1: allocate the id and ask for the microphone and the stream. Starting dismisses the notice (rule 12).
-    mutating func begin(_ mode: TriggerMode, style: DictationStyle, pressTime: TimeInterval, mayArmTap: Bool) {
+    mutating func begin(_ mode: TriggerMode, style: DictationStyle, pressTime: TimeInterval, tapEnrolled: Bool,
+                        mayArmTap: Bool) {
         let id = DictationID(state.nextDictation)
         state.nextDictation += 1
         dismissNotice()
-        let live = LiveDictation(id: id, mode: mode, style: style, pressTime: pressTime, mayArmTap: mayArmTap)
+        let live = LiveDictation(id: id, mode: mode, style: style, pressTime: pressTime, tapEnrolled: tapEnrolled,
+                                 mayArmTap: mayArmTap)
         state.capture = .starting(live, stopRequested: false)
         emit(.startCapture(id, CaptureRequest(deviceID: settings.microphoneID)))
         emit(.openStream(id, retainForCorrection: settings.retainForCorrection))

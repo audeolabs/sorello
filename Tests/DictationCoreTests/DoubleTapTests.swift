@@ -201,6 +201,25 @@ struct DoubleTapTests {
         #expect(pressStyle(&machine, at: 10.2) == .plain)
     }
 
+    @Test func aHoldPressedWithPromptModeOffIsNotATapWhenTheSettingComesOn() {
+        var machine = machine(promptMode: false)
+        _ = pressStyle(&machine, at: 10)
+        machine.started(id1)
+        machine.settings.promptMode = true
+        #expect(!releaseDiscards(&machine, at: 10.2), "this hold never took part in the double tap")
+        #expect(machine.state.tap == nil)
+    }
+
+    @Test func turningPromptModeOffDuringAHoldTakesItOutOfTheDoubleTap() {
+        var machine = machine()
+        _ = pressStyle(&machine, at: 10)
+        machine.settings.promptMode = false
+        machine.send(.engine(.ready))
+        machine.settings.promptMode = true
+        #expect(!releaseDiscards(&machine, at: 10.1), "released like any other hold")
+        #expect(machine.state.tap == nil, "and it arms nothing")
+    }
+
     @Test func thePromptStyleStaysWithItsDictationAndTheNextOneIsPlain() {
         var machine = machine()
         _ = pressStyle(&machine, at: 10)

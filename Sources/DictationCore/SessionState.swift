@@ -214,8 +214,11 @@ public struct LiveDictation: Sendable, Equatable {
     /// When the press that started it arrived, on `SessionClock`'s timeline. The pill counts elapsed time from
     /// here, and the double tap measures the hold from here.
     public let pressTime: TimeInterval
-    /// Whether a quick release of this hold arms the double tap: prompt mode was on, nothing at all was in progress
-    /// at the press, it is not itself a prompt dictation, and no other trigger has arrived since (rule 5).
+    /// Whether this hold takes part in the double tap at all: prompt mode was on when it was pressed and has not
+    /// been seen off since. Only such a hold is discarded when released quickly (rule 5).
+    var tapEnrolled: Bool
+    /// Whether a quick release of this hold arms the double tap: it is enrolled, nothing at all was in progress at
+    /// the press, it is not itself a prompt dictation, and no other trigger has arrived since (rule 5).
     var mayArmTap: Bool
 }
 
