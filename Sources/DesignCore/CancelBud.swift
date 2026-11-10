@@ -96,12 +96,13 @@ public enum CancelBud {
         public var isShowing: Bool { phase != .home }
 
         /// Moves the bud from `now`: out to `resting` (its circle, as `PillLayout.cancel` gives it) or, with nil, back
-        /// into the pill's end at `end` with the pill's middle-line `radius`. `animated` false places it at once (Reduce
-        /// Motion, or a pill that is appearing or changing screens).
-        public mutating func update(resting: (centre: Double, radius: Double)?, end: Double, endRadius: Double,
-                                    animated: Bool, now: TimeInterval) {
-            let home = end - endRadius + CancelBud.homeInset
+        /// into the pill. A bud setting out swells from the pill's end where it is now, `from`; one taken back slips
+        /// into the end where the pill is going, `to`. `endRadius` is the pill's half height. `animated` false places
+        /// it at once (Reduce Motion, or a pill that is appearing or changing screens).
+        public mutating func update(resting: (centre: Double, radius: Double)?, from: Double, to: Double,
+                                    endRadius: Double, animated: Bool, now: TimeInterval) {
             if let resting {
+                let home = from - endRadius + CancelBud.homeInset
                 if !animated {
                     centre.snap(to: resting.centre)
                     radius.snap(to: resting.radius)
@@ -121,6 +122,7 @@ public enum CancelBud {
                 return
             }
             guard phase != .home else { return }
+            let home = to - endRadius + CancelBud.homeInset
             guard animated else {
                 phase = .home
                 return

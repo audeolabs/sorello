@@ -148,8 +148,9 @@ final class PillView: NSView {
             body?.snap(to: target)
         }
         let resting = next.layout.cancel.map { (centre: Double($0.midX), radius: Double($0.width) / 2) }
-        bud.update(resting: resting, end: Double(target.frame.maxX), endRadius: Double(target.frame.height) / 2,
-                   animated: travels, now: now)
+        let current = body?.body(at: now).frame ?? target.frame
+        bud.update(resting: resting, from: Double(current.maxX), to: Double(target.frame.maxX),
+                   endRadius: Double(target.frame.height) / 2, animated: travels, now: now)
     }
 
     /// The body's colours, and whether it shows. Where there is no housing to grow out of it fades in as it grows and

@@ -100,7 +100,7 @@ import Testing
     @Test func theBudStartsInsideThePillAndPinchesFree() throws {
         var model = CancelBud.Model()
         #expect(model.frame(at: 0, end: Self.end, endRadius: Self.endRadius, y: Self.y) == nil)
-        model.update(resting: Self.resting, end: Self.end, endRadius: Self.endRadius, animated: true, now: 0)
+        model.update(resting: Self.resting, from: Self.end, to: Self.end, endRadius: Self.endRadius, animated: true, now: 0)
         let first = try #require(model.frame(at: 0, end: Self.end, endRadius: Self.endRadius, y: Self.y))
         #expect(first.centre + first.radius <= Self.end && first.radius < Self.endRadius)
         #expect(first.glyphAlpha == 0)
@@ -122,11 +122,23 @@ import Testing
         #expect(!model.needsFrames(at: 1) && model.isShowing)
     }
 
+    /// When the pill grows as the bud sets out (the wait turning into toggle listening), the bud swells from the end
+    /// the pill has now, not the one it is growing to, so it never starts detached from the body.
+    @Test func theBudSetsOutFromWhereThePillIsNow() throws {
+        var model = CancelBud.Model()
+        let now = 969.5, growing = 1005.5
+        model.update(resting: (centre: growing + PillGeometry.budGap + 12, radius: 12), from: now, to: growing,
+                     endRadius: Self.endRadius, animated: true, now: 0)
+        let first = try #require(model.frame(at: 0, end: now, endRadius: Self.endRadius, y: Self.y))
+        #expect(first.centre + first.radius <= now)
+        #expect(first.glyphAlpha == 0)
+    }
+
     /// A bud resting beside the pill is never joined to it: the neck lets go before the resting gap.
     @Test func aBudBesideThePillHasNoNeck() {
         #expect(CancelBud.reach < PillGeometry.budGap)
         var model = CancelBud.Model()
-        model.update(resting: Self.resting, end: Self.end, endRadius: Self.endRadius, animated: false, now: 0)
+        model.update(resting: Self.resting, from: Self.end, to: Self.end, endRadius: Self.endRadius, animated: false, now: 0)
         #expect(model.frame(at: 0, end: Self.end, endRadius: Self.endRadius, y: Self.y)?.neck == nil)
         #expect(model.frame(at: 0, end: Self.end, endRadius: Self.endRadius, y: Self.y)?.glyphAlpha == 1)
         #expect(!model.needsFrames(at: 0))
@@ -167,8 +179,8 @@ import Testing
     /// and is gone, asking for no more frames.
     @Test func thePillTakesTheBudBack() {
         var model = CancelBud.Model()
-        model.update(resting: Self.resting, end: Self.end, endRadius: Self.endRadius, animated: false, now: 0)
-        model.update(resting: nil, end: Self.end, endRadius: Self.endRadius, animated: true, now: 1)
+        model.update(resting: Self.resting, from: Self.end, to: Self.end, endRadius: Self.endRadius, animated: false, now: 0)
+        model.update(resting: nil, from: Self.end, to: Self.end, endRadius: Self.endRadius, animated: true, now: 1)
         #expect((model.frame(at: 1 + Motion.handover, end: Self.end, endRadius: Self.endRadius, y: Self.y)?.glyphAlpha
             ?? 0) <= 0)
         var gone: Double?
@@ -190,10 +202,10 @@ import Testing
     /// With Reduce Motion nothing travels: the bud is simply there, then simply gone.
     @Test func reduceMotionMovesNothing() {
         var model = CancelBud.Model()
-        model.update(resting: Self.resting, end: Self.end, endRadius: Self.endRadius, animated: false, now: 1)
+        model.update(resting: Self.resting, from: Self.end, to: Self.end, endRadius: Self.endRadius, animated: false, now: 1)
         #expect(model.frame(at: 1, end: Self.end, endRadius: Self.endRadius, y: Self.y)?.centre == Self.resting.centre)
         #expect(!model.needsFrames(at: 1))
-        model.update(resting: nil, end: Self.end, endRadius: Self.endRadius, animated: false, now: 2)
+        model.update(resting: nil, from: Self.end, to: Self.end, endRadius: Self.endRadius, animated: false, now: 2)
         #expect(model.frame(at: 2, end: Self.end, endRadius: Self.endRadius, y: Self.y) == nil)
         #expect(!model.needsFrames(at: 2))
     }
