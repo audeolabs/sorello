@@ -63,7 +63,7 @@ struct WindowPresenter {
         window.appearance = NSAppearance(named: .darkAqua)
         window.isReleasedWhenClosed = false
         window.contentMinSize = noticeMinimumSize
-        window.contentView = NSHostingView(rootView: NoticeText(title: title, text: text))
+        window.contentView = content(NoticeText(title: title, text: text), size: noticeSize)
         window.center()
         return window
     }
@@ -74,10 +74,26 @@ struct WindowPresenter {
         WindowChrome.apply(to: window, kind: kind)
         window.title = title
         window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: content.preferredColorScheme(.dark))
+        window.contentView = Self.content(content.preferredColorScheme(.dark), size: kind.defaultSize)
         window.setContentSize(kind.defaultSize)
         window.center()
         return window
+    }
+
+    /// A window's content, `size` points, drawn by SwiftUI without setting the window's size or limits. A hosting view
+    /// that is a window's content view sets the window's minimum and maximum from what it shows, and SwiftUI takes the
+    /// smallest size with every line of text wrapped as narrow as it will go, which is very tall: setup, which cannot
+    /// be made wider, grew taller than the screen and hid its buttons, and the main window could be made small enough
+    /// to clip what it shows. So the hosting view sits inside a plain view that fills the window, follows its size
+    /// and asks nothing of it.
+    private static func content(_ view: some View, size: CGSize) -> NSView {
+        let container = NSView(frame: CGRect(origin: .zero, size: size))
+        let host = NSHostingView(rootView: view)
+        host.sizingOptions = []
+        host.frame = container.bounds
+        host.autoresizingMask = [.width, .height]
+        container.addSubview(host)
+        return container
     }
 
     private static func bringForward(_ window: NSWindow) {
