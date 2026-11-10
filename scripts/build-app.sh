@@ -20,16 +20,18 @@ esac
 # This Mac's architecture is its hardware's, which a shell running under Rosetta would misreport through uname.
 if [ "$(sysctl -n hw.optional.arm64 2>/dev/null || true)" = 1 ]; then NATIVE=arm64; else NATIVE=x86_64; fi
 if [ "$CHANNEL" = release ]; then DEFAULT_ARCHS="arm64 x86_64"; else DEFAULT_ARCHS=$NATIVE; fi
+# The words of ARCHS, however they are separated, each checked and then held between single spaces.
+REQUESTED=" "
 for arch in ${ARCHS:-$DEFAULT_ARCHS}; do
   case "$arch" in
-    arm64|x86_64) ;;
+    arm64|x86_64) REQUESTED="$REQUESTED$arch " ;;
     *) echo "build-app: ARCHS may name only arm64 and x86_64, not $arch" >&2; exit 64 ;;
   esac
 done
 # Each architecture once, in a fixed order, so the check at the end compares like with like.
 WANTED=""
 for arch in arm64 x86_64; do
-  case " ${ARCHS:-$DEFAULT_ARCHS} " in *" $arch "*) WANTED="${WANTED:+$WANTED }$arch" ;; esac
+  case "$REQUESTED" in *" $arch "*) WANTED="${WANTED:+$WANTED }$arch" ;; esac
 done
 [ -n "$WANTED" ] || { echo "build-app: ARCHS names no architecture" >&2; exit 64; }
 BUILD_DIR=${BUILD_DIR:-build}
