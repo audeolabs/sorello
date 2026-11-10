@@ -242,6 +242,24 @@ struct StoreTests {
         #expect(store.revision > revision + 1, "Adopting the file is a change of its own")
     }
 
+    /// A directory that may not be searched hides whether the file is there; it is treated as a file that cannot
+    /// be opened, never as a missing one, so a dictionary inside is not written over once the directory opens.
+    @Test func unsearchableDirectoryIsNotAnEmptyDictionary() throws {
+        let scratch = Scratch()
+        let writer = DictionaryStore(fileURL: scratch.file, encoder: testEncoder)
+        try writer.save(text: "Zorblax", strength: 2)
+        let folder = scratch.file.deletingLastPathComponent().path
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: folder)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder) }
+
+        let store = DictionaryStore(fileURL: scratch.file, encoder: testEncoder)
+        #expect(store.opening == .unopenable)
+        #expect(throws: DictionaryChangeError.notSaved) { try store.save(text: "Quint", strength: 1) }
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder)
+        try store.save(text: "Quint", strength: 1)
+        #expect(store.dictionary.dictionary.entries.map(\.text) == ["Zorblax", "Quint"], "The hidden dictionary survives")
+    }
+
     /// Without the model's vocabulary nothing may change, and saved data loads as it is.
     @Test func editsNeedVocabulary() throws {
         let scratch = Scratch()

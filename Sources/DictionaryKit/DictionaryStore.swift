@@ -76,7 +76,12 @@ public final class DictionaryStore: Sendable {
     /// Reads the file. A file that cannot be opened is left alone; one that opens but is not a dictionary is moved
     /// aside and replaced with an empty one.
     private static func load(_ url: URL, encoder: BPEEncoder?) -> (Opening, ScopedDictionary, FileState) {
-        guard FileManager.default.fileExists(atPath: url.path) else { return (.new, ScopedDictionary(), .usable) }
+        // Only "no such file" means there is no dictionary. Anything else, such as a directory that may not be
+        // searched, means there may be one we cannot see, which must never be written over.
+        var status = stat()
+        if lstat(url.path, &status) != 0 {
+            return errno == ENOENT ? (.new, ScopedDictionary(), .usable) : (.unopenable, ScopedDictionary(), .unopened)
+        }
         guard let data = try? Data(contentsOf: url) else { return (.unopenable, ScopedDictionary(), .unopened) }
         if let dictionary = DictionaryFile.decode(data, encoder: encoder) { return (.loaded, dictionary, .usable) }
         guard let aside = moveAside(url) else { return (.replacedUnreadable(movedTo: nil), ScopedDictionary(), .readOnly) }
