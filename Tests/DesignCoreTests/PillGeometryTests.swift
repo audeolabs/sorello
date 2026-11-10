@@ -297,11 +297,15 @@ import Testing
             #expect(Double(layout.size.width) <= maxWidth)
             #expect(Double(layout.size.height) == 18 + NoticeLayout.rowGap + 2 * 26 + NoticeLayout.actionGap)
         }
-        // Equal actions split two and two.
-        let even = NoticeLayout(symbol: .zero, text: CGSize(width: 50, height: 16),
-                                actions: Array(repeating: CGSize(width: 150, height: 26), count: 4), maxWidth: 488,
-                                scale: 1)
-        #expect(even.actions.filter { $0.minY == even.actions[0].minY }.count == 2)
+        // Four split two and two, even with one long title, and three two over one: a calm block, not a lone
+        // capsule over a long row. Only when two and two cannot fit does the split fall elsewhere.
+        for (widths, firstRow) in [([150.0, 150, 150, 150], 2), ([202, 118, 78, 112], 2), ([230, 230, 120], 2),
+                                   ([440, 60, 60, 60], 1)] {
+            let layout = NoticeLayout(symbol: .zero, text: CGSize(width: 50, height: 16),
+                                      actions: widths.map { CGSize(width: $0, height: 26) }, maxWidth: 488, scale: 1)
+            #expect(layout.actions.filter { $0.minY == layout.actions[0].minY }.count == firstRow, "\(widths)")
+            #expect(layout.actions.map { Double($0.width) } == widths)
+        }
     }
 
     /// Only an action wider than the card is narrowed; the others keep their titles whole.

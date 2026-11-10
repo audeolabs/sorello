@@ -390,8 +390,8 @@ public struct NoticeLayout: Equatable, Sendable {
 
     /// Lays out a symbol, a line of text and the actions, as the UI measured them, in at most `maxWidth` points. The
     /// text gives way first. Actions beyond the fourth are dropped. Actions that do not fit on one row wrap onto a
-    /// second, split where the two rows come out most even, so no title is truncated; an action is narrowed only if
-    /// it alone is wider than `maxWidth`, or if no split lets both rows fit.
+    /// second, two and two (or two over one) where both rows fit, so no title is truncated; an action is narrowed only
+    /// if it alone is wider than `maxWidth`, or if no split lets both rows fit.
     public init(symbol: CGSize, text: CGSize, actions: [CGSize], maxWidth: Double, scale: Double) {
         let grid = Grid(scale: scale.isFinite && scale > 0 ? scale : 1)
         func clean(_ size: CGSize) -> (w: Double, h: Double) {
@@ -437,17 +437,21 @@ public struct NoticeLayout: Equatable, Sendable {
         row.reduce(0, +) + Double(max(row.count - 1, 0)) * actionGap
     }
 
-    /// The actions' widths in rows: one row if they fit, otherwise two, split where the wider row is narrowest (on a
-    /// tie, the first row the wider), narrowed to share a row's width only when no split fits.
+    /// The actions' widths in rows: one row if they fit, otherwise two. Of the splits where both rows fit, the one
+    /// whose rows hold most nearly the same number of actions (the first row the fuller), then the one whose wider row
+    /// is narrowest; when none fits, the narrowest, its rows narrowed to share their width.
     private static func rows(_ widths: [Double], maxWidth: Double, grid: Grid) -> [[Double]] {
         guard !widths.isEmpty else { return [] }
         guard width(widths) > maxWidth, widths.count > 1 else { return [fit(widths, maxWidth: maxWidth, grid: grid)] }
         let splits = (1 ..< widths.count).map { (first: Array(widths[..<$0]), second: Array(widths[$0...])) }
-        func cost(_ split: (first: [Double], second: [Double])) -> (Double, Double) {
-            (max(width(split.first), width(split.second)), width(split.second) - width(split.first))
+        func cost(_ split: (first: [Double], second: [Double])) -> (Int, Int, Double) {
+            (abs(split.first.count - split.second.count), split.second.count - split.first.count,
+             max(width(split.first), width(split.second)))
         }
         let fitting = splits.filter { width($0.first) <= maxWidth && width($0.second) <= maxWidth }
-        let best = (fitting.isEmpty ? splits : fitting).min { cost($0) < cost($1) } ?? splits[0]
+        let best = fitting.min { cost($0) < cost($1) }
+            ?? splits.min { max(width($0.first), width($0.second)) < max(width($1.first), width($1.second)) }
+            ?? splits[0]
         return [fit(best.first, maxWidth: maxWidth, grid: grid), fit(best.second, maxWidth: maxWidth, grid: grid)]
     }
 
