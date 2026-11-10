@@ -14,7 +14,10 @@ struct MarkEmblemTests {
         let emblem = try EmblemPicture(scale: scale, pixels: pixels)
         let middle = try emblem.capsuleMiddle()
         let white = try emblem.whiteDots(), aurora = try emblem.auroraDot()
-        #expect(abs(white.centreY - middle.y) <= 0.5, "white dots at \(white.centreY), capsule middle at \(middle.y)")
+        #expect(white.centres.count == SorelloMark.row.count, "found \(white.centres.count) white dots")
+        for (index, centre) in white.centres.enumerated() {
+            #expect(abs(centre - middle.y) <= 0.5, "white dot \(index + 1) at \(centre), capsule middle at \(middle.y)")
+        }
         #expect(abs(aurora.centre.y - middle.y) <= 0.5,
                 "aurora dot at \(aurora.centre.y), capsule middle at \(middle.y)")
     }
@@ -33,25 +36,38 @@ struct MarkEmblemTests {
     func theGlowIsDrawnAroundTheAuroraDot(scale: CGFloat, pixels: CGFloat) throws {
         let emblem = try EmblemPicture(scale: scale, pixels: pixels)
         let aurora = try emblem.auroraDot()
-        // Just outside the dot, short of its white neighbour.
-        let distance = aurora.radius * 1.3
         let centre = aurora.centre
-        func glow(_ dx: Double, _ dy: Double, by extra: Double = 0) -> Double {
-            let length = distance + extra
-            return emblem.picture.sample(x: centre.x + dx * length, y: centre.y + dy * length).green
+        func glow(_ dx: Double, _ dy: Double, at distance: Double) -> Double {
+            emblem.picture.sample(x: centre.x + dx * distance, y: centre.y + dy * distance).green
         }
-        let directions: [(Double, Double)] = [(0, -1), (0, 1), (-1, 0), (1, 0)]
-        let up = glow(0, -1), down = glow(0, 1), left = glow(-1, 0), right = glow(1, 0)
-        // How much the glow changes over a pixel here: a glow off centre by half a pixel would make a pair of
-        // opposite readings differ by this much.
-        let slope = directions.map { glow($0.0, $0.1, by: -0.5) - glow($0.0, $0.1, by: 0.5) }.reduce(0, +) / 4
-        let quantum = 2.0 / 255
-        #expect(min(up, down, left, right) > emblem.pill.green + 0.03, "no glow around the aurora dot")
-        #expect(slope > 0, "the glow does not fade away from the dot")
-        #expect(abs(up - down) <= slope + quantum, "above \(up), below \(down)")
-        #expect(abs(left - right) <= slope + quantum, "left \(left), right \(right)")
-        #expect(abs((up + down) / 2 - (left + right) / 2) <= slope / 2 + quantum,
-                "above and below \((up + down) / 2), either side \((left + right) / 2)")
+        // Readings on the diagonals, which clear both the dot and its white neighbour, from a little outside the dot
+        // to well inside the glow, every quarter pixel, so the rounding of single readings averages out. Above and
+        // below the dot is clear too, for comparing the glow's height with its width.
+        let distances = Array(stride(from: aurora.radius + 2.5, through: aurora.radius * 1.7, by: 0.25))
+        let diagonal = 0.5.squareRoot()
+        let corners = [(diagonal, -diagonal), (diagonal, diagonal), (-diagonal, -diagonal), (-diagonal, diagonal)]
+        func mean(_ values: [Double]) -> Double { values.reduce(0, +) / Double(values.count) }
+        func sum(_ directions: [(Double, Double)], at distance: Double) -> Double {
+            directions.map { glow($0.0, $0.1, at: distance) }.reduce(0, +)
+        }
+        // How much the glow fades over one pixel outwards.
+        let slope = mean(distances.flatMap { d in
+            corners.map { glow($0.0, $0.1, at: d - 0.5) - glow($0.0, $0.1, at: d + 0.5) }
+        })
+        #expect(glow(0, -1, at: distances[0]) > emblem.pill.green + 0.02, "no glow around the aurora dot")
+        try #require(slope > 0, "the glow does not fade away from the dot")
+        // A glow centred `offset` pixels to the right reads `offset × slope × √½` brighter on each right diagonal
+        // and as much darker on each left one; likewise downwards. A glow taller than it is wide reads brighter
+        // straight above and below than on the diagonals.
+        let shift = 2 * 2 * diagonal * slope
+        let toRight = corners.filter { $0.0 > 0 }, toLeft = corners.filter { $0.0 < 0 }
+        let below = corners.filter { $0.1 > 0 }, above = corners.filter { $0.1 < 0 }
+        let right = mean(distances.map { sum(toRight, at: $0) - sum(toLeft, at: $0) }) / shift
+        let down = mean(distances.map { sum(below, at: $0) - sum(above, at: $0) }) / shift
+        let taller = mean(distances.map { sum([(0, -1), (0, 1)], at: $0) / 2 - sum(corners, at: $0) / 4 }) / slope
+        #expect(abs(right) <= 0.5, "the glow's centre is \(right) px right of the dot's")
+        #expect(abs(down) <= 0.5, "the glow's centre is \(down) px below the dot's")
+        #expect(abs(taller) <= 0.5, "the glow reaches \(taller) px further above and below than on the diagonals")
     }
 }
 
@@ -160,37 +176,50 @@ private struct EmblemPicture {
         return (centre, radius, centre.x + radius)
     }
 
-    /// How strongly a pixel shows a white dot: its darkest channel above the capsule's, where it has no colour of its
-    /// own. Only pixels between a column's top and bottom edges count, so the hairline does not.
-    private func whiteWeight(_ colour: Picture.Colour) -> Double {
-        colour.chroma < 0.06 ? max(0, colour.darkest - pill.darkest - 2.0 / 255) : 0
+    /// How much of a white dot a pixel shows: its darkest channel above the capsule's, where it has no colour of its
+    /// own.
+    private func whiteInk(_ colour: Picture.Colour) -> Double {
+        colour.chroma < 0.06 ? max(0, colour.darkest - pill.darkest) : 0
     }
 
-    /// The white dots: the height of their centres, and the left edge of the leftmost, which is the left edge of the
-    /// mark's ink.
-    func whiteDots() throws -> (centreY: Double, left: Double) {
+    /// Where a pixel is clearly part of a white dot. The aurora's glow lifts the capsule's darkest channel by less
+    /// than 0.05 where its colour is faint enough to pass for white, so it never counts.
+    private func whiteWeight(_ colour: Picture.Colour) -> Double { max(0, whiteInk(colour) - 0.05) }
+
+    /// The white dots, left to right: the height of each one's centre, and the left edge of the leftmost, which is the
+    /// left edge of the mark's ink. A dot is a run of columns with white ink in it, between the capsule's edges.
+    func whiteDots() throws -> (centres: [Double], left: Double) {
         let aurora = try auroraDot()
         let end = Int((aurora.centre.x - aurora.radius).rounded(.down)) - 1
-        var total = 0.0, sumY = 0.0
+        var dots: [(total: Double, sumY: Double)] = []
+        var inDot = false
         for x in box.minX ... end {
             let line = (box.minY ... box.maxY).map { picture[x, $0] }
-            guard let first = line.firstIndex(where: isBare), let last = line.lastIndex(where: isBare) else { continue }
-            for index in first ... last {
-                let weight = whiteWeight(line[index])
-                total += weight
-                sumY += weight * (Double(box.minY + index) + 0.5)
+            var total = 0.0, sumY = 0.0
+            if let first = line.firstIndex(where: isBare), let last = line.lastIndex(where: isBare) {
+                for index in first ... last {
+                    let weight = whiteWeight(line[index])
+                    total += weight
+                    sumY += weight * (Double(box.minY + index) + 0.5)
+                }
             }
+            if total > 0 {
+                if !inDot { dots.append((0, 0)) }
+                dots[dots.count - 1].total += total
+                dots[dots.count - 1].sumY += sumY
+            }
+            inDot = total > 0
         }
-        try #require(total > 0, "no white dots")
-        let centreY = sumY / total
-        // Along the row through the centres, from inside the capsule's hairline to the first dot.
-        let row = Int(centreY.rounded(.down))
+        try #require(!dots.isEmpty, "no white dots")
+        let centres = dots.map { $0.sumY / $0.total }
+        // Along the row through the leftmost dot's centre, from inside the capsule's hairline to the dot.
+        let row = Int(centres[0].rounded(.down))
         let start = try #require((box.minX ... end).first { isBare(picture[$0, row]) })
-        let weights = (start ... end).map { whiteWeight(picture[$0, row]) }
-        let first = try #require(weights.firstIndex { $0 > 0 })
+        let weights = (start ... end).map { whiteInk(picture[$0, row]) }
+        let first = try #require(weights.firstIndex { $0 > 2.0 / 255 })
         let full = try #require(weights[first ..< min(first + 3, weights.count)].max())
         let left = Double(start + first) + 1 - weights[first] / full
-        return (centreY, left)
+        return (centres, left)
     }
 }
 
