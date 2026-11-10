@@ -34,11 +34,11 @@ public final class BPEEncoder: Sendable {
     public convenience init(vocabularyFile url: URL) throws(VocabularyError) {
         let data: Data
         do { data = try Data(contentsOf: url) } catch { throw VocabularyError() }
-        try self.init(pieces: Self.pieces(vocabulary: data))
+        try self.init(pieces: Self.vocabularyPieces(from: data))
     }
 
-    /// The pieces of a `vocabulary.json` in id order.
-    static func pieces(vocabulary data: Data) throws(VocabularyError) -> [String] {
+    /// The pieces of a `vocabulary.json` in id order, for the decoder that turns token ids back into text.
+    public static func vocabularyPieces(from data: Data) throws(VocabularyError) -> [String] {
         guard data.count <= 1 << 20,
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: String],
               object.count == vocabularySize else {
