@@ -15,6 +15,18 @@ struct PrivacyPermissionTests {
         #expect(PrivacyPermission.microphone.settingsTitle(macOSMajorVersion: 27) == "Microphone")
     }
 
+    @Test("On macOS 15, as on 26, the pane is Accessibility, opened by the same link")
+    func macOS15() {
+        #expect(PrivacyPermission.accessibility.settingsTitle(macOSMajorVersion: 15) == "Accessibility")
+        #expect(PrivacyPermission.microphone.settingsTitle(macOSMajorVersion: 15) == "Microphone")
+        #expect(PrivacyPermission.accessibility.enableInstructions(appName: "Synthetic Dictation", macOSMajorVersion: 15)
+                == "Go to System Settings > Privacy & Security > Accessibility and enable Synthetic Dictation.")
+        #expect(PrivacyPermission.accessibility.alertText(appName: "Synthetic Dictation", macOSMajorVersion: 15)
+                == PrivacyPermission.accessibility.alertText(appName: "Synthetic Dictation", macOSMajorVersion: 26))
+        #expect(PrivacyPermission.accessibility.settingsURL.absoluteString
+                == "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+    }
+
     @Test("Instructions name the pane for the version")
     func instructions() {
         #expect(PrivacyPermission.accessibility.enableInstructions(appName: "Synthetic Dictation", macOSMajorVersion: 27)
