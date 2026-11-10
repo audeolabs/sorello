@@ -66,7 +66,8 @@ final class StatusItemController: NSObject {
             origin.x = min(max(origin.x, visible.minX + 6), visible.maxX - size.width - 6)
         }
         panel.setFrame(CGRect(origin: origin, size: size), display: true)
-        NSApp.activate()
+        // The panel takes the keyboard without activating the app, as a menu does, so the app the user was typing
+        // in stays in front and keeps its focus when the panel closes.
         panel.makeKeyAndOrderFront(nil)
         button.highlight(true)
         startMonitoring()
@@ -100,8 +101,8 @@ final class StatusItemController: NSObject {
     }
 }
 
-/// The menu panel's window: borderless, above other windows like a menu, and able to take the keyboard for ⌘, and
-/// ⌘Q without making the app's other windows key.
+/// The menu panel's window: borderless, above other windows like a menu, and able to take the keyboard for Escape,
+/// ⌘, and ⌘Q without activating the app.
 final class MenuPanelWindow: NSPanel {
     init() {
         super.init(contentRect: CGRect(x: 0, y: 0, width: WindowChrome.menuPanelWidth, height: 360),
