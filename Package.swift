@@ -50,7 +50,10 @@ let package = Package(
         .testTarget(name: "PersistenceTests", dependencies: ["Persistence", "DictationCore", "TextRules", "TestSupport"], swiftSettings: strict),
         .testTarget(name: "MacPlatformTests", dependencies: ["MacPlatform", "DictationCore", "DictionaryKit", "TestSupport"], swiftSettings: strict),
         .testTarget(name: "SorelloUITests", dependencies: ["SorelloUI", "DesignCore", "TestSupport"], swiftSettings: strict),
-        .testTarget(name: "SorelloAppTests", dependencies: ["SorelloApp", "TestSupport"], swiftSettings: strict),
+        .testTarget(name: "SorelloAppTests",
+                    dependencies: ["SorelloApp", "DictationCore", "TextRules", "DictionaryKit", "DesignCore",
+                                   "SpeechEngine", "Persistence", "SorelloUI", "MacPlatform", "TestSupport"],
+                    swiftSettings: strict),
     ],
     swiftLanguageModes: [.v6]
 )
