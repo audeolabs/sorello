@@ -70,6 +70,10 @@ final class SessionEventTap: KeyEventTapping {
         return true
     }
 
+    isolated deinit {
+        remove()
+    }
+
     func reenable() {
         if let port { CGEvent.tapEnable(tap: port, enable: true) }
     }

@@ -20,6 +20,10 @@ final class WorkspaceInterruptions: SystemInterruptionObserving {
 
     private var tokens: [(center: NotificationCenter, token: any NSObjectProtocol)] = []
 
+    isolated deinit {
+        stop()
+    }
+
     func start(_ interrupted: @escaping @MainActor () -> Void) {
         stop()
         let workspace = NSWorkspace.shared.notificationCenter
