@@ -94,6 +94,34 @@ import Testing
         #expect(abs(settled.frame.maxX - cancel.maxX) < 0.01 && abs(settled.frame.minX - layout.body.frame.minX) < 0.01)
     }
 
+    /// A control takes clicks only once it is drawn where it is: Stop once the body has dropped into place and is
+    /// fully there, Cancel once its bud has reached its place beside the pill, a notice's actions once the card and
+    /// what it holds have arrived.
+    @Test func eachControlWaitsUntilItIsDrawn() throws {
+        let screen = PillSnapshots.Housing.island.topology
+        let toggle = PillDisplay.listening(.init(trigger: .toggle, started: 0))
+        let layout = PillScene(display: toggle, screen: screen).layout
+        let cancel = try #require(layout.cancel)
+        let view = Self.view(on: screen)
+        view.update(PillScene(display: toggle, screen: screen), appearance: PillAppearance(), animated: true)
+        view.fixedMotionTime = OverlayLifecycle.controlsWait(.stop(dictation: 0))
+        let atStop = try #require(view.drawnBody)
+        #expect(atStop.opacity == 1)
+        #expect([atStop.frame.minX - layout.body.frame.minX, atStop.frame.minY - layout.body.frame.minY,
+                 atStop.frame.maxY - layout.body.frame.maxY].allSatisfy { abs($0) < 0.5 }, "Stop is not in place yet")
+        view.fixedMotionTime = OverlayLifecycle.controlsWait(.cancel(dictation: 0))
+        let atCancel = try #require(view.drawnBody)
+        #expect(atCancel.frame.maxX >= cancel.maxX - 0.5, "the bud is \(cancel.maxX - atCancel.frame.maxX) pt short")
+        let notice = PillDisplay.notice(.init(id: 1, symbol: "info.circle", tone: .information, text: "Invented",
+                                              actions: [.init(id: "a", title: "Choice")]))
+        let card = Self.view(on: screen)
+        card.update(PillScene(display: notice, screen: screen), appearance: PillAppearance(), animated: true)
+        card.fixedMotionTime = OverlayLifecycle.controlsWait(.action(notice: 1, id: "a"))
+        let atAction = try #require(card.drawnBody)
+        #expect(atAction.opacity == 1)
+        #expect(abs(atAction.frame.maxY - PillScene(display: notice, screen: screen).layout.body.frame.maxY) < 0.5)
+    }
+
     /// A moment is drawn the same however the drawing was asked for: a press or a move of the panel redraws the pill's
     /// own moment, not the wall clock's, so the bud taken back as the pill hides is still there at the start.
     @Test func aRedrawKeepsThePillsMoment() throws {

@@ -208,15 +208,13 @@ import Testing
     static func rest(_ life: inout OverlayLifecycle) -> Bool { life.rested() }
 
     /// The overlay chooses a screen when a dictation starts, even if the pill never left the last one, and keeps it
-    /// for that dictation's wait and notices. Appearing, the controls take no clicks until the pill has dropped into
-    /// place and what it holds has arrived; a change while it is up offers them at once.
+    /// for that dictation's wait and notices. A pill that was not up drops in, and its controls wait for it
+    /// (`PillMotionTests.eachControlWaitsUntilItIsDrawn`); a change while it is up offers them at once.
     @Test func eachDictationChoosesItsScreen() {
         var life = OverlayLifecycle()
         let first = PillDisplay.listening(.init(trigger: .hold, started: 10))
         let second = PillDisplay.listening(.init(trigger: .hold, started: 20))
-        let arriving = OverlayLifecycle.arrival
-        #expect(arriving >= Motion.drop + Motion.arrival)
-        #expect(Self.show(&life, first) == .init(chooseScreen: true, present: true, controlsAfter: arriving))
+        #expect(Self.show(&life, first) == .init(chooseScreen: true, present: true, drops: true))
         #expect(Self.show(&life, .waiting(.transcribing)) == .init(chooseScreen: false, present: true))
         #expect(Self.show(&life, Self.notice) == .init(chooseScreen: false, present: true))
         #expect(Self.show(&life, second) == .init(chooseScreen: true, present: true))
@@ -224,7 +222,7 @@ import Testing
             == .init(chooseScreen: false, present: true))
         // A notice shown from nothing (a microphone that is denied) chooses a screen too.
         var idle = OverlayLifecycle()
-        #expect(Self.show(&idle, Self.notice) == .init(chooseScreen: true, present: true, controlsAfter: arriving))
+        #expect(Self.show(&idle, Self.notice) == .init(chooseScreen: true, present: true, drops: true))
     }
 
     /// Hidden, the panels stay up only until the pill has come to rest, and nothing brings them back until something
@@ -245,7 +243,7 @@ import Testing
         _ = Self.show(&life, .waiting(.transcribing))
         _ = Self.show(&life, .hidden)
         #expect(Self.show(&life, .waiting(.preparingModel))
-            == .init(chooseScreen: false, present: true, controlsAfter: OverlayLifecycle.arrival))
+            == .init(chooseScreen: false, present: true, drops: true))
         #expect(!Self.rest(&life))
     }
 

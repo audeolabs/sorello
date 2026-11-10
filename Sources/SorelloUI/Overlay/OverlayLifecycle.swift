@@ -24,13 +24,18 @@ struct OverlayLifecycle: Equatable {
         var chooseScreen: Bool
         /// The panels must be on the screen.
         var present: Bool
-        /// How long the controls wait before they take clicks: appearing, until the pill has dropped into place and
-        /// what it holds has arrived, so a click never lands on a control that is not drawn yet.
-        var controlsAfter: TimeInterval = 0
+        /// The pill was not up: it drops in, and its controls wait until it has (`controlsWait`).
+        var drops = false
     }
 
-    /// How long the controls of a pill that is appearing wait.
-    static let arrival = Motion.drop + Motion.arrival
+    /// How long after a drop begins a control takes clicks, so a click never lands on a control that is not drawn
+    /// yet: Stop and a notice's actions once the body has dropped into place and what it holds has arrived, Cancel
+    /// once its bud has budded off and reached its place beside the pill. A pill that moves to another screen for a
+    /// new dictation drops in there afresh, and its controls wait again.
+    static func controlsWait(_ kind: PillControl.Kind) -> TimeInterval {
+        if case .cancel = kind { return Motion.drop + Motion.bud.response }
+        return Motion.drop + Motion.arrival
+    }
 
     private(set) var phase = Phase.off
     /// The dictation the screen was chosen for, by its start time.
@@ -48,9 +53,9 @@ struct OverlayLifecycle: Equatable {
             dictation = listening.started
             choose = true
         }
-        let appearing = phase != .up
+        let drops = phase != .up
         phase = .up
-        return Step(chooseScreen: choose, present: true, controlsAfter: appearing ? Self.arrival : 0)
+        return Step(chooseScreen: choose, present: true, drops: drops)
     }
 
     /// The pill came to rest. True when its panels should leave the screen: it was hidden and nothing has been shown
