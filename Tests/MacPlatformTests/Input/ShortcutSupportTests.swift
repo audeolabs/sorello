@@ -151,6 +151,20 @@ struct KeyEventNormalizationTests {
         #expect(event(.keyDown, kVK_ANSI_A, flags)?.modifiers == [.leftShift])
     }
 
+    @Test("Without device bits, both sides of one modifier are tracked through presses and releases")
+    func genericBothSides() {
+        let option = CGEventFlags.maskAlternate
+        let left = event(.flagsChanged, kVK_Option, option)
+        #expect(left?.modifiers == [.leftOption])
+        let both = event(.flagsChanged, kVK_RightOption, option, previous: [.leftOption])
+        #expect(both?.modifiers == [.leftOption, .rightOption])
+        let rightOnly = event(.flagsChanged, kVK_Option, option, previous: [.leftOption, .rightOption])
+        #expect(rightOnly?.modifiers == [.rightOption], "Left released, Right still held")
+        #expect(event(.flagsChanged, kVK_RightOption, [], previous: [.rightOption])?.modifiers == [])
+        #expect(event(.flagsChanged, kVK_RightOption, option, previous: [.rightOption])?.modifiers == [.rightOption],
+                "a release that was missed leaves the key that changed held")
+    }
+
     @Test("Fn is read from flags-changed events only")
     func function() {
         #expect(event(.flagsChanged, kVK_Function, .maskSecondaryFn)?.modifiers == [.function])

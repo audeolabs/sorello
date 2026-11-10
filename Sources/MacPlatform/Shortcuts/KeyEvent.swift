@@ -32,8 +32,8 @@ public struct KeyEvent: Sendable, Equatable {
     /// flags changed.
     ///
     /// The side of each modifier comes from the device-dependent bits of `flags` (`NX_DEVICE…KEYMASK` in IOKit's
-    /// `IOLLEvent.h`). When a keyboard sets only the generic bit, the key that changed decides the side, and
-    /// otherwise the side already known in `previous` is kept. Fn is read only from flags-changed events: Apple
+    /// `IOLLEvent.h`). When a keyboard sets only the generic bit, the sides known in `previous` stand and the key
+    /// that changed flips its own; with nothing known, the left key is assumed. Fn is read only from flags-changed events: Apple
     /// keyboards also set the Fn bit on arrow, function and navigation key events while Fn is up, so for key down
     /// and up the Fn state in `previous` stands.
     public init?(type: CGEventType, keyCode: UInt16, flags: CGEventFlags, isRepeat: Bool, time: TimeInterval,
@@ -52,13 +52,15 @@ public struct KeyEvent: Sendable, Equatable {
             if left { keys.insert(family.left) }
             if right { keys.insert(family.right) }
             guard !left, !right, flags.contains(family.generic) else { continue }
-            let changed = KeyCode.modifierKey(for: keyCode)
-            if kind == .modifiersChanged, let changed, changed == family.left || changed == family.right {
-                keys.insert(changed)
-            } else {
-                let known = previous.intersection([family.left, family.right])
-                keys.formUnion(known.isEmpty ? [family.left] : known)
+            // Only the generic bit: the sides already known stand, and the key that changed flips its own.
+            var sides = previous.intersection([family.left, family.right])
+            if kind == .modifiersChanged, let changed = KeyCode.modifierKey(for: keyCode),
+               changed == family.left || changed == family.right {
+                if sides.remove(changed) == nil { sides.insert(changed) }
+                // The family is still down, so a key believed released must be the one held.
+                if sides.isEmpty { sides = [changed] }
             }
+            keys.formUnion(sides.isEmpty ? [family.left] : sides)
         }
         if kind == .modifiersChanged {
             if flags.contains(.maskSecondaryFn) { keys.insert(.function) }
