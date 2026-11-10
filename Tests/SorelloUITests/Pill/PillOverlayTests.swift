@@ -225,7 +225,8 @@ import Testing
         #expect(Set(names).count == names.count)
         for housing in ["island", "notch", "none"] {
             for state in ["listening-silent", "listening-speaking", "listening-toggle", "listening-prompt", "waiting",
-                          "waiting-preparing", "notice-error", "notice-suggestion", "contrast-listening",
+                          "waiting-preparing", "notice-error", "notice-suggestion", "notice-suggestion-app",
+                          "notice-suggestion-long-app", "contrast-listening",
                           "reduce-motion-waiting", "contact-sheet", "toggle-at-1x"] {
                 #expect(names.contains("pill-\(housing)-\(state)"))
             }

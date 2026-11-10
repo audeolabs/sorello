@@ -87,6 +87,10 @@ public enum PillSnapshots {
             State(name: "waiting-preparing", caption: "Preparing the model", display: .waiting(.preparingModel)),
             State(name: "notice-error", caption: "An error", display: errorNotice),
             State(name: "notice-suggestion", caption: "Dictionary suggestion", display: suggestion),
+            State(name: "notice-suggestion-app", caption: "Suggestion, dictating into an app",
+                  display: suggestion(app: "Terminal", id: 3)),
+            State(name: "notice-suggestion-long-app", caption: "Suggestion, an app with a long name",
+                  display: suggestion(app: "Northwind Field Notes", id: 4)),
         ]
         let contrast = PillAppearance(increaseContrast: true), still = PillAppearance(reduceMotion: true)
         all += [
@@ -112,6 +116,17 @@ public enum PillSnapshots {
         actions: [.init(id: "add", title: String(localized: "Add"), isPrimary: true),
                   .init(id: "later", title: String(localized: "Not Now")),
                   .init(id: "never", title: String(localized: "Don\u{2019}t Suggest"))]))
+
+    /// The suggestion as it reads when the dictation went into an app: the word can be added for that app alone.
+    static func suggestion(app: String, id: UInt64) -> PillDisplay {
+        .notice(.init(
+            id: id, symbol: "character.book.closed.fill", tone: .information,
+            text: String(localized: "Add \u{201C}Okonkwo\u{201D} to your dictionary?"),
+            actions: [.init(id: "add-app", title: String(localized: "Add to \(app)"), isPrimary: true),
+                      .init(id: "add", title: String(localized: "Add Everywhere")),
+                      .init(id: "later", title: String(localized: "Not Now")),
+                      .init(id: "never", title: String(localized: "Don\u{2019}t Suggest"))]))
+    }
 
     static let silence = PillView.FixedWave(trace: DotWave.Trace(), now: started + 12, level: 0)
 

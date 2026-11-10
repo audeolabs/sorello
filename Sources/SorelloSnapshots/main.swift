@@ -87,6 +87,12 @@ final class PillDemo {
                 text: "Add \u{201C}Okonkwo\u{201D} to your dictionary?",
                 actions: [.init(id: "add", title: "Add", isPrimary: true), .init(id: "later", title: "Not Now"),
                           .init(id: "never", title: "Don\u{2019}t Suggest")]))),
+            ("dictionary suggestion, a long app name", .notice(.init(
+                id: 3, symbol: "character.book.closed.fill", tone: .information,
+                text: "Add \u{201C}Okonkwo\u{201D} to your dictionary?",
+                actions: [.init(id: "add-app", title: "Add to Northwind Field Notes", isPrimary: true),
+                          .init(id: "add", title: "Add Everywhere"), .init(id: "later", title: "Not Now"),
+                          .init(id: "never", title: "Don\u{2019}t Suggest")]))),
             ("hidden", .hidden),
         ]
     }
