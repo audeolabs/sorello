@@ -1,7 +1,7 @@
 # Sorello for macOS: architecture contract
 
-Sorello is a menu-bar dictation app for Apple Silicon Macs. You hold a key,
-speak, and release; the words appear at the cursor. Speech recognition runs
+Sorello is a menu-bar dictation app for the Mac, on Apple silicon and on
+Intel. You hold a key, speak, and release; the words appear at the cursor. Speech recognition runs
 on the Mac with a bundled model. Sorello makes no network connections.
 
 This document is the contract the code is written against. It states what
@@ -342,9 +342,20 @@ How the runtime uses them:
 Ported from LocalFlow's runtime, which was measured and tuned there:
 
 - The model is kea-b-0.1, a 1-bit derivative of NVIDIA Parakeet v2, as a
-  Core ML encoder with one 15 second function running on the Neural Engine
-  (`cpuAndNeuralEngine`), a vDSP feature front end and an Accelerate TDT
-  decoder. English only.
+  Core ML encoder with one 15 second function, a vDSP feature front end
+  and an Accelerate TDT decoder. English only.
+- Where the encoder runs is read from the hardware once, when the engine
+  is made (`MLComputeDevice.allComputeDevices`), never from the
+  architecture the app was built for. On a Mac with a Neural Engine it
+  runs there (`cpuAndNeuralEngine`). On a Mac without one, which is every
+  Intel Mac, Core ML's CPU kernels are the fallback (`cpuOnly`): the same
+  model files, the same chunks, front end and decoder, only slower and
+  with the weights unpacked in memory. The GPU is not used: nothing about
+  it can be checked on the Macs Sorello is built on. The two paths may
+  differ where two words score almost alike, as 16-bit and 32-bit
+  arithmetic do. The General screen says which one this Mac uses.
+  `sorello-transcribe --cpu` and `Sorello --self-test --cpu` force the
+  fallback, so it can be proved on any Mac.
 - `SpeechEngine` is an actor with its own serial executor. Model loading,
   warm-up and every prediction run there, one at a time. `append` on a
   stream never waits for model work.
@@ -357,8 +368,9 @@ Ported from LocalFlow's runtime, which was measured and tuned there:
   word both chunks heard. Long silences are compacted first. The shared
   vectors in `Tests/Vectors` pin this behaviour, as they do on Linux.
 - Preparation starts at launch. The first preparation on a machine can take
-  minutes; the menu and the General screen show its state and offer a retry
-  after a failure.
+  minutes on the Neural Engine, which compiles the model for itself; the
+  fallback takes seconds every time. The menu and the General screen show
+  its state and offer a retry after a failure.
 - The dictionary biases decoding through a graph built per dictionary
   revision and app. `docs/dictionary/DESIGN.md` is the contract for
   entries, validation, boosting and correction suggestions.
@@ -722,7 +734,12 @@ Review does.
   `CODESIGN_IDENTITY` defaults to ad hoc.
 - Identity is one file, `Config/identity.conf`. Development builds are
   "Sorello Dev", `com.audeolabs.sorello.dev`; `CHANNEL=release` builds are
-  "Sorello", `com.audeolabs.sorello`. Minimum system: macOS 26, arm64.
+  "Sorello", `com.audeolabs.sorello`. Minimum system: macOS 26, on Apple
+  silicon or Intel.
+- A development build is made for the Mac that builds it. A
+  `CHANNEL=release` build is universal (arm64 and x86_64). `ARCHS` chooses
+  otherwise, for example `ARCHS="arm64 x86_64"` for a universal
+  development build.
 - Model weights are not in Git. `Models/model.lock.json` pins the bundle by
   the SHA-256 of its manifest. `SORELLO_MODEL_DIR` points the build at a
   local copy. The build checks the manifest against the pin and every file
@@ -757,6 +774,10 @@ Review does.
   menu's rows as text.
   `Sorello --no-setup` opens the app without its setup window, so a
   packaged build can be launched and quit without touching a permission.
+- The Intel half of a universal build is compiled and linked on every
+  release build, but it cannot run on the Apple silicon Macs Sorello is
+  built on. What it does differently, the fallback, is proved there with
+  `--cpu`. That the app runs on an Intel Mac is checked by hand on one.
 - What tests cannot show is checked by hand on a Mac, on the installed
   build: grant, deny and revoke each permission; rebuild and relaunch;
   hold, toggle, cancel and Paste Again into a native text field, a browser
