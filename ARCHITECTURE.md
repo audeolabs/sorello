@@ -660,7 +660,9 @@ A reviewer checks every change against these.
 2. No content in logs. Diagnostics go through one type, `Diagnostics`,
    whose events are a compile-time name and numbers. `print`, `NSLog`,
    `os_log` and `Logger` are not used elsewhere in `Sources`, except in
-   the two command-line tools.
+   the two command-line tools. The app itself writes to standard output
+   only in its two verification modes, `--self-test` and `--snapshots`,
+   which report on synthetic recordings to the person who ran them.
 3. In storage Sorello manages, audio and transcripts exist only in the Run
    Log. Clearing it deletes them and makes the app forget the last
    dictation and any audio kept for a correction suggestion. What a
@@ -717,6 +719,10 @@ Review does.
   with a file in place of the microphone and a recorder in place of the
   paste, and prints what would have been inserted. It needs no permission,
   so it proves the packaged app end to end from a clean location.
+- `Sorello --snapshots <dir>` renders the menu-bar item, the menu panel,
+  every window and every setup step as the app wires them to its stores.
+  `Sorello --no-setup` opens the app without its setup window, so a
+  packaged build can be launched and quit without touching a permission.
 - What tests cannot show is checked by hand on a Mac, on the installed
   build: grant, deny and revoke each permission; rebuild and relaunch;
   hold, toggle, cancel and Paste Again into a native text field, a browser
