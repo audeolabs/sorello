@@ -727,6 +727,11 @@ and no further. Setup cannot be resized: it is one size at every step and
 in every state, so its buttons are always where they were. A notice's
 window opens at one size and can be made no smaller than its own minimum.
 
+A control that cannot be used says so by how it looks. Sorello dims it,
+and dims a text field's placeholder and text with it. Sorello draws this
+itself: it is not left to the system, which dims some of these for an app
+that records one SDK and not for an app that records another (section 10).
+
 Every screen has VoiceOver labels on its controls, because most controls
 are icons. User-facing strings go through `String(localized:)`, so a string
 catalog can be added without touching a call site. The app's name and
