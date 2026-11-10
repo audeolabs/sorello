@@ -41,6 +41,8 @@ final class PillView: NSView {
     private var bud = CancelBud.Model()
     private var recorder = DotWave.Recorder()
     private var restReported = true
+    /// Whether the body was last asked to show: its fade is replaced only when that changes.
+    private var bodyShowing = false
     /// Once hidden, the last fade ends at this moment on the motion clock; the pill is not at rest before it.
     private var quietAt: CFTimeInterval = 0
 
@@ -108,6 +110,7 @@ final class PillView: NSView {
         body = nil
         bud = CancelBud.Model()
         restReported = true
+        bodyShowing = false
     }
 
     // MARK: - What to show
@@ -142,7 +145,7 @@ final class PillView: NSView {
         }
         moveBody(to: next, from: wasHidden, travels: travels, at: now)
         handOver(to: next, animated: fades, at: now)
-        applyLook(showing: display != .hidden, fades: fades && wasHidden != (display == .hidden), at: now)
+        applyLook(showing: display != .hidden, animated: fades, at: now)
         scene = next
         if display == .hidden, !wasHidden {
             restReported = false
@@ -177,7 +180,15 @@ final class PillView: NSView {
 
     /// The body's colours, and whether it shows. Where there is no housing to grow out of it fades in as it grows and
     /// out as it shrinks; beside a housing it is black over black and simply there.
-    private func applyLook(showing: Bool, fades: Bool, at now: CFTimeInterval) {
+    /// What becomes of the floating body's fade at an update. A change of visibility replaces whatever fade was
+    /// running or still waiting to begin, so an old fade-out never dims a pill shown again; an update that leaves the
+    /// visibility as it was lets a fade in progress finish, unless it puts everything in place at once.
+    static func bodyFade(wasShowing: Bool, showing: Bool, animated: Bool) -> (cancel: Bool, start: Bool) {
+        let changed = wasShowing != showing
+        return (cancel: changed || !animated, start: changed && animated)
+    }
+
+    private func applyLook(showing: Bool, animated: Bool, at now: CFTimeInterval) {
         guard let screen else { return }
         let floating = screen.kind == .none
         fill.fillColor = NSColor(floating ? Palette.pill : Palette.housing).cgColor
@@ -189,11 +200,12 @@ final class PillView: NSView {
         edge.lineWidth = CGFloat(2 * Palette.edgeWidth(highContrast: look.increaseContrast))
         let opacity: Float = floating && !showing ? 0 : 1
         let schedule = Motion.bodyFade(showing: showing, reduceMotion: look.reduceMotion)
+        let step = Self.bodyFade(wasShowing: bodyShowing, showing: showing, animated: animated)
+        bodyShowing = showing
         for part in [edge, fill] {
             let from = part.presentation()?.opacity ?? part.opacity
-            // A fade still running, or still waiting to begin, belongs to the last change: it never outlives it.
-            part.removeAnimation(forKey: "appear")
-            if fades, floating, from != opacity {
+            if step.cancel { part.removeAnimation(forKey: "appear") }
+            if step.start, floating, from != opacity {
                 let fade = CABasicAnimation(keyPath: "opacity")
                 fade.fromValue = from
                 fade.toValue = opacity

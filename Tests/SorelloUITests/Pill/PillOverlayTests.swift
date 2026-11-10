@@ -204,6 +204,18 @@ import Testing
         #expect(!Self.rest(&life))
     }
 
+    /// The floating body's fade: appearing or hiding replaces any fade still running or waiting (a hide followed at once
+    /// by a show never lets the old fade-out dim the new pill); a change of content while it fades in lets the fade
+    /// finish; an update placed at once ends any fade.
+    @Test func theBodysFadeFollowsVisibilityOnly() {
+        #expect(PillView.bodyFade(wasShowing: false, showing: true, animated: true) == (cancel: true, start: true))
+        #expect(PillView.bodyFade(wasShowing: true, showing: false, animated: true) == (cancel: true, start: true))
+        #expect(PillView.bodyFade(wasShowing: true, showing: true, animated: true) == (cancel: false, start: false))
+        #expect(PillView.bodyFade(wasShowing: false, showing: false, animated: true) == (cancel: false, start: false))
+        #expect(PillView.bodyFade(wasShowing: true, showing: true, animated: false) == (cancel: true, start: false))
+        #expect(PillView.bodyFade(wasShowing: false, showing: true, animated: false) == (cancel: true, start: false))
+    }
+
     static let notice = PillDisplay.notice(.init(id: 5, symbol: "info.circle", tone: .information, text: "Invented"))
 
     /// The snapshot tool draws every state for every housing, a contact sheet and a 1x preview per housing, and the
