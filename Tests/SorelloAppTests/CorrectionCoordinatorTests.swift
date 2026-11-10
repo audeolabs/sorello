@@ -301,4 +301,33 @@ final class CorrectionHarness {
         await harness.edit(finding: nil, isLast: true)
         #expect(harness.speech.released == [77])
     }
+
+    @Test func aWatchThatEndsQuietlyLetsItsAudioGo() async throws {
+        let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
+        let harness = try CorrectionHarness(directory: directory.url, defaults: suite.defaults)
+        harness.dictate(1)
+        #expect(harness.watcher.started.count == 1)
+        await eventually { harness.clock.sleeperCount == 1 }
+        harness.clock.advance(by: CorrectionCoordinator.watchLimit - 1)
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(harness.speech.released.isEmpty)
+        harness.clock.advance(by: 1.1)
+        await eventually { harness.speech.released == [77] }
+    }
+
+    @Test func clearingTheRunLogStopsACheckAboutToShowASuggestion() async throws {
+        let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
+        let harness = try CorrectionHarness(directory: directory.url, defaults: suite.defaults)
+        harness.dictate(1)
+        let cancels = harness.watcher.cancels
+        await harness.edit(finding: "Okonkwo")
+        #expect(harness.speech.checks == 1)
+        // The check's result has not been delivered yet.
+        harness.coordinator.runLogCleared()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(harness.coordinator.notice == nil)
+        #expect(harness.watcher.cancels == cancels + 1)
+        #expect(harness.speech.discards == 1)
+    }
 }
+

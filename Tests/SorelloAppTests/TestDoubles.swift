@@ -26,6 +26,11 @@ final class ManualClock: SessionClock {
         let id = UUID()
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                // A task cancelled before it slept has already run its cancellation handler: it must not wait.
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
                 let resumeNow: Bool = state.withLock { state in
                     if seconds <= 0 { return true }
                     state.sleepers[id] = Sleeper(deadline: state.now + seconds, continuation: continuation)
