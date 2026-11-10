@@ -414,6 +414,31 @@ struct EngineTests {
         #expect(await finish(stream) == .failure(.engineUnavailable(.loadFailed)))
     }
 
+    /// A failure latched while a finish already waits (an older drain learning that its attempt failed, while the
+    /// finish waits for a retry) reaches that finish at once, not when the retry ends.
+    @Test func aLatchedFailureWakesAWaitingFinish() async throws {
+        let log = ModelLog()
+        let release = DispatchSemaphore(value: 0)
+        let engine = engine(log, loader: fakeLoader(log, wait: release))
+        let stream = engine.openStream(SpeechStreamOptions())
+        let pending = Task { await finish(stream) }
+        let installed = ContinuousClock.now + .seconds(5)
+        while engine.preparation.waiting == 0 && ContinuousClock.now < installed { try await Task.sleep(for: .milliseconds(5)) }
+        try await Task.sleep(for: .milliseconds(50))
+        let start = ContinuousClock.now
+        try #require(stream as? SpeechStream).fail(.engineUnavailable(.modelCorrupt))
+        #expect(await within { await pending.value } == .failure(.engineUnavailable(.modelCorrupt)))
+        #expect(elapsed(since: start) < .milliseconds(500), "The finish did not wait for the attempt in progress")
+        try #require(stream as? SpeechStream).fail(.engineUnavailable(.loadFailed))
+        release.signal()
+        await prepare(engine)
+        // A stream that failed before it finished refuses the finish with the first failure.
+        let early = engine.openStream(SpeechStreamOptions())
+        try #require(early as? SpeechStream).fail(.engineUnavailable(.loadFailed))
+        early.append(Self.speech(1))
+        #expect(await finish(early) == .failure(.engineUnavailable(.loadFailed)))
+    }
+
     /// Someone waiting for an attempt hears how that attempt ended, even when a retry starts before they resume, and
     /// only a caller that asks to retry starts a new attempt after a failure.
     @Test func waitersHearTheirOwnAttempt() async {

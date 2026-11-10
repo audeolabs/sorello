@@ -54,13 +54,14 @@ final class SpeechStream: SpeechStreaming {
         engine.cancelChecks()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<SpeechResult, any Error>) in
-                let waiting = ingress.withLock { state -> Bool in
-                    guard !state.cancelled else { return false }
+                let refusal = ingress.withLock { state -> SpeechFailure? in
+                    if state.cancelled { return .cancelled }
+                    if let failure = state.failure { return failure }
                     state.waiter = continuation
-                    return true
+                    return nil
                 }
-                guard waiting else {
-                    continuation.resume(throwing: SpeechFailure.cancelled)
+                if let refusal {
+                    continuation.resume(throwing: refusal)
                     return
                 }
                 Task { await engine.complete(self) }
@@ -89,13 +90,17 @@ final class SpeechStream: SpeechStreaming {
     /// Why the stream can no longer succeed, if something already decided that.
     var failure: SpeechFailure? { ingress.withLock { $0.failure } }
 
-    /// Drops what was appended and makes the stream fail with `failure` when it finishes. The first failure wins.
+    /// Drops what was appended and makes the stream fail with `failure`. The first failure wins, and a `finish`
+    /// already waiting gets it at once, whatever the engine is still waiting for.
     func fail(_ failure: SpeechFailure) {
-        ingress.withLock { state in
+        let (latched, waiter) = ingress.withLock { state in
             state.inbox = []
             state.drainScheduled = false
             if state.failure == nil { state.failure = failure }
+            defer { state.waiter = nil }
+            return (state.failure ?? failure, state.waiter)
         }
+        waiter?.resume(throwing: latched)
     }
 
     /// Throws once the stream is cancelled; the engine calls it between model calls and decoder steps.
