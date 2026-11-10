@@ -2,8 +2,15 @@
 """A lint for the rules a compiler cannot check (ARCHITECTURE.md, sections 2 and 9).
 
 It catches the obvious mistakes and fails with the offending lines. It does not prove the invariants; review does.
-Rules that look for API use read Swift code only: comments and the text of string and regex literals are ignored,
-while code inside a string's interpolation is still read. Runs on Python 3.9 or later, on macOS and Linux.
+Rules that look for API use read Swift code only: comments and the text of string literals and `#/.../#` regex
+literals are ignored, while code inside a string's interpolation is still read.
+
+A bare slash is ambiguous without a Swift parser: `/.../` may be a regex literal or two divisions. Where a slash
+might open a regex literal the source is therefore read both ways, and a violation in either reading counts. So a
+misjudged slash can never hide a banned call. The price is that a banned name written inside a bare regex literal
+is reported; write that literal as `#/.../#`, which is unambiguous, to have its text ignored.
+
+Runs on Python 3.9 or later, on macOS and Linux.
 """
 import os
 import re
@@ -13,14 +20,19 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STRING_OPEN = re.compile(r'(#*)("""|")')
 EXTENDED_REGEX_OPEN = re.compile(r"(#+)/")
-# What a bare regex literal may follow: an opening bracket, a separator, an operator that expects a value, or one
-# of these words. After a name, a number or a closing bracket a slash is division.
-REGEX_AFTER = set("([{,;:=!&|?")
-REGEX_AFTER_WORDS = ("return", "in", "case", "else", "try", "await", "throw")
+# What a bare regex literal may follow: an opening bracket, a separator, an assignment or comparison, or one of
+# these words. After a name, a number or a closing bracket a slash is division.
+REGEX_AFTER = set("([{,;:=?")
+REGEX_AFTER_WORDS = ("return", "in", "case", "else", "try", "await", "throw", "if", "guard", "while", "where",
+                     "switch", "yield")
 
 
-def code_only(src):
-    """`src` with comments and literal text replaced by spaces. Line breaks, and so line numbers, are kept."""
+def code_only(src, bare_regex=True):
+    """`src` with comments and literal text replaced by spaces. Line breaks, and so line numbers, are kept.
+
+    With `bare_regex` a slash in a position where a regex literal may start, and with a closing slash on its line,
+    is read as one; without it every bare slash is division.
+    """
     out = list(src)
     n = len(src)
 
@@ -54,7 +66,7 @@ def code_only(src):
 
     def bare_regex_end(i):
         """The index just past the bare regex literal whose opening slash is at `i`, or None if it is not one."""
-        if i + 1 >= n or src[i + 1] in " \t\n":
+        if not bare_regex or i + 1 >= n or src[i + 1] in " \t\n":
             return None
         k = i - 1
         while k >= 0 and out[k] in " \t":
@@ -65,16 +77,27 @@ def code_only(src):
                 m -= 1
             if "".join(out[m + 1:k + 1]) not in REGEX_AFTER_WORDS:
                 return None
-        j, classes = i + 1, 0
+        j, classes, groups = i + 1, 0, 0
         while j < n and src[j] != "\n":
-            if src[j] == "\\":
+            c = src[j]
+            if c == "\\":
+                if j + 1 < n and src[j + 1] == "\n":
+                    return None
                 j += 2
                 continue
-            if src[j] == "[":
-                classes += 1
-            elif src[j] == "]" and classes:
-                classes -= 1
-            elif src[j] == "/" and classes == 0:
+            if classes:
+                classes += (c == "[") - (c == "]")
+            elif c == "[":
+                classes = 1
+            elif c == "(":
+                groups += 1
+            elif c == ")":
+                # As Swift does: a closing parenthesis with no opening one means this was an operator, as in
+                # `reduce(1, /)`, not the start of a regex.
+                if groups == 0:
+                    return None
+                groups -= 1
+            elif c == "/":
                 return j + 1
             j += 1
         return None
@@ -108,8 +131,11 @@ def code_only(src):
             elif src[i] == "#" and EXTENDED_REGEX_OPEN.match(src, i):
                 opener = EXTENDED_REGEX_OPEN.match(src, i)
                 closer = "/" + opener.group(1)
-                end = src.find(closer, opener.end())
-                end = n if end < 0 else end
+                end = opener.end()
+                # The first closing delimiter that is not escaped: `\/#` inside the pattern is text.
+                while end < n and not src.startswith(closer, end):
+                    end += 2 if src[end] == "\\" else 1
+                end = min(end, n)
                 blank(opener.end(), end)
                 i = end + len(closer)
             elif src[i] == '"' or (src[i] == "#" and STRING_OPEN.match(src, i)):
@@ -149,30 +175,31 @@ MAY_PRINT = ("SorelloSnapshots", "SorelloTranscribe")
 
 def lint_swift(module, name, src):
     """The (rule, line number, line) violations in one Swift source of `module`."""
-    found = []
     raw = src.split("\n")
-    code = code_only(src)
+    # Both readings of any ambiguous slash; a violation in either counts.
+    readings = {code_only(src, True), code_only(src, False)}
+    found = set()
+    for code in readings:
+        for imported in IMPORT.finditer(code):
+            framework = imported.group(1)
+            number = code.count("\n", 0, imported.start(1)) + 1
+            text = raw[number - 1].strip()
+            if framework == "Network":
+                found.add(("Sorello makes no network connections", number, text))
+            if module in PURE and framework in UI_AND_MODEL:
+                found.add(("pure modules import only Foundation", number, text))
+            if framework in NEUTRAL.get(module, ()):
+                found.add(("neutral modules must also build for iOS", number, text))
 
-    for imported in IMPORT.finditer(code):
-        framework = imported.group(1)
-        number = code.count("\n", 0, imported.start(1)) + 1
-        text = raw[number - 1].strip()
-        if framework == "Network":
-            found.append(("Sorello makes no network connections", number, text))
-        if module in PURE and framework in UI_AND_MODEL:
-            found.append(("pure modules import only Foundation", number, text))
-        if framework in NEUTRAL.get(module, ()):
-            found.append(("neutral modules must also build for iOS", number, text))
-
-    for number, line in enumerate(code.split("\n"), 1):
-        text = raw[number - 1].strip()
-        if NETWORK.search(line):
-            found.append(("Sorello makes no network connections", number, text))
-        if LOGGING.search(line) and module not in MAY_PRINT and name != "Diagnostics.swift":
-            found.append(("log only through Diagnostics, which cannot carry content", number, text))
-        if UNCHECKED.search(line) and not any("Safe:" in near for near in raw[max(0, number - 4):number + 3]):
-            found.append(("@unchecked Sendable needs a '// Safe:' comment naming the lock or queue", number, text))
-    return sorted(found, key=lambda violation: violation[1])
+        for number, line in enumerate(code.split("\n"), 1):
+            text = raw[number - 1].strip()
+            if NETWORK.search(line):
+                found.add(("Sorello makes no network connections", number, text))
+            if LOGGING.search(line) and module not in MAY_PRINT and name != "Diagnostics.swift":
+                found.add(("log only through Diagnostics, which cannot carry content", number, text))
+            if UNCHECKED.search(line) and not any("Safe:" in near for near in raw[max(0, number - 4):number + 3]):
+                found.add(("@unchecked Sendable needs a '// Safe:' comment naming the lock or queue", number, text))
+    return sorted(found, key=lambda violation: (violation[1], violation[0]))
 
 
 def self_test():
@@ -200,15 +227,27 @@ def self_test():
         ("DictationCore", 'print("x")', [], "Diagnostics.swift"),
         ("SorelloApp", "let s = URLSession.shared", ["Sorello"]),
         ("SorelloApp", "// URLSession is forbidden in this application.", []),
-        # Regex literals are text, and a quote inside one does not start a string.
+        # `#/.../#` regex literals are text, escaped delimiters included, and a quote inside one starts no string.
         ("TextRules", "let pattern = #/URLSession/#", []),
-        ("TextRules", r"let pattern = /print\(x\)/", []),
-        ("TextRules", "let found = text.firstMatch(of: /[/]print(1)/)", []),
+        ("TextRules", "let found = text.firstMatch(of: #/[/]print(1)/#)", []),
+        ("TextRules", "let pattern = #/abc\\/#URLSession/#", []),
+        ("TextRules", "let pattern = ##/a/#print(1)/##", []),
+        ("TextRules", "let pattern = #/\n  print(1)  # the call\n  URLSession\n/#\nlet x = 1", []),
+        ("TextRules", 'let pattern = #/abc\\/#"def/#; print("x")', ["log"]),
         ("TextRules", 'let r = value.replacing(#/"/#, with: { _ in Swift.print("x"); return "y" })', ["log"]),
+        # A bare slash is read both ways, so neither a regex's quote nor a division can hide a call.
+        ("TextRules", r"let pattern = /print\(x\)/", []),
         ("TextRules", 'let m = text.firstMatch(of: /"/); print("x")', ["log"]),
         ("TextRules", "let ratio = total / count; print(ratio)", ["log"]),
         ("TextRules", "let ratio = (a + b) / 2 / print(c)", ["log"]),
+        ("TextRules", "let ratio = values.reduce(1, /); print(ratio / 2)", ["log"]),
+        ("TextRules", "let ratio = values.reduce(1, /); print(ratio) // Explain the ratio.", ["log"]),
+        ("TextRules", "let ops = [+, -, *, /]; print(x/y)", ["log"]),
+        ("TextRules", "let half = a!/2; print(b!/2)", ["log"]),
+        ("TextRules", "let f: (Double, Double) -> Double = (/); print(f(a, b)/2)", ["log"]),
         ("TextRules", "let x = a / b / c", []),
+        # The price of reading both ways: a banned name in a bare regex is reported. `#/.../#` is the way out.
+        ("TextRules", "let pattern = /URLSession/", ["Sorello"]),
         # Imports, however they are laid out.
         ("SorelloApp", "import Network", ["Sorello"]),
         ("SorelloApp", "    @preconcurrency import Network", ["Sorello"]),
