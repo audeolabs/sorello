@@ -131,10 +131,11 @@ spoken, one insertion at a time.
 
 - Triggers: `holdPressed`, `holdReleased(origin)`, `holdAbandoned`,
   `togglePressed`, `cancelPressed`, `pasteAgainPressed`, `pillStopClicked`,
-  `pillCancelClicked`. Each carries the monotonic time it arrived.
-  `origin` is `keyUp` or `interrupted` (the shortcut ended without a
-  genuine key release). `holdAbandoned` means the hold turned out to be
-  the start of a chord.
+  `pillCancelClicked`, `systemInterrupted`. Each carries the monotonic
+  time it arrived. `origin` is `keyUp` or `interrupted` (the shortcut
+  ended without a genuine key release). `holdAbandoned` means the hold
+  turned out to be the start of a chord. `systemInterrupted` means the
+  session was locked or switched away, or the Mac is going to sleep.
 - Capture, each with its `DictationID`: `started`, `failed(reason)`,
   `stalled`, `interrupted(reason)`, `ended(summary)`.
 - `transcript(id, result)`, `insertion(id, report)`,
@@ -143,22 +144,31 @@ spoken, one insertion at a time.
 
 ### Effects
 
-`requestMicrophoneAccess`, `startCapture(id)`, `stopCapture(id)` (finish
-and deliver what was heard), `abortCapture(id)` (discard), `openStream(id,
-options)`, `finishStream(id)`, `cancelStream(id)`, `insert(id)`,
-`reinsert(replayID, text)`, `setTimer(timerID, after)`,
-`cancelTimer(timerID)`, `record(entry)` (Run Log).
+- `requestMicrophoneAccess`
+- `startCapture(id)` and `openStream(id, options)`
+- `stopCapture(id)`: finish, and deliver what was heard
+- `abortCapture(id)`: stop producing audio now; what was already delivered
+  still counts
+- `finishStream(id)`
+- `discard(id)`: throw the dictation away. Its task is cancelled, its
+  capture and stream are released, its audio is dropped, and nothing of
+  it is transcribed or inserted.
+- `insert(id)` and `reinsert(replayID, text)`
+- `setTimer(timerID, after)` and `cancelTimer(timerID)`
+- `record(entry)`: the Run Log
 
 Timers are typed: `captureStart(id)`, `captureDrain(id)`,
 `captureLimit(id)` and `notice(noticeID)`. A timer event is acted on only
-if that exact timer is still armed.
+if that exact timer is still armed, and a dictation that leaves a phase
+cancels that phase's timer.
 
 ### Rules
 
 1. **Start.** A hold or toggle press while `capture` is `idle` starts a
    dictation: allocate the id, `startCapture`, `openStream`, and set
-   `captureStart(id)` for 3 s. The text options and the app in front are
-   read once, now, and stay with the dictation. If three dictations already
+   `captureStart(id)` for 3 s, which includes any wait for the previous
+   capture's teardown. The text options and the app in front are read
+   once, now, and stay with the dictation. If three dictations already
    exist, show the busy notice and start nothing. If the microphone is
    `denied`, show the microphone notice and start nothing. If the engine
    has `failed`, show the engine notice and start nothing. An engine that
@@ -167,39 +177,47 @@ if that exact timer is still armed.
 2. **Permission.** If the microphone is `unknown`, the press requests
    access and `capture` becomes `awaitingPermission` holding the intent:
    the mode, the press time and, for a hold, that the key is down.
-   Releasing or abandoning that hold, a second toggle press, or Escape
-   clears the intent; a new press replaces it. When access is granted, an
-   intent that is still there starts a dictation as in rule 1. A granted
-   result never revives a press that was released. A denied result clears
-   the intent and shows the microphone notice.
+   Releasing or abandoning that hold, a second toggle press, Escape or
+   `systemInterrupted` clears the intent; a new press replaces it. When
+   access is granted, an intent that is still there starts a dictation as
+   in rule 1. A granted result never revives a press that was released. A
+   denied result clears the intent and shows the microphone notice.
 3. **Recording.** `capture.started` moves `starting` to `recording`,
    cancels the start timer and sets `captureLimit(id)` for 15 minutes. A
    stop that was asked for during `starting` is applied now.
 4. **Stop.** Releasing Hold to Talk, pressing Tap to Toggle again, clicking
-   the pill in toggle mode, the limit timer, `stalled`, `interrupted` and
-   `capture.failed` while recording all do the same thing: `stopCapture`,
-   set `captureDrain(id)` for 2 s, move the dictation into the pipeline as
+   the pill in toggle mode, the limit timer, `systemInterrupted`,
+   `stalled`, `interrupted` and `capture.failed` while recording all do
+   the same thing: `stopCapture`, cancel the limit timer, set
+   `captureDrain(id)` for 2 s, move the dictation into the pipeline as
    `draining`, and make `capture` `idle`. The microphone can be asked for
    again at once; the capture adapter finishes one capture's teardown
-   before it starts the next. `capture.ended` moves the dictation to
-   `transcribing` and sends `finishStream`, unless less than 0.15 s of
-   audio was captured, in which case the stream is cancelled, the
-   dictation removed and nothing shown. If the drain timer fires first,
-   `abortCapture` and continue the same way with what was captured.
+   before it starts the next.
+
+   `capture.ended` is the only thing that finishes a draining dictation.
+   It cancels the drain timer and moves the dictation to `transcribing`
+   with `finishStream`, unless less than 0.15 s of audio was captured, in
+   which case the dictation is discarded and nothing shown. If the drain
+   timer fires first it sends only `abortCapture`: the capture stops
+   producing at once, the consumer still appends every chunk that was
+   already delivered, and `capture.ended` then arrives as usual. A
+   capture event for a dictation that is not `starting`, `recording` or
+   `draining` does nothing, even though the dictation still exists.
 5. **Double tap.** With prompt mode on, a hold released within 0.3 s of
    its press, by the triggers' own timestamps and whether it was
-   `starting` or `recording`, is discarded (`abortCapture`,
-   `cancelStream`) and arms the tap. A Hold to Talk press within 0.4 s of
-   that release starts a dictation in prompt style and uses the arm up.
-   The tap arms only if nothing at all was in progress when it was pressed
-   and it ended with a genuine `keyUp`. Any other trigger, an abandoned
-   hold, or a permission request clears the arm.
+   `starting` or `recording`, is discarded and arms the tap. A Hold to
+   Talk press within 0.4 s of that release starts a dictation in prompt
+   style and uses the arm up. The tap arms only if nothing at all was in
+   progress when it was pressed and it ended with a genuine `keyUp`. Any
+   other trigger, an abandoned hold, or a permission request clears the
+   arm.
 6. **Cancel.** Escape, or the pill's cancel button:
    - with a dictation `starting` or `recording`, discards that dictation
-     (`abortCapture`, `cancelStream`) and leaves the pipeline alone;
-   - otherwise, cancels every pipeline item that is not `inserting`
-     (`abortCapture` if it is draining, `cancelStream`). An item that is
-     inserting is left alone: a posted paste is never retracted;
+     and leaves the pipeline alone;
+   - otherwise, discards every pipeline item that is not `inserting`,
+     draining ones included. An item that is inserting, and a replay, are
+     left alone, even while they wait for modifiers: a paste is never
+     retracted;
    - while awaiting permission, clears the intent.
 
    `handle` reports true, and Escape is consumed, only if something was
@@ -208,7 +226,10 @@ if that exact timer is still armed.
    press during a toggle recording, are ignored. `holdAbandoned` discards
    the hold's dictation like a cancel, with no notice. A hold release with
    no hold in progress is ignored, so a key still down after the 15 minute
-   limit starts nothing until it is pressed again.
+   limit starts nothing until it is pressed again. `systemInterrupted`
+   stops a recording in either mode as in rule 4 and discards a dictation
+   that is still `starting`. Nothing resumes by itself when the session
+   comes back.
 8. **Order.** `transcript(id, result)` with empty text removes the item;
    if the recording lasted a second or more, the "nothing heard" notice is
    shown. Otherwise the item is `ready`. Whenever `output` is `free` and
@@ -216,33 +237,33 @@ if that exact timer is still armed.
    emits `insert(id)`. Later items wait for it, even if they were ready
    first.
 9. **Insertion.** Every `insertion(id, report)` frees `output`, removes the
-   item, and applies rule 8 again. `inserted` remembers the text for Paste
-   Again and records the Run Log entry. `nothingToInsert` (a macro whose
-   saved text is empty) does nothing more. `leftOnClipboard` remembers and
-   records the text and shows a notice telling the user to paste. `failed`
-   records the entry and shows an error notice. Once a paste has been
+   item, and applies rule 8 again. `inserted` and `leftOnClipboard` record
+   the Run Log entry and, when the text is not empty, remember it for
+   Paste Again; `leftOnClipboard` also shows a notice telling the user to
+   paste. A dictation that only pressed Return leaves the remembered text
+   as it was. `nothingToInsert` (a macro whose saved text is empty) does
+   nothing more. `failed` records the entry and shows an error notice; a
+   "press enter" that could not be posted says so. Once a paste has been
    posted for a dictation, nothing is ever posted for it again
    automatically.
 10. **Failures.** The start timer firing in `starting`, or
-    `capture.failed` in `starting`, discards the dictation
-    (`abortCapture`, `cancelStream`) and shows the microphone-unavailable
-    notice. A failed transcript removes its item, records the entry with
-    its audio so it can be retried, and shows an error notice. An engine
-    that fails while a dictation records does not interrupt it; its
-    transcript fails in the ordinary way.
+    `capture.failed` in `starting`, discards the dictation and shows the
+    microphone-unavailable notice. A failed transcript removes its item,
+    records the entry with its audio so it can be retried, and shows an
+    error notice. An engine that fails while a dictation records does not
+    interrupt it; its transcript fails in the ordinary way.
 11. **Paste Again.** When `capture` is `idle`, the pipeline is empty,
     `output` is `free` and there is a last text, the reducer claims
     `output` as `replaying` and emits `reinsert`. `reinsertion` frees it.
-    A replay pastes the same text, never presses Return, and is not
-    recorded.
+    A replay pastes the same text, never presses Return, is not recorded,
+    and is never watched for a correction.
 12. **Notices** expire by their own timer: 1.4 s for information, 4 s for
     errors. Starting a dictation dismisses the notice.
 
-When a dictation leaves the pipeline, the runtime also reports a
-`DictationCompletion` (its id, the processed text and flags, the speech
-result's correction id and the outcome) to the app, which decides whether
-to watch for a correction. Clearing the Run Log also makes the session
-forget `last`.
+When a dictation leaves the session, the runtime also reports a
+`DictationCompletion` to the app: its id, how it ended, the speech result
+if there was one, and the processed text and flags if composition ran.
+Clearing the Run Log also makes the session forget the remembered text.
 
 ### What the pill shows
 
@@ -279,12 +300,18 @@ How the runtime uses them:
 
 - **Capture.** `start` honours task cancellation: it either throws after
   releasing the microphone or returns one live capture. A capture returned
-  to a dictation that has since been cancelled is aborted by the runtime at
+  to a dictation that has since been discarded is aborted by the runtime at
   once. One consumer reads `events`, appends each chunk to the speech
   stream and to the recording kept for the Run Log, and reports
-  `capture.ended` only after the stream of events has finished and every
-  delivered chunk has been appended. `events` buffers without limit and
-  never drops audio; the 15 minute limit bounds it.
+  `capture.ended` exactly once, only after the stream of events has
+  finished and every delivered chunk has been appended. `abort` closes the
+  stream at once: chunks already delivered stay readable, anything not yet
+  delivered is dropped. `events` buffers without limit and never drops
+  audio; the 15 minute limit bounds it. The level sink follows the newest
+  dictation only: once it has heard a chunk from a newer dictation it
+  ignores everything from an older one, so a draining dictation's last
+  chunks never disturb the wave. That filter is for the picture only; the
+  audio still reaches speech and the Run Log.
 - **Speech.** A stream is its own object with a synchronized ingress, so
   `append` and `cancel` are plain synchronous calls that never wait for the
   model. `finish` is called once; `cancel` wins over it and makes a pending
@@ -297,9 +324,16 @@ How the runtime uses them:
   after the text before it has landed.
 - **Insertion.** `insert` takes a `compose` closure. The adapter waits for
   the shortcut's modifiers, finds the destination, reads the context, and
-  only then calls `compose(context)`, which runs the text rules and returns
-  the text and whether to press Return. The app's correction watch captures
-  its anchor from inside that call, before anything is pasted.
+  only then calls `compose` exactly once, telling it where the text is
+  going: to the cursor (with the context, and a token naming the field and
+  selection that were read) or only to the clipboard (with the reason).
+  `compose` runs the text rules and returns the text and whether to press
+  Return. The runtime passes the token, unopened, to the app's hook, and
+  the correction watch takes its anchor from it; it never looks for the
+  focused field itself. A clipboard-only composition and a replay give no
+  token, so they are never watched. Only a dictation reported `inserted`,
+  typed rather than pasted from a macro, without Return, with a correction
+  id and a token, starts a watch; every other ending releases the anchor.
 
 ## 5. Speech engine
 
@@ -356,10 +390,13 @@ Ported from LocalFlow's runtime, which was measured and tuned there:
 - A modifier-only hold starts at once. If another key goes down within
   0.3 s the hold was a chord: `holdAbandoned`.
 - A hold ends as `holdReleased(interrupted)` when the system disables the
-  tap (the adapter enables it again), when secure input begins, when the
-  session is locked or switched away, when the Mac sleeps, or when the
-  bindings change under it. While secure input is on, the adapter reports
-  that shortcuts are paused.
+  tap (the adapter enables it again), when secure input begins, or when
+  the bindings change under it. While secure input is on, the adapter
+  reports that shortcuts are paused.
+- When the session is locked or switched to another user, and when the Mac
+  is about to sleep, the adapter sends `systemInterrupted`, whatever the
+  shortcut mode, so a toggle recording does not go on behind a lock
+  screen.
 - Escape is delivered as `cancelPressed` and consumed only when `handle`
   returns true.
 - Events Sorello posts itself carry a fixed tag and are ignored by the tap.
@@ -393,31 +430,49 @@ One insertion is one transaction, and the adapter runs one transaction at
 a time:
 
 1. Wait, up to 1 s, until no Command, Option, Control or Shift key is
-   down. If one still is, write the text to the clipboard and report
-   `leftOnClipboard(modifiersStillDown)`: a paste posted now would be a
-   different shortcut.
-2. If the screen is locked, do the same with `screenLocked`.
-3. Find the focused field of the app in front and read up to 16 UTF-16
-   units each side of the selection (nothing, for a secure or unreadable
-   field). Call `compose` with that context. If it returns no text and no
-   Return, report `nothingToInsert`.
-4. With text: if restoring, snapshot every item and type on the
+   down.
+2. Decide where the text can go. If a modifier is still down
+   (`modifiersStillDown`), the screen is locked (`screenLocked`) or the
+   app has no Accessibility (`accessibilityMissing`), it can go only to
+   the clipboard: nothing will be posted, and no field is read.
+   Otherwise find the focused field of the app in front and read up to 16
+   UTF-16 units each side of the selection (nothing, for a secure or
+   unreadable field; the paste still goes ahead).
+3. Call `compose` once, with that destination. Then classify what it
+   returned, before touching the clipboard:
+   - no text and no Return: `nothingToInsert`;
+   - clipboard only, with text: write the text plainly and report
+     `leftOnClipboard(reason)`;
+   - clipboard only, with Return alone: write nothing and report
+     `failed(commandNotPosted)`.
+4. Check again, because `compose` took time: the screen is unlocked, no
+   modifier is down, the same app is in front and, where it can be read,
+   the same field has the same selection. If not, text is left on the
+   clipboard as `leftOnClipboard(targetChanged)` and a lone Return is
+   `failed(commandNotPosted)`. Sorello never brings another app forward
+   to recover.
+5. With text: if restoring, snapshot every item and type on the
    pasteboard. Write the text, marked transient when it will be restored
    so clipboard managers skip it, and remember the change count the write
-   produced.
-5. Post Command-V with the key that types "v" under Command in the current
-   layout (the ANSI V key if none does). Report `inserted` now: it means
-   the paste was posted, which is all the system can tell us.
-6. For Return: 80 ms later, if the same app is still in front, post
-   Return. If it is not, skip it. A dictation that is only "press enter"
-   posts Return alone and leaves the clipboard untouched.
+   produced. Post Command-V with the key that types "v" under Command in
+   the current layout (the ANSI V key if none does). Report `inserted`
+   now: it means the paste was posted, which is all the system can tell
+   us.
+6. For Return: 80 ms later, if the same app is still in front and no
+   modifier is down, post Return; otherwise skip it. A dictation that is
+   only "press enter" posts Return alone, without the wait, and leaves
+   the clipboard untouched. If no key at all was posted the outcome is
+   never `inserted`.
 7. If restoring: 1 s after the paste, put the snapshot back, but only if
-   the pasteboard's change count is still the one from step 4. A snapshot
+   the pasteboard's change count is still the one from step 5. A snapshot
    that could not be taken in full, or is larger than 32 MB, is not
    restored. The next transaction starts only after this step.
 
-Without Accessibility no key can be posted: the text is written to the
-clipboard and the outcome is `leftOnClipboard(accessibilityMissing)`.
+If the caller is cancelled before any key is posted, the transaction
+stops, puts back anything it wrote, and reports `failed(cancelled)`. After
+a key is posted cancellation changes nothing: the adapter finishes Return
+and the restore on its own, and nothing is ever posted twice.
+
 Pasteboard access across apps cannot be made atomic; the change count is
 what the system offers, and it is what protects something the user copies
 in the meantime. Insertion sits behind `TextInserting` so another strategy
