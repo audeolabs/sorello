@@ -14,6 +14,23 @@ import Testing
         #expect(Motion.crossFade == 0.15)
     }
 
+    /// Leaving, the content fades first and the floating body after it; with Reduce Motion everything cross-fades at
+    /// once in 0.15 s. The pill counts as at rest only once every one of those fades has ended.
+    @Test func thePillRestsOnlyAfterItsFades() {
+        let leaving = Motion.bodyFade(showing: false, reduceMotion: false)
+        #expect(leaving.delay == Motion.handover)
+        #expect(Motion.bodyFade(showing: true, reduceMotion: false).delay == 0)
+        for reduce in [false, true] {
+            let body = Motion.bodyFade(showing: false, reduceMotion: reduce)
+            #expect(Motion.hideFades(reduceMotion: reduce) >= body.delay + body.duration)
+            #expect(Motion.hideFades(reduceMotion: reduce) >= (reduce ? Motion.crossFade : Motion.handover))
+        }
+        for showing in [false, true] {
+            let still = Motion.bodyFade(showing: showing, reduceMotion: true)
+            #expect(still.delay == 0 && still.duration == Motion.crossFade)
+        }
+    }
+
     /// A value moves as SwiftUI's `spring(response:dampingFraction:)` would: from rest, settling in about four
     /// responses with the overshoot of a damped harmonic spring. A new target keeps its place and speed; a delay
     /// holds it still.

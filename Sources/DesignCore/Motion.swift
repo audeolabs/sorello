@@ -29,6 +29,19 @@ public enum Motion {
     public static let crossFade = 0.15
     /// The body appearing where there is no housing to grow out of, and leaving again: a fade over its grow.
     public static let appear = 0.15
+
+    /// The floating body's fade: after what delay and for how long. Leaving, the content goes first; with Reduce
+    /// Motion everything cross-fades together.
+    public static func bodyFade(showing: Bool, reduceMotion: Bool) -> (delay: Double, duration: Double) {
+        reduceMotion ? (0, crossFade) : (showing ? 0 : handover, appear)
+    }
+
+    /// How long after the pill is hidden its last fade ends, content and body: it is not at rest before then.
+    public static func hideFades(reduceMotion: Bool) -> Double {
+        let content = reduceMotion ? crossFade : handover
+        let body = bodyFade(showing: false, reduceMotion: reduceMotion)
+        return max(content, body.delay + body.duration)
+    }
 }
 
 /// A value moving under a spring from where it was, at the speed it had, towards a target. Its value at a moment is

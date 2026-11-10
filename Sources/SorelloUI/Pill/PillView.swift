@@ -147,7 +147,7 @@ final class PillView: NSView {
         if display == .hidden, !wasHidden {
             restReported = false
             // What leaves fades out, and a floating body after it; the panels must stay up until both have gone.
-            quietAt = now + (fades ? (appearance.reduceMotion ? Motion.crossFade : Motion.handover + Motion.appear) : 0)
+            quietAt = now + (fades ? Motion.hideFades(reduceMotion: appearance.reduceMotion) : 0)
         }
         CATransaction.commit()
 
@@ -188,14 +188,17 @@ final class PillView: NSView {
         // own antialiased rim never meets the backdrop.
         edge.lineWidth = CGFloat(2 * Palette.edgeWidth(highContrast: look.increaseContrast))
         let opacity: Float = floating && !showing ? 0 : 1
+        let schedule = Motion.bodyFade(showing: showing, reduceMotion: look.reduceMotion)
         for part in [edge, fill] {
-            if fades, floating, (part.presentation()?.opacity ?? part.opacity) != opacity {
+            let from = part.presentation()?.opacity ?? part.opacity
+            // A fade still running, or still waiting to begin, belongs to the last change: it never outlives it.
+            part.removeAnimation(forKey: "appear")
+            if fades, floating, from != opacity {
                 let fade = CABasicAnimation(keyPath: "opacity")
-                fade.fromValue = part.presentation()?.opacity ?? part.opacity
+                fade.fromValue = from
                 fade.toValue = opacity
-                fade.duration = Motion.appear
-                // Leaving, the content goes first.
-                fade.beginTime = part.convertTime(now, from: nil) + (showing ? 0 : Motion.handover)
+                fade.duration = schedule.duration
+                fade.beginTime = part.convertTime(now, from: nil) + schedule.delay
                 fade.fillMode = .backwards
                 part.add(fade, forKey: "appear")
             }
@@ -286,7 +289,9 @@ final class PillView: NSView {
             cross.move(to: CGPoint(x: centre.x - arm, y: centre.y + arm))
             cross.addLine(to: CGPoint(x: centre.x + arm, y: centre.y - arm))
             glyph.path = cross
-            glyph.opacity = Float(budFrame.glyphAlpha * (pressed == .cancel ? 0.5 : 1))
+            var cancelHeld = false
+            if case .cancel = pressed { cancelHeld = true }
+            glyph.opacity = Float(budFrame.glyphAlpha * (cancelHeld ? 0.5 : 1))
             glyph.isHidden = false
         } else {
             glyph.isHidden = true
@@ -310,7 +315,9 @@ final class PillView: NSView {
             } else if case .waiting = current.key {
                 current.drawShimmer(scene, sweep: DotWave.sweep(at: now - current.arrived), view: self)
             }
-            current.dim(pressed == .stop ? 0.6 : 1, action: pressedAction)
+            var stopHeld = false
+            if case .stop = pressed { stopHeld = true }
+            current.dim(stopHeld ? 0.6 : 1, action: pressedAction)
         }
         leaving.removeAll { content in
             guard let end = content.leftAt, now >= end else { return false }
