@@ -9,9 +9,10 @@ import SpeechEngine
 /// `Sorello --self-test <file.wav>…` (ARCHITECTURE.md, section 11): the assembled app's own composition and session,
 /// with each file in place of the microphone and a recorder in place of the paste. Each file is one dictation,
 /// started and ended by a synthetic Hold to Talk through the same relay the keyboard uses; the real pill shows it.
-/// It prints what would have been inserted and how long each step took, and exits 0 when every file produced text.
-/// It says on standard error where the encoder runs; `--cpu` forces Core ML's CPU kernels, to prove on any Mac the
-/// fallback a Mac without a Neural Engine uses.
+/// The last file is then dictated once more hands-free, started by a double tap and stopped by one more tap.
+/// It prints what would have been inserted and how long each step took, and exits 0 when every dictation produced
+/// text. It says on standard error where the encoder runs; `--cpu` forces Core ML's CPU kernels, to prove on any Mac
+/// the fallback a Mac without a Neural Engine uses.
 ///
 /// It needs no permission and keeps nothing: settings, macros, the dictionary and the Run Log live in a temporary
 /// directory, removed at the end, with default settings except that "press enter" is on. Only the model's stable
@@ -116,6 +117,9 @@ private final class SelfTestRun {
         for file in files {
             passed = await dictate(file, through: app) && passed
         }
+        if let last = files.last {
+            passed = await dictateHandsFree(last, through: app) && passed
+        }
         let expected = inserter.inserted.count
         _ = await wait(10, until: { app.history.entries.count >= expected })
         Console.line("run log: \(app.history.entries.count) of \(expected) dictations recorded")
@@ -127,14 +131,7 @@ private final class SelfTestRun {
     /// One file as one dictation: hold, speak at the recording's own pace, release, and wait for the text.
     private func dictate(_ file: URL, through app: AppComposition) async -> Bool {
         let name = file.lastPathComponent
-        let samples: [Float]
-        do {
-            samples = try AudioFileReader.samples(contentsOf: file)
-        } catch {
-            Console.line("\(name): could not be read")
-            return false
-        }
-        let duration = Double(samples.count) / AudioFormat.sampleRate
+        guard let samples = read(file) else { return false }
         capture.queue(samples)
         let before = completions.count, insertedBefore = inserter.inserted.count
         let pressed = ContinuousClock.now
@@ -151,6 +148,83 @@ private final class SelfTestRun {
             Console.line("\(name): no result within \(Int(SelfTest.completionLimit)) s of the release")
             return false
         }
+        return await report(name, samples: samples, completion: completion, insertedBefore: insertedBefore,
+                            pressed: pressed, released: released)
+    }
+
+    /// The file once more as a hands-free dictation (rule 5): tap Hold to Talk, press it again and let go at once,
+    /// let the recording play with no key held, then tap once more to stop it, and wait for the text.
+    private func dictateHandsFree(_ file: URL, through app: AppComposition) async -> Bool {
+        let name = "\(file.lastPathComponent), hands-free"
+        guard let samples = read(file) else { return false }
+        // The tap records a little silence of its own, so the file is left for the dictation the double tap starts.
+        // Its capture has started, and taken the silence, before the tap is released.
+        capture.queue([Float](repeating: 0, count: Int(AudioFormat.sampleRate) / 10))
+        app.relay.handle(.holdPressed, at: clock.now)
+        guard await wait(SessionTiming.tapHold * 0.8, until: { self.isRecording(app) }) else {
+            Console.line("\(name): the tap's recording did not start in time")
+            return false
+        }
+        app.relay.handle(.holdReleased(.keyUp), at: clock.now)
+        guard app.runtime.state.capture == .idle, app.runtime.state.tap != nil else {
+            Console.line("\(name): the tap did not arm the double tap")
+            return false
+        }
+        capture.queue(samples)
+        let insertedBefore = inserter.inserted.count
+        // The second press comes as a person's would, a moment after the tap and well inside its window, and is let
+        // go a moment later.
+        try? await Task.sleep(for: .seconds(SessionTiming.tapWindow / 2))
+        let pressed = ContinuousClock.now
+        app.relay.handle(.holdPressed, at: clock.now)
+        let live = app.runtime.state.capture.live
+        try? await Task.sleep(for: .seconds(SessionTiming.tapHold / 2))
+        app.relay.handle(.holdReleased(.keyUp), at: clock.now)
+        guard let live, live.mode == .toggle, live.style == .plain else {
+            Console.line("\(name): the double tap did not start a hands-free dictation")
+            return false
+        }
+        let id = live.id
+        guard await wait(5, until: { self.isRecording(app) }) else {
+            Console.line("\(name): the recording did not start")
+            return false
+        }
+        await capture.waitUntilPlayed()
+        guard app.runtime.state.capture.live?.id == id else {
+            Console.line("\(name): the recording stopped before the tap that ends it")
+            return false
+        }
+        app.relay.handle(.holdPressed, at: clock.now)
+        try? await Task.sleep(for: .seconds(SessionTiming.tapHold / 2))
+        guard app.runtime.state.capture.live?.id == id else {
+            Console.line("\(name): the recording stopped at the press, not the release")
+            return false
+        }
+        app.relay.handle(.holdReleased(.keyUp), at: clock.now)
+        let released = ContinuousClock.now
+        guard await wait(SelfTest.completionLimit, until: { self.completions.contains { $0.id == id } }),
+              let completion = completions.last(where: { $0.id == id }) else {
+            Console.line("\(name): no result within \(Int(SelfTest.completionLimit)) s of the tap that ends it")
+            return false
+        }
+        return await report(name, samples: samples, completion: completion, insertedBefore: insertedBefore,
+                            pressed: pressed, released: released)
+    }
+
+    private func read(_ file: URL) -> [Float]? {
+        do {
+            return try AudioFileReader.samples(contentsOf: file)
+        } catch {
+            Console.line("\(file.lastPathComponent): could not be read")
+            return nil
+        }
+    }
+
+    /// Prints how one dictation went and says whether its text was inserted. `released` is when the key that
+    /// ended it came up.
+    private func report(_ name: String, samples: [Float], completion: DictationCompletion, insertedBefore: Int,
+                        pressed: ContinuousClock.Instant, released: ContinuousClock.Instant) async -> Bool {
+        let duration = Double(samples.count) / AudioFormat.sampleRate
         let done = ContinuousClock.now
         let timing = String(format: "%.1f s of audio, recorded for %@, ", duration, Self.seconds(released - pressed))
             + "text ready \(Self.seconds(done - released)) after the release"
