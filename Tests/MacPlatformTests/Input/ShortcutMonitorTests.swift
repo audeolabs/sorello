@@ -116,6 +116,20 @@ struct ShortcutMonitorTests {
         #expect(rig.handler.times == [1_000, 1_001.5])
     }
 
+    @Test("Hold to Talk reaches the handler press by press, whatever it answers")
+    func deliversWhateverTheAnswer() {
+        let rig = Rig()
+        rig.monitor.start()
+        rig.handler.answer = false
+        for _ in 0..<2 {
+            rig.tap.send(Rig.fnDown)
+            rig.clock.advance(by: 0.1)
+            rig.tap.send(Rig.fnUp)
+            rig.clock.advance(by: 0.2)
+        }
+        #expect(rig.handler.received == [.holdPressed, .holdReleased(.keyUp), .holdPressed, .holdReleased(.keyUp)])
+    }
+
     @Test("Without a tap it needs Accessibility, and starting again retries")
     func needsAccessibility() {
         let rig = Rig(canInstall: false)
