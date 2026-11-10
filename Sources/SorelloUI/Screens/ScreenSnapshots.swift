@@ -82,6 +82,10 @@ public enum ScreenSnapshots {
             ("test-preparing", .sample(step: .test, microphone: .granted, accessibility: .granted, model: preparing)),
             ("test-done", .sample(step: .test, microphone: .granted, accessibility: .granted,
                                   testText: "Sphinx of black quartz, judge my vow.")),
+            ("test-failed", .sample(step: .test, microphone: .granted, accessibility: .granted,
+                                    model: .failed(.couldNotLoad))),
+            ("test-full", .sample(step: .test, microphone: .granted, accessibility: .granted,
+                                  testText: fullTestField)),
         ]
         return scenes.map { name, model in
             SnapshotScene(name: "setup-\(name)", size: WindowChrome.Kind.setup.defaultSize) {
@@ -91,6 +95,10 @@ public enum ScreenSnapshots {
         }
     }
 }
+
+/// More dictation than setup's test field shows at once, so it scrolls.
+private let fullTestField = Array(repeating: "Pack my box with five dozen liquor jugs, then carry it up the hill.",
+                                  count: 8).joined(separator: " ")
 
 /// Setup's shortcut step holding the longest shortcut there can be: fn and both sides of every modifier.
 private func longestShortcut() -> SetupModel {
