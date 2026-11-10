@@ -594,7 +594,9 @@ The pill never draws in the top band, so it cannot cover the menu bar,
 the camera housing or anything the system shows around it. It drops down
 from the band: it starts as a small capsule touching the foot of the
 band, under the housing, and grows down and outward to its place, fading
-in as it grows. It leaves the same way, back up.
+in as it grows. What it holds, and the cancel bud, follow once it has
+nearly dropped into place. It leaves the same way, back up, after what
+it holds has faded.
 
 The geometry is one pure function in `DesignCore`: the display (frame, top
 band, housing span, scale) and the content's measured sizes go in; the
