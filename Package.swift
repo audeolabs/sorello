@@ -17,7 +17,7 @@ let linkedSDK: [LinkerSetting] = Context.environment["SDKROOT"].map {
 
 let package = Package(
     name: "Sorello",
-    platforms: [.macOS(.v26)],
+    platforms: [.macOS(.v15)],
     products: [
         .executable(name: "Sorello", targets: ["Sorello"]),
         .executable(name: "SorelloSnapshots", targets: ["SorelloSnapshots"]),
