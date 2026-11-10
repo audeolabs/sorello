@@ -209,7 +209,7 @@ public struct ScreenPage<Content: View, Trailing: View>: View {
                 HStack(alignment: .lastTextBaseline, spacing: 12) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(title)
-                            .font(.screenTitle)
+                            .displayType(.screenTitle)
                             .foregroundStyle(Theme.ink)
                             .accessibilityAddTraits(.isHeader)
                         if let subtitle {

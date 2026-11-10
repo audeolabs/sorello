@@ -225,10 +225,10 @@ final class Harness {
     let windows: WindowModels
 
     /// `model`: a model directory for the vocabulary (`makeModelDirectory`); without one the dictionary cannot be
-    /// edited and nothing is kept for a suggestion.
-    init(directory: URL, defaults: UserDefaults, model: URL? = nil, trusted: Bool = true) {
+    /// edited and nothing is kept for a suggestion. `fontLicence`: where the app says the display font's licence is.
+    init(directory: URL, defaults: UserDefaults, model: URL? = nil, trusted: Bool = true, fontLicence: URL? = nil) {
         let info = AppInfo(name: "Sorello Test", version: "0.0.1", build: "1", modelDirectory: model,
-                           modelName: model.flatMap(AppInfo.modelName(in:)))
+                           modelName: model.flatMap(AppInfo.modelName(in:)), fontLicence: fontLicence)
         let system = self.system
         let platform = AppPlatform(
             capture: capture, microphone: GrantedMicrophone(), frontmostApp: frontmost, inserter: inserter,

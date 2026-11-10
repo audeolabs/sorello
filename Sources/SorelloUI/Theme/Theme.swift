@@ -1,3 +1,4 @@
+import AppKit
 import DesignCore
 import SwiftUI
 
@@ -109,19 +110,46 @@ public enum Metrics {
     public static let fieldRadius: CGFloat = 7
 }
 
-/// Sorello's text styles.
-public extension Font {
-    /// Geist Serif, the display face: window titles and headlines only. It has one weight and is never bolded.
-    /// Without the font the system face stands in.
-    static func display(_ size: CGFloat, relativeTo style: Font.TextStyle = .largeTitle) -> Font {
-        Resources.hasDisplayFont ? .custom(Resources.displayFontName, size: size, relativeTo: style)
-            : .system(size: size, weight: .regular)
+/// Display text (ARCHITECTURE.md, section 8): window and screen titles, setup's headlines and the app's name. It is
+/// set as the Audeo Labs site sets its headings, in Urbanist Medium tracked in by 0.015 em, so a size is all a call
+/// site chooses; `View.displayType(_:)` sets the face and the tracking together.
+public struct DisplayType: Equatable {
+    /// The size, in points.
+    public var size: CGFloat
+
+    /// Display text at `size` points.
+    public init(size: CGFloat) {
+        self.size = size
     }
 
-    /// A screen's title.
-    static var screenTitle: Font { display(30) }
+    /// A screen's title, and a window's.
+    public static let screenTitle = DisplayType(size: 30)
     /// The title of a setup step.
-    static var headline1: Font { display(32) }
+    public static let stepTitle = DisplayType(size: 32)
+
+    /// How far apart display text's letters are moved, as a fraction of its size: in by 0.015 em.
+    public static let trackingPerEm: CGFloat = -0.015
+
+    /// The tracking at this size, in points.
+    public var tracking: CGFloat { Self.trackingPerEm * size }
+
+    /// The face at this size: Urbanist Medium once `Resources.registerFonts()` has run, and the system face at the
+    /// same weight without the font file.
+    public var face: NSFont {
+        NSFont(name: Resources.displayFontName, size: size) ?? .systemFont(ofSize: size, weight: .medium)
+    }
+}
+
+public extension View {
+    /// Sets the text in this view as display text of `type`: its face, its size and its tracking at once, so display
+    /// text is never drawn without its tracking.
+    func displayType(_ type: DisplayType) -> some View {
+        font(Font(type.face as CTFont)).tracking(type.tracking)
+    }
+}
+
+/// Sorello's text styles in the system face.
+public extension Font {
     /// A group's title above its card.
     static var groupTitle: Font { .system(size: 12, weight: .semibold) }
     /// A row's title.

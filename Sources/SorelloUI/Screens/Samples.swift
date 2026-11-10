@@ -149,7 +149,8 @@ public extension AboutModel {
             modelNotice: NoticeItem(id: "model", title: "kea-b-0.1",
                                     detail: "Derived from NVIDIA Parakeet v2, CC-BY-4.0. Licence and attribution."),
             thirdPartyNotices: [
-                NoticeItem(id: "geist", title: "Geist Serif", detail: "Vercel, SIL Open Font License 1.1."),
+                NoticeItem(id: "urbanist", title: "Urbanist",
+                           detail: "The Urbanist Project Authors, SIL Open Font License 1.1."),
                 NoticeItem(id: "permission-card", title: "Permission card",
                            detail: "Adapted from Scrawl and AskForPermission, MIT License."),
             ])

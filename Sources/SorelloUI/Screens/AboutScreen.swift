@@ -63,7 +63,7 @@ public struct AboutScreen: View {
                 MarkEmblem()
                     .padding(.bottom, 12)
                 Text(model.appName)
-                    .font(.display(40))
+                    .displayType(DisplayType(size: 40))
                     .foregroundStyle(Theme.ink)
                 Text("Version \(model.version) (\(model.build))")
                     .font(.system(size: 13).monospacedDigit())

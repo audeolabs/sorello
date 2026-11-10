@@ -78,7 +78,7 @@ private struct NoticeText: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text(verbatim: title)
-                    .font(.display(30))
+                    .displayType(.screenTitle)
                     .foregroundStyle(Theme.ink)
                 Text(verbatim: text.isEmpty ? String(localized: "This notice is not in this copy of the app.") : text)
                     .font(.system(size: 11.5, design: .monospaced))
