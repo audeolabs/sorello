@@ -1,0 +1,12 @@
+.DS_Store
+.build/
+build/
+*.xcodeproj
+*.xcworkspace
+DerivedData/
+.swiftpm/
+*.dmg
+# Model weights are kept outside Git.
+Models/bundle/
+# Private planning notes are never committed.
+.plan/
