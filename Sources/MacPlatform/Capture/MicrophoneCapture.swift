@@ -103,7 +103,9 @@ private final class StartAttempt: Sendable {
     /// On the queue, before opening: false if the caller has already given up.
     func begin() -> Bool {
         state.withLock { state in
-            guard state.phase == .queued else { return false }
+            // `giveUp` marks a queued attempt before it settles it, so both are checked here: an attempt whose
+            // caller has given up never opens the device, even in the moment before it is settled.
+            guard state.phase == .queued, state.gaveUp == nil else { return false }
             state.phase = .opening
             return true
         }
