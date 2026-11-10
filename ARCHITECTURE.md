@@ -423,9 +423,13 @@ Ported from LocalFlow's runtime, which was measured and tuned there:
   order asked. Audio stays in memory; nothing is written to disk until the
   Run Log entry is saved after insertion.
 - `start` returns when the session is running and gives up after 3 s,
-  which has to cover a Bluetooth headset switching profile. A capture that
-  delivers nothing for 2 s reports `stalled` once. A device that goes away
-  reports `interrupted`; any other error reports `failed`.
+  which has to cover a Bluetooth headset switching profile. Opening a
+  device blocks and cannot be interrupted, so when the 3 s pass during
+  the open, `start` throws as soon as the open returns and the device has
+  been released; the session's own timer has discarded the dictation by
+  then. A capture that delivers nothing for 2 s reports `stalled` once. A
+  device that goes away reports `interrupted`; any other error reports
+  `failed`.
 
 ### Text insertion
 
@@ -517,7 +521,9 @@ Everything is under `Application Support/<bundle id>/`, in a directory only
 the user can read. Files are written atomically and carry a `version`. The
 app never fails to launch over data: settings, the dictionary or macros
 that cannot be read are moved aside and replaced with empty ones, and a Run
-Log that cannot be read is deleted.
+Log that cannot be read is deleted. A file that is there but cannot be
+opened (a permission problem, not damage) is left alone: it is not deleted,
+moved or written over, and its store works without it until it opens.
 
 - **Settings**: typed keys over `UserDefaults`, exposed as one observable
   `SettingsStore`.

@@ -166,7 +166,9 @@ public enum CaptureEvent: Sendable, Equatable {
 }
 
 public protocol AudioCapturing: Sendable {
-    /// Starts the microphone and returns once it is running. Throws `CaptureFailure`; gives up after 3 s.
+    /// Starts the microphone and returns once it is running. Throws `CaptureFailure`; gives up after 3 s. Opening
+    /// a device blocks and cannot be interrupted, so a start that times out or is cancelled while the device is
+    /// opening throws as soon as the open returns and the device has been released.
     ///
     /// Honours task cancellation: it either throws after releasing the microphone or returns one live capture,
     /// never both and never neither. Starts and teardowns run one at a time in the order asked, so `start` may be
