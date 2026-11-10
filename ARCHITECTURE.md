@@ -1,8 +1,9 @@
 # Sorello for macOS: architecture contract
 
 Sorello is a menu-bar dictation app for the Mac, on Apple silicon and on
-Intel. You hold a key, speak, and release; the words appear at the cursor. Speech recognition runs
-on the Mac with a bundled model. Sorello makes no network connections.
+Intel. You hold a key, speak, and release; the words appear at the cursor.
+Speech recognition runs on the Mac with a bundled model. Sorello makes no
+network connections.
 
 This document is the contract the code is written against. It states what
 each part does and where the boundaries are. When behaviour and this
@@ -363,7 +364,9 @@ Ported from LocalFlow's runtime, which was measured and tuned there:
   under a file lock, because Core ML's Neural Engine cache is keyed by the
   model file's path and identity; loading from the app bundle would
   recompile after every update. Each file's SHA-256 is checked against the
-  bundle's manifest before loading.
+  bundle's manifest before loading. The CPU fallback loads the same copy,
+  so both paths share one store and one check. The manifest's
+  `compute_units` records how the bundle was exported; nothing reads it.
 - Audio is cut into 15 s chunks that overlap by 2 s and are joined on a
   word both chunks heard. Long silences are compacted first. The shared
   vectors in `Tests/Vectors` pin this behaviour, as they do on Linux.
@@ -739,7 +742,9 @@ Review does.
 - A development build is made for the Mac that builds it. A
   `CHANNEL=release` build is universal (arm64 and x86_64). `ARCHS` chooses
   otherwise, for example `ARCHS="arm64 x86_64"` for a universal
-  development build.
+  development build. Each architecture is built on its own and joined
+  with `lipo`; the build fails unless the signed executable holds exactly
+  the architectures asked for.
 - Model weights are not in Git. `Models/model.lock.json` pins the bundle by
   the SHA-256 of its manifest. `SORELLO_MODEL_DIR` points the build at a
   local copy. The build checks the manifest against the pin and every file
