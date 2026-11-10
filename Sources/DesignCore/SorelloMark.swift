@@ -19,16 +19,19 @@ public enum SorelloMark {
         }
     }
 
-    /// The white dots, left to right, in the mark's units: the wave's pitch, rising from a resting dot to a full one.
+    /// The white dots, left to right, in the mark's units: rising from the wave's resting dot towards a full one, an
+    /// even gap between each pair, so the row reads as one gesture.
     public static let row: [Dot] = [
-        Dot(x: 0, y: 0, radius: 1.4, brightness: 0.5),
-        Dot(x: 6.2, y: 0, radius: 1.85, brightness: 0.67),
-        Dot(x: 12.4, y: 0, radius: 2.3, brightness: 0.84),
-        Dot(x: 18.6, y: 0, radius: 2.75, brightness: 1),
+        Dot(x: 0, y: 0, radius: 1.3, brightness: 0.5),
+        Dot(x: 5.05, y: 0, radius: 1.75, brightness: 0.67),
+        Dot(x: 11, y: 0, radius: 2.2, brightness: 0.84),
+        Dot(x: 17.85, y: 0, radius: 2.65, brightness: 1),
     ]
-    /// The aurora dot the row rises into: the wave's aurora dot at its fullest, a little further off than the pitch, as
-    /// the wave leaves room before it.
-    public static let accent = Dot(x: 26.4, y: 0, radius: 3.45, brightness: 1)
+    /// The gap between neighbouring white dots, edge to edge.
+    public static let gap = 2.0
+    /// The aurora dot the row rises into: the wave's aurora dot at its fullest, a little further off, as the wave
+    /// leaves room before it.
+    public static let accent = Dot(x: 26.5, y: 0, radius: 3.4, brightness: 1)
 
     /// The mark fitted into a box: the white dots and the aurora dot, in the box's coordinates.
     public struct Fitted: Equatable, Sendable {

@@ -107,12 +107,11 @@ import Testing
         #expect(row.count >= 3)
         for (a, b) in zip(row, row.dropFirst()) {
             #expect(b.radius > a.radius && b.brightness >= a.brightness)
-            #expect(abs(b.x - a.x - DotWave.pitch) < 1e-9)
-            #expect(b.x - a.x > a.radius + b.radius, "the mark's dots touch")
+            #expect(abs(b.x - a.x - a.radius - b.radius - SorelloMark.gap) < 1e-9, "uneven gaps")
         }
         let last = try #require(row.last)
         #expect(SorelloMark.accent.radius > last.radius)
-        #expect(SorelloMark.accent.x - SorelloMark.accent.radius > last.x + last.radius)
+        #expect(SorelloMark.accent.x - SorelloMark.accent.radius - last.x - last.radius > SorelloMark.gap)
         #expect((row + [SorelloMark.accent]).allSatisfy { $0.y == 0 })
     }
 
@@ -130,7 +129,7 @@ import Testing
                 #expect(abs((minX + maxX) / 2 - (10 + w / 2)) < 1e-9 && abs((minY + maxY) / 2 - (20 + h / 2)) < 1e-9)
                 #expect(abs(maxX - minX - w) < 1e-9 || abs(maxY - minY - h) < 1e-9)
                 let first = try #require(mark.row.first), second = mark.row[1]
-                #expect(abs(second.x - first.x - DotWave.pitch * mark.scale) < 1e-9)
+                #expect(abs(second.x - first.x - (SorelloMark.row[1].x - SorelloMark.row[0].x) * mark.scale) < 1e-9)
                 #expect(abs(first.radius - SorelloMark.row[0].radius * weight * mark.scale) < 1e-9)
             }
         }

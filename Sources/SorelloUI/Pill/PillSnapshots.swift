@@ -2,7 +2,8 @@ import AppKit
 import DesignCore
 
 /// The pill's scenes for the snapshot tool (ARCHITECTURE.md, section 11): every state, for every camera housing, over
-/// a menu bar on a wallpaper with the housing drawn in black so the merge shows, and a contact sheet per housing.
+/// a menu bar on a wallpaper with the housing drawn in black so the merge shows; a contact sheet per housing; and the
+/// mark, the menu-bar icon and the app icon.
 public enum PillSnapshots {
     public static var scenes: [SnapshotScene] {
         Housing.allCases.flatMap { housing in
@@ -11,7 +12,7 @@ public enum PillSnapshots {
                     PillStage(housing: housing, state: state)
                 }
             } + [contactSheet(for: housing), pixelPreview(for: housing)]
-        }
+        } + MarkSnapshots.scenes
     }
 
     // MARK: - The screens

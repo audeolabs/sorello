@@ -112,8 +112,8 @@ import Testing
         #expect(pill.hitTest(NSPoint(x: 10, y: 10)) == nil)
     }
 
-    /// The snapshot tool draws every state for every housing, and a contact sheet and a 1x preview per housing, each
-    /// under its own name.
+    /// The snapshot tool draws every state for every housing, a contact sheet and a 1x preview per housing, and the
+    /// mark's pictures, each under its own name.
     @Test func everyStateHasASnapshot() {
         let names = PillSnapshots.scenes.map(\.name)
         #expect(Set(names).count == names.count)
@@ -124,5 +124,9 @@ import Testing
                 #expect(names.contains("pill-\(housing)-\(state)"))
             }
         }
+        for mark in ["mark", "mark-menu-bar-light", "mark-menu-bar-dark", "mark-app-icon"] {
+            #expect(names.contains(mark))
+        }
+        #expect(SorelloMarkImages.menuBarIcon().isTemplate)
     }
 }
