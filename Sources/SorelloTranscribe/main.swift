@@ -44,7 +44,7 @@ while let argument = arguments.popFirst() {
         }
         switch DictionaryValidation.validate(text: text, strength: strength, encoder: nil) {
         case .success(let entry): words.append(entry)
-        case .failure(let error): fail("sorello-transcribe: --word \(text): \(error.message)")
+        case .failure(let error): fail("sorello-transcribe: a --word cannot be used: \(error.message)")
         }
     case "--realtime":
         realtime = true
