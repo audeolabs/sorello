@@ -256,7 +256,9 @@ cancels that phase's timer.
     `output` is `free` and there is a last text, the reducer claims
     `output` as `replaying` and emits `reinsert`. `reinsertion` frees it.
     A replay pastes the same text, never presses Return, is not recorded,
-    and is never watched for a correction.
+    and is never watched for a correction. If the text was left on the
+    clipboard or could not be pasted, the same notice as in rule 9 says
+    so.
 12. **Notices** expire by their own timer: 1.4 s for information, 4 s for
     errors. Starting a dictation dismisses the notice.
 
