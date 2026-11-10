@@ -57,6 +57,7 @@ import Testing
         // A 3-byte LIST chunk with its pad byte, between the format and the data.
         let list = Array("LIST".utf8) + bytes([UInt32(3)]) + [1, 2, 3, 0]
         fixture.insert(contentsOf: list, at: 36)
+        fixture.replaceSubrange(4..<8, with: bytes([UInt32(fixture.count - 8)]))
         #expect(try WAVAudio.decode(Data(fixture)) == [1])
     }
 
