@@ -1,3 +1,4 @@
+import AppKit
 import DictationCore
 import DictionaryKit
 import Foundation
@@ -59,6 +60,49 @@ import Testing
         #expect(app.runtime.state.lastText == nil)
         #expect(harness.speech.discards == 1)
         await eventually { harness.windows.menu.lastDictation == nil && harness.windows.main.runLog.items.isEmpty }
+    }
+
+    /// Copy Last Dictation, chosen in the menu the app builds, puts the last dictation's text on the clipboard. It is
+    /// unavailable, and copies nothing, before the first dictation and after the Run Log is cleared.
+    @Test func copyLastDictationInTheMenuCopiesTheLastDictation() async throws {
+        _ = NSApplication.shared
+        let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
+        let harness = Harness(directory: directory.url, defaults: suite.defaults)
+        let app = harness.app
+        let controller = StatusMenuController(model: harness.windows.menu)
+        let menu = controller.menu
+        let copy = try #require(menu.items.first { $0.title == "Copy Last Dictation" })
+        // Opens the menu as the system does, then chooses Copy.
+        func chooseCopy() throws {
+            controller.menuNeedsUpdate(menu)
+            menu.performActionForItem(at: try #require(menu.items.firstIndex { $0 === copy }))
+        }
+        app.start()
+        await eventually { app.runtime.state.engine == .ready }
+
+        controller.menuNeedsUpdate(menu)
+        #expect(!copy.isEnabled)
+        try chooseCopy()
+        #expect(harness.system.copied.isEmpty)
+
+        await harness.dictate()
+        await eventually { app.runtime.state.lastText != nil }
+        let text = try #require(app.runtime.state.lastText)
+        await eventually {
+            controller.menuNeedsUpdate(menu)
+            return copy.isEnabled
+        }
+        try chooseCopy()
+        #expect(harness.system.copied == [text])
+
+        harness.windows.main.runLog.actions.clearAll()
+        await eventually { app.runtime.state.lastText == nil }
+        await eventually {
+            controller.menuNeedsUpdate(menu)
+            return !copy.isEnabled
+        }
+        try chooseCopy()
+        #expect(harness.system.copied == [text])
     }
 
     /// General says where the engine runs the model, as the engine chose it from the hardware.
