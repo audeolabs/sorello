@@ -804,7 +804,10 @@ Review does.
   so it proves the packaged app end to end from a clean location.
 - `Sorello --snapshots <dir>` renders the menu-bar item, every window and
   every setup step as the app wires them to its stores, and writes the
-  menu's rows as text.
+  menu's rows as text. It also builds setup and the main window as the
+  app shows them, without putting them on screen, takes them through
+  every step and section, and fails, naming the window, if one does not
+  keep its chrome's size and minimum.
   `Sorello --no-setup` opens the app without its setup window, so a
   packaged build can be launched and quit without touching a permission.
 - The Intel half of a universal build is compiled and linked on every

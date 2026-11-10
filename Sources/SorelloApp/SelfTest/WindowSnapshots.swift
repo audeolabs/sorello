@@ -12,7 +12,8 @@ import SwiftUI
 /// `Sorello --snapshots <dir>`: the menu-bar item, every main window section and every setup step as the app draws
 /// them, wired to real stores, rendered to PNG files, and the menu-bar item's menu as the app builds it, listed as
 /// text in `app-menu.txt` (the system draws the menu, so there is no picture of it). SorelloUI's own snapshots draw
-/// invented models; these draw the models the app builds, so what is reviewed is what ships.
+/// invented models; these draw the models the app builds, so what is reviewed is what ships. It also builds setup and
+/// the main window as the app shows them, never on screen, and fails if either loses its chrome's size or minimum.
 ///
 /// The stores are real and live in a temporary directory, filled with invented words, macros and Run Log entries,
 /// and one dictation is run through the session so the menu has a last dictation. The engine and the
@@ -104,10 +105,58 @@ enum WindowSnapshots {
             }
             Console.line(scene.name)
         }
+        // After the pictures, so stepping the real windows cannot change one.
+        if await !checkWindowSizes(models, title: app.info.name) { passed = false }
         models.stop()
         await app.shutdown(limit: 1)
         return passed
     }
+
+    /// Builds setup and the main window with the functions the app shows them with, never on screen, takes setup
+    /// through every step and the main window through every section, and prints a line naming the window wherever
+    /// one does not have its chrome's size and minimum (ARCHITECTURE.md, section 8, "Windows").
+    private static func checkWindowSizes(_ models: WindowModels, title: String) async -> Bool {
+        var failures: [String] = []
+        let setup = WindowPresenter.setupWindow(models.setup, title: title)
+        for step in SetupStep.allCases {
+            models.setup.step = step
+            if let failure = await sizeFailure(of: setup, .setup) {
+                failures.append("window-setup at \(slug(step)): \(failure)")
+            }
+        }
+        setup.close()
+        let main = WindowPresenter.mainWindow(models.main, title: title)
+        for section in MainSection.allCases {
+            models.main.section = section
+            if let failure = await sizeFailure(of: main, .main) {
+                failures.append("window-main at \(slug(section)): \(failure)")
+            }
+        }
+        main.close()
+        guard failures.isEmpty else {
+            failures.forEach { Console.line("FAILED \($0)") }
+            return false
+        }
+        Console.line("window-setup \(describe(.setup)) at every step")
+        Console.line("window-main \(describe(.main)) at every section")
+        return true
+    }
+
+    /// What is wrong with `window`'s size once the run loop has turned, when the window's content may have asked it
+    /// for another; nil when it has the size and minimum its chrome gives it.
+    private static func sizeFailure(of window: NSWindow, _ kind: WindowChrome.Kind) async -> String? {
+        try? await Task.sleep(for: .milliseconds(200))
+        window.layoutIfNeeded()
+        let size = window.contentRect(forFrameRect: window.frame).size
+        guard size != kind.defaultSize || window.contentMinSize != kind.minimumSize else { return nil }
+        return "\(points(size)), minimum \(points(window.contentMinSize)), not \(describe(kind))"
+    }
+
+    private static func describe(_ kind: WindowChrome.Kind) -> String {
+        "\(points(kind.defaultSize)), minimum \(points(kind.minimumSize))"
+    }
+
+    private static func points(_ size: CGSize) -> String { "\(Int(size.width)) x \(Int(size.height))" }
 
     /// Invented words, macros and dictations, put in through the stores the way the windows and the session do.
     private static func fill(_ app: AppComposition, capture: FileCapture, clock: SystemSessionClock) async {
