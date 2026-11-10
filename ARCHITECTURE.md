@@ -539,7 +539,11 @@ moved or written over, and its store works without it until it opens.
   are removed at launch. Clear removes the index and every audio and
   temporary file, and cancels any save that began before it. Retry
   transcribes an entry's audio again with today's dictionary and text
-  rules and replaces the entry's text; it never pastes.
+  rules and replaces the entry's words; it never pastes or presses a
+  key. An entry goes on saying how it ended, so a retry never turns
+  pasted words into a command alone, or a command into words: such a
+  retry, like one that hears nothing or fails, leaves the entry as it
+  was.
 
 ## 8. Look and motion
 

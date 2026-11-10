@@ -38,8 +38,9 @@ extension WindowModels {
         app.live.playingID = player.play(url) ? id : nil
     }
 
-    /// Transcribes the entry's audio again with today's dictionary and text rules and replaces its text. It never
-    /// pastes. A retry that hears nothing, or fails, leaves the entry as it was.
+    /// Transcribes the entry's audio again with today's dictionary and text rules and replaces its words. It never
+    /// pastes or presses a key. A retry that hears nothing, fails, or would change what kind of dictation the entry
+    /// was (`retryKeepsKind`) leaves the entry as it was.
     func retry(_ id: String) {
         let app = self.app
         guard let uuid = UUID(uuidString: id), !app.live.retryingIDs.contains(id) else { return }
@@ -58,9 +59,17 @@ extension WindowModels {
                   let entry = app.history.entries.first(where: { $0.id == uuid }) else { return }
             let processed = TextRulesSnapshot(settings: app.settings, macros: app.macros.macros)
                 .process(transcript, style: .plain, context: nil)
+            guard Self.retryKeepsKind(entry, text: processed.text) else { return }
             await app.history.replace(id: uuid, heard: transcript, text: processed.text,
                                       outcome: Self.outcomeAfterRetry(entry.outcome))
         }
+    }
+
+    /// Whether a retry's `text` may replace the entry's. A row reads an entry's words together with how it ended: an
+    /// entry with words pasted them, and one that was heard but has no words was only a command. A retry does neither,
+    /// so it never turns one kind into the other. An entry whose transcription had failed has no kind to keep.
+    static func retryKeepsKind(_ entry: HistoryEntry, text: String) -> Bool {
+        entry.heard.isEmpty || entry.text.isEmpty == text.isEmpty
     }
 
     /// A retry never pastes, so an entry whose transcription had failed now has words that were never pasted.

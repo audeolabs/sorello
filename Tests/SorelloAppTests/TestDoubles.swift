@@ -76,6 +76,7 @@ final class FakeSpeech: AppSpeech {
         var checks = 0
         var suggestion: DictionarySuggestion?
         var retried = "a retried transcript"
+        var retries = 0
     }
 
     private let state = Mutex(State())
@@ -88,6 +89,13 @@ final class FakeSpeech: AppSpeech {
         get { state.withLock { $0.suggestion } }
         set { state.withLock { $0.suggestion = newValue } }
     }
+    /// What a Run Log retry hears.
+    var retried: String {
+        get { state.withLock { $0.retried } }
+        set { state.withLock { $0.retried = newValue } }
+    }
+    /// How many Run Log retries reached the engine.
+    var retries: Int { state.withLock { $0.retries } }
     var opened: [SpeechStreamOptions] { state.withLock { $0.opened } }
     var released: [UInt64] { state.withLock { $0.released } }
     var discards: Int { state.withLock { $0.discards } }
@@ -108,7 +116,10 @@ final class FakeSpeech: AppSpeech {
     }
 
     func transcribe(_ samples: [Float], appBundleID: String?) async throws(SpeechFailure) -> String {
-        state.withLock { $0.retried }
+        state.withLock { state in
+            state.retries += 1
+            return state.retried
+        }
     }
 
     func correctionCheck(typed: String, edited: String, correctionID: UInt64, ignore: Set<DictionaryKey>,
