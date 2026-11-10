@@ -54,12 +54,12 @@ Sendable` without a comment that says which lock or queue makes it safe.
 |---|---|---|---|
 | `DictationCore` | neutral, pure | nothing | The session state machine, its runtime, the ports every adapter implements, and `Diagnostics` |
 | `TextRules` | neutral, pure | nothing | Numbers, spoken delimiters, macros, prompt tag, insertion-context fitting |
-| `DictionaryKit` | neutral | `DictationCore` | Entries, validation, tokenizer, bias graph, casing, correction decisions and the correction watch (which reads text through `TextFieldReading`), the dictionary file |
+| `DictionaryKit` | neutral | nothing | Entries, validation, tokenizer, bias graph, casing, correction decisions and the correction watch, the `TextFieldReading` protocol it reads text through, the dictionary file |
 | `DesignCore` | neutral, pure | nothing | Palette, dot wave, level meter, pill geometry, motion constants, the mark |
 | `SpeechEngine` | neutral | `DictationCore`, `DictionaryKit` | Model store, feature front end, Core ML encoder, decoder, chunked streaming |
 | `Persistence` | neutral | `DictationCore`, `TextRules` | Settings, macros, Run Log |
 | `SorelloUI` | macOS UI | `DesignCore` | The pill, its overlay window, every screen and control |
-| `MacPlatform` | macOS | `DictationCore` | Shortcuts, audio capture, text insertion, Accessibility reads, permissions |
+| `MacPlatform` | macOS | `DictationCore`, `DictionaryKit` | Shortcuts, audio capture, text insertion, Accessibility reads, permissions |
 | `SorelloApp` | macOS | all of the above | Composition: builds the objects, connects them, owns windows and the menu bar item |
 | `Sorello` | executable | `SorelloApp` | `@main` only |
 | `SorelloSnapshots` | executable | `SorelloUI` | Renders every pill state and screen to PNG files |
@@ -73,8 +73,8 @@ Rules the compiler enforces through the package graph:
 - `SorelloUI` knows nothing about speech, storage or the session. It draws
   values it is given and reports actions through closures. `SorelloApp`
   maps session state to those values.
-- Adapters depend on `DictationCore`, never the reverse, and never on each
-  other.
+- Adapters depend on the neutral modules, never the reverse, and never on
+  each other.
 - There is no shared mutable singleton. `SorelloApp` creates each object
   once and passes it to what needs it.
 
@@ -95,101 +95,164 @@ report back into events. Nothing else mutates dictation state, and no
 callback checks whether it is stale: an event that names a dictation the
 state no longer holds is dropped at the top of `reduce`.
 
+Two things are deliberately outside `reduce`:
+
+- **Resources.** Dropping a stale event must never leak the microphone or a
+  stream. The runtime runs one task per dictation; cancelling the dictation
+  cancels the task, and whatever that task holds or is about to receive (a
+  capture that finished starting late, an open stream) is released by the
+  task itself. Decisions are the reducer's; cleanup is the runtime's.
+- **Audio.** Samples and levels never pass through the state.
+
+`TriggerHandling.handle` runs `reduce` and returns. Effects are performed
+after it returns, and nothing in it waits for Accessibility, capture,
+speech or the disk, because it is called from the keyboard event tap.
+
 ### State
 
 ```
 SessionState
-  capture:   idle | awaitingPermission | starting | recording | ending
-  pipeline:  [dictation]   audio finished; each is transcribing, ready, or inserting; oldest first
+  capture:    idle | awaitingPermission(intent?) | starting | recording
+  pipeline:   [dictation]  audio stopped; each is draining, transcribing, ready or inserting; oldest first
+  output:     free | inserting(DictationID) | replaying(ReplayID)
   microphone: unknown | granted | denied
-  engine:    preparing | ready | failed
-  notice:    Notice?       one short message for the pill, with its expiry
-  last:      the last inserted text, for Paste Again
-  tap:       double-tap detector state
-  holdIsDown, nextID
+  engine:     preparing | ready | failed
+  notice:     Notice?      one short message for the pill, with its own id
+  last:       the last inserted text, for Paste Again
+  tap:        the double tap's arm, if any
 ```
 
-At most one dictation uses the microphone. Any number may be in the
-pipeline, so a second dictation can start while the first is still being
-transcribed; their text is inserted in the order they were spoken.
+At most one dictation uses the microphone, and at most three exist at once
+(the one recording plus the pipeline). A second dictation can start while
+the first is still being transcribed; text is inserted in the order it was
+spoken, one insertion at a time.
 
 ### Events
 
-- Triggers: `holdPressed`, `holdReleased(origin)`, `togglePressed`,
-  `cancelPressed`, `pasteAgainPressed`, `pillStopClicked`,
+- Triggers: `holdPressed`, `holdReleased(origin)`, `holdAbandoned`,
+  `togglePressed`, `cancelPressed`, `pasteAgainPressed`, `pillStopClicked`,
   `pillCancelClicked`. Each carries the monotonic time it arrived.
   `origin` is `keyUp` or `interrupted` (the shortcut ended without a
-  genuine key release).
-- Capture: `started`, `failed(reason)`, `stalled`, `interrupted(reason)`,
-  `ended(summary)`, each with its `DictationID`.
-- `transcript(id, result)`, `insertion(id, outcome)`, `timer(id)`,
+  genuine key release). `holdAbandoned` means the hold turned out to be
+  the start of a chord.
+- Capture, each with its `DictationID`: `started`, `failed(reason)`,
+  `stalled`, `interrupted(reason)`, `ended(summary)`.
+- `transcript(id, result)`, `insertion(id, report)`,
+  `reinsertion(replayID, outcome)`, `timer(timerID)`,
   `microphoneAccess(access)`, `engine(readiness)`.
 
 ### Effects
 
 `requestMicrophoneAccess`, `startCapture(id)`, `stopCapture(id)` (finish
 and deliver what was heard), `abortCapture(id)` (discard), `openStream(id,
-options)`, `finishStream(id, style)`, `cancelStream(id)`, `insert(id,
-plan)`, `reinsert(text)`, `setTimer(id, after)`, `cancelTimer(id)`,
-`record(entry)` (Run Log), `watchForCorrection(id, text)`.
+options)`, `finishStream(id)`, `cancelStream(id)`, `insert(id)`,
+`reinsert(replayID, text)`, `setTimer(timerID, after)`,
+`cancelTimer(timerID)`, `record(entry)` (Run Log).
+
+Timers are typed: `captureStart(id)`, `captureDrain(id)`,
+`captureLimit(id)` and `notice(noticeID)`. A timer event is acted on only
+if that exact timer is still armed.
 
 ### Rules
 
 1. **Start.** A hold or toggle press while `capture` is `idle` starts a
-   dictation: allocate the id, `startCapture`, `openStream`, and set a 2 s
-   start timer. If the microphone is `denied`, show the microphone notice
-   and start nothing. If it is `unknown`, request access first; when
-   granted, a toggle press proceeds and a hold press proceeds only if the
-   key is still down. If the engine has `failed`, show the engine notice
-   and start nothing. An engine that is still `preparing` does not block
-   recording: the transcript waits behind preparation.
-2. **Recording.** `capture.started` moves `starting` to `recording` and
-   cancels the start timer. A release that arrived during `starting` is
-   applied now.
-3. **Stop.** Releasing Hold to Talk, pressing Tap to Toggle again, or
-   clicking the pill in toggle mode sends `stopCapture` and moves to
-   `ending`. `capture.ended` moves the dictation to the pipeline and sends
-   `finishStream`, unless less than 0.15 s of audio was captured, in which
-   case the stream is cancelled and nothing is shown.
-4. **Too-short holds.** With prompt mode on, a hold released within 0.3 s
-   is discarded (`abortCapture`, `cancelStream`) and arms the double tap.
-   A Hold to Talk press within 0.4 s of that release starts a dictation in
-   prompt style. The tap arms only if it began while the session was idle,
-   ended with a genuine `keyUp`, and nothing started in between.
-5. **Cancel.** Escape, or the pill's cancel button, while starting or
-   recording discards the dictation. While only waiting, it cancels every
-   pipeline item that has not begun inserting. Escape is consumed only
-   when it cancels something.
-6. **Other presses.** A toggle press during a hold recording, and a hold
-   press during a toggle recording, are ignored. A start press during
-   `ending` is remembered (one at most) and applied when the capture ends.
-7. **Order.** A transcript marks its dictation ready. The oldest pipeline
-   item is inserted when it is ready; later items wait for it. Empty text
-   removes the item and shows the brief "nothing heard" notice.
-8. **Insertion.** `inserted` removes the item, remembers the text for
-   Paste Again, records the Run Log entry and, if suggestions are on,
-   starts a correction watch. `leftOnClipboard` does the same and shows a
-   notice telling the user to paste. `failed` records the entry and shows
-   an error notice.
-9. **Failures.** The start timer firing in `starting` aborts with the
-   microphone-unavailable notice. `stalled` (no audio for 2 s) and
-   `interrupted` (device removed, sleep, lock) stop the capture and
-   transcribe what was captured. A recording is stopped the same way after
-   15 minutes. A failed transcript removes its item, records the entry with
-   its audio so it can be retried, and shows an error notice.
-10. **Paste Again** reinserts `last` when nothing is recording or waiting.
-11. **Notices** expire by timer: 1.4 s for information, 4 s for errors, or
-    when a new dictation starts.
+   dictation: allocate the id, `startCapture`, `openStream`, and set
+   `captureStart(id)` for 3 s. The text options and the app in front are
+   read once, now, and stay with the dictation. If three dictations already
+   exist, show the busy notice and start nothing. If the microphone is
+   `denied`, show the microphone notice and start nothing. If the engine
+   has `failed`, show the engine notice and start nothing. An engine that
+   is still `preparing` does not block recording: the transcript waits
+   behind preparation.
+2. **Permission.** If the microphone is `unknown`, the press requests
+   access and `capture` becomes `awaitingPermission` holding the intent:
+   the mode, the press time and, for a hold, that the key is down.
+   Releasing or abandoning that hold, a second toggle press, or Escape
+   clears the intent; a new press replaces it. When access is granted, an
+   intent that is still there starts a dictation as in rule 1. A granted
+   result never revives a press that was released. A denied result clears
+   the intent and shows the microphone notice.
+3. **Recording.** `capture.started` moves `starting` to `recording`,
+   cancels the start timer and sets `captureLimit(id)` for 15 minutes. A
+   stop that was asked for during `starting` is applied now.
+4. **Stop.** Releasing Hold to Talk, pressing Tap to Toggle again, clicking
+   the pill in toggle mode, the limit timer, `stalled`, `interrupted` and
+   `capture.failed` while recording all do the same thing: `stopCapture`,
+   set `captureDrain(id)` for 2 s, move the dictation into the pipeline as
+   `draining`, and make `capture` `idle`. The microphone can be asked for
+   again at once; the capture adapter finishes one capture's teardown
+   before it starts the next. `capture.ended` moves the dictation to
+   `transcribing` and sends `finishStream`, unless less than 0.15 s of
+   audio was captured, in which case the stream is cancelled, the
+   dictation removed and nothing shown. If the drain timer fires first,
+   `abortCapture` and continue the same way with what was captured.
+5. **Double tap.** With prompt mode on, a hold released within 0.3 s of
+   its press, by the triggers' own timestamps and whether it was
+   `starting` or `recording`, is discarded (`abortCapture`,
+   `cancelStream`) and arms the tap. A Hold to Talk press within 0.4 s of
+   that release starts a dictation in prompt style and uses the arm up.
+   The tap arms only if nothing at all was in progress when it was pressed
+   and it ended with a genuine `keyUp`. Any other trigger, an abandoned
+   hold, or a permission request clears the arm.
+6. **Cancel.** Escape, or the pill's cancel button:
+   - with a dictation `starting` or `recording`, discards that dictation
+     (`abortCapture`, `cancelStream`) and leaves the pipeline alone;
+   - otherwise, cancels every pipeline item that is not `inserting`
+     (`abortCapture` if it is draining, `cancelStream`). An item that is
+     inserting is left alone: a posted paste is never retracted;
+   - while awaiting permission, clears the intent.
+
+   `handle` reports true, and Escape is consumed, only if something was
+   cancelled.
+7. **Other triggers.** A toggle press during a hold recording, and a hold
+   press during a toggle recording, are ignored. `holdAbandoned` discards
+   the hold's dictation like a cancel, with no notice. A hold release with
+   no hold in progress is ignored, so a key still down after the 15 minute
+   limit starts nothing until it is pressed again.
+8. **Order.** `transcript(id, result)` with empty text removes the item;
+   if the recording lasted a second or more, the "nothing heard" notice is
+   shown. Otherwise the item is `ready`. Whenever `output` is `free` and
+   the oldest pipeline item is `ready`, the reducer claims `output` and
+   emits `insert(id)`. Later items wait for it, even if they were ready
+   first.
+9. **Insertion.** Every `insertion(id, report)` frees `output`, removes the
+   item, and applies rule 8 again. `inserted` remembers the text for Paste
+   Again and records the Run Log entry. `nothingToInsert` (a macro whose
+   saved text is empty) does nothing more. `leftOnClipboard` remembers and
+   records the text and shows a notice telling the user to paste. `failed`
+   records the entry and shows an error notice. Once a paste has been
+   posted for a dictation, nothing is ever posted for it again
+   automatically.
+10. **Failures.** The start timer firing in `starting`, or
+    `capture.failed` in `starting`, discards the dictation
+    (`abortCapture`, `cancelStream`) and shows the microphone-unavailable
+    notice. A failed transcript removes its item, records the entry with
+    its audio so it can be retried, and shows an error notice. An engine
+    that fails while a dictation records does not interrupt it; its
+    transcript fails in the ordinary way.
+11. **Paste Again.** When `capture` is `idle`, the pipeline is empty,
+    `output` is `free` and there is a last text, the reducer claims
+    `output` as `replaying` and emits `reinsert`. `reinsertion` frees it.
+    A replay pastes the same text, never presses Return, and is not
+    recorded.
+12. **Notices** expire by their own timer: 1.4 s for information, 4 s for
+    errors. Starting a dictation dismisses the notice.
+
+When a dictation leaves the pipeline, the runtime also reports a
+`DictationCompletion` (its id, the processed text and flags, the speech
+result's correction id and the outcome) to the app, which decides whether
+to watch for a correction. Clearing the Run Log also makes the session
+forget `last`.
 
 ### What the pill shows
 
-`PillContent` is a pure function of `SessionState`:
-`listening` while starting or recording; otherwise an error `notice`;
-otherwise `waiting` while the pipeline is not empty (with the reason
-`preparingModel` when the engine is not ready); otherwise an information
-`notice`; otherwise `hidden`. Audio level does not pass through the state.
-The runtime hands each captured chunk, with its time, to a `LevelSink`, and
-the pill reads the level from there.
+`PillContent` is a pure function of `SessionState`: `listening` while
+starting or recording; otherwise an error `notice`; otherwise `waiting`
+while the pipeline is not empty (with the reason `preparingModel` when the
+engine is not ready); otherwise an information `notice`; otherwise
+`hidden`. Nothing is shown while awaiting permission: the system's prompt
+is on screen. The runtime hands each captured chunk, with its time and its
+dictation, to a `LevelSink`, and the pill reads the level from there.
 
 ## 4. Ports
 
@@ -198,17 +261,45 @@ test.
 
 | Port | Implemented by | Purpose |
 |---|---|---|
-| `AudioCapturing` | `MacPlatform` | Start a capture; deliver 16 kHz mono `Float` chunks as an async stream; stop or abort |
+| `AudioCapturing`, `AudioCapture` | `MacPlatform` | Start a capture; deliver 16 kHz mono `Float` chunks to one consumer, in order and without dropping; stop or abort |
 | `SpeechTranscribing`, `SpeechStreaming` | `SpeechEngine` | Prepare the model, report readiness, open a stream, append samples, finish with text, cancel |
-| `TranscriptProcessing` | `SorelloApp` over `TextRules` | Raw transcript, style and insertion context in; text to insert out |
-| `InsertionContextReading` | `MacPlatform` | Up to 16 characters each side of the cursor; never from secure fields; gives up after 0.3 s |
-| `TextInserting` | `MacPlatform` | Insert a plan; report `inserted`, `leftOnClipboard` or `failed` |
-| `TextFieldReading` | `MacPlatform` | Read the focused text field through Accessibility, for the two readers above and the correction watch |
+| `TranscriptProcessing` | `SorelloApp` over `TextRules` | An immutable snapshot of the user's text rules: transcript, style and insertion context in; text to insert out |
+| `TextInserting` | `MacPlatform` | Run one insertion: find the destination, read the text around the cursor, ask the caller to compose the text for it, paste; report the outcome |
 | `MicrophoneAuthorizing` | `MacPlatform` | Current access, and a request |
 | `FrontmostAppReading` | `MacPlatform` | Bundle identifier and name of the app in front, read when a dictation starts |
 | `HistoryRecording` | `Persistence` | Save a Run Log entry and its samples |
 | `LevelSink` | `SorelloApp`, over `SorelloUI`'s level feed | Hear each captured chunk with its time, to show the voice |
 | `SessionClock` | `DictationCore` | Monotonic now, and sleeping; a manual clock in tests |
+
+`TextFieldReading`, the bounded Accessibility reads used by insertion and
+by the correction watch, is declared in `DictionaryKit` and implemented in
+`MacPlatform`. No Accessibility type enters `DictationCore`.
+
+How the runtime uses them:
+
+- **Capture.** `start` honours task cancellation: it either throws after
+  releasing the microphone or returns one live capture. A capture returned
+  to a dictation that has since been cancelled is aborted by the runtime at
+  once. One consumer reads `events`, appends each chunk to the speech
+  stream and to the recording kept for the Run Log, and reports
+  `capture.ended` only after the stream of events has finished and every
+  delivered chunk has been appended. `events` buffers without limit and
+  never drops audio; the 15 minute limit bounds it.
+- **Speech.** A stream is its own object with a synchronized ingress, so
+  `append` and `cancel` are plain synchronous calls that never wait for the
+  model. `finish` is called once; `cancel` wins over it and makes a pending
+  `finish` throw `cancelled` promptly. If preparation fails, every waiting
+  `finish` throws `engineUnavailable`; `prepare` called again starts a new
+  attempt, and concurrent calls share one.
+- **Text.** The processor is a snapshot taken when the dictation starts, so
+  editing a macro while a dictation waits changes nothing for it. Insertion
+  context is read only when the dictation reaches the head of the pipeline,
+  after the text before it has landed.
+- **Insertion.** `insert` takes a `compose` closure. The adapter waits for
+  the shortcut's modifiers, finds the destination, reads the context, and
+  only then calls `compose(context)`, which runs the text rules and returns
+  the text and whether to press Return. The app's correction watch captures
+  its anchor from inside that call, before anything is pasted.
 
 ## 5. Speech engine
 
@@ -235,6 +326,13 @@ Ported from LocalFlow's runtime, which was measured and tuned there:
 - The dictionary biases decoding through a graph built per dictionary
   revision and app. `docs/dictionary/DESIGN.md` is the contract for
   entries, validation, boosting and correction suggestions.
+  Where that document and this one disagree about where the dictionary is
+  stored or what happens to an unreadable file, section 7 here wins.
+- For correction suggestions the engine keeps what it needs to decode one
+  dictation again, in memory only: the most recent one that asked for it.
+  A late result from an older dictation never replaces a newer one's.
+  Starting a new recording, clearing the Run Log, or the watch ending
+  releases it.
 
 ## 6. macOS adapters
 
@@ -243,19 +341,33 @@ Ported from LocalFlow's runtime, which was measured and tuned there:
 - A binding is either a key with optional modifiers, or a set of modifier
   keys alone (left and right distinguished; Fn is a modifier here).
   Defaults: Hold to Talk is Fn; Tap to Toggle and Paste Again are unset.
-- One active event tap at the session level reads key and modifier events.
-  It needs Accessibility. Without it the adapter reports
-  `needsAccessibility` and no shortcut works.
-- A key binding consumes its own key-down and key-up. A modifier-only
-  binding consumes nothing. A modifier-only hold starts at once; if another
-  key goes down within 0.3 s the hold was a chord, and the dictation is
-  aborted without a notice.
-- If the system disables the tap, the adapter enables it again and reports
-  `holdReleased(interrupted)` for a hold in progress.
-- Escape is delivered as `cancelPressed`; the tap consumes it only when the
-  session says it cancelled something.
+  A binding cannot be empty, cannot be Escape, cannot be a bare typing key,
+  and cannot repeat another action's.
+- One active event tap at the session level, on the main run loop, reads
+  key and modifier events. Its callback only normalizes the event, runs the
+  matcher and calls `handle`; it never waits. It needs Accessibility.
+  Without it the adapter reports `needsAccessibility` and no shortcut
+  works.
+- A key binding consumes its own key-down, its repeats and its key-up, and
+  always consumes the key-up of a key-down it consumed. Auto-repeat never
+  triggers anything; an action triggers again only after a fresh key-down.
+  A modifier-only binding consumes nothing and matches only while exactly
+  its keys are down, tracked per physical key.
+- A modifier-only hold starts at once. If another key goes down within
+  0.3 s the hold was a chord: `holdAbandoned`.
+- A hold ends as `holdReleased(interrupted)` when the system disables the
+  tap (the adapter enables it again), when secure input begins, when the
+  session is locked or switched away, when the Mac sleeps, or when the
+  bindings change under it. While secure input is on, the adapter reports
+  that shortcuts are paused.
+- Escape is delivered as `cancelPressed` and consumed only when `handle`
+  returns true.
+- Events Sorello posts itself carry a fixed tag and are ignored by the tap.
 - The shortcut recorder in Settings reads the next key or modifier set from
-  the same tap, and refuses a binding already used by another action.
+  the same tap. While it records, no trigger is delivered.
+- The Fn key also has a system action (emoji, input source or dictation).
+  Setup explains how to set it to "Do Nothing"; Sorello never changes
+  system settings itself.
 
 ### Audio capture
 
@@ -263,33 +375,63 @@ Ported from LocalFlow's runtime, which was measured and tuned there:
   audio engine's input tap is not used: with some Bluetooth and aggregate
   devices it delivers no buffers.
 - The input is the system default, or a microphone chosen in Settings and
-  found again by its unique identifier. Samples are converted to 16 kHz
-  mono `Float`.
-- The session runs only during a dictation, so the system's microphone
-  indicator is on only then. Audio stays in memory. Nothing is written to
-  disk until the Run Log entry is saved after insertion.
-- Start gives up after 2 s. A capture that delivers nothing for 2 s reports
-  `stalled`.
+  found again by its unique identifier (the default is used if it is
+  gone). Samples are converted to 16 kHz mono `Float`. A format change
+  mid-capture rebuilds the converter; `stop` flushes the converter's tail.
+- The microphone is held only from `start` until `stop` or `abort` has
+  torn the session down. Starts and teardowns run one at a time, in the
+  order asked. Audio stays in memory; nothing is written to disk until the
+  Run Log entry is saved after insertion.
+- `start` returns when the session is running and gives up after 3 s,
+  which has to cover a Bluetooth headset switching profile. A capture that
+  delivers nothing for 2 s reports `stalled` once. A device that goes away
+  reports `interrupted`; any other error reports `failed`.
 
 ### Text insertion
 
-1. Wait, up to 0.6 s, until the shortcut's modifier keys are up.
-2. If restoring, snapshot the pasteboard.
-3. Write the text. When it will be restored, mark it transient so clipboard
-   managers skip it.
-4. Post Command-V, using the key that types "v" in the current layout.
-5. For "press enter", post Return 80 ms later.
-6. After 1 s, restore the snapshot if the pasteboard still holds our text.
+One insertion is one transaction, and the adapter runs one transaction at
+a time:
 
-Without Accessibility no key can be posted: the text stays on the clipboard
-and the outcome is `leftOnClipboard`. Insertion sits behind `TextInserting`
-so another strategy (typing, or per-app choices) can be added without
-touching the session.
+1. Wait, up to 1 s, until no Command, Option, Control or Shift key is
+   down. If one still is, write the text to the clipboard and report
+   `leftOnClipboard(modifiersStillDown)`: a paste posted now would be a
+   different shortcut.
+2. If the screen is locked, do the same with `screenLocked`.
+3. Find the focused field of the app in front and read up to 16 UTF-16
+   units each side of the selection (nothing, for a secure or unreadable
+   field). Call `compose` with that context. If it returns no text and no
+   Return, report `nothingToInsert`.
+4. With text: if restoring, snapshot every item and type on the
+   pasteboard. Write the text, marked transient when it will be restored
+   so clipboard managers skip it, and remember the change count the write
+   produced.
+5. Post Command-V with the key that types "v" under Command in the current
+   layout (the ANSI V key if none does). Report `inserted` now: it means
+   the paste was posted, which is all the system can tell us.
+6. For Return: 80 ms later, if the same app is still in front, post
+   Return. If it is not, skip it. A dictation that is only "press enter"
+   posts Return alone and leaves the clipboard untouched.
+7. If restoring: 1 s after the paste, put the snapshot back, but only if
+   the pasteboard's change count is still the one from step 4. A snapshot
+   that could not be taken in full, or is larger than 32 MB, is not
+   restored. The next transaction starts only after this step.
+
+Without Accessibility no key can be posted: the text is written to the
+clipboard and the outcome is `leftOnClipboard(accessibilityMissing)`.
+Pasteboard access across apps cannot be made atomic; the change count is
+what the system offers, and it is what protects something the user copies
+in the meantime. Insertion sits behind `TextInserting` so another strategy
+(typing, or per-app choices) can be added without touching the session.
 
 ### Accessibility reads and permissions
 
 - `TextFieldReading` wraps the focused element: its selected range, its
-  length and a substring. Secure text fields always read as nothing.
+  length and a substring. Every read is bounded; a whole value is never
+  read. A field that is secure, or whose security cannot be determined,
+  reads as nothing, and it is checked again before each read. Reads run on
+  their own queue with a short per-message timeout and a total deadline of
+  0.3 s for the insertion context; work that misses the deadline is
+  abandoned, not waited for.
 - Microphone access is requested the first time a dictation needs it.
   Accessibility is granted in System Settings; setup opens the pane with a
   card to drag in (adapted from Scrawl and AskForPermission, MIT, notices
@@ -297,9 +439,11 @@ touching the session.
 
 ## 7. Persistence
 
-Everything is under `Application Support/<bundle id>/`. Files are written
-atomically and carry a `version`. A file that cannot be read is moved aside
-and replaced with an empty one; the app never fails to launch over data.
+Everything is under `Application Support/<bundle id>/`, in a directory only
+the user can read. Files are written atomically and carry a `version`. The
+app never fails to launch over data: settings, the dictionary or macros
+that cannot be read are moved aside and replaced with empty ones, and a Run
+Log that cannot be read is deleted.
 
 - **Settings**: typed keys over `UserDefaults`, exposed as one observable
   `SettingsStore`.
@@ -308,6 +452,12 @@ and replaced with an empty one; the app never fails to launch over data.
 - **Macros**: `macros.json`.
 - **Run Log**: `history/index.json` and one 16 kHz WAV per entry. Twenty
   entries; older ones and their audio are deleted. It stores no app names.
+  One writer serializes saving, deleting and clearing. An entry appears in
+  the index only after its audio is on disk, and audio files with no entry
+  are removed at launch. Clear removes the index and every audio and
+  temporary file, and cancels any save that began before it. Retry
+  transcribes an entry's audio again with today's dictionary and text
+  rules and replaces the entry's text; it never pastes.
 
 ## 8. Look and motion
 
@@ -332,11 +482,20 @@ accents 3:1; `DesignCore` tests hold the palette to that.
 
 ### The pill
 
-The pill is drawn in a borderless, non-activating panel above the menu bar
-on the screen that has keyboard focus. It takes clicks only on its own
-controls. Its shape depends on the screen's camera housing, read from
-`NSScreen` (`safeAreaInsets`, `auxiliaryTopLeftArea`,
-`auxiliaryTopRightArea`):
+The pill is drawn in a borderless, non-activating panel at the status-bar
+window level, on every Space and over full-screen apps. It appears on the
+screen that has keyboard focus when the dictation starts (`NSScreen.main`;
+failing that the screen under the pointer) and stays there for that
+dictation; if that screen goes away it moves to the main one. The panel
+that draws ignores the mouse entirely. Controls (stop, cancel, a notice's
+actions) sit in a second small panel exactly the size of those controls,
+shown only while there are any, so the pill never swallows a click meant
+for the menu bar. Neither panel ever takes keyboard focus.
+
+Its shape depends on the screen's camera housing, read from `NSScreen`
+(`safeAreaInsets`, `auxiliaryTopLeftArea`, `auxiliaryTopRightArea`). A
+housing counts only if both auxiliary areas exist and leave a gap between
+them at the top of the screen; otherwise the screen has none:
 
 - **Island** (housing narrower than 110 pt; 59 x 40 pt on the 2026 MacBook
   Pro): a pure black capsule, 32 pt tall, centred on the housing, that
@@ -350,9 +509,15 @@ controls. Its shape depends on the screen's camera housing, read from
   menu bar, centred.
 
 Pure black is used where the body must merge with hardware. The geometry
-for every form is one pure function in `DesignCore`, tested for each
-housing. Island height and vertical offset can be nudged with two hidden
-defaults, because `NSScreen` reports the housing's band, not its outline.
+is one pure function in `DesignCore`: the display (frame, top band,
+housing span, scale), the content's measured sizes and the adjustments go
+in; the body's outline, the regions for the wave, the text and each
+control, and the interactive regions come out, in whole pixels. Nothing is
+laid out under the housing. Text that does not fit is truncated, and a
+notice is placed below the band. Island height and vertical offset can be
+nudged with two hidden settings, because `NSScreen` reports the housing's
+band, not its outline; the pill must be checked against the real hardware
+by eye (`SorelloSnapshots --demo`).
 
 States:
 
@@ -366,16 +531,19 @@ States:
   sweeping it every 1.1 s. With the model still preparing, the words
   "Preparing model" follow the row.
 - **Notice.** The pill grows downward into a rounded card: a symbol (ember
-  for errors), one line of white text, and at most two capsule actions.
-  The dictionary suggestion ("Add 'Kubernetes'?" with Add and Dismiss) is
-  a notice.
+  for errors), one line of white text, and up to three capsule actions.
+  The dictionary suggestion is a notice owned by the app layer, with the
+  actions and the lifetime `docs/dictionary/DESIGN.md` gives it.
 
 Motion: the body grows and shrinks on a spring (response 0.26 s, damping
 0.88). At each change what leaves fades first, in 0.06 s, then what
 arrives. The dots are Core Animation layers moved by a display link that
 runs only while the pill is visible and animating, at most 60 frames a
-second. With Reduce Motion nothing travels: states cross-fade in 0.15 s
-and the wave stands still at each level.
+second. With Reduce Motion nothing travels: states cross-fade in 0.15 s,
+the wave stands still at each level, and the wait is a still row with its
+middle dot lit. VoiceOver sees the pill's controls as "Stop dictation" and
+"Cancel dictation" and announces a notice once; the moving level is never
+exposed to it.
 
 ### The mark
 
@@ -389,8 +557,9 @@ menu-bar icon is the same row as a template image.
   dictation with a copy button, then Dictionary, Run Log, Settings, Quit.
 - **Main window**: a sidebar (General, Shortcuts, Dictionary, Macros, Run
   Log, About) over the screen colour, content in cards.
-- **Setup**: welcome, microphone, Accessibility, shortcut, and a live test
-  that shows the pill and the words.
+- **Setup**: welcome, microphone, Accessibility, shortcut, and a live test.
+  The test has a text field of its own with keyboard focus, so the
+  dictation is pasted there by the ordinary path and nowhere else.
 
 Every screen has VoiceOver labels on its controls, because most controls
 are icons. User-facing strings go through `String(localized:)`, so a string
@@ -401,21 +570,28 @@ version are read from the bundle, never written in code.
 
 A reviewer checks every change against these.
 
-1. No network. No module imports a networking API or names a URL to
-   contact. `scripts/check-rules.sh` fails the build on `URLSession`,
-   `NWConnection`, `CFNetwork` or `WKWebView` in `Sources`.
+1. No network. No module opens a connection or names a host to contact.
 2. No content in logs. Diagnostics go through one type, `Diagnostics`,
-   whose events carry only enumerations, counts and durations. `print`,
-   `NSLog`, `os_log` and `Logger` are banned elsewhere in `Sources`
-   (checked by the same script), except in the two command-line tools.
-3. Audio and transcripts exist in memory and in the Run Log, nowhere else.
-   Clearing the Run Log deletes them.
-4. Accessibility is used to post the paste, read the 16 characters around
-   the cursor, and watch the pasted span for a correction for at most a
-   minute. Secure fields are never read. Nothing read is stored.
+   whose events are a compile-time name and numbers. `print`, `NSLog`,
+   `os_log` and `Logger` are not used elsewhere in `Sources`, except in
+   the two command-line tools.
+3. In storage Sorello manages, audio and transcripts exist only in the Run
+   Log. Clearing it deletes them and makes the app forget the last
+   dictation and any audio kept for a correction suggestion. What a
+   destination app, a backup or a clipboard manager keeps is outside
+   Sorello's control.
+4. Accessibility is used to post the paste, read the 16 units around the
+   cursor, and watch the pasted span for a correction for the bounded time
+   the dictionary design allows. Secure fields are never read. What is
+   read is held in memory for that long and then released; only a
+   suggestion the user accepts becomes a dictionary entry.
 5. The clipboard snapshot lives in memory for about a second.
 6. Fixtures and tests contain only synthetic audio (`say`) and invented
    text.
+
+`scripts/check-rules.sh` is a lint for the first two and for module
+purity. It catches the obvious mistakes; it does not prove the invariants.
+Review does.
 
 ## 10. Build, identity and model
 
@@ -426,12 +602,16 @@ A reviewer checks every change against these.
   the release executable, `Info.plist`, fonts, icon, notices and the model,
   then signs it with the hardened runtime and the audio-input entitlement.
   `CODESIGN_IDENTITY` defaults to ad hoc.
-- Identity is one file, `Config/identity.env`. Development builds are
+- Identity is one file, `Config/identity.conf`. Development builds are
   "Sorello Dev", `com.audeolabs.sorello.dev`; `CHANNEL=release` builds are
   "Sorello", `com.audeolabs.sorello`. Minimum system: macOS 26, arm64.
 - Model weights are not in Git. `Models/model.lock.json` pins the bundle by
   the SHA-256 of its manifest. `SORELLO_MODEL_DIR` points the build at a
-  local copy, which is verified against the pin before it is copied in.
+  local copy. The build checks the manifest against the pin and every file
+  against the manifest before copying it in, and fails otherwise.
+- A bundled app loads its fonts, icon and model only from its own bundle.
+  The repository's `Resources` directory and the `SORELLO_RESOURCES`
+  override are used only by tests and the tools run from a build tree.
 - The app is not sandboxed: the event tap and Accessibility calls do not
   work in the sandbox.
 
@@ -447,8 +627,19 @@ A reviewer checks every change against these.
   set. `sorello-transcribe` checks a synthetic recording end to end.
 - `SorelloSnapshots` renders each pill state for each housing, and each
   screen, to PNG. A change to anything visible is reviewed in those images.
-- What tests cannot show (the event tap, the paste, the microphone, the
-  pill over real hardware) is checked by running the app on a Mac.
+- `Sorello --self-test <file.wav>` runs the assembled app's own session
+  with a file in place of the microphone and a recorder in place of the
+  paste, and prints what would have been inserted. It needs no permission,
+  so it proves the packaged app end to end from a clean location.
+- What tests cannot show is checked by hand on a Mac, on the installed
+  build: grant, deny and revoke each permission; rebuild and relaunch;
+  hold, toggle, cancel and Paste Again into a native text field, a browser
+  field and a terminal; a second dictation begun while the first is still
+  being transcribed; a clipboard manager running; the built-in microphone
+  and a Bluetooth headset; secure input (a password field) during a hold;
+  lock and sleep during a recording; the pill on the built-in display, an
+  external display and a full-screen Space; and no network activity during
+  any of it.
 
 ## 12. Provenance
 
