@@ -32,14 +32,14 @@ import Testing
         }
     }
 
-    /// A notice's actions are controls inside its card, at most three, each reporting the notice's id and its own.
+    /// A notice's actions are controls inside its card, at most four, each reporting the notice's id and its own.
     @Test func noticeActionsAreControlsInTheCard() throws {
-        let actions = (1 ... 4).map { PillDisplay.Notice.Action(id: "a\($0)", title: "Choice \($0)") }
+        let actions = (1 ... 5).map { PillDisplay.Notice.Action(id: "a\($0)", title: "Choice \($0)") }
         for screen in Self.screens {
             let scene = Self.scene(.notice(.init(id: 9, symbol: "info.circle", tone: .information,
                                                  text: "An invented message", actions: actions)), on: screen)
             let card = try #require(scene.layout.card)
-            #expect(scene.controls.count == 3)
+            #expect(scene.controls.count == 4)
             for (index, control) in scene.controls.enumerated() {
                 #expect(control.kind == .action(notice: 9, id: "a\(index + 1)"))
                 #expect(control.label == "Choice \(index + 1)")

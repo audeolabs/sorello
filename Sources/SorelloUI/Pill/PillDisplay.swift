@@ -8,7 +8,7 @@ public enum PillDisplay: Equatable, Sendable {
     case listening(Listening)
     /// The last words are being transcribed, or the model is still preparing.
     case waiting(Waiting)
-    /// One short message, with up to three actions.
+    /// One short message, with up to four actions.
     case notice(Notice)
 
     public struct Listening: Equatable, Sendable {
@@ -69,7 +69,7 @@ public enum PillDisplay: Equatable, Sendable {
         public var tone: Tone
         /// One line; truncated if it does not fit.
         public var text: String
-        /// At most three are shown.
+        /// At most four are shown, on one row while they fit and on two when they do not.
         public var actions: [Action]
 
         public init(id: UInt64, symbol: String, tone: Tone, text: String, actions: [Action] = []) {

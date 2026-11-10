@@ -371,22 +371,27 @@ struct Grid {
 }
 
 /// Where a notice's parts go inside its card (ARCHITECTURE.md, section 8, "Notice"): the symbol and one line of
-/// text on the first row, up to three capsule actions centred on the second. Rectangles are from the content's top
-/// left, on whole pixels.
+/// text on the first row, then up to four capsule actions, centred on one row while they fit and on two when they do
+/// not. Rectangles are from the content's top left, on whole pixels.
 public struct NoticeLayout: Equatable, Sendable {
     public static let symbolGap = 8.0
+    /// Between the line of text and the first row of actions.
     public static let rowGap = 12.0
+    /// Between two actions side by side, and between the two rows of actions: the capsules sit on one even grid.
     public static let actionGap = 8.0
-    public static let maximumActions = 3
+    public static let maximumActions = 4
 
     public var size: CGSize
     public var symbol: CGRect
     /// The text's box: narrower than its measured width when it must be truncated.
     public var text: CGRect
+    /// In the order given, row by row.
     public var actions: [CGRect]
 
     /// Lays out a symbol, a line of text and the actions, as the UI measured them, in at most `maxWidth` points. The
-    /// text gives way first; actions beyond the third are dropped; actions that together do not fit share the width.
+    /// text gives way first. Actions beyond the fourth are dropped. Actions that do not fit on one row wrap onto a
+    /// second, split where the two rows come out most even, so no title is truncated; an action is narrowed only if
+    /// it alone is wider than `maxWidth`, or if no split lets both rows fit.
     public init(symbol: CGSize, text: CGSize, actions: [CGSize], maxWidth: Double, scale: Double) {
         let grid = Grid(scale: scale.isFinite && scale > 0 ? scale : 1)
         func clean(_ size: CGSize) -> (w: Double, h: Double) {
@@ -400,29 +405,56 @@ public struct NoticeLayout: Equatable, Sendable {
         let firstWidth = symbolSize.w + gap + textWidth
         let firstHeight = max(symbolSize.h, textSize.h)
 
-        var widths = actions.prefix(Self.maximumActions).map { clean($0).w }
-        let actionHeight = actions.prefix(Self.maximumActions).map { clean($0).h }.max() ?? 0
-        let gaps = Double(max(widths.count - 1, 0)) * Self.actionGap
-        if widths.reduce(0, +) + gaps > maxWidth, !widths.isEmpty {
-            let share = grid.down(max((maxWidth - gaps) / Double(widths.count), 0))
-            widths = widths.map { min($0, share) }
-        }
-        let secondWidth = widths.reduce(0, +) + (widths.isEmpty ? 0 : gaps)
-        let width = max(firstWidth, secondWidth)
-        let height = firstHeight + (widths.isEmpty ? 0 : Self.rowGap + actionHeight)
-        size = CGSize(width: width, height: height)
+        let shown = actions.prefix(Self.maximumActions).map(clean)
+        let actionHeight = shown.map(\.h).max() ?? 0
+        let rows = Self.rows(shown.map { min($0.w, maxWidth) }, maxWidth: maxWidth, grid: grid)
+        let rowWidths = rows.map(Self.width)
+        let width = max(firstWidth, rowWidths.max() ?? 0)
+        let rowsHeight = rows.isEmpty ? 0
+            : Self.rowGap + Double(rows.count) * actionHeight + Double(rows.count - 1) * Self.actionGap
+        size = CGSize(width: width, height: firstHeight + rowsHeight)
 
         var x = grid.round((width - firstWidth) / 2)
         self.symbol = CGRect(x: x, y: grid.round((firstHeight - symbolSize.h) / 2), width: symbolSize.w,
                              height: symbolSize.h)
         x += symbolSize.w + gap
         self.text = CGRect(x: x, y: grid.round((firstHeight - textSize.h) / 2), width: textWidth, height: textSize.h)
-        var actionX = grid.round((width - secondWidth) / 2)
         var rects: [CGRect] = []
-        for w in widths {
-            rects.append(CGRect(x: actionX, y: firstHeight + Self.rowGap, width: w, height: actionHeight))
-            actionX += w + Self.actionGap
+        var y = firstHeight + Self.rowGap
+        for (row, rowWidth) in zip(rows, rowWidths) {
+            var actionX = grid.round((width - rowWidth) / 2)
+            for w in row {
+                rects.append(CGRect(x: actionX, y: y, width: w, height: actionHeight))
+                actionX += w + Self.actionGap
+            }
+            y += actionHeight + Self.actionGap
         }
         self.actions = rects
+    }
+
+    /// A row's width: its actions and the gaps between them.
+    private static func width(_ row: [Double]) -> Double {
+        row.reduce(0, +) + Double(max(row.count - 1, 0)) * actionGap
+    }
+
+    /// The actions' widths in rows: one row if they fit, otherwise two, split where the wider row is narrowest (on a
+    /// tie, the first row the wider), narrowed to share a row's width only when no split fits.
+    private static func rows(_ widths: [Double], maxWidth: Double, grid: Grid) -> [[Double]] {
+        guard !widths.isEmpty else { return [] }
+        guard width(widths) > maxWidth, widths.count > 1 else { return [fit(widths, maxWidth: maxWidth, grid: grid)] }
+        let splits = (1 ..< widths.count).map { (first: Array(widths[..<$0]), second: Array(widths[$0...])) }
+        func cost(_ split: (first: [Double], second: [Double])) -> (Double, Double) {
+            (max(width(split.first), width(split.second)), width(split.second) - width(split.first))
+        }
+        let fitting = splits.filter { width($0.first) <= maxWidth && width($0.second) <= maxWidth }
+        let best = (fitting.isEmpty ? splits : fitting).min { cost($0) < cost($1) } ?? splits[0]
+        return [fit(best.first, maxWidth: maxWidth, grid: grid), fit(best.second, maxWidth: maxWidth, grid: grid)]
+    }
+
+    /// A row narrowed to `maxWidth` by sharing it, when it is wider.
+    private static func fit(_ row: [Double], maxWidth: Double, grid: Grid) -> [Double] {
+        guard width(row) > maxWidth else { return row }
+        let share = grid.down(max((maxWidth - Double(row.count - 1) * actionGap) / Double(row.count), 0))
+        return row.map { min($0, share) }
     }
 }

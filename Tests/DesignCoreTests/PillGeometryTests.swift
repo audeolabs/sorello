@@ -181,6 +181,31 @@ import Testing
         }
     }
 
+    /// A suggestion's four actions, wrapping for a long app name, on every screen: every action lies in the card,
+    /// below the band, clear of the housing, inside the screen's margins, on whole pixels.
+    @Test(arguments: Self.screens)
+    func fourActionsFitTheCardOnEveryScreen(screen: ScreenTopology) throws {
+        for titles in [[126.0, 121, 77, 111], [262, 121, 77, 111]] {
+            let notice = NoticeLayout(symbol: CGSize(width: 18, height: 18), text: CGSize(width: 260, height: 16),
+                                      actions: titles.map { CGSize(width: $0, height: 26) },
+                                      maxWidth: PillGeometry.maximumCardContent(on: screen), scale: screen.scale)
+            let layout = PillGeometry.layout(.notice(notice.size), on: screen)
+            let card = try #require(layout.card)
+            #expect(notice.actions.count == 4)
+            for action in notice.actions {
+                let frame = action.offsetBy(dx: card.minX, dy: card.minY)
+                #expect(Self.contains(card, frame))
+                #expect(Self.contains(layout.body.frame, frame))
+                if let housing = layout.housing { #expect(!frame.intersects(housing)) }
+                #expect(Double(frame.minX) >= PillGeometry.screenMargin - 1e-9)
+                #expect(Double(frame.maxX) <= screen.width - PillGeometry.screenMargin + 1e-9)
+                #expect(Self.onPixels(frame, screen.scale), "\(frame) is between pixels")
+            }
+            #expect(Double(layout.body.frame.minX) >= PillGeometry.screenMargin - 1e-9)
+            #expect(Double(layout.body.frame.maxX) <= screen.width - PillGeometry.screenMargin + 1e-9)
+        }
+    }
+
     /// A notice wider than the screen allows is narrowed to fit, and its text truncated by the layout inside it.
     @Test func aLongNoticeFitsTheScreen() throws {
         for screen in Self.screens {
@@ -218,16 +243,86 @@ import Testing
         #expect(abs(layout.symbol.midY - layout.text.midY) <= 0.5)
     }
 
-    @Test func aFourthActionIsDroppedAndCrowdedActionsShare() {
-        let four = NoticeLayout(symbol: .zero, text: CGSize(width: 50, height: 16),
-                                actions: Array(repeating: CGSize(width: 60, height: 26), count: 4), maxWidth: 400,
+    /// Today's three actions that fit lay out exactly as before four were allowed.
+    @Test func threeActionsThatFitAreUnchanged() {
+        let layout = NoticeLayout(symbol: CGSize(width: 15.3, height: 15), text: CGSize(width: 180.4, height: 16.2),
+                                  actions: [CGSize(width: 50.2, height: 26), CGSize(width: 70, height: 26),
+                                            CGSize(width: 96.6, height: 26)],
+                                  maxWidth: 400, scale: 2)
+        #expect(layout.size == CGSize(width: 233.5, height: 54.5))
+        #expect(layout.actions == [CGRect(x: 0, y: 28.5, width: 50.5, height: 26),
+                                   CGRect(x: 58.5, y: 28.5, width: 70, height: 26),
+                                   CGRect(x: 136.5, y: 28.5, width: 97, height: 26)])
+        #expect(layout.text == CGRect(x: 38.5, y: 0, width: 180.5, height: 16.5))
+    }
+
+    /// Four actions that fit share one row, in order, centred, at their own widths.
+    @Test func fourActionsThatFitShareOneRow() throws {
+        let widths = [126.0, 121, 77, 111]
+        let layout = NoticeLayout(symbol: CGSize(width: 18, height: 18), text: CGSize(width: 240, height: 16),
+                                  actions: widths.map { CGSize(width: $0, height: 26) }, maxWidth: 488, scale: 2)
+        #expect(layout.actions.count == 4)
+        #expect(Set(layout.actions.map(\.minY)).count == 1)
+        #expect(layout.actions.map { Double($0.width) } == widths)
+        for (a, b) in zip(layout.actions, layout.actions.dropFirst()) {
+            #expect(Double(b.minX - a.maxX) == NoticeLayout.actionGap)
+        }
+        let first = try #require(layout.actions.first), last = try #require(layout.actions.last)
+        #expect(abs(Double(first.minX) - Double(layout.size.width - last.maxX)) <= 0.5)
+        #expect(Double(layout.size.height) == 18 + NoticeLayout.rowGap + 26)
+    }
+
+    /// Four actions too wide for one row (a long app name) wrap onto a second rather than truncate: every title keeps
+    /// its width, each row fits and is centred, the rows are a gap apart, and the order reads left to right, top to
+    /// bottom.
+    @Test func fourActionsThatDoNotFitWrap() throws {
+        for widths in [[226.0, 121, 77, 111], [200, 120, 90, 110], [150, 150, 150, 150]] {
+            let maxWidth = 488.0
+            let layout = NoticeLayout(symbol: CGSize(width: 18, height: 18), text: CGSize(width: 240, height: 16),
+                                      actions: widths.map { CGSize(width: $0, height: 26) }, maxWidth: maxWidth,
+                                      scale: 2)
+            #expect(layout.actions.map { Double($0.width) } == widths, "a title was truncated")
+            let rows = Dictionary(grouping: layout.actions, by: \.minY).sorted { $0.key < $1.key }
+            #expect(rows.count == 2)
+            let top = try #require(rows.first), bottom = try #require(rows.last)
+            #expect(Double(bottom.key - top.key) == 26 + NoticeLayout.actionGap)
+            for (_, row) in rows {
+                let minX = try #require(row.map(\.minX).min()), maxX = try #require(row.map(\.maxX).max())
+                #expect(Double(maxX - minX) <= maxWidth)
+                #expect(abs(Double(minX) - Double(layout.size.width - maxX)) <= 0.5, "a row is off centre")
+            }
+            for (a, b) in zip(layout.actions, layout.actions.dropFirst()) {
+                #expect(b.minY > a.minY || (b.minY == a.minY && b.minX > a.maxX), "the actions are out of order")
+            }
+            #expect(Double(layout.size.width) <= maxWidth)
+            #expect(Double(layout.size.height) == 18 + NoticeLayout.rowGap + 2 * 26 + NoticeLayout.actionGap)
+        }
+        // Equal actions split two and two.
+        let even = NoticeLayout(symbol: .zero, text: CGSize(width: 50, height: 16),
+                                actions: Array(repeating: CGSize(width: 150, height: 26), count: 4), maxWidth: 488,
+                                scale: 1)
+        #expect(even.actions.filter { $0.minY == even.actions[0].minY }.count == 2)
+    }
+
+    /// Only an action wider than the card is narrowed; the others keep their titles whole.
+    @Test func onlyAnActionWiderThanTheCardIsNarrowed() {
+        let layout = NoticeLayout(symbol: .zero, text: CGSize(width: 50, height: 16),
+                                  actions: [CGSize(width: 500, height: 26), CGSize(width: 50, height: 26)],
+                                  maxWidth: 300, scale: 2)
+        #expect(layout.actions.map { Double($0.width) } == [300, 50])
+        #expect(Double(layout.size.width) <= 300)
+    }
+
+    @Test func aFifthActionIsDroppedAndCrowdedActionsShare() {
+        let five = NoticeLayout(symbol: .zero, text: CGSize(width: 50, height: 16),
+                                actions: Array(repeating: CGSize(width: 60, height: 26), count: 5), maxWidth: 400,
                                 scale: 2)
-        #expect(four.actions.count == 3)
+        #expect(five.actions.count == 4)
         let crowded = NoticeLayout(symbol: .zero, text: CGSize(width: 50, height: 16),
                                    actions: Array(repeating: CGSize(width: 200, height: 26), count: 3), maxWidth: 300,
                                    scale: 2)
         #expect(crowded.size.width <= 300)
-        #expect(crowded.actions.allSatisfy { $0.width > 0 })
+        #expect(crowded.actions.allSatisfy { $0.width > 0 && $0.maxX <= 300 })
         let none = NoticeLayout(symbol: CGSize(width: 16, height: 16), text: CGSize(width: 50, height: 16), actions: [],
                                 maxWidth: 400, scale: 1)
         #expect(none.size.height == 16)
