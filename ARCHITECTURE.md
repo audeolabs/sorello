@@ -773,6 +773,13 @@ Review does.
   "Sorello Dev", `com.audeolabs.sorello.dev`; `CHANNEL=release` builds are
   "Sorello", `com.audeolabs.sorello`. Minimum system: macOS 15, on Apple
   silicon or Intel.
+- An executable records the SDK it was linked against as well as its
+  minimum system, and AppKit and SwiftUI give it that SDK's design and
+  behaviour: one that records macOS 15 gets the controls, windows and menus
+  of macOS 15 on a later system. SwiftPM records the minimum system in
+  place of the SDK unless the link is told the SDK
+  (swiftlang/swift-package-manager#10696), so `Package.swift` tells it,
+  from the `SDKROOT` that `swift` sets.
 - A development build is made for the Mac that builds it. A
   `CHANNEL=release` build is universal (arm64 and x86_64). `ARCHS` chooses
   otherwise, for example `ARCHS="arm64 x86_64"` for a universal
@@ -821,8 +828,9 @@ Review does.
   built on. What it does differently, the fallback, is proved there with
   `--cpu`. That the app runs on an Intel Mac is checked by hand on one.
 - Sorello is built and checked on macOS 26 or later, so nothing is run on
-  macOS 15 there. The build fails unless the app's executable declares
-  the minimum system `Config/identity.conf` names. The older surface of
+  macOS 15 there. The build fails unless every architecture of the app's
+  executable declares the minimum system `Config/identity.conf` names and
+  the SDK the build used. The older surface of
   the permission card can be forced, and is drawn and tested that way.
   Every system symbol Sorello names is checked to exist on the minimum
   system. That the app runs on macOS 15 is checked by hand on a Mac that
