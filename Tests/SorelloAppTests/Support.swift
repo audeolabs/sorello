@@ -46,3 +46,19 @@ func eventually(within seconds: Double = 5, sourceLocation: SourceLocation = #_s
     }
     return true
 }
+
+/// A stand-in model directory with only what the app reads without Core ML: a 1024-piece vocabulary that spells
+/// every ASCII letter, and a manifest naming the model. Enough for the dictionary to be edited.
+func makeModelDirectory(in directory: URL) throws -> URL {
+    let model = directory.appendingPathComponent("Model", isDirectory: true)
+    try FileManager.default.createDirectory(at: model, withIntermediateDirectories: true)
+    let letters = (Unicode.Scalar("a").value...Unicode.Scalar("z").value).compactMap(Unicode.Scalar.init)
+        .flatMap { [String($0), String($0).uppercased()] }
+    var pieces = ["<unk>", "\u{2581}", "'", "-"] + letters
+    while pieces.count < 1024 { pieces.append("\u{2581}filler\(pieces.count)") }
+    let vocabulary = Dictionary(uniqueKeysWithValues: pieces.enumerated().map { (String($0.offset), $0.element) })
+    try JSONSerialization.data(withJSONObject: vocabulary).write(to: model.appendingPathComponent("vocabulary.json"))
+    try JSONSerialization.data(withJSONObject: ["base_model": "kea-test"])
+        .write(to: model.appendingPathComponent("bundle.json"))
+    return model
+}
