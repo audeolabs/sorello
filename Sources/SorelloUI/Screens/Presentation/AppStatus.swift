@@ -124,9 +124,9 @@ nonisolated public struct StatusLine: Equatable, Sendable {
         public var hint: String {
             switch self {
             case .retryModel: String(localized: "Loads the speech model again")
-            case .openMicrophoneSettings: String(localized: "Opens the General screen, where microphone access is given")
+            case .openMicrophoneSettings: String(localized: "Opens the General screen to manage microphone access")
             case .openAccessibilitySettings:
-                String(localized: "Opens the General screen, where Accessibility access is given")
+                String(localized: "Opens the General screen to manage Accessibility access")
             }
         }
     }

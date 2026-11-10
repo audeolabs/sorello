@@ -79,15 +79,16 @@ struct StatusMenuRowsTests {
         #expect(Self.summary(rows) == ["information | Microphone access needed", "command openGeneral | Fix…",
                                        "separator"] + Self.shortcutsAndBelow)
         #expect(rows.first?.image == .indicator(.problem))
-        // The command opens Sorello's General screen, and says so: it does not open System Settings.
-        #expect(rows[1].help == "Opens the General screen, where microphone access is given")
+        // The command opens the General screen, and says so. Access itself is granted in System Settings, which
+        // General leads to, so the words do not say it is given here.
+        #expect(rows[1].help == "Opens the General screen to manage microphone access")
     }
 
     @Test func missingAccessibilityLeadsToGeneral() {
         let rows = Self.rows(AppStatus(model: .ready, microphone: .granted, accessibility: .missing))
         #expect(Self.summary(rows) == ["information | Accessibility access needed", "command openGeneral | Fix…",
                                        "separator"] + Self.shortcutsAndBelow)
-        #expect(rows[1].help == "Opens the General screen, where Accessibility access is given")
+        #expect(rows[1].help == "Opens the General screen to manage Accessibility access")
     }
 
     @Test func withoutADictationTheLineSaysSoAndCopyIsUnavailable() {
