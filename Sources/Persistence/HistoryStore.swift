@@ -210,7 +210,7 @@ actor HistoryWriter {
 
     func load(clearCount: Int) -> Snapshot {
         catchUp(to: clearCount)
-        return snapshot(loaded())
+        return snapshot(loaded() ?? lastKnown)
     }
 
     /// Writes the audio, then the index that names it, then deletes what the cap evicted. Nil when the save was
@@ -218,7 +218,7 @@ actor HistoryWriter {
     func save(_ entry: HistoryEntry, audio: Data, clearCount: Int) -> Snapshot? {
         guard clearCount >= self.clearCount else { return nil }
         catchUp(to: clearCount)
-        let current = loaded()
+        guard let current = writable() else { return nil }
         let audioURL = Self.audioURL(for: entry.id, in: directory)
         do {
             try StoredFile.ensurePrivateDirectory(directory)
@@ -244,16 +244,17 @@ actor HistoryWriter {
 
     func delete(id: UUID, clearCount: Int) -> Snapshot? {
         catchUp(to: clearCount)
-        let current = loaded()
+        guard let current = writable() else { return nil }
         guard current.contains(where: { $0.id == id }) else { return snapshot(current) }
-        guard writeIndex(current.filter { $0.id != id }) else { return nil }
+        let remaining = current.filter { $0.id != id }
+        guard writeIndex(remaining) else { return nil }
         try? FileManager.default.removeItem(at: Self.audioURL(for: id, in: directory))
-        return snapshot(loaded())
+        return snapshot(remaining)
     }
 
     func replace(id: UUID, heard: String, text: String, outcome: DictationOutcome, clearCount: Int) -> Snapshot? {
         catchUp(to: clearCount)
-        var updated = loaded()
+        guard var updated = writable() else { return nil }
         guard let index = updated.firstIndex(where: { $0.id == id }) else { return snapshot(updated) }
         updated[index].heard = heard
         updated[index].text = text
@@ -265,12 +266,12 @@ actor HistoryWriter {
     /// The snapshot after the clear, and whether the clear deleted everything.
     func clear(clearCount: Int) -> (Snapshot, Bool) {
         catchUp(to: clearCount)
-        return (snapshot(loaded()), lastClearComplete)
+        return (snapshot(loaded() ?? lastKnown), lastClearComplete)
     }
 
     func samples(for id: UUID, clearCount: Int) -> [Float]? {
         catchUp(to: clearCount)
-        guard loaded().contains(where: { $0.id == id }),
+        guard (loaded() ?? lastKnown).contains(where: { $0.id == id }),
               let data = try? Data(contentsOf: Self.audioURL(for: id, in: directory)) else { return nil }
         return try? WAVAudio.decode(data)
     }
@@ -285,9 +286,19 @@ actor HistoryWriter {
         lastClearComplete = wipe()
     }
 
+    /// The index for an operation that changes it. Nil while the index cannot be opened: writing then would replace
+    /// a file that may hold entries this writer has never seen.
+    private func writable() -> [HistoryEntry]? {
+        guard let current = loaded() else {
+            Diagnostics.record("history.writeRefused")
+            return nil
+        }
+        return current
+    }
+
     /// The index, read on first use. An unreadable index is deleted; audio and temporary files that no entry names
-    /// are removed.
-    private func loaded() -> [HistoryEntry] {
+    /// are removed. Nil, and not cached, while the index exists but cannot be opened.
+    private func loaded() -> [HistoryEntry]? {
         if let entries { return entries }
         let manager = FileManager.default
         // The directory is the app's own. Closing it first also lets the cleanup below work in a restored directory
@@ -309,7 +320,7 @@ actor HistoryWriter {
         case .inaccessible:
             // Not read, so not cached: the next operation tries again.
             Diagnostics.record("history.indexInaccessible")
-            return lastKnown
+            return nil
         }
         // An entry whose audio has gone cannot be played or retried; keep the index true to the disk.
         let kept = Array(found.filter { Self.hasAudio($0.id, in: directory) }

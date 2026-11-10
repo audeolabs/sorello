@@ -317,10 +317,15 @@ import Testing
         #expect(blocked.entries.isEmpty)
         #expect(FileManager.default.fileExists(atPath: index.path), "a file that may be good is not deleted")
         #expect(wavFiles(in: directory).count == 1, "nor is the audio it names")
+        await blocked.record(draft(2))
+        #expect(blocked.entries.isEmpty, "nothing is written over an index that may be good")
+        #expect(wavFiles(in: directory).count == 1)
 
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: index.path)
         await blocked.load()
         #expect(blocked.entries == store.entries)
+        await blocked.record(draft(3))
+        #expect(blocked.entries.map(\.heard) == ["Synthetic sentence 3.", "Synthetic sentence 1."])
     }
 
     @Test func aRestoredFolderWithoutWritePermissionIsStillTidied() async throws {
