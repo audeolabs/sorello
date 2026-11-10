@@ -97,7 +97,7 @@ public actor CorrectionWatcher {
     public nonisolated func anchor(target: TextFieldTarget, insertionPoint: Int?,
                                    expecting expected: UInt64) -> CorrectionAnchor? {
         guard let token = generation.advance(from: expected) else { return nil }
-        Task { await self.stop() }
+        Task { await self.stop(before: token) }
         return CorrectionAnchor(target: target, generation: token, insertionPoint: insertionPoint)
     }
 
@@ -110,15 +110,15 @@ public actor CorrectionWatcher {
 
     /// Discards the current watch without finalizing. Safe from any thread.
     public nonisolated func cancel() {
-        generation.advance()
-        Task { await self.stop() }
+        let current = generation.advance()
+        Task { await self.stop(before: current) }
     }
 
     /// Ends watch `watch` to use a result for it, in one atomic step: false, changing nothing, if that watch is no
     /// longer current (abandoned, or cancelled). Safe from any thread.
     public nonisolated func claim(_ watch: UInt64) -> Bool {
-        guard generation.advance(from: watch) != nil else { return false }
-        Task { await self.stop() }
+        guard let next = generation.advance(from: watch) else { return false }
+        Task { await self.stop(before: next) }
         return true
     }
 
@@ -155,6 +155,13 @@ public actor CorrectionWatcher {
                 poll(watch)
             }
         }
+    }
+
+    /// Stops the session only if it belongs to a generation older than `limit`, so a cleanup that runs late never
+    /// stops a watch started after the cancel that asked for it.
+    func stop(before limit: UInt64) {
+        guard let watching = sessionGeneration, watching < limit else { return }
+        stop()
     }
 
     private func stop() {

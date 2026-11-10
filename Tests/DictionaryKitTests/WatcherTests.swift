@@ -83,6 +83,30 @@ struct WatcherTests {
         #expect(reader.rangeReads.count == reads + 1)
     }
 
+    /// The cleanup a cancel, an anchor or a claim asks for may run late, after a newer watch has started; it stops
+    /// only watches older than the one it was asked for.
+    @Test func lateCleanupLeavesANewerWatchAlone() async throws {
+        let reader = FakeTextFieldReader("Note: ")
+        reader.paste("cart")
+        let log = WatchLog()
+        let watcher = watcher(reader, log: log)
+        let older = watcher.currentGeneration
+        let anchored = try #require(try anchor(watcher, reader))
+        watcher.start(anchored, pasted: "cart", correctionID: 7)
+        await waitUntil(1) { !reader.rangeReads.isEmpty }
+        // A cleanup for something older than this watch, arriving now, changes nothing.
+        await watcher.stop(before: older + 1)
+        let reads = reader.rangeReads.count
+        await waitUntil(1.2) { reader.rangeReads.count > reads }
+        #expect(reader.rangeReads.count > reads, "The newer watch goes on reading")
+        // One for this watch stops it.
+        await watcher.stop(before: anchored.generation + 1)
+        await waitUntil(0.2)
+        let stopped = reader.rangeReads.count
+        await waitUntil(1.2)
+        #expect(reader.rangeReads.count == stopped)
+    }
+
     @Test func reportsAndContinues() async throws {
         let reader = FakeTextFieldReader("Note: ")
         reader.paste("cart")
