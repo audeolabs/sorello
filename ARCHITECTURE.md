@@ -630,11 +630,13 @@ States:
 
 Motion: the body grows and shrinks on a spring (response 0.26 s, damping
 0.88). At each change what leaves fades first, in 0.06 s, then what
-arrives. The dots are Core Animation layers moved by a display link that
-runs only while the pill is visible and animating, at most 60 frames a
-second. With Reduce Motion nothing travels: states cross-fade in 0.15 s,
-the wave stands still at each level, and the wait is a still row with its
-middle dot lit. VoiceOver sees the pill's controls as "Stop dictation" and
+arrives. What leaves stays where it was drawn while it fades, whatever
+size the next form is and however the panel grows to hold it. The dots
+are Core Animation layers moved by a display link that runs only while
+the pill is visible and animating, at most 60 frames a second. With
+Reduce Motion nothing travels: states cross-fade in 0.15 s, the wave
+stands still at each level, and the wait is a still row with its middle
+dot lit. VoiceOver sees the pill's controls as "Stop dictation" and
 "Cancel dictation" and announces a notice once; the moving level is never
 exposed to it.
 
