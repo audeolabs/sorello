@@ -225,7 +225,7 @@ private struct RunLogRow: View {
                     if item.outcome.isProblem {
                         StatusIndicator(.problem, size: 7)
                     }
-                    Text(item.outcome.label)
+                    Text(item.outcomeLabel)
                 }
                 Text(verbatim: "·").accessibilityHidden(true)
                 Text(item.durationLabel).monospacedDigit()

@@ -77,6 +77,17 @@ struct RunLogPresentationTests {
         #expect(command.canCopy)
     }
 
+    @Test func aCommandThatWentThroughSaysWhatItDidNotThatItPasted() {
+        let command = RunLogItem(id: "c", date: now, heard: "press enter", text: "", outcome: .inserted, duration: 1)
+        #expect(command.outcomeLabel == "Return pressed")
+        let blocked = RunLogItem(id: "d", date: now, heard: "press enter", text: "", outcome: .insertionFailed,
+                                 duration: 1)
+        #expect(blocked.outcomeLabel == RunLogOutcome.insertionFailed.label)
+        let pasted = RunLogItem(id: "e", date: now, heard: "pack my box", text: "Pack my box.", outcome: .inserted,
+                                duration: 2)
+        #expect(pasted.outcomeLabel == RunLogOutcome.inserted.label)
+    }
+
     @Test func durationsAreMinutesAndSeconds() {
         #expect(RunLogItem(id: "a", date: now, heard: "", text: "", outcome: .inserted, duration: 4.4).durationLabel == "0:04")
         #expect(RunLogItem(id: "a", date: now, heard: "", text: "", outcome: .inserted, duration: 72).durationLabel == "1:12")

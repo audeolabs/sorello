@@ -73,6 +73,13 @@ nonisolated public struct RunLogItem: Identifiable, Equatable, Sendable {
         return .none
     }
 
+    /// How it ended, in a few words. A dictation that was only a command pasted nothing, so when it went through
+    /// the row says what it did instead of "Pasted".
+    public var outcomeLabel: String {
+        if case .commandOnly = display, outcome == .inserted { return String(localized: "Return pressed") }
+        return outcome.label
+    }
+
     /// Copy is offered only when there are words to copy: the inserted text, or what was heard.
     public var canCopy: Bool { display != .none }
 
