@@ -15,16 +15,6 @@ public struct HousingSpan: Equatable, Sendable {
     public var midX: Double { (minX + maxX) / 2 }
 }
 
-/// What the top of a screen holds, which decides the pill's shape (ARCHITECTURE.md, section 8, "The pill").
-public enum HousingKind: Equatable, Sendable {
-    /// A camera island narrower than `PillGeometry.islandLimit`: the pill is a black capsule that grows out of it.
-    case island
-    /// A wider notch: the pill is a black shape flush with the top of the screen that widens it.
-    case notch
-    /// No housing: the pill floats under the menu bar in the pill colour, edged with a hairline.
-    case none
-}
-
 /// What the pill needs to know about the screen it is on, as `NSScreen` reports it. Kept as plain numbers so the
 /// geometry can be tested against real Macs without one.
 public struct ScreenTopology: Equatable, Sendable, CustomStringConvertible {
@@ -64,40 +54,25 @@ public struct ScreenTopology: Equatable, Sendable, CustomStringConvertible {
     public var width: Double { Double(frame.width) }
     public var height: Double { Double(frame.height) }
 
-    /// The housing the pill grows out of: none without a reported band or a housing with width.
-    public var kind: HousingKind {
-        guard let housing, housing.width > 0, safeAreaTop > 0 else { return .none }
-        return housing.width < PillGeometry.islandLimit ? .island : .notch
+    /// The band at the top of the screen the pill never draws in: the menu bar, or the housing's band where that is
+    /// taller.
+    public var topBand: Double {
+        [menuBarHeight, safeAreaTop].filter(\.isFinite).reduce(0, max)
     }
+
+    /// The line the pill is centred on: the housing's middle where there is a housing, whatever its width, and the
+    /// screen's middle where there is none.
+    public var middle: Double { housing?.midX ?? width / 2 }
 
     public var description: String {
         let housing = housing.map { "x \($0.minX) to \($0.maxX) (\($0.width) pt)" } ?? "none"
         return "screen \(frame.width) x \(frame.height) pt at (\(frame.minX), \(frame.minY)), scale \(scale), "
-            + "safe-area top \(safeAreaTop), menu bar \(menuBarHeight), housing \(housing), kind \(kind)"
+            + "menu bar \(menuBarHeight), safe-area top \(safeAreaTop), top band \(topBand), housing \(housing)"
     }
-}
-
-/// The two hidden settings that nudge the island pill (ARCHITECTURE.md, section 8): `NSScreen` reports the housing's
-/// band, not its outline, so its height and vertical position are checked by eye on the hardware.
-public struct PillAdjustments: Equatable, Sendable {
-    /// Points added to the island pill's height, within ±`limit`.
-    public var islandHeight: Double
-    /// Points the island pill moves down (negative: up), within ±`limit`.
-    public var islandOffset: Double
-
-    public static let limit = 8.0
-
-    public init(islandHeight: Double = 0, islandOffset: Double = 0) {
-        self.islandHeight = islandHeight
-        self.islandOffset = islandOffset
-    }
-
-    var clampedHeight: Double { islandHeight.isFinite ? min(max(islandHeight, -Self.limit), Self.limit) : 0 }
-    var clampedOffset: Double { islandOffset.isFinite ? min(max(islandOffset, -Self.limit), Self.limit) : 0 }
 }
 
 /// The pill's outline: a rectangle whose top and bottom corners are rounded, each pair by its own radius. A capsule
-/// has both radii half its height; a body flush with the top of the screen has square top corners.
+/// has both radii half its height; a card has both its own.
 public struct PillBody: Equatable, Sendable {
     /// In the screen's points, from its top left, y down.
     public var frame: CGRect
@@ -125,12 +100,13 @@ public struct PillBody: Equatable, Sendable {
 
 /// A form of the pill, with the sizes of what it holds as the UI measured them.
 public enum PillForm: Equatable, Sendable {
-    /// The housing's own footprint (a small dot where there is none): where the pill grows from and shrinks back to.
+    /// A small capsule touching the foot of the top band, under the housing: where the pill drops from and goes back
+    /// up to.
     case rest
-    /// The wave in the leading wing, and in the trailing wing content `trailing` points wide (the elapsed time, with the
-    /// prompt tag before it). `cancel`: toggle mode, with the cancel bud beside the pill.
+    /// The wave, then content `trailing` points wide (the elapsed time, with the prompt tag before it). `cancel`:
+    /// toggle mode, with the cancel bud beside the pill.
     case listening(trailing: Double, cancel: Bool)
-    /// The shimmer, and in the trailing wing content `trailing` points wide (the words "Preparing model"), if any.
+    /// The wait's row, then content `trailing` points wide (the words "Preparing model"), if any.
     case waiting(trailing: Double?)
     /// A card holding content of this size (`NoticeLayout.size`).
     case notice(CGSize)
@@ -139,13 +115,10 @@ public enum PillForm: Equatable, Sendable {
 /// Where everything goes for one form on one screen. Every rectangle is in the screen's points from its top left, y
 /// down, on whole pixels.
 public struct PillLayout: Equatable, Sendable {
-    public var kind: HousingKind
     public var body: PillBody
-    /// The housing's footprint inside the body, where nothing is laid out; nil where there is none.
-    public var housing: CGRect?
-    /// The wave or the shimmer.
+    /// The wave or the wait's row.
     public var leading: CGRect?
-    /// The elapsed time, the words of the wait, or the shimmer's second half beside a housing.
+    /// The elapsed time, or the words of the wait.
     public var trailing: CGRect?
     /// The notice's content.
     public var card: CGRect?
@@ -153,40 +126,37 @@ public struct PillLayout: Equatable, Sendable {
     public var cancel: CGRect?
 }
 
-/// The pill's geometry (ARCHITECTURE.md, section 8, "The pill"): from the screen, the form and the two adjustments
-/// to the body's outline and the regions its content goes in. One pure function, so every housing and every form can
-/// be tested for the invariants the pill must keep.
+/// The pill's geometry (ARCHITECTURE.md, section 8, "The pill"): from the screen and the form to the body's outline
+/// and the regions its content goes in. One pure function, so every screen and every form can be tested for the
+/// invariants the pill must keep. There is one pill: the same content gives the same body on every screen wide enough
+/// for it, hung `gap` below the top band and centred on the screen's middle.
 public enum PillGeometry {
-    /// A housing narrower than this is an island; a wider one is a notch.
-    public static let islandLimit = 110.0
-    /// The island pill's height before adjustment.
-    public static let islandHeight = 32.0
-    /// The floating pill's height, and its distance under the menu bar.
-    public static let floatingHeight = 36.0
-    public static let floatingGap = 8.0
-    /// The notch's lower corners at rest (the hardware's), when widened, and as a card.
-    public static let notchRestRadius = 8.0
-    public static let notchRadius = 10.0
-    public static let cardRadius = 20.0
-    /// Between content and the housing, and between content and the body's ends.
-    public static let housingGap = 8.0
+    /// The pill's height in every form but a card, and its distance below the top band.
+    public static let height = 36.0
+    public static let gap = 8.0
+    /// The rest's size: small enough to lie inside every form, so the pill only ever grows out of it.
+    public static let restWidth = 40.0
+    public static let restHeight = 12.0
+    /// Between content and the body's ends, and between the wave or the wait's row and what follows it.
     public static let endPadding = 12.0
-    /// Between the two wings where there is no housing.
-    public static let floatingSplit = 14.0
-    /// The wave's width, and the shimmer's in each wing (the whole row where there is no housing).
+    public static let split = 14.0
+    /// The wave's width; the wait's row alone, and before the words of the wait.
     public static let waveWidth = 88.0
-    public static let shimmerWidth = 52.0
-    public static let floatingShimmerWidth = 96.0
+    public static let shimmerWidth = 96.0
+    public static let shortShimmerWidth = 52.0
+    /// The least the wave or the wait's row gives way to on a narrow screen before the text is truncated: room for a
+    /// few dots.
+    public static let leastLeading = 32.0
     /// Between the body and the cancel bud at rest, over the neck's reach so it has pinched free; and how much smaller
     /// than the body's height the bud is.
     public static let budGap = 12.0
     public static let budInset = 8.0
     /// The body never comes nearer the screen's sides than this.
     public static let screenMargin = 8.0
-    /// The card's padding: at the sides, under the band (or above the content where there is none), and at the bottom.
+    /// The card's corners, its padding at the sides and above and below the content, and its widths.
+    public static let cardRadius = 20.0
     public static let cardPadding = 16.0
-    public static let cardTopGap = 10.0
-    public static let cardBottom = 14.0
+    public static let cardVerticalPadding = 14.0
     public static let cardMinWidth = 240.0
     public static let cardMaxWidth = 520.0
 
@@ -196,166 +166,105 @@ public enum PillGeometry {
     }
 
     /// Where the pill's parts go for `form` on `screen`.
-    public static func layout(_ form: PillForm, on screen: ScreenTopology,
-                              adjustments: PillAdjustments = PillAdjustments()) -> PillLayout {
+    public static func layout(_ form: PillForm, on screen: ScreenTopology) -> PillLayout {
         let scale = screen.scale.isFinite && screen.scale > 0 ? screen.scale : 1
-        let grid = Grid(scale: scale)
-        let line = band(on: screen, adjustments: adjustments, grid: grid)
+        let line = Line(screen: screen, grid: Grid(scale: scale))
         switch form {
         case .rest:
-            return PillLayout(kind: line.kind, body: rest(line), housing: line.housing, leading: nil, trailing: nil,
-                              card: nil, cancel: nil)
+            return PillLayout(body: rest(line, screen), leading: nil, trailing: nil, card: nil, cancel: nil)
         case .listening(let trailing, let cancel):
-            return wings(leading: waveWidth, trailing: trailing, cancel: cancel, line, screen, grid)
+            return capsule(leading: waveWidth, trailing: trailing, cancel: cancel, line, screen)
         case .waiting(let trailing):
-            if let trailing {
-                return wings(leading: shimmerWidth, trailing: trailing, cancel: false, line, screen, grid)
-            }
-            // The row alone: beside a housing it runs through both wings, behind the housing.
-            return wings(leading: line.housing == nil ? floatingShimmerWidth : shimmerWidth,
-                         trailing: line.housing == nil ? 0 : shimmerWidth, cancel: false, line, screen, grid)
+            return capsule(leading: trailing == nil ? shimmerWidth : shortShimmerWidth, trailing: trailing ?? 0,
+                           cancel: false, line, screen)
         case .notice(let size):
-            return card(size, line, screen, grid)
+            return card(size, line, screen)
         }
     }
 
-    // MARK: - The band the pill sits in
+    // MARK: - The line the pill hangs from
 
-    /// The pill's horizontal line on a screen: where its middle is, how tall it is there, and the housing it must
-    /// contain.
+    /// Where every form hangs on a screen, on its pixel grid: the foot of the top band, the top of every form below
+    /// it, and the middle they are centred on.
     private struct Line {
-        var kind: HousingKind
-        var housing: CGRect?
-        /// The middle's x, the body's top and height in its wing forms, and the bottom of the band content must clear.
-        var midX: Double
+        var grid: Grid
+        var foot: Double
         var top: Double
-        var height: Double
-        var bandBottom: Double
-        var topRadius: Double
-        var bottomRadius: Double
-    }
+        var middle: Double
 
-    private static func band(on screen: ScreenTopology, adjustments: PillAdjustments, grid: Grid) -> Line {
-        switch screen.kind {
-        case .island:
-            let span = screen.housing ?? HousingSpan(minX: 0, maxX: 0)
-            let height = grid.round(min(max(islandHeight + adjustments.clampedHeight, 16), screen.safeAreaTop + 16))
-            let top = grid.round((screen.safeAreaTop - height) / 2 + adjustments.clampedOffset)
-            let minX = grid.down(span.minX), maxX = grid.up(span.maxX)
-            let housing = CGRect(x: minX, y: top, width: maxX - minX, height: height)
-            return Line(kind: .island, housing: housing, midX: (minX + maxX) / 2, top: top, height: height,
-                        bandBottom: max(screen.safeAreaTop, top + height), topRadius: height / 2,
-                        bottomRadius: height / 2)
-        case .notch:
-            let span = screen.housing ?? HousingSpan(minX: 0, maxX: 0)
-            let height = grid.up(screen.safeAreaTop)
-            let minX = grid.down(span.minX), maxX = grid.up(span.maxX)
-            let housing = CGRect(x: minX, y: 0, width: maxX - minX, height: height)
-            return Line(kind: .notch, housing: housing, midX: (minX + maxX) / 2, top: 0, height: height,
-                        bandBottom: height, topRadius: 0, bottomRadius: notchRadius)
-        case .none:
-            let top = grid.round(max(screen.menuBarHeight, 0) + floatingGap)
-            return Line(kind: .none, housing: nil, midX: grid.round(screen.width / 2), top: top,
-                        height: floatingHeight, bandBottom: top, topRadius: floatingHeight / 2,
-                        bottomRadius: floatingHeight / 2)
+        init(screen: ScreenTopology, grid: Grid) {
+            self.grid = grid
+            foot = grid.up(screen.topBand)
+            top = foot + PillGeometry.gap
+            middle = screen.middle.isFinite ? screen.middle : screen.width / 2
+        }
+
+        /// The left edge of a body `width` wide centred on the middle, held `right` points more than the margin from
+        /// the screen's right side and the margin from its left.
+        func minX(width: Double, right: Double, on screen: ScreenTopology) -> Double {
+            let centred = grid.round(middle - width / 2)
+            let highest = grid.down(screen.width - PillGeometry.screenMargin - right - width)
+            return max(min(centred, highest), grid.up(PillGeometry.screenMargin))
         }
     }
 
-    private static func rest(_ line: Line) -> PillBody {
-        guard let housing = line.housing else {
-            let side = line.height
-            return PillBody(frame: CGRect(x: line.midX - side / 2, y: line.top, width: side, height: side),
-                            topRadius: side / 2, bottomRadius: side / 2)
-        }
-        let bottom = line.kind == .notch ? notchRestRadius : line.bottomRadius
-        return PillBody(frame: housing, topRadius: line.topRadius, bottomRadius: bottom)
+    private static func rest(_ line: Line, _ screen: ScreenTopology) -> PillBody {
+        let width = max(min(restWidth, line.grid.down(screen.width - 2 * screenMargin)), 0)
+        let frame = CGRect(x: line.minX(width: width, right: 0, on: screen), y: line.foot, width: width,
+                           height: restHeight)
+        return PillBody(frame: frame, topRadius: restHeight / 2, bottomRadius: restHeight / 2)
     }
 
-    // MARK: - Wings
+    // MARK: - The capsule
 
-    private static func wings(leading: Double, trailing: Double, cancel: Bool, _ line: Line,
-                              _ screen: ScreenTopology, _ grid: Grid) -> PillLayout {
-        let budDiameter = grid.round(max(line.height - budInset, 12))
+    /// The wave or the wait's row, a split, then the trailing content, between the end paddings, centred; the cancel
+    /// bud beside the trailing end.
+    private static func capsule(leading: Double, trailing: Double, cancel: Bool, _ line: Line,
+                                _ screen: ScreenTopology) -> PillLayout {
+        let grid = line.grid
+        let budDiameter = grid.round(max(height - budInset, 12))
         let budRoom = cancel ? budGap + budDiameter : 0
-        let leadingWant = sane(leading), trailingWant = sane(trailing)
-        var layout: PillLayout
-        if let housing = line.housing {
-            // Both wings the same width, so the body is symmetric about the housing.
-            let room = min(Double(housing.minX) - screenMargin,
-                           screen.width - Double(housing.maxX) - screenMargin - budRoom) - housingGap - endPadding
-            let wing = max(min(grid.up(max(leadingWant, trailingWant)), grid.down(room)), 0)
-            let leadingBox = CGRect(x: Double(housing.minX) - housingGap - wing, y: line.top, width: wing,
-                                    height: line.height)
-            let trailingBox = CGRect(x: Double(housing.maxX) + housingGap, y: line.top, width: wing,
-                                     height: line.height)
-            let frame = CGRect(x: Double(leadingBox.minX) - endPadding, y: line.top,
-                               width: Double(trailingBox.maxX) + endPadding - (Double(leadingBox.minX) - endPadding),
-                               height: line.height)
-            layout = PillLayout(kind: line.kind, body: PillBody(frame: frame, topRadius: line.topRadius,
-                                                                bottomRadius: line.bottomRadius),
-                                housing: housing, leading: leadingBox, trailing: trailingBox, card: nil, cancel: nil)
-        } else {
-            // No housing: the leading content, a gap, the trailing content, centred on the screen.
-            let gap = trailingWant > 0 ? floatingSplit : 0
-            let room = screen.width - 2 * screenMargin - 2 * endPadding - gap - 2 * budRoom
-            var leadingWidth = grid.up(leadingWant), trailingWidth = grid.up(trailingWant)
-            if leadingWidth + trailingWidth > room {
-                // The text keeps what it can; the wave or shimmer gives way first.
-                trailingWidth = grid.down(max(min(trailingWidth, room / 2), 0))
-                leadingWidth = grid.down(max(room - trailingWidth, 0))
-            }
-            let width = 2 * endPadding + leadingWidth + gap + trailingWidth
-            let minX = grid.round(line.midX - width / 2)
-            let frame = CGRect(x: minX, y: line.top, width: width, height: line.height)
-            let leadingBox = CGRect(x: minX + endPadding, y: line.top, width: leadingWidth, height: line.height)
-            let trailingBox = trailingWidth > 0
-                ? CGRect(x: Double(leadingBox.maxX) + gap, y: line.top, width: trailingWidth, height: line.height)
-                : nil
-            layout = PillLayout(kind: .none, body: PillBody(frame: frame, topRadius: line.topRadius,
-                                                            bottomRadius: line.bottomRadius),
-                                housing: nil, leading: leadingBox, trailing: trailingBox, card: nil, cancel: nil)
+        let gap = sane(trailing) > 0 ? split : 0
+        // Room for both on either side of the middle, the bud's included, so the body stays centred.
+        let room = max(screen.width - 2 * screenMargin - 2 * endPadding - gap - 2 * budRoom, 0)
+        var leadingWidth = grid.up(sane(leading)), trailingWidth = grid.up(sane(trailing))
+        if leadingWidth + trailingWidth > room {
+            // The row gives way first, down to room for a few dots; then the text is truncated.
+            leadingWidth = grid.down(max(room - trailingWidth, min(leadingWidth, leastLeading, room)))
+            trailingWidth = grid.down(max(min(trailingWidth, room - leadingWidth), 0))
         }
-        if cancel {
-            let frame = layout.body.frame
-            let midY = Double(frame.midY)
-            layout.cancel = CGRect(x: Double(frame.maxX) + budGap, y: grid.round(midY - budDiameter / 2),
-                                   width: budDiameter, height: budDiameter)
-        }
-        return layout
+        let width = 2 * endPadding + leadingWidth + gap + trailingWidth
+        let minX = line.minX(width: width, right: budRoom, on: screen)
+        let frame = CGRect(x: minX, y: line.top, width: width, height: height)
+        let leadingBox = CGRect(x: minX + endPadding, y: line.top, width: leadingWidth, height: height)
+        let trailingBox = trailingWidth > 0
+            ? CGRect(x: Double(leadingBox.maxX) + gap, y: line.top, width: trailingWidth, height: height)
+            : nil
+        let bud = cancel
+            ? CGRect(x: Double(frame.maxX) + budGap, y: grid.round(Double(frame.midY) - budDiameter / 2),
+                     width: budDiameter, height: budDiameter)
+            : nil
+        return PillLayout(body: PillBody(frame: frame, topRadius: height / 2, bottomRadius: height / 2),
+                          leading: leadingBox, trailing: trailingBox, card: nil, cancel: bud)
     }
 
     // MARK: - Card
 
-    private static func card(_ size: CGSize, _ line: Line, _ screen: ScreenTopology, _ grid: Grid) -> PillLayout {
+    /// A rounded card hung from the same line as the capsule, as wide as its content and its padding (at least
+    /// `cardMinWidth`), centred.
+    private static func card(_ size: CGSize, _ line: Line, _ screen: ScreenTopology) -> PillLayout {
+        let grid = line.grid
         let contentWidth = grid.up(min(sane(Double(size.width)), maximumCardContent(on: screen)))
         let contentHeight = grid.up(sane(Double(size.height)))
         let widest = max(min(cardMaxWidth, screen.width - 2 * screenMargin), 0)
-        var width = max(contentWidth + 2 * cardPadding, cardMinWidth)
-        if let housing = line.housing { width = max(width, Double(housing.width) + 2 * (housingGap + endPadding + 24)) }
-        width = grid.down(min(width, widest))
-        let top: Double, contentTop: Double, radii: (Double, Double)
-        switch line.kind {
-        case .island:
-            top = line.top
-            contentTop = grid.up(line.bandBottom + cardTopGap)
-            radii = (line.topRadius, cardRadius)
-        case .notch:
-            top = 0
-            contentTop = grid.up(line.bandBottom + cardTopGap)
-            radii = (0, cardRadius)
-        case .none:
-            top = line.top
-            contentTop = grid.round(line.top + cardBottom)
-            radii = (cardRadius, cardRadius)
-        }
-        let height = contentTop + contentHeight + cardBottom - top
-        var minX = grid.round(line.midX - width / 2)
-        minX = min(max(minX, grid.up(screenMargin)), grid.down(screen.width - screenMargin - width))
-        let frame = CGRect(x: minX, y: top, width: width, height: height)
+        let width = grid.down(min(max(contentWidth + 2 * cardPadding, cardMinWidth), widest))
+        let contentTop = line.top + cardVerticalPadding
+        let frame = CGRect(x: line.minX(width: width, right: 0, on: screen), y: line.top, width: width,
+                           height: 2 * cardVerticalPadding + contentHeight)
         let content = CGRect(x: grid.round(Double(frame.midX) - contentWidth / 2), y: contentTop, width: contentWidth,
                              height: contentHeight)
-        return PillLayout(kind: line.kind, body: PillBody(frame: frame, topRadius: radii.0, bottomRadius: radii.1),
-                          housing: line.housing, leading: nil, trailing: nil, card: content, cancel: nil)
+        return PillLayout(body: PillBody(frame: frame, topRadius: cardRadius, bottomRadius: cardRadius),
+                          leading: nil, trailing: nil, card: content, cancel: nil)
     }
 
     private static func sane(_ value: Double) -> Double { value.isFinite ? max(value, 0) : 0 }

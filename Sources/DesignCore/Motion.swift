@@ -27,11 +27,11 @@ public enum Motion {
     public static let arrival = 0.12
     /// With Reduce Motion nothing travels: each form cross-fades into the next in this long.
     public static let crossFade = 0.15
-    /// The body appearing where there is no housing to grow out of, and leaving again: a fade over its grow.
+    /// The body fading in as it drops down from the band, and out as it goes back up.
     public static let appear = 0.15
 
-    /// The floating body's fade: after what delay and for how long. Leaving, the content goes first; with Reduce
-    /// Motion everything cross-fades together.
+    /// The body's fade: after what delay and for how long. Leaving, the content goes first; with Reduce Motion
+    /// everything cross-fades together.
     public static func bodyFade(showing: Bool, reduceMotion: Bool) -> (delay: Double, duration: Double) {
         reduceMotion ? (0, crossFade) : (showing ? 0 : handover, appear)
     }
@@ -114,7 +114,7 @@ public struct SpringValue: Equatable, Sendable {
 }
 
 /// The pill's body moving between forms: each edge and each radius on the body's spring, so one shape morphs into
-/// the next (a capsule into a card, a notch into a wider notch) and the outline at a moment is a pure function.
+/// the next (the rest into the capsule, a capsule into a card) and the outline at a moment is a pure function.
 public struct MovingBody: Equatable, Sendable {
     private var minX, minY, maxX, maxY, top, bottom: SpringValue
 

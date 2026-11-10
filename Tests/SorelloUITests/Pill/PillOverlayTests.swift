@@ -48,8 +48,8 @@ import Testing
         }
     }
 
-    /// The time ticking, or a longer recording, never changes the pill's size: the trailing wing is measured for the
-    /// widest time it shows.
+    /// The time ticking, or a longer recording, never changes the pill's size: what follows the wave is measured for
+    /// the widest time it shows.
     @Test func theTimeNeverResizesThePill() {
         let early = Self.scene(.listening(.init(trigger: .hold, started: 0)))
         let late = Self.scene(.listening(.init(trigger: .hold, started: -5_000)))
@@ -64,7 +64,7 @@ import Testing
         #expect(PillScene.timeContentWidth(prompt: false) >= time)
     }
 
-    /// The words of the wait fit their wing on every screen, and a hidden pill sits in its housing.
+    /// The words of the wait fit their box on every screen, and a hidden pill is at its rest under the band.
     @Test func theWaitsWordsFitAndHiddenRests() throws {
         for screen in Self.screens {
             let preparing = Self.scene(.waiting(.preparingModel), on: screen)
@@ -192,12 +192,12 @@ import Testing
         _ = Self.show(&life, .waiting(.transcribing))
         #expect(life.appliesChanges && !Self.rest(&life), "a pill that is up came to rest")
         #expect(Self.show(&life, .hidden) == .init(chooseScreen: false, present: false))
-        #expect(life.appliesChanges, "a pill shrinking away stops following the screen")
+        #expect(life.appliesChanges, "a pill going back up stops following the screen")
         #expect(Self.rest(&life))
         #expect(!life.appliesChanges && life.phase == .off)
         #expect(!Self.rest(&life))
         #expect(Self.show(&life, .hidden) == nil)
-        // Called back while shrinking away, it stays on its screen and does not come to rest.
+        // Called back while going back up, it stays on its screen and does not come to rest.
         _ = Self.show(&life, .waiting(.transcribing))
         _ = Self.show(&life, .hidden)
         #expect(Self.show(&life, .waiting(.preparingModel)) == .init(chooseScreen: false, present: true))
@@ -218,8 +218,8 @@ import Testing
 
     static let notice = PillDisplay.notice(.init(id: 5, symbol: "info.circle", tone: .information, text: "Invented"))
 
-    /// The snapshot tool draws every state for every housing, a contact sheet and a 1x preview per housing, and the
-    /// mark's pictures, each under its own name.
+    /// The snapshot tool draws every state under a camera island, under a notch and with neither, a contact sheet and
+    /// a 1x preview for each, and the mark's pictures, each under its own name.
     @Test func everyStateHasASnapshot() {
         let names = PillSnapshots.scenes.map(\.name)
         #expect(Set(names).count == names.count)

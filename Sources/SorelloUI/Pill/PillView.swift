@@ -94,7 +94,7 @@ final class PillView: NSView {
     private var motionNow: CFTimeInterval { fixedMotionTime ?? CACurrentMediaTime() }
 
     /// Forgets what was shown, so the next display appears from rest: the pill moving to another screen for a new
-    /// dictation grows out of that screen's housing.
+    /// dictation drops down on that screen.
     func reset() {
         stopLink()
         CATransaction.begin()
@@ -120,8 +120,8 @@ final class PillView: NSView {
         let now = motionNow
         let next = PillScene(display: display, screen: screen)
         let wasHidden = scene.map { $0.display == .hidden } ?? true
-        // A pill that is up and changes screens takes its new place at once; one that is appearing grows out of the
-        // new screen's housing.
+        // A pill that is up and changes screens takes its new place at once; one that is appearing drops down on the
+        // new screen.
         let moved = !wasHidden && screen != self.screen
         let travels = animated && !appearance.reduceMotion && !moved
         let fades = animated && !moved
@@ -146,7 +146,7 @@ final class PillView: NSView {
         scene = next
         if display == .hidden, !wasHidden {
             restReported = false
-            // What leaves fades out, and a floating body after it; the panels must stay up until both have gone.
+            // What leaves fades out, and the body after it; the panels must stay up until both have gone.
             quietAt = now + (fades ? Motion.hideFades(reduceMotion: appearance.reduceMotion) : 0)
         }
         CATransaction.commit()
@@ -162,7 +162,7 @@ final class PillView: NSView {
         let rest = PillGeometry.layout(.rest, on: screen).body
         if body == nil { body = MovingBody(wasHidden ? rest : target) }
         if travels {
-            // Appearing from rest it grows out of the housing; called back while still shrinking away, it turns
+            // Appearing from rest it drops down from the band; called back while still going back up, it turns
             // round from where it is.
             if wasHidden, restReported { body?.snap(to: rest) }
             body?.move(to: target, at: now)
@@ -175,9 +175,7 @@ final class PillView: NSView {
                    endRadius: Double(target.frame.height) / 2, animated: travels, now: now)
     }
 
-    /// The body's colours, and whether it shows. Where there is no housing to grow out of it fades in as it grows and
-    /// out as it shrinks; beside a housing it is black over black and simply there.
-    /// What becomes of the floating body's fade at an update. A change of visibility replaces whatever fade was
+    /// What becomes of the body's fade at an update. A change of visibility replaces whatever fade was
     /// running or still waiting to begin, so an old fade-out never dims a pill shown again; an update that leaves the
     /// visibility as it was lets a fade in progress finish, unless it puts everything in place at once.
     static func bodyFade(wasShowing: Bool, showing: Bool, animated: Bool) -> (cancel: Bool, start: Bool) {
@@ -185,24 +183,21 @@ final class PillView: NSView {
         return (cancel: changed || !animated, start: changed && animated)
     }
 
+    /// The body's colours, and whether it shows: it fades in as it grows and out as it shrinks.
     private func applyLook(showing: Bool, animated: Bool, at now: CFTimeInterval) {
-        guard let screen else { return }
-        let floating = screen.kind == .none
-        fill.fillColor = NSColor(floating ? Palette.pill : Palette.housing).cgColor
-        // Beside a housing the body merges with the hardware: no edge, unless Increase Contrast asks for one.
-        edge.isHidden = !(floating || look.increaseContrast)
+        fill.fillColor = NSColor(Palette.pill).cgColor
         edge.strokeColor = NSColor(Palette.edge).cgColor
         // Twice the edge: its inner half lies under the fill, so exactly the edge's width shows, crisp, and the fill's
         // own antialiased rim never meets the backdrop.
         edge.lineWidth = CGFloat(2 * Palette.edgeWidth(highContrast: look.increaseContrast))
-        let opacity: Float = floating && !showing ? 0 : 1
+        let opacity: Float = showing ? 1 : 0
         let schedule = Motion.bodyFade(showing: showing, reduceMotion: look.reduceMotion)
         let step = Self.bodyFade(wasShowing: bodyShowing, showing: showing, animated: animated)
         bodyShowing = showing
         for part in [edge, fill] {
             let from = part.presentation()?.opacity ?? part.opacity
             if step.cancel { part.removeAnimation(forKey: "appear") }
-            if step.start, floating, from != opacity {
+            if step.start, from != opacity {
                 let fade = CABasicAnimation(keyPath: "opacity")
                 fade.fromValue = from
                 fade.toValue = opacity

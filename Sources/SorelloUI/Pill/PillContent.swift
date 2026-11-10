@@ -170,7 +170,7 @@ final class PillContent {
         case .listening:
             guard let box = layout.trailing else { break }
             let timeImage = images[ObjectIdentifier(time)]
-            // The time sits at the wing's outer end, as the wave starts at the other.
+            // The time sits at the end of its box, as the wave starts at the start of its own.
             let timeX = box.maxX - (timeImage?.size.width ?? 0)
             placeText(time, x: timeX, middle: box.midY, font: PillType.time, view: view)
             if let tagImage = images[ObjectIdentifier(tag)] {
@@ -198,7 +198,7 @@ final class PillContent {
         }
     }
 
-    /// The wave and its aurora dot in the leading wing, for the voice in `trace` at `now`.
+    /// The wave and its aurora dot in its box, for the voice in `trace` at `now`.
     func drawWave(_ scene: PillScene, trace: DotWave.Trace, level: Double, now: Double, view: PillView) {
         guard let box = scene.layout.leading else { return }
         let wave = PillDots.wave(in: box, trace: trace, now: now, level: level, still: view.reduceMotion)
@@ -216,10 +216,8 @@ final class PillContent {
 
     /// The wait's row with its spot at `sweep`; with Reduce Motion, still, its middle lit.
     func drawShimmer(_ scene: PillScene, sweep: Double, view: PillView) {
-        guard let leading = scene.layout.leading else { return }
-        let trailing = scene.display == .waiting(.transcribing) && scene.layout.housing != nil
-            ? scene.layout.trailing : nil
-        let row = PillDots.shimmer(leading: leading, trailing: trailing, sweep: sweep, still: view.reduceMotion)
+        guard let box = scene.layout.leading else { return }
+        let row = PillDots.shimmer(in: box, sweep: sweep, still: view.reduceMotion)
         dots.show(row.map { local($0, view) }, color: NSColor(Palette.shimmer).cgColor)
     }
 

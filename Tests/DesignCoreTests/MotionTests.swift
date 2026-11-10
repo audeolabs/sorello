@@ -14,7 +14,7 @@ import Testing
         #expect(Motion.crossFade == 0.15)
     }
 
-    /// Leaving, the content fades first and the floating body after it; with Reduce Motion everything cross-fades at
+    /// Leaving, the content fades first and the body after it; with Reduce Motion everything cross-fades at
     /// once in 0.15 s. The pill counts as at rest only once every one of those fades has ended.
     @Test func thePillRestsOnlyAfterItsFades() {
         let leaving = Motion.bodyFade(showing: false, reduceMotion: false)
@@ -66,21 +66,21 @@ import Testing
     /// The body's grow is quick (most of the way in 0.2 s) and firm (it overshoots by under a point on a 200 pt
     /// change), and its outline at a moment depends only on the moment.
     @Test func theBodyMorphsQuicklyAndFirmly() {
-        let from = PillBody(frame: CGRect(x: 838.5, y: 4, width: 59, height: 32), topRadius: 16, bottomRadius: 16)
-        let to = PillBody(frame: CGRect(x: 738.5, y: 4, width: 259, height: 120), topRadius: 16, bottomRadius: 20)
+        let from = PillBody(frame: CGRect(x: 790, y: 48, width: 156, height: 36), topRadius: 18, bottomRadius: 18)
+        let to = PillBody(frame: CGRect(x: 690, y: 48, width: 356, height: 120), topRadius: 20, bottomRadius: 20)
         var body = MovingBody(from)
         body.move(to: to, at: 10)
         #expect(body.body(at: 10) == from)
         #expect(body.target == to)
         let at = body.body(at: 10.2)
-        #expect(Double(at.frame.width) > 59 + 0.9 * 200)
+        #expect(Double(at.frame.width) > 156 + 0.9 * 200)
         var widest = 0.0
         for step in 0 ... 200 {
             let frame = body.body(at: 10 + Double(step) / 200).frame
             widest = max(widest, Double(frame.width))
             #expect(frame.width >= 0 && frame.height >= 0)
         }
-        #expect(widest - 259 < 1 && widest >= 259 - 0.01)
+        #expect(widest - 356 < 1 && widest >= 356 - 0.01)
         #expect(body.isSettled(at: 11.5) && !body.isSettled(at: 10.1))
         #expect(body.body(at: 10.13) == body.body(at: 10.13))
         // Retargeted halfway, it carries on from where it is.

@@ -71,7 +71,7 @@ public final class PillOverlayController {
         controls.hide()
     }
 
-    /// Shows `display`: the pill grows out of its housing, changes form, or shrinks back into it, on its spring.
+    /// Shows `display`: the pill drops down from the band, changes form, or goes back up, on its spring.
     public func show(_ display: PillDisplay) {
         guard display != self.display else { return }
         self.display = display
@@ -81,7 +81,7 @@ public final class PillOverlayController {
         if step.chooseScreen, let screen = Self.chooseScreen() {
             let moving = drawing.isVisible && screen.displayNumber != screenNumber
             if moving {
-                // A new dictation on another screen: the pill leaves this one and grows out of that one's housing.
+                // A new dictation on another screen: the pill leaves this one and drops down on that one.
                 drawing.orderOut(nil)
                 view.reset()
             }
@@ -114,9 +114,8 @@ public final class PillOverlayController {
     private func place(covering frames: [CGRect], on screen: ScreenTopology) {
         var wanted = frames.reduce(CGRect.null) { $0.union($1) }.insetBy(dx: -24, dy: -16)
         wanted = wanted.intersection(CGRect(x: 0, y: 0, width: screen.width, height: screen.height))
-        if wanted.minY > 0 { wanted = CGRect(x: wanted.minX, y: 0, width: wanted.width, height: wanted.maxY) }
         // Window frames land on whole points, so the canvas does too, and the pill is drawn from where the panel
-        // really is: half a point off would put it a pixel beside the housing.
+        // really is, so its edges land on the pixels the geometry chose.
         wanted = CGRect(x: wanted.minX.rounded(.down), y: wanted.minY.rounded(.down),
                         width: wanted.maxX.rounded(.up) - wanted.minX.rounded(.down),
                         height: wanted.maxY.rounded(.up) - wanted.minY.rounded(.down))
@@ -135,7 +134,7 @@ public final class PillOverlayController {
                height: rect.height)
     }
 
-    /// The pill has shrunk back into its housing, or faded: its panels leave the screen.
+    /// The pill has gone back up to its rest and faded: its panels leave the screen.
     private func rested() {
         guard lifecycle.rested() else { return }
         drawing.orderOut(nil)

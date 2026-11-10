@@ -129,10 +129,9 @@ final class PillDemo {
         print("state: \(name)")
         if index == 0, let topology = overlay.topology { print("topology: \(topology)") }
         if let layout = overlay.layout {
-            print("  housing \(layout.kind), body \(layout.body.frame) radii \(layout.body.topRadius)/"
-                + "\(layout.body.bottomRadius)")
-            if let leading = layout.leading { print("  leading wing \(leading)") }
-            if let trailing = layout.trailing { print("  trailing wing \(trailing)") }
+            print("  body \(layout.body.frame) radii \(layout.body.topRadius)/\(layout.body.bottomRadius)")
+            if let leading = layout.leading { print("  leading \(leading)") }
+            if let trailing = layout.trailing { print("  trailing \(trailing)") }
             if let card = layout.card { print("  card content \(card)") }
             if let cancel = layout.cancel { print("  cancel bud \(cancel)") }
         }

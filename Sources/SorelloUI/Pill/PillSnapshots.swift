@@ -1,9 +1,9 @@
 import AppKit
 import DesignCore
 
-/// The pill's scenes for the snapshot tool (ARCHITECTURE.md, section 11): every state, for every camera housing, over
-/// a menu bar on a wallpaper with the housing drawn in black so the merge shows; a contact sheet per housing; and the
-/// mark, the menu-bar icon and the app icon.
+/// The pill's scenes for the snapshot tool (ARCHITECTURE.md, section 11): every state under a camera island, under a
+/// notch and on a screen with neither, over a menu bar on a wallpaper with the housing drawn in black, so the pill can
+/// be judged where it hangs; a contact sheet per screen; and the mark, the menu-bar icon and the app icon.
 public enum PillSnapshots {
     public static var scenes: [SnapshotScene] {
         Housing.allCases.flatMap { housing in
@@ -17,7 +17,8 @@ public enum PillSnapshots {
 
     // MARK: - The screens
 
-    /// A Mac to draw the pill on, and the part of its screen a picture shows.
+    /// A Mac to draw the pill on, by the camera housing at the top of its screen, and the part of its screen a picture
+    /// shows. The pill is the same on all three; only the backdrop differs.
     enum Housing: CaseIterable {
         case island, notch, none
 
@@ -52,11 +53,30 @@ public enum PillSnapshots {
             }
         }
 
+        /// The housing as the picture draws it, in the screen's points: on the island Mac a small black island centred
+        /// in the band (an illustration: `NSScreen` reports the band, not the island's outline), on the notch Mac the
+        /// notch flush with the top of the screen with rounded lower corners, on an external display nothing.
+        func outline(on topology: ScreenTopology) -> PillBody? {
+            guard let span = topology.housing else { return nil }
+            switch self {
+            case .island:
+                let width = 34.0, height = 12.0
+                let frame = CGRect(x: span.midX - width / 2, y: (topology.safeAreaTop - height) / 2, width: width,
+                                   height: height)
+                return PillBody(frame: frame, topRadius: height / 2, bottomRadius: height / 2)
+            case .notch:
+                return PillBody(frame: CGRect(x: span.minX, y: 0, width: span.width, height: topology.safeAreaTop),
+                                topRadius: 0, bottomRadius: 8)
+            case .none:
+                return nil
+            }
+        }
+
         /// The top middle of the screen, where the pill is: wide enough for the widest card.
         var crop: CGRect {
             let topology = topology
-            let middle = topology.housing?.midX ?? topology.width / 2
-            return CGRect(x: middle - 300, y: 0, width: 600, height: 168)
+            let middle = topology.middle
+            return CGRect(x: middle - 300, y: 0, width: 600, height: 184)
         }
     }
 
@@ -169,9 +189,9 @@ public enum PillSnapshots {
     static func pixelPreview(for housing: Housing) -> SnapshotScene {
         var topology = housing.topology
         topology.scale = 1
-        let crop = CGRect(x: housing.crop.midX - 200, y: 0, width: 400, height: 80)
+        let crop = CGRect(x: housing.crop.midX - 200, y: 0, width: 400, height: 104)
         let state = states[2]
-        return SnapshotScene(name: "pill-\(housing.name)-toggle-at-1x", size: CGSize(width: 800, height: 160)) {
+        return SnapshotScene(name: "pill-\(housing.name)-toggle-at-1x", size: CGSize(width: 800, height: 208)) {
             PixelPreview(stage: PillStage(housing: housing, state: state, topology: topology, crop: crop),
                          size: crop.size, magnification: 2)
         }
@@ -186,12 +206,14 @@ final class PillStage: NSView {
     private let menuBar = CALayer()
     private let housingShape = CAShapeLayer()
     private let pill: PillView
+    private let housing: PillSnapshots.Housing
     private let topology: ScreenTopology
     private let crop: CGRect
 
     init(housing: PillSnapshots.Housing, state: PillSnapshots.State, topology: ScreenTopology? = nil,
          crop: CGRect? = nil) {
         let topology = topology ?? housing.topology
+        self.housing = housing
         self.topology = topology
         self.crop = crop ?? housing.crop
         pill = PillView(levels: nil, clock: { PillSnapshots.started + 12 }, fixedWave: state.wave,
@@ -228,10 +250,9 @@ final class PillStage: NSView {
         let bar = CGFloat(topology.menuBarHeight)
         menuBar.frame = CGRect(x: 0, y: bounds.height - bar, width: bounds.width, height: bar)
         housingShape.frame = bounds
-        if topology.kind != .none {
-            let rest = PillGeometry.layout(.rest, on: topology).body
+        if let outline = housing.outline(on: topology) {
             var flip = CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: -crop.minX, ty: bounds.height + crop.minY)
-            housingShape.path = PillPath.rounded(rest).copy(using: &flip)
+            housingShape.path = PillPath.rounded(outline).copy(using: &flip)
         }
         CATransaction.commit()
         pill.frame = bounds

@@ -47,7 +47,7 @@ struct PillScene: Equatable {
     var notice: NoticeLayout?
     var controls: [PillControl]
 
-    /// The form to draw; hidden draws the housing's own footprint.
+    /// The form to draw; hidden draws the rest the pill goes back up to.
     static func form(for display: PillDisplay, on screen: ScreenTopology) -> PillForm {
         switch display {
         case .hidden:
@@ -94,7 +94,7 @@ struct PillScene: Equatable {
 
     static var preparingText: String { String(localized: "Preparing model") }
 
-    /// The trailing wing's content while listening: the widest time it will show, and the tag before it.
+    /// What follows the wave while listening: the widest time it will show, and the tag before it.
     static func timeContentWidth(prompt: Bool) -> CGFloat {
         let time = PillType.width(of: "00:00", font: PillType.time)
         return prompt ? time + PillType.tagSize + PillType.tagGap + 2 : time
