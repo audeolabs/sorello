@@ -372,7 +372,8 @@ struct Grid {
 
 /// Where a notice's parts go inside its card (ARCHITECTURE.md, section 8, "Notice"): the symbol and one line of
 /// text on the first row, then up to four capsule actions, centred on one row while they fit and on two when they do
-/// not. Rectangles are from the content's top left, on whole pixels.
+/// not (on a screen too narrow for two, on as many as it takes). Rectangles are from the content's top left, on whole
+/// pixels.
 public struct NoticeLayout: Equatable, Sendable {
     public static let symbolGap = 8.0
     /// Between the line of text and the first row of actions.
@@ -390,8 +391,8 @@ public struct NoticeLayout: Equatable, Sendable {
 
     /// Lays out a symbol, a line of text and the actions, as the UI measured them, in at most `maxWidth` points. The
     /// text gives way first. Actions beyond the fourth are dropped. Actions that do not fit on one row wrap onto a
-    /// second, two and two (or two over one) where both rows fit, so no title is truncated; an action is narrowed only
-    /// if it alone is wider than `maxWidth`, or if no split lets both rows fit.
+    /// second, two and two (or two over one), and only on a screen too narrow for that onto more, so no title is
+    /// truncated: an action is narrowed only if it alone is wider than `maxWidth`.
     public init(symbol: CGSize, text: CGSize, actions: [CGSize], maxWidth: Double, scale: Double) {
         let grid = Grid(scale: scale.isFinite && scale > 0 ? scale : 1)
         func clean(_ size: CGSize) -> (w: Double, h: Double) {
@@ -407,7 +408,7 @@ public struct NoticeLayout: Equatable, Sendable {
 
         let shown = actions.prefix(Self.maximumActions).map(clean)
         let actionHeight = shown.map(\.h).max() ?? 0
-        let rows = Self.rows(shown.map { min($0.w, maxWidth) }, maxWidth: maxWidth, grid: grid)
+        let rows = Self.rows(shown.map { min($0.w, maxWidth) }, maxWidth: maxWidth)
         let rowWidths = rows.map(Self.width)
         let width = max(firstWidth, rowWidths.max() ?? 0)
         let rowsHeight = rows.isEmpty ? 0
@@ -437,28 +438,35 @@ public struct NoticeLayout: Equatable, Sendable {
         row.reduce(0, +) + Double(max(row.count - 1, 0)) * actionGap
     }
 
-    /// The actions' widths in rows: one row if they fit, otherwise two. Of the splits where both rows fit, the one
-    /// whose rows hold most nearly the same number of actions (the first row the fuller), then the one whose wider row
-    /// is narrowest; when none fits, the narrowest, its rows narrowed to share their width.
-    private static func rows(_ widths: [Double], maxWidth: Double, grid: Grid) -> [[Double]] {
+    /// The actions' widths in rows, in order: the fewest rows that each fit `maxWidth` (every action is at most that
+    /// wide, so one per row always fits). Of the ways to fill that many rows, the one whose rows hold most nearly the
+    /// same number of actions, the earlier rows the fuller, then the one whose widest row is narrowest.
+    private static func rows(_ widths: [Double], maxWidth: Double) -> [[Double]] {
         guard !widths.isEmpty else { return [] }
-        guard width(widths) > maxWidth, widths.count > 1 else { return [fit(widths, maxWidth: maxWidth, grid: grid)] }
-        let splits = (1 ..< widths.count).map { (first: Array(widths[..<$0]), second: Array(widths[$0...])) }
-        func cost(_ split: (first: [Double], second: [Double])) -> (Int, Int, Double) {
-            (abs(split.first.count - split.second.count), split.second.count - split.first.count,
-             max(width(split.first), width(split.second)))
+        for count in 1 ... widths.count {
+            let fitting = partitions(widths, into: count).filter { $0.allSatisfy { width($0) <= maxWidth } }
+            func cost(_ rows: [[Double]]) -> (Int, [Int], Double) {
+                let sizes = rows.map(\.count)
+                return ((sizes.max() ?? 0) - (sizes.min() ?? 0), sizes.map { -$0 }, rows.map(width).max() ?? 0)
+            }
+            if let best = fitting.min(by: { a, b in
+                let (x, y) = (cost(a), cost(b))
+                if x.0 != y.0 { return x.0 < y.0 }
+                if x.1 != y.1 { return x.1.lexicographicallyPrecedes(y.1) }
+                return x.2 < y.2
+            }) {
+                return best
+            }
         }
-        let fitting = splits.filter { width($0.first) <= maxWidth && width($0.second) <= maxWidth }
-        let best = fitting.min { cost($0) < cost($1) }
-            ?? splits.min { max(width($0.first), width($0.second)) < max(width($1.first), width($1.second)) }
-            ?? splits[0]
-        return [fit(best.first, maxWidth: maxWidth, grid: grid), fit(best.second, maxWidth: maxWidth, grid: grid)]
+        return widths.map { [$0] }
     }
 
-    /// A row narrowed to `maxWidth` by sharing it, when it is wider.
-    private static func fit(_ row: [Double], maxWidth: Double, grid: Grid) -> [Double] {
-        guard width(row) > maxWidth else { return row }
-        let share = grid.down(max((maxWidth - Double(row.count - 1) * actionGap) / Double(row.count), 0))
-        return row.map { min($0, share) }
+    /// Every way to cut `widths`, in order, into `count` non-empty rows.
+    private static func partitions(_ widths: [Double], into count: Int) -> [[[Double]]] {
+        guard count > 1 else { return widths.isEmpty ? [] : [[widths]] }
+        guard widths.count >= count else { return [] }
+        return (1 ... widths.count - count + 1).flatMap { cut in
+            partitions(Array(widths[cut...]), into: count - 1).map { [Array(widths[..<cut])] + $0 }
+        }
     }
 }

@@ -192,6 +192,10 @@ import Testing
             let layout = PillGeometry.layout(.notice(notice.size), on: screen)
             let card = try #require(layout.card)
             #expect(notice.actions.count == 4)
+            // No title is cut unless it alone is wider than the card allows, even on the narrowest screen.
+            let widest = PillGeometry.maximumCardContent(on: screen)
+            #expect(notice.actions.map { Double($0.width) } == titles.map { min($0, (widest * screen.scale)
+                .rounded(.down) / screen.scale) })
             for action in notice.actions {
                 let frame = action.offsetBy(dx: card.minX, dy: card.minY)
                 #expect(Self.contains(card, frame))
@@ -326,7 +330,10 @@ import Testing
                                    actions: Array(repeating: CGSize(width: 200, height: 26), count: 3), maxWidth: 300,
                                    scale: 2)
         #expect(crowded.size.width <= 300)
-        #expect(crowded.actions.allSatisfy { $0.width > 0 && $0.maxX <= 300 })
+        #expect(crowded.actions.allSatisfy { $0.width == 200 && $0.maxX <= 300 }, "a title that fits was cut")
+        #expect(Set(crowded.actions.map(\.minY)).count == 3, "too narrow for two rows, each action takes its own")
+        let rows = Set(crowded.actions.map(\.minY)).sorted()
+        #expect(zip(rows, rows.dropFirst()).allSatisfy { Double($1 - $0) == 26 + NoticeLayout.actionGap })
         let none = NoticeLayout(symbol: CGSize(width: 16, height: 16), text: CGSize(width: 50, height: 16), actions: [],
                                 maxWidth: 400, scale: 1)
         #expect(none.size.height == 16)

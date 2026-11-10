@@ -69,7 +69,8 @@ public enum PillDisplay: Equatable, Sendable {
         public var tone: Tone
         /// One line; truncated if it does not fit.
         public var text: String
-        /// At most four are shown, on one row while they fit and on two when they do not.
+        /// At most four are shown, on one row while they fit and on two when they do not (more only on a screen too
+        /// narrow for two), so a title is never cut unless it alone is wider than the card.
         public var actions: [Action]
 
         public init(id: UInt64, symbol: String, tone: Tone, text: String, actions: [Action] = []) {
