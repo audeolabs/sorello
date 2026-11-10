@@ -9,7 +9,7 @@ import Synchronization
 /// It follows the newest capture only. Once a chunk from a capture has been accepted, chunks and endings from any
 /// capture with a lower number are ignored, and a capture that has ended stays ended: a stopped dictation keeps
 /// delivering its last buffered chunks while the next one has already started, and those must not disturb the new
-/// wave.
+/// wave. A capture that ended before any of its chunks was heard is remembered too, so its late chunks are ignored.
 ///
 /// Thread-safe. `heard` runs on the audio path, so it only sums squares into a fixed block under a lock, and
 /// allocates nothing.
@@ -26,6 +26,8 @@ public nonisolated final class LevelFeed: Sendable {
         var count = 0
         var level = 0.0
         var refreshed = -Double.infinity
+        /// The newest capture reported ended, heard or not: nothing it or an older capture delivers counts.
+        var latestEnded: UInt64?
     }
 
     private let state = Mutex(State())
@@ -36,9 +38,10 @@ public nonisolated final class LevelFeed: Sendable {
     /// overlay was given, during capture number `capture`.
     public func heard(_ samples: [Float], at time: TimeInterval, capture: UInt64) {
         state.withLock { state in
+            if let ended = state.latestEnded, capture <= ended { return }
             if let current = state.capture {
                 guard capture >= current else { return }
-                if capture > current { state = State(capture: capture) }
+                if capture > current { state = State(capture: capture, latestEnded: state.latestEnded) }
             } else {
                 state.capture = capture
             }
@@ -57,10 +60,12 @@ public nonisolated final class LevelFeed: Sendable {
         }
     }
 
-    /// Capture number `capture` ended or was discarded: the level falls to rest. Ignored unless it is the newest
-    /// capture heard.
+    /// Capture number `capture` ended or was discarded: the level falls to rest if it is the capture being shown, and
+    /// nothing it delivers afterwards counts. An ending from a capture older than the one shown is ignored.
     public func captureEnded(capture: UInt64) {
         state.withLock { state in
+            if let current = state.capture, capture < current { return }
+            state.latestEnded = max(state.latestEnded ?? capture, capture)
             guard state.capture == capture else { return }
             state.ended = true
             state.level = 0

@@ -80,6 +80,23 @@ import Testing
         #expect(feed.level(at: 3).level > 0.8)
     }
 
+    /// A capture that ended before any of its chunks was heard stays ended: its buffered chunks, arriving late, do
+    /// not raise the level, whether or not another capture was heard before it.
+    @Test func aCaptureEndedBeforeItsFirstChunkStaysEnded() {
+        let fresh = LevelFeed()
+        fresh.captureEnded(capture: 4)
+        Self.speak(fresh, capture: 4)
+        #expect(fresh.level(at: 1).level == 0)
+        let after = LevelFeed()
+        Self.speak(after, capture: 3)
+        after.captureEnded(capture: 3)
+        after.captureEnded(capture: 4)
+        Self.speak(after, capture: 4, from: 1)
+        #expect(after.level(at: 2).level == 0)
+        Self.speak(after, capture: 5, from: 2)
+        #expect(after.level(at: 3).level > 0.8)
+    }
+
     /// A level not refreshed for half a second reads as silence: a stalled microphone does not freeze the wave.
     @Test func aStalledCaptureFallsToRest() {
         let feed = LevelFeed()
