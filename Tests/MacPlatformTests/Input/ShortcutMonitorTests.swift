@@ -305,6 +305,24 @@ struct ShortcutMonitorTests {
         #expect(rig.monitor.isRecording == false)
     }
 
+    @Test("A cancelled recording that was replaced before its cancellation ran leaves the new one alone")
+    func lateCancellation() async {
+        let rig = Rig()
+        rig.monitor.start()
+        let first = Task { await rig.monitor.recordBinding() }
+        await waitUntil { rig.monitor.isRecording }
+        // Queued before the first is cancelled, so it replaces the first before the cancellation reaches the
+        // main actor.
+        let second = Task { await rig.monitor.recordBinding() }
+        first.cancel()
+        #expect(await first.value == nil)
+        for _ in 0..<100 { await Task.yield() }
+        #expect(rig.monitor.isRecording, "the second recording is still open")
+        rig.tap.send(Rig.fnDown)
+        rig.tap.send(Rig.fnUp)
+        #expect(await second.value == .function)
+    }
+
     @Test("Recording without a running tap returns nothing at once")
     func recordingWithoutTap() async {
         let rig = Rig(canInstall: false)

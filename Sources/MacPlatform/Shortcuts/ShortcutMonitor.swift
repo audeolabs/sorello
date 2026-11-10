@@ -48,6 +48,8 @@ public final class ShortcutMonitor {
     @ObservationIgnored private var observing = false
     @ObservationIgnored private var poll: Task<Void, Never>?
     @ObservationIgnored private var recording: CheckedContinuation<ShortcutBinding?, Never>?
+    /// Counts recordings, so a cancellation that arrives late ends only the recording it was meant for.
+    @ObservationIgnored private var recordingNumber: UInt64 = 0
 
     /// A monitor over the real event tap and system notifications. Triggers are stamped with `clock`'s time when
     /// each event arrives; the system clock is the keyboard's own timeline.
@@ -116,6 +118,8 @@ public final class ShortcutMonitor {
         finishRecording(nil)
         for trigger in matcher.startRecording() { deliver(trigger) }
         isRecording = true
+        recordingNumber += 1
+        let number = recordingNumber
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 if Task.isCancelled {
@@ -127,7 +131,7 @@ public final class ShortcutMonitor {
                 }
             }
         } onCancel: {
-            Task { @MainActor [weak self] in self?.cancelRecording() }
+            Task { @MainActor [weak self] in self?.cancelRecording(number: number) }
         }
     }
 
@@ -136,6 +140,12 @@ public final class ShortcutMonitor {
         guard matcher.isRecording || recording != nil else { return }
         matcher.cancelRecording()
         finishRecording(nil)
+    }
+
+    /// Ends recording `number` if it is still the one in progress.
+    private func cancelRecording(number: UInt64) {
+        guard number == recordingNumber else { return }
+        cancelRecording()
     }
 
     // MARK: - The tap
