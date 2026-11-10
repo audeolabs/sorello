@@ -13,6 +13,8 @@ struct UnusableControlTests {
     /// of it (1.0); the system's own dimming, for an app that recorded SDK 26, kept 0.53; Sorello's keeps less than
     /// half. A rendering difference of a few levels moves the ratio by a few hundredths.
     static let mostInkKept = 0.75
+    /// The least it may keep: dimmed is still there to be read, not hidden.
+    static let leastInkKept = 0.2
 
     @Test(arguments: UnusableControl.allCases)
     func aControlThatCannotBeUsedIsClearlyDimmer(control: UnusableControl) throws {
@@ -20,8 +22,9 @@ struct UnusableControlTests {
         let unusable = try control.ink(enabled: false)
         try #require(usable > 20, "nothing drawn on the usable \(control)")
         let kept = unusable / usable
-        #expect(kept <= Self.mostInkKept,
-                "\(control) keeps \(String(format: "%.3f", kept)) of its ink: \(Int(unusable)) of \(Int(usable))")
+        let reading = "\(control) keeps \(String(format: "%.3f", kept)) of its ink: \(Int(unusable)) of \(Int(usable))"
+        #expect(kept <= Self.mostInkKept, "\(reading)")
+        #expect(kept >= Self.leastInkKept, "\(reading)")
     }
 }
 
@@ -33,6 +36,9 @@ enum UnusableControl: String, CaseIterable, CustomTestStringConvertible {
     case fieldText
     /// The add card's strength presets.
     case strengthPresets
+    /// The same presets' track alone: the strip along its top edge, where no word is drawn. The whole control is
+    /// dimmed, not only its words.
+    case strengthPresetsTrack
     /// A word's strength menu.
     case strengthMenu
     /// The add card's "Use in" menu.
@@ -61,9 +67,9 @@ enum UnusableControl: String, CaseIterable, CustomTestStringConvertible {
             SorelloTextField("Word or phrase", text: .constant("")).frame(width: Self.field.width)
         case .fieldText:
             SorelloTextField("Word or phrase", text: .constant("Quillmoor")).frame(width: Self.field.width)
-        case .strengthPresets:
-            PresetPicker("Strength", options: StrengthPresets.values, selection: .constant(StrengthPresets.defaultValue),
-                         label: StrengthPresets.label)
+        case .strengthPresets, .strengthPresetsTrack:
+            PresetPicker("Strength", options: StrengthPresets.values,
+                         selection: .constant(StrengthPresets.defaultValue), label: StrengthPresets.label)
         case .strengthMenu:
             StrengthMenu(strength: 2) { _ in }
         case .appsMenu:
@@ -82,16 +88,19 @@ enum UnusableControl: String, CaseIterable, CustomTestStringConvertible {
     }
 
     /// What is measured, in points: inside the field's edge for the field, so only its placeholder or text counts;
-    /// the whole picture otherwise.
+    /// across the top of the presets' track, from 2 pt above it to 1 pt inside, clear of its rounded ends, for the
+    /// track; the whole picture otherwise.
     @MainActor private var measured: CGRect {
         switch self {
         case .fieldPlaceholder, .fieldText: Self.field.insetBy(dx: 6, dy: 4)
+        case .strengthPresetsTrack: CGRect(x: Self.field.minX + 30, y: Self.field.minY - 2, width: 240, height: 3)
         default: CGRect(origin: .zero, size: Self.size)
         }
     }
 
     /// How much the control draws above its own background inside `measured`: each pixel's lightness above the
-    /// commonest one there, summed.
+    /// commonest one there, summed, in whole levels so a background exactly the commonest colour counts for nothing,
+    /// then as a fraction of white.
     @MainActor func ink(enabled: Bool) throws -> Double {
         let scale: CGFloat = 2
         let scene = SnapshotScene(name: "unusable-\(rawValue)", size: Self.size, background: Palette.card) {
@@ -104,17 +113,18 @@ enum UnusableControl: String, CaseIterable, CustomTestStringConvertible {
         let png = try #require(SnapshotRenderer.png(of: scene, scale: scale))
         let bitmap = try #require(NSBitmapImageRep(data: png))
         let box = measured
-        var lightness: [Double] = []
+        // Lightness as the sum of the three channels, from 0 to 765.
+        var levels: [Int] = []
         var pixel = [Int](repeating: 0, count: bitmap.samplesPerPixel)
         for y in Int(box.minY * scale) ..< Int(box.maxY * scale) {
             for x in Int(box.minX * scale) ..< Int(box.maxX * scale) {
                 bitmap.getPixel(&pixel, atX: x, y: y)
-                lightness.append(Double(pixel[0] + pixel[1] + pixel[2]) / 3 / 255)
+                levels.append(pixel[0] + pixel[1] + pixel[2])
             }
         }
         var counts: [Int: Int] = [:]
-        for value in lightness { counts[Int((value * 255).rounded()), default: 0] += 1 }
-        let background = Double(try #require(counts.max { $0.value < $1.value }).key) / 255
-        return lightness.reduce(0) { $0 + max(0, $1 - background) }
+        for level in levels { counts[level, default: 0] += 1 }
+        let background = try #require(counts.max { $0.value < $1.value }).key
+        return Double(levels.reduce(0) { $0 + max(0, $1 - background) }) / 765
     }
 }
