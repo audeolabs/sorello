@@ -140,7 +140,9 @@ final class PillView: NSView {
         let rest = PillGeometry.layout(.rest, on: screen, adjustments: adjustments).body
         if body == nil { body = MovingBody(wasHidden ? rest : target) }
         if travels {
-            if wasHidden { body?.snap(to: rest) }
+            // Appearing from rest it grows out of the housing; called back while still shrinking away, it turns
+            // round from where it is.
+            if wasHidden, restReported { body?.snap(to: rest) }
             body?.move(to: target, at: now)
         } else {
             body?.snap(to: target)
@@ -164,9 +166,9 @@ final class PillView: NSView {
         edge.lineWidth = CGFloat(2 * Palette.edgeWidth(highContrast: look.increaseContrast))
         let opacity: Float = floating && !showing ? 0 : 1
         for part in [edge, fill] {
-            if fades, floating, part.opacity != opacity {
+            if fades, floating, (part.presentation()?.opacity ?? part.opacity) != opacity {
                 let fade = CABasicAnimation(keyPath: "opacity")
-                fade.fromValue = part.opacity
+                fade.fromValue = part.presentation()?.opacity ?? part.opacity
                 fade.toValue = opacity
                 fade.duration = Motion.appear
                 // Leaving, the content goes first.

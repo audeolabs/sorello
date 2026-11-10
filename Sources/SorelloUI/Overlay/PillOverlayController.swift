@@ -10,6 +10,7 @@ import DesignCore
 /// kept until the pill hides; if it goes away the pill moves to the main screen. Reduce Motion and Increase Contrast
 /// are read from the system and followed as they change. VoiceOver hears each notice once, and the controls as
 /// buttons; the moving level is never exposed to it.
+@MainActor
 public final class PillOverlayController {
     /// The user clicked the pill while it listens in toggle mode, or pressed it with VoiceOver.
     public var onStop: () -> Void = {}
