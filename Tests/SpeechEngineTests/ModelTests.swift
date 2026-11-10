@@ -111,7 +111,9 @@ struct ModelTests {
 
     /// The fallback (ARCHITECTURE.md, section 5): Core ML's CPU kernels, forced here, hear what the Neural Engine
     /// hears, through the app's streaming path, from a short phrase to three chunks joined at two seams. On a Mac
-    /// without a Neural Engine both engines run on the CPU and this still holds.
+    /// without a Neural Engine both engines run on the CPU and this still holds. The contract lets the two paths
+    /// differ where two words score almost alike; these recordings have no such near-tie, so any difference here is
+    /// a fault to explain, not one to tolerate.
     @Test func theCPUFallbackHearsWhatTheNeuralEngineHears() async throws {
         let neural = try await engine(compute: .neuralEngine)
         let cpu = try await engine(compute: .cpu)
