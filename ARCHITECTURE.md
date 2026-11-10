@@ -613,9 +613,11 @@ States:
   sweeping it every 1.1 s. With the model still preparing, the words
   "Preparing model" follow the row.
 - **Notice.** The pill grows downward into a rounded card: a symbol (ember
-  for errors), one line of white text, and up to three capsule actions.
-  The dictionary suggestion is a notice owned by the app layer, with the
-  actions and the lifetime `docs/dictionary/DESIGN.md` gives it.
+  for errors), one line of white text, and up to four capsule actions, on
+  a second row when they do not fit on one. The dictionary suggestion is
+  a notice owned by the app layer, with the actions and the lifetime
+  `docs/dictionary/DESIGN.md` gives it: four actions when the dictation
+  had an app, three when it had none.
 
 Motion: the body grows and shrinks on a spring (response 0.26 s, damping
 0.88). At each change what leaves fades first, in 0.06 s, then what
