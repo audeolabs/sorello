@@ -455,13 +455,12 @@ a time:
    or Shift key is down; the same app is in front; and, where it can be
    read, the prepared field still has focus and the same selection. If a
    check fails, no key is posted and the correction anchor is released.
-   Text is
-   left on the clipboard with the reason that applies (`screenLocked`,
-   `accessibilityMissing`, `modifiersStillDown` or `targetChanged`); a
-   lone Return is `failed(commandNotPosted)` and the clipboard is not
-   touched. A field that cannot be read still gets a best-effort paste
-   into the same app in front, without a correction watch. Sorello never
-   brings another app forward to recover.
+   Text is left on the clipboard with the reason that applies
+   (`screenLocked`, `accessibilityMissing`, `modifiersStillDown` or
+   `targetChanged`); a lone Return is `failed(commandNotPosted)` and the
+   clipboard is not touched. A field that cannot be read still gets a
+   best-effort paste into the same app in front, without a correction
+   watch. Sorello never brings another app forward to recover.
 5. With text: if restoring, snapshot every item and type on the
    pasteboard. Write the text, marked transient when it will be restored
    so clipboard managers skip it, and remember the change count the write
