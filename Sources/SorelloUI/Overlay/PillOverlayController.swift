@@ -36,6 +36,10 @@ public final class PillOverlayController {
     private let clock: () -> TimeInterval
     /// Fires when the listening time gains a digit, so the pill widens for it.
     private var widening: Timer?
+    /// When the controls may take clicks, on `clock`: appearing, once what they belong to has dropped into place.
+    private var controlsFrom: TimeInterval = 0
+    /// Fires at `controlsFrom` to put the controls on the screen.
+    private var controlsWait: Timer?
     private var lifecycle = OverlayLifecycle()
     private var screenNumber: UInt32?
     private var appearance: PillAppearance
@@ -74,6 +78,7 @@ public final class PillOverlayController {
         drawing.orderOut(nil)
         controls.hide()
         widening?.invalidate()
+        controlsWait?.invalidate()
     }
 
     /// Shows `display`: the pill drops down from the band, changes form, or goes back up, on its spring.
@@ -83,6 +88,7 @@ public final class PillOverlayController {
         // A press on a control that is about to change belongs to nothing any more.
         view.pressed = nil
         guard let step = lifecycle.show(display) else { return }
+        if step.controlsAfter > 0 { controlsFrom = clock() + step.controlsAfter }
         if step.chooseScreen, let screen = Self.chooseScreen() {
             let moving = drawing.isVisible && screen.displayNumber != screenNumber
             if moving {
@@ -113,8 +119,27 @@ public final class PillOverlayController {
         view.update(scene, appearance: appearance, animated: animated)
         // Hiding may have come to rest at once; then the panel stays off the screen.
         if lifecycle.phase == .up, !drawing.isVisible { drawing.orderFrontRegardless() }
-        controls.show(lifecycle.phase == .up ? scene.controls : []) { self.global($0, on: topology) }
+        placeControls()
         widenWhenTheTimeGainsADigit(after: elapsed)
+    }
+
+    /// Puts the controls of what the pill shows on the screen, once they may take clicks; until then, and while the
+    /// pill is not up, none.
+    private func placeControls() {
+        controlsWait?.invalidate()
+        controlsWait = nil
+        guard let topology, let scene = view.scene, lifecycle.phase == .up else { return controls.hide() }
+        let wait = controlsFrom - clock()
+        guard wait <= 0 else {
+            controls.hide()
+            let timer = Timer(timeInterval: wait, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated { self?.placeControls() }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            controlsWait = timer
+            return
+        }
+        controls.show(scene.controls) { self.global($0, on: topology) }
     }
 
     /// While listening, refreshes the pill at the moment its time gains a digit, so it widens for it on its spring.

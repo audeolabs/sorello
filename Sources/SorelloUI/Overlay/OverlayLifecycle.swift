@@ -1,3 +1,4 @@
+import DesignCore
 import Foundation
 
 /// When the overlay's panels come and go, and when it chooses a screen (ARCHITECTURE.md, section 8, "The pill"). A
@@ -23,7 +24,13 @@ struct OverlayLifecycle: Equatable {
         var chooseScreen: Bool
         /// The panels must be on the screen.
         var present: Bool
+        /// How long the controls wait before they take clicks: appearing, until the pill has dropped into place and
+        /// what it holds has arrived, so a click never lands on a control that is not drawn yet.
+        var controlsAfter: TimeInterval = 0
     }
+
+    /// How long the controls of a pill that is appearing wait.
+    static let arrival = Motion.drop + Motion.arrival
 
     private(set) var phase = Phase.off
     /// The dictation the screen was chosen for, by its start time.
@@ -41,8 +48,9 @@ struct OverlayLifecycle: Equatable {
             dictation = listening.started
             choose = true
         }
+        let appearing = phase != .up
         phase = .up
-        return Step(chooseScreen: choose, present: true)
+        return Step(chooseScreen: choose, present: true, controlsAfter: appearing ? Self.arrival : 0)
     }
 
     /// The pill came to rest. True when its panels should leave the screen: it was hidden and nothing has been shown
