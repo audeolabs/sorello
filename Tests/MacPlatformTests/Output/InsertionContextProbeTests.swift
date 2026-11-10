@@ -158,6 +158,46 @@ import Testing
         #expect(field.state.withLock { $0.rangeReads }.isEmpty)
     }
 
+    /// The check before a range read can itself block past the deadline; when it finally answers, the abandoned
+    /// work must not go on to read the text.
+    @Test func noReadFollowsACheckThatOutlivedTheDeadline() async {
+        let field = FakeTextField("Some invented words")
+        field.update { $0.caret = 4 }
+        let entered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        field.update { state in
+            // The next check after the character count is the one before the first range read.
+            state.onCharacterCount = { [field] in
+                field.update { state in
+                    state.onCharacterCount = nil
+                    state.onCheck = { [field] in
+                        field.update { $0.onCheck = nil }
+                        entered.signal()
+                        release.wait()
+                    }
+                }
+            }
+        }
+        let clock = ManualClock()
+        let probe = InsertionContextProbe(reader: field, clock: clock)
+        let reading = Task { await probe.read() }
+
+        await waitForSignal(entered)
+        _ = await clock.nextDeadline()
+        clock.advance(to: InsertionContextProbe.deadline)
+        let result = await finished(reading)
+        #expect(result != nil, "The read finished")
+        #expect(result.flatMap { $0 } == nil, "and found nothing")
+
+        let callsAtDeadline = field.state.withLock { $0.calls.count }
+        field.update { $0.trusted = false }
+        release.signal()
+        #expect(await probe.read() == nil)
+        let later = field.state.withLock { Array($0.calls[callsAtDeadline...]) }
+        #expect(later == ["isTrusted"], "The abandoned work read nothing after its deadline")
+        #expect(field.state.withLock { $0.rangeReads }.isEmpty)
+    }
+
     @Test func confirmsTheSameFieldAndSelection() async {
         let field = FakeTextField("Some invented words")
         field.update { $0.caret = 4 }

@@ -54,7 +54,9 @@ public final class InsertionContextProbe: Sendable {
     /// established before the deadline.
     public func confirm(_ field: PreparedField, sameSelection: Bool) async -> Bool {
         await bounded { [reader] budget -> Bool? in
-            guard budget.isLive, reader.isTrusted(), reader.check(field.target) == .ok else { return false }
+            guard budget.isLive, reader.isTrusted(), reader.check(field.target) == .ok, budget.isLive else {
+                return false
+            }
             guard sameSelection else { return true }
             guard budget.isLive, reader.selectedRange(field.target) == field.selection else { return false }
             return budget.isLive && reader.isTrusted() && reader.check(field.target) == .ok
@@ -63,9 +65,13 @@ public final class InsertionContextProbe: Sendable {
 
     /// The reads themselves. As in the correction watch, the field is checked before every read and after the last
     /// one: a field that loses focus or turns secure meanwhile yields nothing, and so does work past its deadline.
+    /// The budget is looked at again after each check, because a check is itself a call that can block past the
+    /// deadline, and a read must never follow it then.
     private static func read(using reader: any TextFieldReading, budget: ReadBudget) -> ProbedField? {
         guard budget.isLive, reader.isTrusted(), let target = reader.captureFocusedTextField() else { return nil }
-        func stillEligible() -> Bool { budget.isLive && reader.isTrusted() && reader.check(target) == .ok }
+        func stillEligible() -> Bool {
+            budget.isLive && reader.isTrusted() && reader.check(target) == .ok && budget.isLive
+        }
         guard stillEligible(), let selection = reader.selectedRange(target),
               stillEligible(), let count = reader.characterCount(target),
               selection.location <= count - selection.length else { return nil }

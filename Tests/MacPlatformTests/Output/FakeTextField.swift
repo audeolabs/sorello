@@ -31,6 +31,8 @@ final class FakeTextField: TextFieldReading {
         var checkedSinceRead = false
         /// Runs inside the character-count request, as if during an in-flight Accessibility call.
         var onCharacterCount: (@Sendable () -> Void)?
+        /// Runs inside a focus check, as if during an in-flight Accessibility call.
+        var onCheck: (@Sendable () -> Void)?
     }
 
     static let pid: Int32 = 4242
@@ -71,8 +73,12 @@ final class FakeTextField: TextFieldReading {
     }
 
     func check(_ target: TextFieldTarget) -> TextFieldCheck {
-        state.withLock { state in
+        let hook = state.withLock { state in
             state.calls.append("check")
+            return state.onCheck
+        }
+        hook?()
+        return state.withLock { state in
             state.checkedSinceRead = true
             guard let element = target.element as? FakeElement else { return .failed }
             guard state.focused, target.pid == Self.pid, element.id == state.focusedElement else { return .focusChanged }
