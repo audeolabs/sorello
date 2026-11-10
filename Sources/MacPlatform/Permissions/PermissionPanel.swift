@@ -801,15 +801,19 @@ extension PermissionPanel {
             step(at: 0)
             window.orderFrontRegardless()
             onFirstFrame()
+            onFirstFrame = {}
             startTime = CACurrentMediaTime()
             let link = surface.displayLink(target: self, selector: #selector(tick(_:)))
             link.add(to: .main, forMode: .common)
             self.link = link
         }
 
+        /// Stops the flight and lets go of its completion, whose callers capture the flight itself.
         func close() {
             link?.invalidate()
             link = nil
+            done = {}
+            onFirstFrame = {}
             window.orderOut(nil)
         }
 
@@ -819,6 +823,8 @@ extension PermissionPanel {
                 step(at: spring.settleTime)
                 link.invalidate()
                 self.link = nil
+                let done = self.done
+                self.done = {}
                 done()
                 return
             }
