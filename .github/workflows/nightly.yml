@@ -52,7 +52,7 @@ jobs:
       channel: nightly
       commit: ${{ needs.moved.outputs.commit }}
     secrets: inherit
-  # There is one nightly: the last one makes way for this one. The tag is moved to the commit this one was built
+  # There is one nightly: the last one makes way for this one, its disk image and the feed that lists it. The tag is moved to the commit this one was built
   # from before the release is made on it, so a nightly is never published on a tag that is on another commit. If a
   # step here fails there is no nightly until the next run, which builds again. Whether the last nightly and the
   # tag are there is read from lists: an answer that could not be had stops the job, and never passes for "no".
@@ -65,20 +65,22 @@ jobs:
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: ${{ needs.package.outputs.zip }}
+          name: ${{ needs.package.outputs.dmg }}
       - name: Publish the nightly
         env:
           GH_TOKEN: ${{ github.token }}
           COMMIT: ${{ needs.moved.outputs.commit }}
           VERSION: ${{ needs.package.outputs.version }}
           BUILD: ${{ needs.package.outputs.build }}
-          ZIP: ${{ needs.package.outputs.zip }}
+          DMG: ${{ needs.package.outputs.dmg }}
           SHA256: ${{ needs.package.outputs.sha256 }}
+          FEED_SHA256: ${{ needs.package.outputs.feed_sha256 }}
         run: |
-          echo "$SHA256  $ZIP" | shasum -a 256 --check
+          echo "$SHA256  $DMG" | shasum -a 256 --check
+          echo "$FEED_SHA256  appcast.xml" | shasum -a 256 --check
           notes="Version $VERSION ($BUILD), built from $COMMIT. Signed with the Developer ID and notarized by Apple.
 
-          SHA-256 of $ZIP: $SHA256"
+          SHA-256 of $DMG: $SHA256"
           last=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq '.[] | "\(.id) \(.tag_name)"' \
             | awk -v tag="$TAG" '$2 == tag { print $1 }')
           for id in $last; do gh api --method DELETE "repos/$GH_REPO/releases/$id"; done
@@ -89,4 +91,5 @@ jobs:
             gh api --method POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$COMMIT" > /dev/null
           fi
           [ "$(gh api "repos/$GH_REPO/git/ref/tags/$TAG" --jq .object.sha)" = "$COMMIT" ]
-          gh release create "$TAG" "$ZIP" --verify-tag --prerelease --title "Sorello Nightly" --notes "$notes"
+          gh release create "$TAG" "$DMG" appcast.xml --verify-tag --prerelease --title "Sorello Nightly" \
+            --notes "$notes"

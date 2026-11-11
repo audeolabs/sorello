@@ -1019,13 +1019,21 @@ Review does.
 
 ### Signed builds
 
-- `scripts/notarize-app.sh <app> <zip>` has Apple notarize an app, staples
-  the ticket to it, and writes the zip that is handed out. Before it
-  uploads anything it refuses an app that is not signed with a Developer
-  ID, the hardened runtime and Apple's timestamp. It writes no zip unless
-  Apple accepts the app, the ticket is stapled, and Gatekeeper judges the
-  app notarized. Notarizing uploads the app to Apple. The credentials are
-  an App Store Connect API key, given in the environment.
+- `scripts/notarize-app.sh <app> <dmg>` has Apple notarize an app, staples
+  the ticket to it, and writes the disk image that is handed out: the app
+  beside a way into Applications, signed with the same Developer ID,
+  notarized and stapled as well. Before it uploads anything it refuses an
+  app that is not signed with a Developer ID, the hardened runtime and
+  Apple's timestamp. It writes no image unless Apple accepts the app and
+  the image, both tickets are stapled, and Gatekeeper judges both
+  notarized. Notarizing uploads the app to Apple. The credentials are an
+  App Store Connect API key, given in the environment.
+- `scripts/write-appcast.sh <app> <dmg> <url> <appcast>` writes the update
+  feed for one build (section 6, "Updates"): an appcast that lists that
+  build alone, at the address it will be downloaded from, with the
+  image's signature made with the update key. It writes no feed unless
+  the key it is given is the private half of the public key in the app,
+  so a feed is never published that installed apps would refuse.
 - GitHub Actions runs the workflows in `.github/workflows` on GitHub's
   runners, on macOS with Xcode 27 for everything that builds. They use
   only GitHub's own actions, each pinned to a commit.
@@ -1034,27 +1042,33 @@ Review does.
   after it.
 - **Package** is what Nightly and Release share. It builds only a commit
   that is on `main` and whose push to `main` passed the check. It builds
-  the channel's app signed with the Developer ID, notarizes it, and
-  proves the app out of the zip: `--snapshots`, then `--self-test
-  --download` with a recording made by `say`, whose words must come
-  back. A build that fails any of this is not handed on.
+  the channel's app signed with the Developer ID, notarizes it into its
+  disk image, writes the image's update feed, and proves the app out of
+  the image: `--snapshots`, then `--self-test --download` with a
+  recording made by `say`, whose words must come back. A build that
+  fails any of this is not handed on.
 - **Nightly** runs every night, and when it is started by hand. If `main`
   has not moved since the last nightly, it does nothing. Otherwise it
   packages "Sorello Nightly" from `main` and publishes it as the
-  prerelease `nightly`, in place of the last one: one file,
-  `Sorello-Nightly.zip`. The `nightly` tag is moved to the commit it was
+  prerelease `nightly`, in place of the last one: two files,
+  `Sorello-Nightly.dmg` and `appcast.xml`, the feed installed nightlies
+  follow. The `nightly` tag is moved to the commit it was
   built from before the release is made on it, so a nightly is never
   published on a tag that is on another commit. If publishing fails part
   way there is no nightly until the next run, which builds again.
 - **Release** is started by hand, from `main`. It packages "Sorello" and
-  leaves `Sorello.zip` in a draft release named for the version, such as
-  `v0.0.1`. Publishing the draft, which creates the tag, is the owner's.
+  leaves `Sorello.dmg` and `appcast.xml` in a draft release named for the
+  version, such as `v0.0.1`. Publishing the draft, which creates the tag,
+  is the owner's. Installed releases follow the feed of the latest
+  published release, so publishing is also what offers the update.
   It fails, before anything is built, if that version already has a
   release, a draft or a tag.
-- The Developer ID and the notarization key are repository secrets:
-  `DEVELOPER_ID_P12` (the certificate and its key, a .p12 file in
-  base64), `DEVELOPER_ID_P12_PASSWORD`, `NOTARY_KEY_P8` (the API key, a
-  .p8 file in base64), `NOTARY_KEY_ID` and `NOTARY_ISSUER_ID`. Only the
+- The Developer ID, the notarization key and the update key are
+  repository secrets: `DEVELOPER_ID_P12` (the certificate and its key, a
+  .p12 file in base64), `DEVELOPER_ID_P12_PASSWORD`, `NOTARY_KEY_P8` (the
+  API key, a .p8 file in base64), `NOTARY_KEY_ID`, `NOTARY_ISSUER_ID` and
+  `UPDATE_SIGNING_KEY` (the private half of the update key, its 32-byte
+  seed in base64). Only the
   job that builds reads them, the certificate from a keychain that exists
   for that job, and that job cannot write to the repository. The job that
   publishes has none of them. Without them nothing is published: there is
