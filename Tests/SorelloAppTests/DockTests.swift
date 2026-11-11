@@ -20,13 +20,34 @@ final class RecordingDock: DockPresence {
     func leaveDock() { calls.append("leave Dock") }
     func activate() { calls.append("activate") }
     func bringForward(_ window: NSWindow) { calls.append("front \(name(window))") }
-    func yieldFront(closing: NSWindow) { calls.append("yield front, closing \(name(closing))") }
+
+    /// Records that `app` was handed the front.
+    func handedFront(to app: FakeApp) { calls.append("hand front to \(app.name)") }
 
     /// The calls since the last time they were taken.
     func take() -> [String] {
         defer { calls = [] }
         return calls
     }
+}
+
+/// An app that comes to the front, as the workspace reports one. Handing it the front is recorded, not done.
+@MainActor
+final class FakeApp: FrontApp {
+    let name: String
+    let processIdentifier: pid_t
+    let isOrdinary: Bool
+    var isTerminated = false
+    private let dock: RecordingDock
+
+    init(_ name: String, processIdentifier: pid_t, isOrdinary: Bool = true, dock: RecordingDock) {
+        self.name = name
+        self.processIdentifier = processIdentifier
+        self.isOrdinary = isOrdinary
+        self.dock = dock
+    }
+
+    func takeFront() { dock.handedFront(to: self) }
 }
 
 /// ARCHITECTURE.md, section 8, "Windows": Sorello is in the Dock exactly while setup, the main window or a notice's
@@ -62,6 +83,14 @@ final class RecordingDock: DockPresence {
     private func showSetup() { presenter.showSetup(setup, title: "Sorello Test") }
     private func showNotice(_ title: String) { presenter.showNotice(title: title, files: []) }
 
+    /// An app other than Sorello, as the workspace would report it.
+    private func app(_ name: String, _ processIdentifier: pid_t, ordinary: Bool = true) -> FakeApp {
+        FakeApp(name, processIdentifier: processIdentifier, isOrdinary: ordinary, dock: dock)
+    }
+
+    /// Sorello itself, as the workspace reports it when it comes to the front.
+    private var sorello: FakeApp { app("Sorello", ProcessInfo.processInfo.processIdentifier) }
+
     /// Closes `window` as its close button and ⌘W do.
     private func clickClose(_ window: AppWindow) throws {
         try #require(presenter.window(window)).performClose(nil)
@@ -85,6 +114,7 @@ final class RecordingDock: DockPresence {
     }
 
     @Test func whenOneOfTwoClosesSorelloStaysInTheDock() throws {
+        presenter.appCameToFront(app("Field Notes", 401))
         showSetup()
         showNotice("Licence")
         _ = dock.take()
@@ -96,17 +126,19 @@ final class RecordingDock: DockPresence {
     }
 
     @Test func whenTheLastClosesSorelloLeavesTheDockAndTheAppBehindComesForward() throws {
+        presenter.appCameToFront(app("Field Notes", 401))
         showMain()
         showNotice("Licence")
         try clickClose(.notice("Licence"))
         _ = dock.take()
         try clickClose(.main)
         #expect(!presenter.isInDock)
-        #expect(dock.take() == ["leave Dock", "yield front, closing main"])
+        #expect(dock.take() == ["leave Dock", "hand front to Field Notes"])
     }
 
     /// A window closed while another app is in front leaves that app in front.
     @Test func theLastClosingWhileAnotherAppIsInFrontLeavesTheFrontAlone() throws {
+        presenter.appCameToFront(app("Field Notes", 401))
         showNotice("Licence")
         _ = dock.take()
         dock.isActive = false
@@ -121,7 +153,7 @@ final class RecordingDock: DockPresence {
         presenter.closeSetup()
         #expect(!presenter.isOpen(.setup))
         #expect(!presenter.isInDock)
-        #expect(dock.take() == ["leave Dock", "yield front, closing setup"])
+        #expect(dock.take() == ["leave Dock"])
     }
 
     @Test func theMainWindowClosedByItsCloseButtonOrCommandW() throws {
@@ -129,7 +161,7 @@ final class RecordingDock: DockPresence {
         _ = dock.take()
         try clickClose(.main)
         #expect(!presenter.isInDock)
-        #expect(dock.take() == ["leave Dock", "yield front, closing main"])
+        #expect(dock.take() == ["leave Dock"])
     }
 
     @Test func aNoticeClosedIsNoLongerOpen() throws {
@@ -149,7 +181,7 @@ final class RecordingDock: DockPresence {
         _ = dock.take()
         try clickClose(.main)
         #expect(!presenter.isInDock)
-        #expect(dock.take() == ["leave Dock", "yield front, closing main"])
+        #expect(dock.take() == ["leave Dock"])
     }
 
     @Test func aWindowOpenedClosedAndOpenedAgainPutsSorelloBackInTheDock() throws {
@@ -159,6 +191,44 @@ final class RecordingDock: DockPresence {
         showSetup()
         #expect(presenter.isInDock)
         #expect(dock.take() == ["enter Dock", "activate", "front setup"])
+    }
+
+    // MARK: Who gets the front back
+
+    /// The front goes back to the latest ordinary app that had it, not to Sorello itself, nor to an agent such as the
+    /// one that shows the system's microphone prompt.
+    @Test func theFrontGoesBackToTheLatestOrdinaryAppThatHadIt() throws {
+        presenter.appCameToFront(app("Field Notes", 401))
+        presenter.appCameToFront(app("Mail Room", 402))
+        showSetup()
+        presenter.appCameToFront(sorello)
+        presenter.appCameToFront(app("Prompt Agent", 403, ordinary: false))
+        presenter.appCameToFront(sorello)
+        _ = dock.take()
+        presenter.closeSetup()
+        #expect(dock.take() == ["leave Dock", "hand front to Mail Room"])
+    }
+
+    /// An app that has quit is not asked to come forward: Sorello stays in front, with no window, until the user
+    /// clicks elsewhere.
+    @Test func anAppThatHasQuitIsNotHandedTheFront() throws {
+        let notes = app("Field Notes", 401)
+        presenter.appCameToFront(notes)
+        showMain()
+        notes.isTerminated = true
+        _ = dock.take()
+        try clickClose(.main)
+        #expect(!presenter.isInDock)
+        #expect(dock.take() == ["leave Dock"])
+    }
+
+    /// With no other app ever in front, nothing is handed over.
+    @Test func withNoAppBeforeSorelloNothingIsHandedOver() throws {
+        presenter.appCameToFront(sorello)
+        showMain()
+        _ = dock.take()
+        try clickClose(.main)
+        #expect(dock.take() == ["leave Dock"])
     }
 
     /// A minimised window is off the screen but still open, so Sorello stays in the Dock.

@@ -97,6 +97,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
         statusItem = StatusItemController(model: models.menu, appName: info.name)
         app.start()
         watchActivation(app)
+        watchFrontApps()
         catchTermination()
         if showsSetup && models.setupIsNeeded { showSetup() }
     }
@@ -184,6 +185,20 @@ final class AppShell: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil,
                                                queue: .main) { _ in
             MainActor.assumeIsolated { app.becameActive() }
+        }
+    }
+
+    /// Tells the presenter which app comes to the front, starting with the one in front at launch, so that when
+    /// Sorello's last window closes the front can go back to the app the user was in before.
+    private func watchFrontApps() {
+        let workspace = NSWorkspace.shared
+        if let front = workspace.frontmostApplication { windows.appCameToFront(front) }
+        workspace.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil,
+                                                 queue: .main) { [weak self] notification in
+            let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            MainActor.assumeIsolated {
+                if let app { self?.windows.appCameToFront(app) }
+            }
         }
     }
 

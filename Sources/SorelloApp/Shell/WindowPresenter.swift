@@ -26,9 +26,20 @@ protocol DockPresence {
     func activate()
     /// Puts `window` in front of Sorello's other windows, out of the Dock if it was minimised, and makes it key.
     func bringForward(_ window: NSWindow)
-    /// Gives the front to the app behind Sorello, leaving the pill and every panel of Sorello's where they are.
-    /// `closing` is the window whose close made Sorello leave the Dock; it is still on screen while it closes.
-    func yieldFront(closing: NSWindow)
+}
+
+/// An app other than Sorello that has been in front, as the presenter needs to know it to hand the front back.
+/// `NSRunningApplication` is one; a test gives its own.
+@MainActor
+protocol FrontApp: AnyObject {
+    var processIdentifier: pid_t { get }
+    /// Whether it is an ordinary app, with a Dock icon, rather than an agent such as the one that shows the system's
+    /// own prompts.
+    var isOrdinary: Bool { get }
+    /// Whether it has quit.
+    var isTerminated: Bool { get }
+    /// Asks for it to be in front, with the front handed over by Sorello.
+    func takeFront()
 }
 
 /// `DockPresence` as AppKit does it.
@@ -48,14 +59,16 @@ struct SystemDock: DockPresence {
         window.orderFrontRegardless()
     }
 
-    func yieldFront(closing: NSWindow) {
-        // Hiding is the documented way to give the front to "the next app in line", and an app without a Dock
-        // icon would otherwise stay in front with no window. But a hidden app's panels stay hidden, and the pill
-        // must appear for the next dictation without Sorello coming forward, so the hidden panels are put back at
-        // once without activating Sorello. The closing window goes first, or it would be put back with them.
-        closing.orderOut(nil)
-        NSApp.hide(nil)
-        NSApp.unhideWithoutActivation()
+}
+
+extension NSRunningApplication: FrontApp {
+    @MainActor var isOrdinary: Bool { activationPolicy == .regular }
+
+    /// Cooperative activation, as Apple documents it: Sorello first lets the app make itself active, then asks for it
+    /// to be activated from Sorello. Either may be refused; then Sorello simply stays in front.
+    @MainActor func takeFront() {
+        NSApp.yieldActivation(to: self)
+        _ = activate(from: .current)
     }
 }
 
@@ -69,6 +82,8 @@ final class WindowPresenter {
     private var made: [AppWindow: NSWindow] = [:]
     /// The open windows, the one most recently in front last.
     private(set) var open: [AppWindow] = []
+    /// The latest ordinary app other than Sorello to have been in front: the one to hand the front back to.
+    private var previous: (any FrontApp)?
     private var observers: [any NSObjectProtocol] = []
 
     init(dock: any DockPresence) {
@@ -127,6 +142,13 @@ final class WindowPresenter {
         markInFront(id)
     }
 
+    /// Hears that `app` has come to the front. Sorello itself, and agents such as the one that shows the system's
+    /// prompts, are not remembered, so the front only ever goes back to an ordinary app the user was in.
+    func appCameToFront(_ app: any FrontApp) {
+        guard app.isOrdinary, app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
+        previous = app
+    }
+
     /// The first window to open makes Sorello an ordinary app before it activates, so the window comes forward the
     /// way any app's does; every window is then brought forward with the app active.
     private func show(_ id: AppWindow, make: () -> NSWindow) {
@@ -160,14 +182,23 @@ final class WindowPresenter {
         return window
     }
 
-    /// The last window to close makes Sorello a menu-bar app again and, if it was in front, gives the front to the
-    /// app behind it. One that was not in front leaves the front where it is.
+    /// The last window to close makes Sorello a menu-bar app again and, if it was in front, hands the front to the
+    /// app that was in front before it, if that app is still running. Sorello never hides itself to give up the front,
+    /// since that would hide the pill as well. With no such app it stays in front, without a window, until the user
+    /// clicks elsewhere. A window that closes while another app is in front leaves the front where it is.
+    ///
+    /// This runs while the window is closing (`willCloseNotification`; AppKit offers no notice once a close is done).
+    /// That is safe: the activation policy is the app's Dock icon, app switcher entry and menu bar, not any window's
+    /// state, and Apple documents no ordering between the two. Handing over the front is a request the other app acts
+    /// on later, not something done to the closing window. When Sorello quits, AppKit closes every window, so this
+    /// runs then too, which is harmless: the front goes where it would go anyway.
     private func closed(_ id: AppWindow) {
         guard isOpen(id) else { return }
         open.removeAll { $0 == id }
         guard !isInDock else { return }
         dock.leaveDock()
-        if dock.isActive, let window = made[id] { dock.yieldFront(closing: window) }
+        guard dock.isActive, let previous, !previous.isTerminated else { return }
+        previous.takeFront()
     }
 
     /// The main window as the app builds it, not yet on screen.
