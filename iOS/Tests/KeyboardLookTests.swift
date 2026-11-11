@@ -14,7 +14,7 @@ enum KeyboardLookTests {
             ("highlightedCandidateStaysLegible", testHighlightedCandidateStaysLegible),
             ("swipeTrailIsQuietAndNeutral", testSwipeTrailIsQuietAndNeutral),
             ("menuLinkIsTheBrandAccent", testMenuLinkIsTheBrandAccent),
-            ("ridgeMarkIsTheIconsLineAndDot", testRidgeMarkIsTheIconsLineAndDot),
+            ("ridgeMarkKeepsItsLineAndDot", testRidgeMarkKeepsItsLineAndDot),
             ("ridgeMarkFitsItsBoxCentred", testRidgeMarkFitsItsBoxCentred),
             ("capsuleStyleFollowsTheMode", testCapsuleStyleFollowsTheMode),
             ("barStatusKeepsWordsWhereTheyEarnTheirSpace", testBarStatusKeepsWordsWhereTheyEarnTheirSpace),
@@ -266,9 +266,9 @@ enum KeyboardLookTests {
 
     // MARK: Ridge mark
 
-    /// The icon's mark (AppIcon.svg, the site's 32-unit favicon): a W-shaped ridge of five strokes, alternately down and
-    /// up, and a dot centred below its lowest point.
-    private static func testRidgeMarkIsTheIconsLineAndDot() {
+    /// The mark as first drawn, on its 32-unit grid: a W-shaped ridge of five strokes, alternately down and up, and a
+    /// dot centred below its lowest point.
+    private static func testRidgeMarkKeepsItsLineAndDot() {
         let line = RidgeMark.line
         TestSupport.expectEqual(line.count, 6)
         TestSupport.expectEqual(line.first, RidgeMark.Point(x: 5.4, y: 6.1))
