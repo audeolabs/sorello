@@ -7,7 +7,6 @@ import Testing
 struct UpdateSwitchTests {
     @Test func theSwitchSaysWhatItDoes() {
         #expect(GeneralToggle.checkForUpdates.title == "Check for updates automatically")
-        #expect(GeneralToggle.checkForUpdates.detail == "Once a day. Nothing is installed until you choose Install.")
     }
 
     /// A General screen offers the switch only when the app layer says the build can update itself.

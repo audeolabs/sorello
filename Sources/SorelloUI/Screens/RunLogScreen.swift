@@ -80,7 +80,6 @@ public struct RunLogScreen: View {
 
     public var body: some View {
         ScreenPage(String(localized: "Run Log"),
-                   subtitle: String(localized: "Your last 20 dictations, with their audio. Everything here stays on this Mac."),
                    trailing: {
                        Button(String(localized: "Clear All…")) { confirmingClear = true }
                            .buttonStyle(QuietButtonStyle(destructive: true))

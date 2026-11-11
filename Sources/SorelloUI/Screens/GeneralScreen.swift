@@ -98,8 +98,7 @@ public struct GeneralScreen: View {
     }
 
     public var body: some View {
-        ScreenPage(String(localized: "General"),
-                   subtitle: String(localized: "Speech is recognised on this Mac. Nothing you say is sent anywhere.")) {
+        ScreenPage(String(localized: "General")) {
             CardGroup(String(localized: "Speech model")) {
                 Card {
                     ModelRow(name: model.modelName, status: model.status.model, hardware: model.hardware,
@@ -143,7 +142,7 @@ public struct GeneralScreen: View {
     }
 
     private func toggleRow(_ toggle: GeneralToggle) -> some View {
-        ToggleRow(toggle.title, detail: toggle.detail, symbol: toggle.symbol, isOn: Binding(
+        ToggleRow(toggle.title, symbol: toggle.symbol, isOn: Binding(
             get: { model.isOn(toggle) },
             set: { value in
                 model.toggles[toggle] = value
@@ -277,7 +276,8 @@ nonisolated enum ModelDownloadWords {
     static var unavailable: String { String(localized: "There is no speech model for this Mac yet.") }
 }
 
-/// The microphone permission, its state in words, and the button that fixes it.
+/// The microphone permission, its state in words, and the button that fixes it. Only a denied permission has a line
+/// under its name.
 struct MicrophonePermissionRow: View {
     let status: MicrophoneStatus
     let actions: GeneralActions
@@ -287,11 +287,9 @@ struct MicrophonePermissionRow: View {
     var body: some View {
         switch status {
         case .granted:
-            PermissionRow(title: String(localized: "Microphone"), symbol: "mic",
-                          detail: String(localized: "Used only while you dictate."), state: .granted)
+            PermissionRow(title: String(localized: "Microphone"), symbol: "mic", state: .granted)
         case .notDetermined:
-            PermissionRow(title: String(localized: "Microphone"), symbol: "mic",
-                          detail: String(localized: "Asked for the first time you dictate."), state: .notAsked,
+            PermissionRow(title: String(localized: "Microphone"), symbol: "mic", state: .notAsked,
                           fix: offersFix ? (String(localized: "Allow…"), actions.requestMicrophone) : nil)
         case .denied:
             PermissionRow(title: String(localized: "Microphone"), symbol: "mic.slash",
@@ -301,7 +299,8 @@ struct MicrophonePermissionRow: View {
     }
 }
 
-/// The Accessibility permission, its state in words, and the button that fixes it.
+/// The Accessibility permission, its state in words, and the button that fixes it. Only a missing permission has a
+/// line under its name.
 struct AccessibilityPermissionRow: View {
     let status: AccessibilityStatus
     let actions: GeneralActions
@@ -311,9 +310,7 @@ struct AccessibilityPermissionRow: View {
     var body: some View {
         switch status {
         case .granted:
-            PermissionRow(title: String(localized: "Accessibility"), symbol: "accessibility",
-                          detail: String(localized: "Lets the shortcuts work in any app and pastes your words."),
-                          state: .granted)
+            PermissionRow(title: String(localized: "Accessibility"), symbol: "accessibility", state: .granted)
         case .missing:
             PermissionRow(title: String(localized: "Accessibility"), symbol: "accessibility",
                           detail: String(localized: "Needed for the shortcuts and for pasting. Until then, text is left on the clipboard."),
@@ -323,13 +320,14 @@ struct AccessibilityPermissionRow: View {
     }
 }
 
-/// A permission's row: its glyph, name and one line on what it is for, then its state or the button that fixes it.
+/// A permission's row: its glyph, its name, a line on what is wrong when it is not allowed, then its state or the
+/// button that fixes it.
 struct PermissionRow: View {
     enum State { case granted, notAsked, missing }
 
     let title: String
     let symbol: String
-    let detail: String
+    var detail: String?
     let state: State
     var fix: (String, () -> Void)?
 
