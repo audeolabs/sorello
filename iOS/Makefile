@@ -238,11 +238,11 @@ SIGNED_ACTIVITY_ENTITLEMENTS = --entitlements "$(ACTIVITY_ENTITLEMENTS)"
 endif
 
 # $(1): template, $(2): output, $(3): bundle identifier. The activity extension's (info_plist_base) has no
-# LocalFlow keys: it reads neither the App Group nor the scheme.
+# Sorello keys: it reads neither the App Group nor the scheme.
 info_plist = $(call info_plist_base,$(1),$(2),$(3)) && \
-	plutil -replace LocalFlowAppGroupIdentifier -string "$(APP_GROUP)" "$(2)" && \
-	$(if $(strip $(UNIVERSAL_LINK)),plutil -replace LocalFlowUniversalLink -string "$(UNIVERSAL_LINK)" "$(2)" &&) \
-	plutil -replace LocalFlowURLScheme -string "$(URL_SCHEME)" "$(2)"
+	plutil -replace SorelloAppGroupIdentifier -string "$(APP_GROUP)" "$(2)" && \
+	$(if $(strip $(UNIVERSAL_LINK)),plutil -replace SorelloUniversalLink -string "$(UNIVERSAL_LINK)" "$(2)" &&) \
+	plutil -replace SorelloURLScheme -string "$(URL_SCHEME)" "$(2)"
 info_plist_base = cp "$(1)" "$(2)" && \
 	plutil -replace CFBundleIdentifier -string "$(3)" "$(2)" && \
 	plutil -replace CFBundleDisplayName -string "$(DISPLAY_NAME)" "$(2)" && \

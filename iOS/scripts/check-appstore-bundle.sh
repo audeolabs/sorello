@@ -150,10 +150,10 @@ if [ -f "$app_plist" ] && [ -f "$keyboard_plist" ] && [ -f "$activity_plist" ]; 
         expect_json "$plist" UIRequiredDeviceCapabilities '["arm64"]' "$what"
         # The activity draws only its content state: it reads neither the App Group nor the scheme.
         [ "$what" = activity ] && continue
-        expect "$plist" LocalFlowAppGroupIdentifier "$app_group" "$what"
-        expect "$plist" LocalFlowURLScheme "$url_scheme" "$what"
+        expect "$plist" SorelloAppGroupIdentifier "$app_group" "$what"
+        expect "$plist" SorelloURLScheme "$url_scheme" "$what"
         # The keyboard opens the universal link, never the scheme, which stays for the simulator.
-        expect "$plist" LocalFlowUniversalLink "$universal_link" "$what"
+        expect "$plist" SorelloUniversalLink "$universal_link" "$what"
     done
 
     expect_bool "$app_plist" ITSAppUsesNonExemptEncryption false app
@@ -180,7 +180,7 @@ if [ -f "$app_plist" ] && [ -f "$keyboard_plist" ] && [ -f "$activity_plist" ]; 
             grep -Fq "$needle" "$actions" || fail "$target: the App Intents metadata lacks $needle"
         done
     done
-    for key in LocalFlowAppGroupIdentifier LocalFlowURLScheme LocalFlowUniversalLink; do
+    for key in SorelloAppGroupIdentifier SorelloURLScheme SorelloUniversalLink; do
         [ -z "$(kind "$activity_plist" "$key")" ] || fail "activity: $key is present (it reads no shared files or links)"
     done
 

@@ -146,7 +146,7 @@ enum SelfTest {
 
     // Resolves the container and proves it is writable with an empty probe file.
     private static func appGroupState() -> String {
-        guard let identifier = Bundle.main.object(forInfoDictionaryKey: "LocalFlowAppGroupIdentifier") as? String,
+        guard let identifier = Bundle.main.object(forInfoDictionaryKey: "SorelloAppGroupIdentifier") as? String,
               let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: identifier) else {
             return "unresolved"
         }

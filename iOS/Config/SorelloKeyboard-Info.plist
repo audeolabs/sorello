@@ -30,9 +30,9 @@
     <string>$(SDK_VERSION)</string>
     <key>DTSDKName</key>
     <string>$(SDK)$(SDK_VERSION)</string>
-    <key>LocalFlowAppGroupIdentifier</key>
+    <key>SorelloAppGroupIdentifier</key>
     <string>$(APP_GROUP)</string>
-    <key>LocalFlowURLScheme</key>
+    <key>SorelloURLScheme</key>
     <string>$(URL_SCHEME)</string>
     <key>MinimumOSVersion</key>
     <string>$(DEPLOYMENT_TARGET)</string>

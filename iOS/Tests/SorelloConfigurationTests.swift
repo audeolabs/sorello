@@ -14,7 +14,7 @@ enum SorelloConfigurationTests {
     }
 
     private static var validInfo: [String: Any] {
-        ["LocalFlowAppGroupIdentifier": "group.example.synthetic", "LocalFlowURLScheme": "synthetic-flow"]
+        ["SorelloAppGroupIdentifier": "group.example.synthetic", "SorelloURLScheme": "synthetic-flow"]
     }
 
     private static let link = "https://links.example/synthetic-flow/dictate"
@@ -39,20 +39,20 @@ enum SorelloConfigurationTests {
             TestSupport.expectEqual(SorelloConfiguration(infoDictionary: info), nil)
         }
         var info = validInfo
-        info["LocalFlowAppGroupIdentifier"] = "$(APP_GROUP)"
+        info["SorelloAppGroupIdentifier"] = "$(APP_GROUP)"
         TestSupport.expectEqual(SorelloConfiguration(infoDictionary: info), nil)
-        info["LocalFlowAppGroupIdentifier"] = "group.example synthetic"
+        info["SorelloAppGroupIdentifier"] = "group.example synthetic"
         TestSupport.expectEqual(SorelloConfiguration(infoDictionary: info), nil)
     }
 
     private static func testRejectsInvalidScheme() {
         for scheme in ["$(URL_SCHEME)", "1flow", "synthetic flow", "synthetic://", "flów", "-flow"] {
             var info = validInfo
-            info["LocalFlowURLScheme"] = scheme
+            info["SorelloURLScheme"] = scheme
             TestSupport.expect(SorelloConfiguration(infoDictionary: info) == nil, "accepted scheme \(scheme)")
         }
         var info = validInfo
-        info["LocalFlowURLScheme"] = "Synthetic+flow.v2-dev"
+        info["SorelloURLScheme"] = "Synthetic+flow.v2-dev"
         TestSupport.expect(SorelloConfiguration(infoDictionary: info) != nil, "rejected a valid scheme")
     }
 
@@ -63,13 +63,13 @@ enum SorelloConfigurationTests {
 
     private static func testReadsUniversalLink() {
         var info = validInfo
-        info["LocalFlowUniversalLink"] = link
+        info["SorelloUniversalLink"] = link
         TestSupport.expectEqual(
             SorelloConfiguration(infoDictionary: info),
             SorelloConfiguration(appGroupIdentifier: "group.example.synthetic", urlScheme: "synthetic-flow",
                                    universalLink: URL(string: link)!))
         for valid in ["https://links.example/d", "HTTPS://Links.Example/Flow/Dictate", "https://a.links.example/x/y/z/"] {
-            info["LocalFlowUniversalLink"] = valid
+            info["SorelloUniversalLink"] = valid
             TestSupport.expectEqual(SorelloConfiguration(infoDictionary: info)?.universalLink?.absoluteString, valid)
         }
     }
@@ -91,14 +91,14 @@ enum SorelloConfigurationTests {
         ]
         for value in invalid {
             var info = validInfo
-            info["LocalFlowUniversalLink"] = value
+            info["SorelloUniversalLink"] = value
             TestSupport.expect(SorelloConfiguration(infoDictionary: info) == nil, "accepted universal link \(value)")
         }
     }
 
     private static func testPrefersUniversalLinkForDictateURL() {
         var info = validInfo
-        info["LocalFlowUniversalLink"] = link
+        info["SorelloUniversalLink"] = link
         let configuration = SorelloConfiguration(infoDictionary: info)!
         TestSupport.expectEqual(configuration.dictateURL?.absoluteString, link)
         TestSupport.expectEqual(configuration.urlScheme, "synthetic-flow")
