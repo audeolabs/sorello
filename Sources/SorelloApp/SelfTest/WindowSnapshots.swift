@@ -215,6 +215,7 @@ enum WindowSnapshots {
     private static func slug(_ step: SetupStep) -> String {
         switch step {
         case .welcome: "welcome"
+        case .model: "model"
         case .microphone: "microphone"
         case .accessibility: "accessibility"
         case .shortcut: "shortcut"

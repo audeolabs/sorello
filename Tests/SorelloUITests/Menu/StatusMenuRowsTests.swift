@@ -73,6 +73,29 @@ struct StatusMenuRowsTests {
         #expect(rows.first?.image == .indicator(.neutral))
     }
 
+    /// A model not on this Mac: the remedy opens the General screen, where it is downloaded. While it downloads
+    /// the menu says so, and when there is no build for this Mac it offers nothing.
+    @Test func aModelToDownloadIsOfferedThroughGeneral() {
+        let size: Int64 = 138_084_519
+        let absent = Self.rows(AppStatus(model: .notDownloaded(.notStarted(size: size)), microphone: .granted,
+                                         accessibility: .granted))
+        #expect(Self.summary(absent) == ["information | Speech model not downloaded", "command openGeneral | Download…",
+                                         "separator"] + Self.shortcutsAndBelow)
+        #expect(absent.first?.image == .indicator(.problem))
+        let failed = Self.rows(AppStatus(model: .notDownloaded(.failed(.server, size: size)), microphone: .granted,
+                                         accessibility: .granted))
+        #expect(Self.summary(failed) == Self.summary(absent))
+        let downloading = Self.rows(AppStatus(model: .notDownloaded(.downloading(received: 5, size: size)),
+                                              microphone: .granted, accessibility: .granted))
+        #expect(Self.summary(downloading) == ["information | Downloading speech model", "separator"]
+            + Self.shortcutsAndBelow)
+        #expect(downloading.first?.image == .indicator(.preparing))
+        let none = Self.rows(AppStatus(model: .notDownloaded(.unavailable), microphone: .granted,
+                                       accessibility: .granted))
+        #expect(Self.summary(none) == ["information | No speech model for this Mac yet", "separator"]
+            + Self.shortcutsAndBelow)
+    }
+
     @Test func aFailedModelOffersRetry() {
         let rows = Self.rows(AppStatus(model: .failed(.couldNotLoad), microphone: .granted, accessibility: .granted))
         #expect(Self.summary(rows) == ["information | Speech model unavailable", "command retryModel | Retry",
@@ -168,7 +191,9 @@ struct StatusMenuRowsTests {
     /// Each row keeps its identity whatever the state, so an open menu can change in place.
     @Test func rowsAreNamedUniquely() {
         for status in [AppStatus.sampleReady,
-                       AppStatus(model: .failed(.missing), microphone: .denied, accessibility: .missing)] {
+                       AppStatus(model: .failed(.couldNotLoad), microphone: .denied, accessibility: .missing),
+                       AppStatus(model: .notDownloaded(.notStarted(size: 9)), microphone: .denied,
+                                 accessibility: .missing)] {
             let ids = Self.rows(status).map(\.id)
             #expect(Set(ids).count == ids.count)
         }

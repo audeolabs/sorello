@@ -14,7 +14,8 @@ extension ModelStatus {
         switch readiness {
         case .preparing: self = .preparing
         case .ready: self = .ready
-        case .failed(.modelMissing): self = .failed(.missing)
+        // This app cannot download its model yet, so a missing model is one there is no way to get.
+        case .failed(.modelMissing): self = .notDownloaded(.unavailable)
         case .failed(.modelCorrupt): self = .failed(.damaged)
         case .failed(.loadFailed): self = .failed(.couldNotLoad)
         }

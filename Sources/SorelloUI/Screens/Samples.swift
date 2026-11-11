@@ -14,10 +14,25 @@ nonisolated let sampleCalendar: Calendar = {
 }()
 nonisolated let sampleLocale = Locale(identifier: "en_US")
 
+/// The pinned build's size, so the samples say what the app says.
+nonisolated let sampleModelSize: Int64 = 138_084_519
+
 /// Sample statuses.
 public extension AppStatus {
     /// Everything ready.
     static let sampleReady = AppStatus(model: .ready, microphone: .granted, accessibility: .granted)
+}
+
+/// Sample states of the model's download.
+public extension ModelStatus {
+    /// Not downloaded yet.
+    static let sampleNotDownloaded = ModelStatus.notDownloaded(.notStarted(size: sampleModelSize))
+    /// 62 MB of 138 MB.
+    static let sampleDownloading = ModelStatus.notDownloaded(.downloading(received: 62_400_000, size: sampleModelSize))
+    /// Stopped: the connection dropped.
+    static let sampleDownloadFailed = ModelStatus.notDownloaded(.failed(.connection, size: sampleModelSize))
+    /// No build of the model for this Mac.
+    static let sampleNoBuild = ModelStatus.notDownloaded(.unavailable)
 }
 
 /// Sample menus for the menu-bar item.
@@ -169,8 +184,9 @@ public extension MainWindowModel {
 public extension SetupModel {
     static func sample(step: SetupStep, microphone: MicrophoneStatus = .notDetermined,
                        accessibility: AccessibilityStatus = .missing, model: ModelStatus = .ready,
-                       testText: String = "") -> SetupModel {
-        SetupModel(appName: "Sorello", step: step, microphone: microphone, accessibility: accessibility, model: model,
+                       includesModel: Bool = false, testText: String = "") -> SetupModel {
+        SetupModel(appName: "Sorello", step: step, steps: SetupStep.steps(includingModel: includesModel),
+                   microphone: microphone, accessibility: accessibility, model: model, modelSize: sampleModelSize,
                    holdToTalk: ShortcutRecorderState(keys: .function), testText: testText)
     }
 }

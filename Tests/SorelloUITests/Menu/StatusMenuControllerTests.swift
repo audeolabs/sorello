@@ -219,11 +219,13 @@ import Testing
         #expect(ready.hasSuffix("\n") && !ready.contains(" \n"))
     }
 
-    /// The snapshot tool writes the menu's six states as text, in place of pictures of it.
-    @Test func theSnapshotsListTheSixStatesAsText() {
+    /// The snapshot tool writes the menu's states as text, in place of pictures of it, the model's download
+    /// included.
+    @Test func theSnapshotsListTheStatesAsText() {
         let texts = StatusMenuSnapshots.texts
         #expect(texts.map(\.name) == ["menu-ready", "menu-preparing", "menu-microphone-needed",
-                                      "menu-accessibility-needed", "menu-model-failed", "menu-paused"])
+                                      "menu-accessibility-needed", "menu-model-failed", "menu-paused",
+                                      "menu-model-not-downloaded", "menu-model-downloading", "menu-model-no-build"])
         #expect(texts.allSatisfy { !$0.text.isEmpty })
         #expect(!SnapshotCatalog.all.contains { $0.name.hasPrefix("menu") })
     }

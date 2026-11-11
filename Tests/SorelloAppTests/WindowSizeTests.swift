@@ -52,6 +52,11 @@ import Testing
     /// with every state that changes what a step shows.
     private static let setupChanges: [(String, @MainActor (SetupModel) -> Void)] = [
         ("welcome", { $0.step = .welcome }),
+        ("model, not downloaded", { $0.step = .model; $0.model = .notDownloaded(.notStarted(size: 138_084_519)) }),
+        ("model, downloading", { $0.model = .notDownloaded(.downloading(received: 62_400_000, size: 138_084_519)) }),
+        ("model, failed", { $0.model = .notDownloaded(.failed(.disk, size: 138_084_519)) }),
+        ("model, none for this Mac", { $0.model = .notDownloaded(.unavailable) }),
+        ("model, here", { $0.model = .preparing }),
         ("microphone not asked", { $0.step = .microphone; $0.microphone = .notDetermined }),
         ("microphone denied", { $0.microphone = .denied }),
         ("microphone granted", { $0.microphone = .granted }),
@@ -60,7 +65,8 @@ import Testing
         ("shortcut", { $0.step = .shortcut }),
         ("test, model preparing", { $0.step = .test; $0.model = .preparing }),
         ("test, model ready", { $0.model = .ready }),
-        ("test, model missing", { $0.model = .failed(.missing) }),
+        ("test, model downloading", { $0.model = .notDownloaded(.downloading(received: 1, size: 138_084_519)) }),
+        ("test, model not downloaded", { $0.model = .notDownloaded(.notStarted(size: 138_084_519)) }),
         ("test, model damaged", { $0.model = .failed(.damaged) }),
         ("test, model could not load", { $0.model = .failed(.couldNotLoad) }),
         ("test, several lines", {
@@ -75,7 +81,7 @@ import Testing
     ]
 
     @Test func setupKeepsItsSizeAtEveryStepAndInEveryState() async {
-        let model = SetupModel.sample(step: .welcome)
+        let model = SetupModel.sample(step: .welcome, includesModel: true)
         let window = WindowPresenter.setupWindow(model, title: "Sorello")
         defer { window.close() }
         #expect(!window.styleMask.contains(.resizable))

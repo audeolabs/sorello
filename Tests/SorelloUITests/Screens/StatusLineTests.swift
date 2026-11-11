@@ -22,11 +22,32 @@ struct StatusLineTests {
         #expect(line.remedy == nil)
     }
 
-    @Test(arguments: [ModelProblem.missing, .damaged, .couldNotLoad])
+    @Test(arguments: [ModelProblem.damaged, .couldNotLoad])
     func aFailedModelOffersRetry(problem: ModelProblem) {
         let line = AppStatus(model: .failed(problem), microphone: .granted, accessibility: .granted).line
         #expect(line.indicator == .problem)
         #expect(line.remedy == .retryModel)
+    }
+
+    /// A model that is not on this Mac yet is a problem whose remedy is the General screen, where it is downloaded;
+    /// one that is downloading resolves itself; and when there is no build for this Mac, nothing is offered.
+    @Test func aModelNotOnThisMacSaysSo() {
+        for download in [ModelDownloadStatus.notStarted(size: 138_084_519), .failed(.connection, size: 138_084_519)] {
+            let line = AppStatus(model: .notDownloaded(download), microphone: .granted, accessibility: .granted).line
+            #expect(line.text == "Speech model not downloaded")
+            #expect(line.indicator == .problem)
+            #expect(line.remedy == .downloadModel)
+        }
+        let downloading = AppStatus(model: .notDownloaded(.downloading(received: 1, size: 2)), microphone: .granted,
+                                    accessibility: .granted).line
+        #expect(downloading.text == "Downloading speech model")
+        #expect(downloading.indicator == .preparing)
+        #expect(downloading.remedy == nil)
+        let none = AppStatus(model: .notDownloaded(.unavailable), microphone: .granted, accessibility: .granted).line
+        #expect(none.text == "No speech model for this Mac yet")
+        #expect(none.indicator == .problem)
+        #expect(none.remedy == nil)
+        #expect(StatusLine.Remedy.downloadModel.title == "Download…")
     }
 
     @Test func aDeniedMicrophoneLeadsToItsSettings() {
@@ -51,7 +72,8 @@ struct StatusLineTests {
     /// Every combination: a problem that needs the user always outranks one that resolves itself, and among
     /// problems the model comes first, then the microphone, then Accessibility.
     @Test func theMostUrgentStateWins() {
-        let models: [ModelStatus] = [.ready, .preparing, .failed(.couldNotLoad)]
+        let models: [ModelStatus] = [.ready, .preparing, .failed(.couldNotLoad), .notDownloaded(.notStarted(size: 9)),
+                                     .notDownloaded(.downloading(received: 1, size: 9)), .notDownloaded(.unavailable)]
         let microphones: [MicrophoneStatus] = [.granted, .notDetermined, .denied]
         let accessibilities: [AccessibilityStatus] = [.granted, .missing]
         for model in models {
@@ -60,16 +82,20 @@ struct StatusLineTests {
                     for paused in [false, true] {
                         let line = AppStatus(model: model, microphone: microphone, accessibility: accessibility,
                                              shortcutsPaused: paused).line
+                        let blocked = model == .notDownloaded(.unavailable)
                         let expected: StatusLine.Remedy? =
                             if case .failed = model { .retryModel }
+                            else if case .notDownloaded(.notStarted) = model { .downloadModel }
+                            else if blocked { nil }
                             else if microphone == .denied { .openMicrophoneSettings }
                             else if accessibility == .missing { .openAccessibilitySettings }
                             else { nil }
                         #expect(line.remedy == expected, "\(model) \(microphone) \(accessibility) \(paused)")
                         let indicator: StatusLine.Indicator =
-                            if expected != nil { .problem }
+                            if expected != nil || blocked { .problem }
                             else if paused { .neutral }
                             else if model == .preparing { .preparing }
+                            else if case .notDownloaded(.downloading) = model { .preparing }
                             else { .ready }
                         #expect(line.indicator == indicator, "\(model) \(microphone) \(accessibility) \(paused)")
                     }

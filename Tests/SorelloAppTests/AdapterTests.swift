@@ -198,7 +198,7 @@ private struct NoLayout: KeyboardLayout {
     @Test func theEngineAndPermissionsAsTheWindowsShowThem() {
         #expect(ModelStatus(.preparing) == .preparing)
         #expect(ModelStatus(.ready) == .ready)
-        #expect(ModelStatus(.failed(.modelMissing)) == .failed(.missing))
+        #expect(ModelStatus(.failed(.modelMissing)) == .notDownloaded(.unavailable))
         #expect(ModelStatus(.failed(.modelCorrupt)) == .failed(.damaged))
         #expect(ModelStatus(.failed(.loadFailed)) == .failed(.couldNotLoad))
         #expect(MicrophoneStatus(.unknown) == .notDetermined)

@@ -12,6 +12,8 @@ public struct SetupActions {
     public var openKeyboardSettings: () -> Void
     /// Load the speech model again after a failure.
     public var retryModel: () -> Void
+    /// Start the speech model's download, or go on with it after it stopped.
+    public var downloadModel: () -> Void
     /// Record Hold to Talk's shortcut.
     public var recorder: ShortcutRecorderActions
     /// Setup is done; the window closes.
@@ -20,13 +22,14 @@ public struct SetupActions {
     /// Actions that each do nothing unless given.
     public init(requestMicrophone: @escaping () -> Void = {}, openMicrophoneSettings: @escaping () -> Void = {},
                 openAccessibilitySettings: @escaping () -> Void = {}, openKeyboardSettings: @escaping () -> Void = {},
-                retryModel: @escaping () -> Void = {}, recorder: ShortcutRecorderActions = ShortcutRecorderActions(),
-                finish: @escaping () -> Void = {}) {
+                retryModel: @escaping () -> Void = {}, downloadModel: @escaping () -> Void = {},
+                recorder: ShortcutRecorderActions = ShortcutRecorderActions(), finish: @escaping () -> Void = {}) {
         self.requestMicrophone = requestMicrophone
         self.openMicrophoneSettings = openMicrophoneSettings
         self.openAccessibilitySettings = openAccessibilitySettings
         self.openKeyboardSettings = openKeyboardSettings
         self.retryModel = retryModel
+        self.downloadModel = downloadModel
         self.recorder = recorder
         self.finish = finish
     }
@@ -39,12 +42,17 @@ public final class SetupModel {
     public var appName: String
     /// The step showing. The view moves it; the app layer may set it.
     public var step: SetupStep
+    /// The steps this setup has, in order: the model's is among them only when the model was not on the Mac as
+    /// setup opened. The app layer sets it when setup opens, and it stays for that setup.
+    public var steps: [SetupStep]
     /// Microphone access, kept current by the app layer.
     public var microphone: MicrophoneStatus
     /// Accessibility access, kept current by the app layer.
     public var accessibility: AccessibilityStatus
-    /// The speech model, for the live test.
+    /// The speech model, for its step and the live test.
     public var model: ModelStatus
+    /// The size of the model's download in bytes, which its step states.
+    public var modelSize: Int64
     /// Hold to Talk's recorder.
     public var holdToTalk: ShortcutRecorderState
     /// What the live test's field holds: what the user dictated into it, or typed.
@@ -52,12 +60,15 @@ public final class SetupModel {
     /// What setup asks of the app layer.
     public var actions: SetupActions
 
-    /// Setup's values, starting at `step`.
-    public init(appName: String, step: SetupStep = .welcome, microphone: MicrophoneStatus,
-                accessibility: AccessibilityStatus, model: ModelStatus, holdToTalk: ShortcutRecorderState,
-                testText: String = "", actions: SetupActions = SetupActions()) {
+    /// Setup's values, starting at `step`, with `steps`: every step but the model's unless they are given.
+    public init(appName: String, step: SetupStep = .welcome,
+                steps: [SetupStep] = SetupStep.steps(includingModel: false), microphone: MicrophoneStatus,
+                accessibility: AccessibilityStatus, model: ModelStatus, modelSize: Int64 = 0,
+                holdToTalk: ShortcutRecorderState, testText: String = "", actions: SetupActions = SetupActions()) {
         self.appName = appName
         self.step = step
+        self.steps = steps
+        self.modelSize = modelSize
         self.microphone = microphone
         self.accessibility = accessibility
         self.model = model
@@ -67,8 +78,9 @@ public final class SetupModel {
     }
 }
 
-/// Setup: welcome, the microphone, Accessibility, the shortcut, and a live test into a field of its own. Each step
-/// says in one sentence why it is needed, and every step can be left for later.
+/// Setup: welcome, the speech model when it is not on the Mac yet, the microphone, Accessibility, the shortcut, and a
+/// live test into a field of its own. Each step says in one sentence why it is needed, and every step can be left for
+/// later. The window is one size at every step and in every state.
 public struct SetupView: View {
     @Bindable private var model: SetupModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -104,7 +116,7 @@ public struct SetupView: View {
 
     private var progress: some View {
         HStack(spacing: 6) {
-            ForEach(SetupStep.allCases, id: \.self) { item in
+            ForEach(model.steps, id: \.self) { item in
                 Capsule()
                     .fill(Color.white.opacity(item == model.step ? 1 : item.rawValue < model.step.rawValue ? 0.5 : 0.2))
                     .frame(width: item == model.step ? 22 : 6, height: 6)
@@ -113,13 +125,14 @@ public struct SetupView: View {
         .animation(reduceMotion ? nil : .spring(response: 0.26, dampingFraction: 0.88), value: model.step)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "Setup"))
-        .accessibilityValue(model.step.spokenPosition)
+        .accessibilityValue(model.step.spokenPosition(in: model.steps))
     }
 
     private var buttons: some View {
-        let buttons = SetupButtons.forStep(model.step, microphone: model.microphone, accessibility: model.accessibility)
+        let buttons = SetupButtons.forStep(model.step, microphone: model.microphone, accessibility: model.accessibility,
+                                           model: model.model)
         return HStack(spacing: 10) {
-            if let previous = model.step.previous {
+            if let previous = model.step.previous(in: model.steps) {
                 Button { go(to: previous) } label: { Label(String(localized: "Back"), systemImage: "chevron.left") }
                     .buttonStyle(QuietButtonStyle())
             }
@@ -147,7 +160,8 @@ public struct SetupView: View {
 
     private func perform(_ action: SetupAction) {
         switch action {
-        case .advance: if let next = model.step.next { go(to: next) }
+        case .advance: if let next = model.step.next(in: model.steps) { go(to: next) }
+        case .downloadModel: model.actions.downloadModel()
         case .requestMicrophone: model.actions.requestMicrophone()
         case .openMicrophoneSettings: model.actions.openMicrophoneSettings()
         case .openAccessibilitySettings: model.actions.openAccessibilitySettings()
@@ -167,6 +181,7 @@ public struct SetupView: View {
     private var step: some View {
         switch model.step {
         case .welcome: WelcomeStep(appName: model.appName)
+        case .model: ModelStep(model: model)
         case .microphone: MicrophoneStep(model: model)
         case .accessibility: AccessibilityStep(model: model)
         case .shortcut: ShortcutStep(model: model)
@@ -230,7 +245,7 @@ private struct WelcomeStep: View {
                 .padding(.top, 10)
             HStack(alignment: .top, spacing: 8) {
                 Promise(symbol: "laptopcomputer", text: String(localized: "On this Mac"))
-                Promise(symbol: "network.slash", text: String(localized: "No network"))
+                Promise(symbol: "eye.slash", text: String(localized: "Nothing sent"))
                 Promise(symbol: "lock", text: String(localized: "Kept only here"))
             }
             .padding(.vertical, 18)
@@ -263,6 +278,54 @@ private struct Promise: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+/// The speech model: what is downloaded, how large, from where, and that nothing said is ever sent; then how much has
+/// arrived, why it stopped, or that it is here. The download goes on behind the later steps once it has started.
+private struct ModelStep: View {
+    let model: SetupModel
+
+    var body: some View {
+        StepLayout(symbol: "arrow.down.circle", title: String(localized: "Get the speech model"),
+                   line: SetupCopy.modelLine(appName: model.appName, size: model.modelSize)) {
+            state
+        }
+    }
+
+    @ViewBuilder
+    private var state: some View {
+        switch model.model {
+        case .notDownloaded(.notStarted):
+            EmptyView()
+        case .notDownloaded(.downloading(let received, let size)):
+            VStack(spacing: 10) {
+                GlacierBar(fraction: ModelSize.fraction(received: received, of: size))
+                Text(verbatim: ModelSize.progress(received: received, of: size))
+                    .font(.rowDetail)
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.secondaryInk)
+            }
+            .frame(maxWidth: 280)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(String(localized: "Downloading the speech model"))
+            .accessibilityValue(ModelSize.progress(received: received, of: size))
+        case .notDownloaded(.failed(let problem, let size)):
+            InlineMessage(problem.explanation(size: size))
+        case .notDownloaded(.unavailable):
+            InlineMessage(ModelDownloadWords.unavailable)
+        case .preparing, .ready, .failed:
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Theme.aurora)
+                    .accessibilityHidden(true)
+                Text("The speech model is on this Mac.")
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Theme.ink)
+            }
+            .accessibilityElement(children: .combine)
+        }
     }
 }
 
@@ -379,6 +442,24 @@ private struct TestStep: View {
     @ViewBuilder
     private var outcome: some View {
         switch model.model {
+        case .notDownloaded(let download):
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if case .downloading = download {
+                    StatusIndicator(.preparing, size: 7)
+                    Text(SetupCopy.testWaiting(for: model.model) ?? "")
+                        .font(.rowDetail)
+                        .foregroundStyle(Theme.secondaryInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    InlineMessage(SetupCopy.testWaiting(for: model.model) ?? "")
+                }
+                Spacer(minLength: 8)
+                if download.offersDownload {
+                    Button(String(localized: "Download"), action: model.actions.downloadModel)
+                        .buttonStyle(PrimaryButtonStyle(size: .compact))
+                }
+            }
+            .accessibilityElement(children: .contain)
         case .failed(let problem):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 InlineMessage(problem.explanation)

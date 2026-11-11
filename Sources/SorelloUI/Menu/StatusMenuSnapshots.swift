@@ -15,6 +15,11 @@ public enum StatusMenuSnapshots {
              false),
             ("paused", AppStatus(model: .ready, microphone: .granted, accessibility: .granted, shortcutsPaused: true),
              true),
+            ("model-not-downloaded", AppStatus(model: .sampleNotDownloaded, microphone: .granted,
+                                               accessibility: .granted), false),
+            ("model-downloading", AppStatus(model: .sampleDownloading, microphone: .granted, accessibility: .granted),
+             false),
+            ("model-no-build", AppStatus(model: .sampleNoBuild, microphone: .granted, accessibility: .granted), false),
         ]
         return states.map { name, status, copyable in
             ("menu-\(name)", StatusMenuController(model: .sample(status: status, hasLastDictation: copyable)).text)
