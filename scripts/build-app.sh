@@ -90,7 +90,9 @@ plutil -lint "$APP/Contents/Info.plist" > /dev/null
 
 cp -R Resources/Fonts "$APP/Contents/Resources/Fonts"
 cp ThirdPartyNotices.md "$APP/Contents/Resources/"
-[ -f Resources/AppIcon.icns ] && cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+# A nightly carries the icon with stars, so it is told from a release at a glance (ARCHITECTURE.md, section 8).
+if [ "$CHANNEL" = nightly ]; then ICON=Resources/AppIcon-Nightly.icns; else ICON=Resources/AppIcon.icns; fi
+cp "$ICON" "$APP/Contents/Resources/AppIcon.icns"
 
 cp Models/model.lock.json "$APP/Contents/Resources/model.lock.json"
 cp -R Resources/ModelNotices "$APP/Contents/Resources/ModelNotices"

@@ -669,6 +669,7 @@ menu-bar item is the one exception: it is the system's own (see Windows).
 | glacier | `#67E8F9` | The wait's shimmer, and preparing |
 | ember | `#F5C66B` | An error's symbol, never a dot |
 | coral | `#FF7D5E` | Destructive actions only |
+| tangerine | `#FF9233` | Sorello Nightly's stars, on its app icon only |
 | screen | `#05080A` | Window background |
 | card | `#0F1A1C` | Rows and cards |
 | pill | `#09090A` | The pill and primary buttons, edged `#6E6E70` at 0.5 pt (1 pt with Increase Contrast) |
@@ -763,6 +764,16 @@ menu-bar icon is the same row as a template image. Setup's welcome and
 About show it at rest in the island's capsule: the row's ink is centred in
 the capsule both ways, and the aurora dot's glow is drawn around that dot
 without moving anything.
+
+Sorello Nightly's icon is that icon with a few small orange stars on the
+field, around the mark and clear of it and of the aurora dot's glow, so a
+nightly is told from a release at a glance in the Dock, the app switcher
+and Finder. The stars are always in the same places. Nothing else about a
+nightly looks different: its menu-bar icon, setup and About show the mark
+as every build does, and a development build has the plain icon.
+`Resources/AppIcon-Nightly.icns` holds the nightly's icon, and a nightly
+build carries it as its icon. At 32 pixels and under the stars would be
+only specks of brown, so there the nightly's icon is the plain one.
 
 ### Windows
 
