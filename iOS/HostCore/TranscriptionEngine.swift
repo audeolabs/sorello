@@ -35,7 +35,7 @@ protocol HostTranscriber: AnyObject {
     func releaseIfIdle() -> Bool
 }
 
-/// One loaded speech model: `LocalParakeetService` on the Neural Engine in the app, fakes in tests.
+/// One loaded speech model: the shared `SpeechEngine` on the Neural Engine in the app, fakes in tests.
 protocol SpeechRuntime: AnyObject, Sendable {
     func prepare() async throws
     func transcribe(_ samples: [Float]) async throws -> String
@@ -45,7 +45,7 @@ protocol SpeechRuntime: AnyObject, Sendable {
     @MainActor func beginStream(onEnd: @escaping @Sendable () -> Void) -> SpeechStream?
 }
 
-/// A recording transcribed while it is recorded (`LocalParakeetService`'s streaming session in the app).
+/// A recording transcribed while it is recorded (a `SpeechEngine` stream in the app).
 protocol SpeechStream: AnyObject, Sendable {
     /// 16 kHz mono samples in recording order, from the capture thread; never waits for model work.
     func append(_ samples: [Float])

@@ -1,3 +1,4 @@
+import DictionaryKit
 import Foundation
 
 /// `DictionaryLibrary` over an isolated `UserDefaults` suite and a synthetic vocabulary. All words are invented.
@@ -11,6 +12,7 @@ enum DictionaryLibraryTests {
             ("noVocabularyRefusesEdits", isolated(testNoVocabularyRefusesEdits)),
             ("unreadableDataIsKeptUntilReset", isolated(testUnreadableDataIsKeptUntilReset)),
             ("macFormatLoadsAndKeepsIgnoreList", isolated(testMacFormatLoadsAndKeepsIgnoreList)),
+            ("earlierBuildsPayloadLoadsAndIsWrittenAsBefore", isolated(testEarlierBuildsPayloadLoadsAndIsWrittenAsBefore)),
             ("setStrengthKeepsText", isolated(testSetStrengthKeepsText)),
             ("strengthSteps", isolated(testStrengthSteps)),
         ]
@@ -163,6 +165,28 @@ enum DictionaryLibraryTests {
             let reloaded = DictionaryLibrary(defaults: defaults, encoder: encoder)
             TestSupport.expectEqual(reloaded.dictionary.ignore, [DictionaryKey("quint")])
             TestSupport.expectEqual(reloaded.entries.count, 2)
+        }
+    }
+
+    /// The dictionary an iPhone holds from the earlier build loads after the update: its keys, and its payloads byte
+    /// for byte as that build's JSONEncoder wrote them (sorted keys, no spaces). A save writes the same bytes back.
+    @MainActor
+    private static func testEarlierBuildsPayloadLoadsAndIsWrittenAsBefore() {
+        withDefaults { defaults in
+            let entries = Data(#"{"entries":[{"strength":1,"text":"Zorblax"},{"strength":2.83,"text":"Quint Morrow"},{"strength":0.5,"text":"Vellum"}],"version":1}"#.utf8)
+            let ignore = Data(#"{"ignore":["blorf","snee wobble"],"version":1}"#.utf8)
+            defaults.set(entries, forKey: "custom_dictionary")
+            defaults.set(ignore, forKey: "custom_dictionary_ignore")
+            let library = DictionaryLibrary(defaults: defaults, encoder: encoder)
+            TestSupport.expect(!library.loadFailed, "the earlier build's dictionary did not load")
+            TestSupport.expectEqual(library.entries, [DictionaryEntry(text: "Zorblax", strength: 1),
+                                                      DictionaryEntry(text: "Quint Morrow", strength: 2.83),
+                                                      DictionaryEntry(text: "Vellum", strength: 0.5)])
+            TestSupport.expectEqual(library.snapshotEntries, library.entries)
+            TestSupport.expectEqual(library.dictionary.ignore, [DictionaryKey("blorf"), DictionaryKey("snee wobble")])
+            TestSupport.expectEqual(library.setStrength(1, for: DictionaryKey("zorblax")), nil)
+            TestSupport.expectEqual(defaults.object(forKey: "custom_dictionary") as? Data, entries)
+            TestSupport.expectEqual(defaults.object(forKey: "custom_dictionary_ignore") as? Data, ignore)
         }
     }
 

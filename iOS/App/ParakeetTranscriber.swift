@@ -1,5 +1,8 @@
-import CoreML
+import DictationCore
+import DictionaryKit
 import Foundation
+import SpeechEngine
+import Synchronization
 import UIKit
 
 /// One dictation's measurements for Diagnostics. Content-free and held in memory only.
@@ -28,8 +31,8 @@ struct PreparationMeasurement: Sendable {
 }
 
 /// The model runtime for SwiftUI and Diagnostics. The work is done by `TranscriptionEngine` (HostCore),
-/// which the session core uses directly; this adds the Parakeet runtime, the persisted preparation
-/// estimate and in-memory measurements.
+/// which the session core uses directly; this adds the runtime, the shared `SpeechEngine`, the persisted
+/// preparation estimate and in-memory measurements.
 @MainActor
 final class ParakeetTranscriber: ObservableObject {
     static let maxMeasurements = 10
@@ -52,7 +55,7 @@ final class ParakeetTranscriber: ObservableObject {
 
     init(preferences: AppPreferences) {
         self.preferences = preferences
-        let directory = LocalParakeetService.isAvailable ? LocalParakeetService.bundleDirectory : nil
+        let directory = CarriedModel.directory
         let dictionary = self.dictionary
         engine = TranscriptionEngine(
             isAvailable: directory != nil, osMajorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion,
@@ -77,10 +80,9 @@ final class ParakeetTranscriber: ObservableObject {
 
     /// "Find strength" on the loaded model (contract: "Custom dictionary"). Not a dictation: no measurement.
     func probeStrength(samples: [Float], word: String) async throws -> StrengthProbe.Result {
-        let snapshot = dictionary.current
-        return try await engine.withReadyRuntime { runtime in
+        try await engine.withReadyRuntime { runtime in
             guard let runtime = runtime as? ParakeetRuntime else { throw TranscriptionFailure.modelUnavailable }
-            return try await runtime.probeStrength(samples: samples, word: word, dictionary: snapshot)
+            return try await runtime.probeStrength(samples: samples, word: word)
         }
     }
 
@@ -135,76 +137,145 @@ final class ParakeetTranscriber: ObservableObject {
     }
 }
 
-/// `LocalParakeetService` as a `SpeechRuntime`: only the 15 s encoder function, to bound
-/// memory. Dropping the last reference releases the model. The model loads from the bundle: a stable
-/// copy (`ParakeetModelStore`, macOS) does not survive iOS updates, because iOS compiles the Neural
-/// Engine program again for each installed build (TestFlight 20 → 21 reused the copy's cache entry
-/// but still compiled).
+/// The model the app carries (ARCHITECTURE.md, "Transcription"): a build the pin lists for iOS, which the build checked
+/// against the pin and its manifest. The engine loads it where it lies and checks every file again. Nil when the app
+/// was built without it, and on anything but arm64, as before.
+enum CarriedModel {
+    static var directory: URL? {
+        #if arch(arm64)
+        guard let directory = Bundle.main.resourceURL?.appendingPathComponent("Parakeet", isDirectory: true),
+              FileManager.default.fileExists(atPath: directory.appendingPathComponent("bundle.json").path) else {
+            return nil
+        }
+        return directory
+        #else
+        return nil
+        #endif
+    }
+}
+
+/// The shared `SpeechEngine` as a `SpeechRuntime`: the encoder's one 15 s function, to bound memory. Dropping the last
+/// reference releases the engine and its model. The model loads where it lies in the app, with no store: a stable
+/// copy (the Mac's store) does not survive iOS updates, because iOS compiles the Neural Engine program again for each
+/// installed build (TestFlight 20 → 21 reused the copy's cache entry but still compiled).
+///
+/// The engine's failures become the app's own: a cancellation is a `CancellationError`, a failed preparation
+/// `.modelFailed` and any other failure `.transcriptionFailed`, which `TranscriptionEngine` turns into the request's
+/// error and the background hint. A request that ends early still waits for the model to let go of the chunk it is
+/// working on, as it always has, so the runtime is never released or replaced under that work.
 private final class ParakeetRuntime: SpeechRuntime {
-    private let service: LocalParakeetService
-    private let directory: URL?
+    private let engine: SpeechEngine?
     private let dictionary: DictionarySnapshotBox
 
     init(units: ComputePolicy.Units, directory: URL?, dictionary: DictionarySnapshotBox) {
-        service = LocalParakeetService(computeUnits: units.mlComputeUnits)
-        self.directory = directory
         self.dictionary = dictionary
+        // The engine reads the snapshot when each transcription starts.
+        engine = directory.map {
+            SpeechEngine(modelDirectory: $0, storeDirectory: nil, compute: units.speechCompute,
+                         dictionary: { _ in dictionary.current })
+        }
     }
 
     func prepare() async throws {
-        guard let directory else { throw TranscriptionFailure.modelUnavailable }
-        try await service.prepare(directory: directory)
+        guard let engine else { throw TranscriptionFailure.modelUnavailable }
+        await engine.prepare()
+        // `prepare` returns once the attempt has ended, which the engine has published by then.
+        var readiness = EngineReadiness.preparing
+        for await current in engine.readiness() {
+            readiness = current
+            break
+        }
+        guard readiness == .ready else { throw TranscriptionFailure.modelFailed }
     }
 
     /// One snapshot per transcription, taken when it starts.
     func transcribe(_ samples: [Float]) async throws -> String {
-        guard let directory else { throw TranscriptionFailure.modelUnavailable }
-        let snapshot = dictionary.current
-        guard !snapshot.entries.isEmpty else { return try await service.transcribe(samples: samples, directory: directory) }
-        return try await service.transcribe(samples: samples, directory: directory, dictionary: snapshot)
+        guard let engine else { throw TranscriptionFailure.modelUnavailable }
+        do {
+            return try await engine.transcribe(samples)
+        } catch {
+            await engine.waitUntilModelWorkEnds()
+            throw Self.failure(error)
+        }
     }
 
-    func probeStrength(samples: [Float], word: String, dictionary: DictionarySnapshot) async throws -> StrengthProbe.Result {
-        guard let directory else { throw TranscriptionFailure.modelUnavailable }
-        return try await service.probeStrength(samples: samples, directory: directory, word: word, dictionary: dictionary)
+    /// "Find strength" with the current dictionary, minus the word.
+    func probeStrength(samples: [Float], word: String) async throws -> StrengthProbe.Result {
+        guard let engine else { throw TranscriptionFailure.modelUnavailable }
+        do {
+            return try await engine.probeStrength(samples: samples, word: word)
+        } catch {
+            throw Self.failure(error)
+        }
     }
 
-    /// The snapshot is taken now; `finish` fails, so the recording is transcribed as before, if the
-    /// dictionary changed meanwhile.
+    /// The snapshot is taken now, on the main actor, so it is the one whose revision the stream keeps; `finish` fails,
+    /// so the recording is transcribed as before, if the dictionary changed meanwhile.
     func beginStream(onEnd: @escaping @Sendable () -> Void) -> SpeechStream? {
-        guard let directory else { return nil }
-        let snapshot = dictionary.current
-        let session = service.beginStreamingTranscription(directory: directory, dictionary: snapshot, retainForCorrection: false,
-                                                          onEnd: onEnd)
-        return ParakeetStream(session: session, revision: snapshot.revision, dictionary: dictionary)
+        guard let engine else { return nil }
+        let revision = dictionary.current.revision
+        let stream = engine.openStream(SpeechStreamOptions())
+        return ParakeetStream(stream: stream, engine: engine, revision: revision, dictionary: dictionary, onEnd: onEnd)
+    }
+
+    /// The app's error for one of the engine's.
+    static func failure(_ error: Error) -> Error {
+        (error as? SpeechFailure) == .cancelled ? CancellationError() : TranscriptionFailure.transcriptionFailed
     }
 }
 
-/// `ParakeetStreamingSession` as a `SpeechStream`. Audio stays in memory.
+/// The engine's stream as a `SpeechStream`. Audio stays in memory. `onEnd` runs once, after `finish` or `cancel`, when
+/// the engine has finished the model work the stream started.
 private final class ParakeetStream: SpeechStream {
-    private let session: ParakeetStreamingSession
+    private let stream: any SpeechStreaming
+    private let engine: SpeechEngine
     private let revision: UInt64
     private let dictionary: DictionarySnapshotBox
+    private let onEnd: @Sendable () -> Void
+    private let ended = Mutex(false)
 
-    init(session: ParakeetStreamingSession, revision: UInt64, dictionary: DictionarySnapshotBox) {
-        self.session = session
+    init(stream: any SpeechStreaming, engine: SpeechEngine, revision: UInt64, dictionary: DictionarySnapshotBox,
+         onEnd: @escaping @Sendable () -> Void) {
+        self.stream = stream
+        self.engine = engine
         self.revision = revision
         self.dictionary = dictionary
+        self.onEnd = onEnd
     }
 
-    func append(_ samples: [Float]) { session.append(samples) }
+    func append(_ samples: [Float]) { stream.append(samples) }
 
     func finish() async throws -> String {
         guard dictionary.current.revision == revision else {
-            session.cancel()
+            cancel()
             throw TranscriptionFailure.transcriptionFailed
         }
-        return try await session.finish().text
+        defer { end() }
+        do {
+            return try await stream.finish().text
+        } catch {
+            throw ParakeetRuntime.failure(error)
+        }
     }
 
-    func cancel() { session.cancel() }
-}
+    func cancel() {
+        stream.cancel()
+        end()
+    }
 
+    private func end() {
+        let first = ended.withLock { ended in
+            defer { ended = true }
+            return !ended
+        }
+        guard first else { return }
+        let engine = self.engine, onEnd = self.onEnd
+        Task {
+            await engine.waitUntilModelWorkEnds()
+            onEnd()
+        }
+    }
+}
 
 /// The current dictionary snapshot, set on the main actor and read when a transcription starts.
 private final class DictionarySnapshotBox: @unchecked Sendable {
@@ -234,6 +305,6 @@ extension ComputeFailureHint {
 }
 
 extension ComputePolicy.Units {
-    var mlComputeUnits: MLComputeUnits { self == .cpuOnly ? .cpuOnly : .cpuAndNeuralEngine }
+    var speechCompute: SpeechCompute { self == .cpuOnly ? .cpu : .neuralEngine }
     var label: String { self == .cpuOnly ? "CPU" : "CPU + Neural Engine" }
 }

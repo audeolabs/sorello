@@ -1,14 +1,15 @@
+import DictionaryKit
 import Foundation
 
 /// The host app's custom dictionary (contract: "Custom dictionary"). Entries live in the app's own
-/// `UserDefaults` in the macOS app's format, never in the App Group, and are never logged. Every edit is
+/// `UserDefaults` in the earlier build's format (`DictionaryStorage`), never in the App Group, and are never logged. Every edit is
 /// validated, persisted, then published, and raises `revision`. Saved data that fails validation is kept
 /// untouched: the dictionary is empty for decoding and refuses edits until an explicit `reset()`.
 @MainActor
 final class DictionaryLibrary {
     private let defaults: UserDefaults
     private let editor: DictionaryEditor
-    private(set) var dictionary: CustomDictionary
+    private(set) var dictionary: SavedDictionary
     private(set) var loadFailed: Bool
     /// Rises with every change, so a decoding snapshot can be told apart from a newer one.
     private(set) var revision: UInt64 = 1
@@ -18,13 +19,13 @@ final class DictionaryLibrary {
     init(defaults: UserDefaults, encoder: BPEEncoder?) {
         self.defaults = defaults
         editor = DictionaryEditor(encoder: encoder)
-        // The macOS keys and payloads.
+        // The keys and payloads the earlier build wrote.
         switch DictionaryStorage.load(from: defaults, encoder: encoder) {
         case .success(let loaded):
             dictionary = loaded
             loadFailed = false
         case .failure:
-            dictionary = CustomDictionary()
+            dictionary = SavedDictionary()
             loadFailed = true
         }
     }
@@ -61,7 +62,7 @@ final class DictionaryLibrary {
     func reset() {
         DictionaryStorage.remove(from: defaults)
         loadFailed = false
-        dictionary = CustomDictionary()
+        dictionary = SavedDictionary()
         changed()
     }
 
@@ -77,7 +78,7 @@ final class DictionaryLibrary {
 
     private static let resetFirstMessage = "Reset the saved dictionary first."
 
-    private func apply(_ result: Result<CustomDictionary, DictionaryEditError>) -> String? {
+    private func apply(_ result: Result<SavedDictionary, DictionaryEditError>) -> String? {
         guard !loadFailed else { return Self.resetFirstMessage }
         switch result {
         case .success(let updated):

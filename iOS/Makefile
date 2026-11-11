@@ -114,7 +114,8 @@ XCODE_BUILD := $(shell xcodebuild -version 2>/dev/null | awk '/^Build version / 
 DT_XCODE := $(shell printf '%s\n' '$(XCODE_VERSION)' | awk -F. 'NF { printf "%02d%d%d", $$1, $$2, $$3 }')
 BUILD_MACHINE_OS_BUILD := $(shell sw_vers -buildVersion 2>/dev/null)
 
-# Every list can be overridden, e.g. `make SHARED_SOURCES= HOSTCORE_SOURCES=`.
+# Every list can be overridden, e.g. `make SHARED_SOURCES= HOSTCORE_SOURCES=`. The shared modules are not
+# among them: they come from the package (PACKAGE_SOURCES, below).
 swift_sources = $(shell find $(1) -name '*.swift' -type f 2>/dev/null | LC_ALL=C sort)
 APP_SWIFT_SOURCES ?= $(call swift_sources,App)
 KEYBOARD_SWIFT_SOURCES ?= $(call swift_sources,Keyboard)
@@ -142,14 +143,7 @@ TEST_SOURCES ?= $(call swift_sources,Tests)
 # messages and model loader are Foundation only.
 KEYBOARD_TEST_SOURCES ?= Keyboard/SwipeEngine.swift Keyboard/AutocorrectLoader.swift Keyboard/KeyboardMessages.swift \
 	Keyboard/BundleModelLoader.swift
-PARAKEET_SOURCES ?= $(call swift_sources,../Sources/Parakeet)
-# The custom dictionary (boosting, casing and "Find strength"), shared with the
-# macOS app. HostCore's DictionaryLibrary uses it, so the host tests compile it too.
-DICTIONARY_SOURCES ?= $(call swift_sources,../Sources/Dictionary)
-# The dictionary needs the Foundation-only Parakeet core (tokens, errors), which uses the
-# silence compactor; the host tests compile all three.
-DICTIONARY_TEST_SOURCES = $(DICTIONARY_SOURCES) ../Sources/Parakeet/LocalParakeetCore.swift ../Sources/Parakeet/ParakeetSilenceCompactor.swift
-APP_SOURCES = $(APP_SWIFT_SOURCES) $(SHARED_SOURCES) $(HOSTCORE_SOURCES) $(PARAKEET_SOURCES) $(DICTIONARY_SOURCES) \
+APP_SOURCES = $(APP_SWIFT_SOURCES) $(SHARED_SOURCES) $(HOSTCORE_SOURCES) \
 	$(ACTIVITYCORE_SOURCES) $(ACTIVITY_ATTRIBUTES_SOURCES) $(SESSION_CONTROL_INTENT_SOURCES) $(APP_KEYBOARDCORE_SOURCES)
 KEYBOARD_SOURCES = $(KEYBOARD_SWIFT_SOURCES) $(SHARED_SOURCES) $(KEYBOARDCORE_SOURCES)
 ACTIVITY_SOURCES = $(ACTIVITY_SWIFT_SOURCES) $(ACTIVITYCORE_SOURCES) $(ACTIVITY_KEYBOARDCORE_SOURCES)
@@ -584,7 +578,7 @@ else
 	xcrun --sdk macosx swiftc -swift-version 5 -parse-as-library -warnings-as-errors $(SWIFT_PARALLEL_FLAGS) \
 		-sdk "$$(xcrun --sdk macosx --show-sdk-path)" -target $(HOST_TARGET) -module-name SorelloiOSTests \
 		$(call package_library,$(HOST_PACKAGE),SorelloSpeech) \
-		-o "$(HOST_BUILD_DIR)/SorelloiOSTests" $(SHARED_SOURCES) $(HOSTCORE_SOURCES) $(ACTIVITYCORE_SOURCES) $(DICTIONARY_TEST_SOURCES) $(KEYBOARDCORE_SOURCES) $(KEYBOARD_TEST_SOURCES) $(TEST_SOURCES)
+		-o "$(HOST_BUILD_DIR)/SorelloiOSTests" $(SHARED_SOURCES) $(HOSTCORE_SOURCES) $(ACTIVITYCORE_SOURCES) $(KEYBOARDCORE_SOURCES) $(KEYBOARD_TEST_SOURCES) $(TEST_SOURCES)
 	@"$(HOST_BUILD_DIR)/SorelloiOSTests"
 endif
 
