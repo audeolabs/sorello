@@ -187,11 +187,12 @@ final class WindowPresenter {
     /// since that would hide the pill as well. With no such app it stays in front, without a window, until the user
     /// clicks elsewhere. A window that closes while another app is in front leaves the front where it is.
     ///
-    /// This runs while the window is closing (`willCloseNotification`; AppKit offers no notice once a close is done).
-    /// That is safe: the activation policy is the app's Dock icon, app switcher entry and menu bar, not any window's
-    /// state, and Apple documents no ordering between the two. Handing over the front is a request the other app acts
-    /// on later, not something done to the closing window. When Sorello quits, AppKit closes every window, so this
-    /// runs then too, which is harmless: the front goes where it would go anyway.
+    /// This runs while the window is closing (`willCloseNotification`; AppKit offers no notice once a close is done,
+    /// and waiting for a later turn would be a guess at timing). Apple's documentation of `setActivationPolicy` and
+    /// of closing a window sets no order between them, and the policy is the app's Dock icon, app switcher entry and
+    /// menu bar, nothing the closing window holds. Handing over the front is a request the other app acts on later,
+    /// not something done to the closing window. When Sorello quits, AppKit closes every window, so this runs then
+    /// too, which is harmless: the front goes where it would go anyway.
     private func closed(_ id: AppWindow) {
         guard isOpen(id) else { return }
         open.removeAll { $0 == id }
