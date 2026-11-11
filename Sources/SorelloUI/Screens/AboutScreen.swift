@@ -32,32 +32,42 @@ public final class AboutModel {
     public var modelNotice: NoticeItem
     /// Everyone else's work the app includes.
     public var thirdPartyNotices: [NoticeItem]
+    /// Whether the app can update itself, which is a second reason it connects to the network.
+    public var checksForUpdates: Bool
     /// Opens a notice's full text.
     public var showNotice: (String) -> Void
 
     /// The About screen's values; `showNotice` does nothing unless given.
     public init(appName: String, version: String, build: String, copyright: String?, modelNotice: NoticeItem,
-                thirdPartyNotices: [NoticeItem], showNotice: @escaping (String) -> Void = { _ in }) {
+                thirdPartyNotices: [NoticeItem], checksForUpdates: Bool = false,
+                showNotice: @escaping (String) -> Void = { _ in }) {
         self.appName = appName
         self.version = version
         self.build = build
         self.copyright = copyright
         self.modelNotice = modelNotice
         self.thirdPartyNotices = thirdPartyNotices
+        self.checksForUpdates = checksForUpdates
         self.showNotice = showNotice
     }
 }
 
 /// About's promise, in words that are true of an app that downloads its speech model (ARCHITECTURE.md, section 9,
-/// invariant 1): what is said stays on the Mac, and the download is the one thing the app connects for.
+/// invariant 1): what is said stays on the Mac, and the app connects only for that download and, in a build that can
+/// update itself, to check for a newer version.
 nonisolated enum AboutCopy {
     /// The promise.
     static var privacyTitle: String { String(localized: "Nothing you say leaves this Mac.") }
 
-    /// What stays on the Mac, and the one connection the app makes.
-    static func privacyDetail(appName: String) -> String {
-        String(localized: "Speech is recognised here, and the Run Log, the dictionary and your settings stay here. \(appName) connects to the network only to download its speech model.",
-               comment: "About: the app's name")
+    /// What stays on the Mac, and the connections the app makes: the model's download, and the check for a newer
+    /// version when `checksForUpdates`.
+    static func privacyDetail(appName: String, checksForUpdates: Bool = false) -> String {
+        if checksForUpdates {
+            return String(localized: "Speech is recognised here, and the Run Log, the dictionary and your settings stay here. \(appName) connects to the network only to download its speech model and to check for a newer version of itself.",
+                          comment: "About, in a build that updates itself: the app's name")
+        }
+        return String(localized: "Speech is recognised here, and the Run Log, the dictionary and your settings stay here. \(appName) connects to the network only to download its speech model.",
+                      comment: "About: the app's name")
     }
 }
 
@@ -90,7 +100,8 @@ public struct AboutScreen: View {
 
             CardGroup(String(localized: "Privacy")) {
                 Card {
-                    SettingRow(AboutCopy.privacyTitle, detail: AboutCopy.privacyDetail(appName: model.appName),
+                    SettingRow(AboutCopy.privacyTitle, detail: AboutCopy.privacyDetail(appName: model.appName,
+                                                                          checksForUpdates: model.checksForUpdates),
                                symbol: "eye.slash", symbolTint: Theme.ink)
                 }
             }

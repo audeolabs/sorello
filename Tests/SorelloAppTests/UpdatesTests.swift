@@ -63,6 +63,7 @@ import Testing
         #expect(!harness.windows.menu.rows.contains { $0.command == .checkForUpdates })
         #expect(harness.windows.main.general.offersUpdates == false)
         #expect(harness.windows.main.general.toggles[.checkForUpdates] == nil)
+        #expect(harness.windows.main.about.checksForUpdates == false)
         // The row's action has nothing to ask.
         harness.windows.menu.actions.perform(.checkForUpdates)
     }
@@ -150,6 +151,13 @@ import Testing
         general.actions.setToggle(.checkForUpdates, true)
         #expect(updater.checksAutomatically)
         await eventually { general.toggles[.checkForUpdates] == true }
+    }
+
+    /// About names both connections in a build that can update itself.
+    @Test func aboutSaysTheAppAlsoChecksForUpdates() throws {
+        let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
+        let harness = Harness(directory: directory.url, defaults: suite.defaults, updater: FakeUpdater())
+        #expect(harness.windows.main.about.checksForUpdates)
     }
 
     // MARK: The self-test

@@ -36,7 +36,7 @@ final class WindowModels {
             runLog: RunLogModel(items: []),
             about: AboutModel(appName: app.info.name, version: app.info.version, build: app.info.build,
                               copyright: app.info.copyright, modelNotice: Self.modelNotice(app.info),
-                              thirdPartyNotices: Self.thirdPartyNotices))
+                              thirdPartyNotices: Self.thirdPartyNotices, checksForUpdates: app.updater != nil))
         setup = SetupModel(appName: app.info.name, microphone: status.microphone, accessibility: status.accessibility,
                            model: status.model, modelSize: app.download?.size ?? 0,
                            holdToTalk: ShortcutRecorderState(keys: .function))

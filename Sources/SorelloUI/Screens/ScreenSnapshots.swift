@@ -54,6 +54,10 @@ public enum ScreenSnapshots {
             main("runlog-empty", height: 640, window(.runLog) { $0.runLogReplaced(RunLogModel(items: [])) }),
             main("runlog-off", height: 640, window(.runLog) { $0.runLogReplaced(RunLogModel(items: [], isEnabled: false)) }),
             main("about", height: 860, .sample(section: .about)),
+            main("about-updates", height: 860, window(.about) { window in
+                window.about.checksForUpdates = true
+                return window
+            }),
         ]
         let minimum = WindowChrome.Kind.main.minimumSize
         for section in MainSection.allCases {
