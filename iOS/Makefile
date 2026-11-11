@@ -161,9 +161,9 @@ ACTIVITY_APPEX_BUNDLE = $(APP_BUNDLE)/PlugIns/LocalFlowActivity.appex
 APP_BINARY = $(OBJ_DIR)/LocalFlow
 KEYBOARD_BINARY = $(OBJ_DIR)/LocalFlowKeyboard
 ACTIVITY_BINARY = $(OBJ_DIR)/LocalFlowActivity
-APP_ENTITLEMENTS = $(OBJ_DIR)/LocalFlow.xcent
-KEYBOARD_ENTITLEMENTS = $(OBJ_DIR)/LocalFlowKeyboard.xcent
-ACTIVITY_ENTITLEMENTS = $(OBJ_DIR)/LocalFlowActivity.xcent
+APP_ENTITLEMENTS = $(OBJ_DIR)/Sorello.xcent
+KEYBOARD_ENTITLEMENTS = $(OBJ_DIR)/SorelloKeyboard.xcent
+ACTIVITY_ENTITLEMENTS = $(OBJ_DIR)/SorelloActivity.xcent
 # Swift const values of the intent's source, from each binary's compile, for its Metadata.appintents.
 APP_CONST_VALUES = $(OBJ_DIR)/appintents/LocalFlow.swiftconstvalues
 ACTIVITY_CONST_VALUES = $(OBJ_DIR)/appintents/LocalFlowActivity.swiftconstvalues
@@ -403,9 +403,9 @@ $(ACTIVITY_BINARY): $(ACTIVITY_SOURCES) $(CONFIG_STAMP) $(LINKED_ACTIVITY_ENTITL
 		$(call embedded_entitlements,$(ACTIVITY_ENTITLEMENTS)) -o "$@" $(ACTIVITY_SOURCES)
 
 $(APP_SIGNATURE): $(APP_BINARY) $(KEYBOARD_BINARY) $(ACTIVITY_BINARY) $(APP_ENTITLEMENTS) $(KEYBOARD_ENTITLEMENTS) \
-		$(ACTIVITY_ENTITLEMENTS) Makefile Config/LocalFlow-Info.plist Config/LocalFlowKeyboard-Info.plist \
-		Config/LocalFlowActivity-Info.plist $(ICON_SOURCE) $(PARAKEET_STAMP) Config/LocalFlow-PrivacyInfo.xcprivacy \
-		Config/LocalFlowKeyboard-PrivacyInfo.xcprivacy Config/LocalFlowActivity-PrivacyInfo.xcprivacy \
+		$(ACTIVITY_ENTITLEMENTS) Makefile Config/Sorello-Info.plist Config/SorelloKeyboard-Info.plist \
+		Config/SorelloActivity-Info.plist $(ICON_SOURCE) $(PARAKEET_STAMP) Config/Sorello-PrivacyInfo.xcprivacy \
+		Config/SorelloKeyboard-PrivacyInfo.xcprivacy Config/SorelloActivity-PrivacyInfo.xcprivacy \
 		$(wildcard ../Resources/Parakeet/*) ../scripts/label-localflow-model.py \
 		$(SWIPE_STAMP) $(wildcard ../Resources/Swipe/*) $(APP_FONTS)
 	@rm -rf "$(APPEX_BUNDLE)" "$(ACTIVITY_APPEX_BUNDLE)" "$(APP_BUNDLE)/_CodeSignature" "$(APP_BUNDLE)/embedded.mobileprovision" "$(APP_BUNDLE)/Fonts"
@@ -415,16 +415,16 @@ $(APP_SIGNATURE): $(APP_BINARY) $(KEYBOARD_BINARY) $(ACTIVITY_BINARY) $(APP_ENTI
 	@cp "$(ACTIVITY_BINARY)" "$(ACTIVITY_APPEX_BUNDLE)/LocalFlowActivity"
 	@$(call appintents_metadata,LocalFlow,$(BUNDLE_ID),$(APP_BUNDLE),$(APP_BINARY),$(APP_CONST_VALUES))
 	@$(call appintents_metadata,LocalFlowActivity,$(ACTIVITY_BUNDLE_ID),$(ACTIVITY_APPEX_BUNDLE),$(ACTIVITY_BINARY),$(ACTIVITY_CONST_VALUES))
-	@$(call info_plist,Config/LocalFlow-Info.plist,$(APP_BUNDLE)/Info.plist,$(BUNDLE_ID))
+	@$(call info_plist,Config/Sorello-Info.plist,$(APP_BUNDLE)/Info.plist,$(BUNDLE_ID))
 	@plutil -replace CFBundleURLTypes.0.CFBundleURLName -string "$(BUNDLE_ID)" "$(APP_BUNDLE)/Info.plist"
 	@plutil -replace CFBundleURLTypes.0.CFBundleURLSchemes -json '["$(URL_SCHEME)"]' "$(APP_BUNDLE)/Info.plist"
-	@$(call info_plist,Config/LocalFlowKeyboard-Info.plist,$(APPEX_BUNDLE)/Info.plist,$(KEYBOARD_BUNDLE_ID))
-	@$(call info_plist_base,Config/LocalFlowActivity-Info.plist,$(ACTIVITY_APPEX_BUNDLE)/Info.plist,$(ACTIVITY_BUNDLE_ID))
+	@$(call info_plist,Config/SorelloKeyboard-Info.plist,$(APPEX_BUNDLE)/Info.plist,$(KEYBOARD_BUNDLE_ID))
+	@$(call info_plist_base,Config/SorelloActivity-Info.plist,$(ACTIVITY_APPEX_BUNDLE)/Info.plist,$(ACTIVITY_BUNDLE_ID))
 	@! grep -l '\$$(' "$(APP_BUNDLE)/Info.plist" "$(APPEX_BUNDLE)/Info.plist" "$(ACTIVITY_APPEX_BUNDLE)/Info.plist" || { echo "Unexpanded Info.plist placeholder" >&2; exit 1; }
 	@printf 'APPL????' > "$(APP_BUNDLE)/PkgInfo"
-	@cp Config/LocalFlow-PrivacyInfo.xcprivacy "$(APP_BUNDLE)/PrivacyInfo.xcprivacy"
-	@cp Config/LocalFlowKeyboard-PrivacyInfo.xcprivacy "$(APPEX_BUNDLE)/PrivacyInfo.xcprivacy"
-	@cp Config/LocalFlowActivity-PrivacyInfo.xcprivacy "$(ACTIVITY_APPEX_BUNDLE)/PrivacyInfo.xcprivacy"
+	@cp Config/Sorello-PrivacyInfo.xcprivacy "$(APP_BUNDLE)/PrivacyInfo.xcprivacy"
+	@cp Config/SorelloKeyboard-PrivacyInfo.xcprivacy "$(APPEX_BUNDLE)/PrivacyInfo.xcprivacy"
+	@cp Config/SorelloActivity-PrivacyInfo.xcprivacy "$(ACTIVITY_APPEX_BUNDLE)/PrivacyInfo.xcprivacy"
 	@mkdir -p "$(APP_BUNDLE)/Fonts" && cp $(APP_FONTS) "$(APP_BUNDLE)/Fonts/"
 	@# The icon source is a full-bleed square (Resources/ICON.md); iOS applies its
 	@# own mask. The App Store rejects an icon with an alpha channel, so it is
