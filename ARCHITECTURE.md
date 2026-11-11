@@ -563,9 +563,11 @@ menu-bar item is the one exception: it is the system's own (see Windows).
 | pill | `#09090A` | The pill and primary buttons, edged `#6E6E70` at 0.5 pt (1 pt with Increase Contrast) |
 | toggle | `#3FD17A` | A switch that is on |
 
-Display text (window titles, onboarding headlines) is Geist Serif Regular;
-everything else is the system font. Text meets 4.5:1 on its background and
-accents 3:1; `DesignCore` tests hold the palette to that.
+Display text (window titles, onboarding headlines, the app's name) is
+Urbanist, the typeface of the Audeo Labs site, set as the site sets its
+headings: Medium, tracked in by 0.015 em. Everything else is the system
+font. Text meets 4.5:1 on its background and accents 3:1; `DesignCore`
+tests hold the palette to that.
 
 ### The pill
 
@@ -645,7 +647,10 @@ exposed to it.
 
 The Sorello mark is the wave coming to rest: a short row of dots rising
 into the aurora dot. The app icon draws it on a near-black field. The
-menu-bar icon is the same row as a template image.
+menu-bar icon is the same row as a template image. Setup's welcome and
+About show it at rest in the island's capsule: the row's ink is centred in
+the capsule both ways, and the aurora dot's glow is drawn around that dot
+without moving anything.
 
 ### Windows
 

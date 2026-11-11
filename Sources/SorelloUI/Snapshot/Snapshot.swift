@@ -85,7 +85,7 @@ public enum SnapshotRenderer {
         SnapshotScene(name: "harness-self-check", size: CGSize(width: 360, height: 120)) {
             HStack(spacing: 16) {
                 Text("Sorello")
-                    .font(Resources.hasDisplayFont ? .custom(Resources.displayFontName, size: 34) : .system(size: 34))
+                    .displayType(DisplayType(size: 34))
                     .foregroundStyle(.white)
                 Capsule().fill(Color(Palette.pill)).overlay(Capsule().strokeBorder(Color(Palette.edge), lineWidth: 0.5))
                     .frame(width: 96, height: 32)

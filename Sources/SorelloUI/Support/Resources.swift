@@ -5,7 +5,9 @@ import CoreText
 /// directory; in a build tree (tests, the snapshot tool) they are in the repository's `Resources` directory, or
 /// wherever `SORELLO_RESOURCES` points.
 public enum Resources {
-    public static let displayFontName = "GeistSerif-Regular"
+    /// The PostScript name of the display face, Urbanist Medium, which ships as `Fonts/Urbanist-Medium.ttf`. Display
+    /// text is set through `View.displayType(_:)`, which adds the tracking the face is set with.
+    static let displayFontName = "Urbanist-Medium"
 
     public static var directory: URL? {
         let manager = FileManager.default
@@ -36,6 +38,4 @@ public enum Resources {
         }
         return registered
     }
-
-    public static var hasDisplayFont: Bool { NSFont(name: displayFontName, size: 17) != nil }
 }

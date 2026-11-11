@@ -9,6 +9,8 @@ import Testing
 struct SnapshotStillnessTests {
     @Test(arguments: ["main-runlog", "main-general-preparing", "setup-test-preparing"])
     func aSceneRendersTheSameAtAnyMoment(name: String) async throws {
+        // As the snapshot tool does, so another test registering the fonts between the two renders changes nothing.
+        Resources.registerFonts()
         let scene = try #require(SnapshotCatalog.all.first { $0.name == name })
         let first = try #require(SnapshotRenderer.png(of: scene, scale: 1))
         // Less than either animation's period, and not a multiple of it.

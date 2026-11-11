@@ -14,14 +14,18 @@ public struct SorelloMarkView: View {
 
     public var body: some View {
         Canvas { context, size in
-            let mark = SorelloMark.fitted(x: 0, y: 0, width: Double(size.width), height: Double(size.height),
-                                          weight: weight)
-            for dot in mark.row {
-                context.fill(Path(ellipseIn: Self.box(dot)), with: .color(Color(Palette.ink).opacity(dot.brightness)))
-            }
-            context.fill(Path(ellipseIn: Self.box(mark.accent)), with: .color(Color(Palette.aurora)))
+            Self.draw(SorelloMark.fitted(x: 0, y: 0, width: Double(size.width), height: Double(size.height),
+                                         weight: weight), in: context)
         }
         .accessibilityHidden(true)
+    }
+
+    /// Draws `mark`'s dots where it places them: the white dots at their brightness, then the aurora dot.
+    static func draw(_ mark: SorelloMark.Fitted, in context: GraphicsContext) {
+        for dot in mark.row {
+            context.fill(Path(ellipseIn: box(dot)), with: .color(Color(Palette.ink).opacity(dot.brightness)))
+        }
+        context.fill(Path(ellipseIn: box(mark.accent)), with: .color(Color(Palette.aurora)))
     }
 
     static func box(_ dot: SorelloMark.Dot) -> CGRect {

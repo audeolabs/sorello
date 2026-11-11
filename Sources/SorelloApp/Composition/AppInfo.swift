@@ -17,7 +17,7 @@ nonisolated struct AppInfo: Sendable, Equatable {
     var modelName: String?
     /// `ThirdPartyNotices.md` in the app's resources.
     var thirdPartyNotices: URL?
-    /// The display font's licence.
+    /// The display font's licence, `Fonts/Urbanist-OFL.txt` in the app's resources.
     var fontLicence: URL?
 
     /// The running app's identity and resources.
@@ -55,7 +55,7 @@ nonisolated struct AppInfo: Sendable, Equatable {
                   modelDirectory: hasModel ? model : nil,
                   modelName: hasModel ? model.flatMap(Self.modelName(in:)) : nil,
                   thirdPartyNotices: resources?.appendingPathComponent("ThirdPartyNotices.md"),
-                  fontLicence: resources?.appendingPathComponent("Fonts/GeistSerif-OFL.txt"))
+                  fontLicence: resources?.appendingPathComponent("Fonts/Urbanist-OFL.txt"))
     }
 
     /// The model's name in its manifest: the base model it was exported from.

@@ -99,8 +99,8 @@ final class WindowModels {
             switch id {
             case "model":
                 app.navigation.showNotice(app.info.modelName ?? String(localized: "Speech model"), app.info.modelNotices)
-            case "geist":
-                app.navigation.showNotice("Geist Serif", app.info.fontLicence.map { [$0] } ?? [])
+            case "urbanist":
+                app.navigation.showNotice("Urbanist", app.info.fontLicence.map { [$0] } ?? [])
             default:
                 app.navigation.showNotice(String(localized: "Permission card"),
                                           app.info.thirdPartyNotices.map { [$0] } ?? [])
@@ -117,8 +117,8 @@ final class WindowModels {
 
     /// Everyone else's work the app includes (ThirdPartyNotices.md).
     static var thirdPartyNotices: [NoticeItem] {
-        [NoticeItem(id: "geist", title: "Geist Serif",
-                    detail: String(localized: "Vercel, SIL Open Font License 1.1.",
+        [NoticeItem(id: "urbanist", title: "Urbanist",
+                    detail: String(localized: "The Urbanist Project Authors, SIL Open Font License 1.1.",
                                    comment: "About: the display font's notice")),
          NoticeItem(id: "permission-card", title: String(localized: "Permission card"),
                     detail: String(localized: "Adapted from Scrawl and AskForPermission, MIT License.",

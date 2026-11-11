@@ -193,7 +193,7 @@ private struct StepLayout<Content: View>: View {
                     .accessibilityHidden(true)
             }
             Text(title)
-                .font(.headline1)
+                .displayType(.stepTitle)
                 .foregroundStyle(Theme.ink)
                 .multilineTextAlignment(.center)
                 .accessibilityAddTraits(.isHeader)
@@ -219,7 +219,7 @@ private struct WelcomeStep: View {
             MarkEmblem(scale: 1.4)
                 .padding(.bottom, 30)
             Text(verbatim: appName)
-                .font(.display(52))
+                .displayType(DisplayType(size: 52))
                 .foregroundStyle(Theme.ink)
                 .accessibilityAddTraits(.isHeader)
             Text("Hold a key and speak. Let go, and your words appear wherever you were typing.")
