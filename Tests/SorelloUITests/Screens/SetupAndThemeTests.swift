@@ -42,6 +42,9 @@ struct SetupFlowTests {
         }
         #expect(SetupCopy.modelLine(appName: "Sorello", size: size)
                 == "Sorello recognises speech on this Mac, with a model it downloads once from Hugging Face. It is 138 MB. Nothing you say is ever sent anywhere.")
+        // With no build for this Mac there is nothing to download: the line promises neither a download nor a size.
+        #expect(SetupCopy.modelLine(appName: "Sorello", size: 0)
+                == "Sorello recognises speech on this Mac, with a model of its own. Nothing you say is ever sent anywhere.")
     }
 
     /// Until the model is ready, the test says what it is waiting for.

@@ -185,8 +185,10 @@ public extension SetupModel {
     static func sample(step: SetupStep, microphone: MicrophoneStatus = .notDetermined,
                        accessibility: AccessibilityStatus = .missing, model: ModelStatus = .ready,
                        includesModel: Bool = false, testText: String = "") -> SetupModel {
+        // No build for this Mac has no size, as in the app.
         SetupModel(appName: "Sorello", step: step, steps: SetupStep.steps(includingModel: includesModel),
-                   microphone: microphone, accessibility: accessibility, model: model, modelSize: sampleModelSize,
+                   microphone: microphone, accessibility: accessibility, model: model,
+                   modelSize: model == .sampleNoBuild ? 0 : sampleModelSize,
                    holdToTalk: ShortcutRecorderState(keys: .function), testText: testText)
     }
 }

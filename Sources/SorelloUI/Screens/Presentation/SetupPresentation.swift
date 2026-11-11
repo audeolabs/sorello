@@ -130,9 +130,15 @@ nonisolated public struct SetupButtons: Equatable, Sendable {
 nonisolated public enum SetupCopy {
     /// The model step's one sentence: what is downloaded, how large it is, where from, and that nothing said to the
     /// app is ever sent anywhere.
+    /// With no build for this Mac there is nothing to download and `size` is 0: then it promises neither a download
+    /// nor a size.
     public static func modelLine(appName: String, size: Int64) -> String {
-        String(localized: "\(appName) recognises speech on this Mac, with a model it downloads once from Hugging Face. It is \(ModelSize.words(size)). Nothing you say is ever sent anywhere.",
-               comment: "Setup: the app's name, then the model's size, such as 138 MB")
+        guard size > 0 else {
+            return String(localized: "\(appName) recognises speech on this Mac, with a model of its own. Nothing you say is ever sent anywhere.",
+                          comment: "Setup: the app's name, when there is no model to download for this Mac")
+        }
+        return String(localized: "\(appName) recognises speech on this Mac, with a model it downloads once from Hugging Face. It is \(ModelSize.words(size)). Nothing you say is ever sent anywhere.",
+                      comment: "Setup: the app's name, then the model's size, such as 138 MB")
     }
 
     /// What the live test waits for while the model is not on this Mac; nil once it is.
