@@ -2,8 +2,7 @@
 
 <h1 align="center">Sorello</h1>
 
-- [Sorello](https://github.com/audeolabs/sorello/releases/latest/download/Sorello.dmg), the latest stable release. There is
-  none yet, so get the nightly for now.
+- [Sorello](https://github.com/audeolabs/sorello/releases/latest/download/Sorello.dmg), the latest stable release.
 - [Sorello Nightly](https://github.com/audeolabs/sorello/releases/download/nightly/Sorello-Nightly.dmg), to stay on top of
   the latest updates. Things may break, you never will.
 
