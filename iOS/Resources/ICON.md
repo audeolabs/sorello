@@ -1,21 +1,18 @@
-# LocalFlow for iPhone app icon
+# The iPhone app's icon
 
-`AppIcon.svg` is the editable vector source. It is the Wilderness Labs ridge
-mark from the wilderness-labs-site repository (`public/favicon.svg`): an aurora
-green (`#6DFFA8`) W-shaped ridge line over a glacier cyan (`#67E8F9`) dot, on a
-forest-night (`#0A1114` to `#05080A`) square with a faint aurora glow. The
-development variant, `AppIcon-Dev.svg`, adds a small ember (`#F5C66B`) badge.
-Both are full-bleed 1024 squares, because iOS applies its own mask, and use no
-external assets or fonts. The macOS app keeps its own icon in `../Resources/`.
+The iPhone app has Sorello's icon, the Mac app's picture drawn to the edges: the mark, a row of dots rising into the
+aurora dot, on the near-black field, which fills the square because iOS cuts an icon's corners itself
+([ARCHITECTURE.md](../../ARCHITECTURE.md), section 8, "The mark"). `AppIcon-Source.png` is the App Store build's.
+`AppIcon-Dev-Source.png` is the development build's, with a few orange stars on the field, so the two builds can be
+told apart on one iPhone.
 
-The committed 1024-pixel PNG exports feed the Makefile, which flattens them
-into the compiled asset catalog. After editing the SVGs, export them with an
-SVG renderer; for example, with `rsvg-convert` installed, from `iOS/`:
+The icon is drawn in code, not edited here: `AppIconGeometry` in `DesignCore` lays it out and `AppIconView` in
+`SorelloUI` draws it. To write both files again, from the repository's root on a Mac:
 
 ```sh
-rsvg-convert -w 1024 -h 1024 -o Resources/AppIcon-Source.png Resources/AppIcon.svg
-rsvg-convert -w 1024 -h 1024 -o Resources/AppIcon-Dev-Source.png Resources/AppIcon-Dev.svg
+swift run SorelloSnapshots --ios-icon iOS/Resources/AppIcon-Source.png
+swift run SorelloSnapshots --ios-dev-icon iOS/Resources/AppIcon-Dev-Source.png
 ```
 
-Commit the SVGs and PNG exports together, and check the masked rendering on
-the Home Screen and at Settings and Spotlight sizes.
+`make snapshots` shows them as an iPhone does, in the `mark-iphone-icon` pictures. The Makefile flattens the build's
+file and compiles it into the app's asset catalog.

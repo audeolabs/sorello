@@ -173,4 +173,25 @@ struct IPhoneIconTests {
             #expect(names.contains(name), "no scene \(name)")
         }
     }
+
+    /// `iOS/Resources` holds both icons as the snapshot tool writes them: the App Store build's file is the plain icon
+    /// and the development build's the one with stars, each the same picture as a render now, but for the renderer's
+    /// noise, and opaque.
+    @Test(arguments: zip(["AppIcon-Source.png", "AppIcon-Dev-Source.png"],
+                         [AppIconView.Variant.iPhone, .iPhoneDevelopment]))
+    func theIPhoneAppHoldsTheIcons(file: String, variant: AppIconView.Variant) throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("iOS/Resources").appendingPathComponent(file)
+        let held = try Picture(try Data(contentsOf: url)), drawn = try Self.render(variant)
+        try #require(held.width == 1024 && held.height == 1024, "\(file) is \(held.width) by \(held.height) pixels")
+        var largest = 0.0, at = (x: 0, y: 0)
+        for y in 0 ..< held.height {
+            for x in 0 ..< held.width {
+                let difference = held.difference(x, y, drawn, x, y)
+                if difference > largest { (largest, at) = (difference, (x, y)) }
+            }
+        }
+        #expect(largest <= AppIconTests.renderNoise, "\(file) differs from the icon by \(largest * 255) / 255 at \(at)")
+    }
 }
