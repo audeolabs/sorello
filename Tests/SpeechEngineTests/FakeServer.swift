@@ -11,6 +11,8 @@ final class FakeServer: DownloadTransport {
         case serve
         /// The whole file with 200, whatever range was asked.
         case ignoreRange
+        /// A `206` that starts this many bytes after the byte that was asked for.
+        case misplacedRange(by: Int)
         /// This status and an empty body.
         case status(Int)
         /// A redirect to `location`, with this status.
@@ -99,6 +101,13 @@ final class FakeServer: DownloadTransport {
         if case .serve = answer, let range = request.headers["Range"], range.hasPrefix("bytes="),
            let start = Int(range.dropFirst("bytes=".count).dropLast()), range.hasSuffix("-") {
             guard start < file.count else { return respond(416, [:], Data()) }
+            status = 206
+            headers["content-range"] = "bytes \(start)-\(file.count - 1)/\(file.count)"
+            data = file.subdata(in: start..<file.count)
+        }
+        if case .misplacedRange(let shift) = answer, let range = request.headers["Range"],
+           let asked = Int(range.dropFirst("bytes=".count).dropLast()) {
+            let start = min(asked + shift, file.count - 1)
             status = 206
             headers["content-range"] = "bytes \(start)-\(file.count - 1)/\(file.count)"
             data = file.subdata(in: start..<file.count)

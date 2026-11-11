@@ -404,6 +404,21 @@ struct ModelDownloadTests {
         #expect(setup.contents(of: setup.installed)[Self.weights] == weights)
     }
 
+    /// A `206` that does not start at the byte asked for is the server's failure: joined to the part it would make a
+    /// file that is not the model's. The part is left as it was, and the next run goes on from it.
+    @Test func aRangeAnsweredFromTheWrongByteIsRefused() async throws {
+        let setup = Setup()
+        setup.server.answer(Build.address(Self.weights), .cutOff(after: 81_920), .misplacedRange(by: 4_096))
+        #expect(await finish(setup.download())?.state == .failed(.connection))
+        let report = try #require(await finish(setup.download()))
+        #expect(report.state == .failed(.server))
+        #expect(report.fetched == 0 && report.continuedFrom.isEmpty, "Nothing of the misplaced answer is kept")
+        #expect(setup.downloaded[Self.weights + ".sorello-part"]?.count == 81_920, "The part is as it was")
+        setup.expectNothingLoadable()
+        #expect(await finish(setup.download())?.state == .installed)
+        #expect(setup.contents(of: setup.installed)[Self.weights] == setup.build.files[Self.weights])
+    }
+
     @Test func aBodyThatEndsBeforeItsLengthIsADroppedConnection() async throws {
         let setup = Setup()
         setup.server.answer(Build.address(Self.weights), .shortBody)
