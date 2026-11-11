@@ -71,6 +71,14 @@ Run the second again and nothing is fetched; stop it in the middle and run it ag
 stopped. Its `--source` fetches from another address instead, such as a server on this Mac at `http://127.0.0.1`,
 to stage a failure.
 
+A build with an update feed proves its updater the same way. Run this on a copy of the app, against a feed on the same
+Mac: it checks that feed, for that run only, and when the feed lists a newer build signed with the update key it
+installs it over the copy as the command ends, without opening it.
+
+```sh
+"/path/to/copy/Sorello Nightly.app/Contents/MacOS/Sorello" --self-test --update http://127.0.0.1:8000/appcast.xml
+```
+
 `swift run SorelloSnapshots --demo` shows the real pill on the real screen for 20 seconds, cycling through its
 states, to check it against the hardware by eye.
 
@@ -98,7 +106,9 @@ are signed with; `scripts/build-app.sh` writes them into the app's `Info.plist`.
 The app is handed out as a DMG, signed with Audeo Labs' Developer ID and notarized by Apple.
 `scripts/notarize-app.sh <app> <dmg>` has Apple notarize the app and staples the ticket to it, then makes the DMG,
 signs it and has it notarized too. It needs a Developer ID signature on the app and an App Store Connect API key in
-the environment. Notarizing uploads the app to Apple.
+the environment. Notarizing uploads the app to Apple. `scripts/write-appcast.sh <app> <dmg> <url> <appcast>` writes
+the update feed that lists that DMG, signed with the update key. It refuses a key that is not the private half of
+`UPDATE_PUBLIC_KEY`, so a feed is never written that installed apps would refuse.
 
 GitHub Actions runs four workflows, in `.github/workflows`:
 
@@ -106,8 +116,10 @@ GitHub Actions runs four workflows, in `.github/workflows`:
 - **Package** is what Nightly and Release share. It builds a commit of `main` whose check passed, signs and
   notarizes it, and proves the app from the DMG with `--snapshots` and `--self-test --download`.
 - **Nightly** runs every night, and when it is started by hand. If `main` has not moved since the last nightly it
-  does nothing. Otherwise it builds "Sorello Nightly" and publishes `Sorello-Nightly.dmg` and `appcast.xml` as the
-  `nightly` prerelease, in place of the night before's. Its build number, shown in About, is the number of commits
+  does nothing. Otherwise it builds "Sorello Nightly" and publishes it in the `nightly` prerelease, in place of the
+  night before's: `Sorello-Nightly.dmg`, the same image under a name of its own build, and `appcast.xml`. The feed
+  gives the image's own address, and the images of the last thirty builds stay, so an update that was offered
+  earlier still installs after later nightlies. Its build number, shown in About, is the number of commits
   in the history of the commit it was built from, so it rises with every commit to `main`.
 - **Release** is started by hand, from `main`. It builds "Sorello" and leaves `Sorello.dmg` and `appcast.xml` in a
   draft release named for the version, such as `v0.0.1`. It refuses a version that already has a release, a draft
@@ -124,7 +136,7 @@ The workflows read six repository secrets. Their values are never in the reposit
 - `NOTARY_KEY_P8`: the App Store Connect API key used to notarize, a .p8 file in base64.
 - `NOTARY_KEY_ID`: that key's identifier.
 - `NOTARY_ISSUER_ID`: the identifier of the key's issuer.
-- `UPDATE_SIGNING_KEY`: the private half of the key updates are signed with.
+- `UPDATE_SIGNING_KEY`: the private half of the key updates are signed with, its 32-byte seed in base64.
 
 ## More
 
