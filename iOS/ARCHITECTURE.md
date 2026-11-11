@@ -1540,8 +1540,8 @@ the highlighted candidate's text 4.5:1 on its pill.
   Dynamic Island on a dark screen, with a grey hairline that sets it off; on
   the light keyboard it is graphite (#2B2B2E): black across the bar would be
   the heaviest thing on the keyboard. Start carries the ridge mark
-  (`RidgeMark`, the icon's W line and dot, drawn as a vector, 19 pt and 1.3
-  times the icon's weight), its line white and its dot aurora, with the
+  (`RidgeMark`, a W line and a dot, drawn as a vector, 19 pt and 1.3 times
+  its drawn weight), its line white and its dot aurora, with the
   session in its motion ([Top row](#top-row)). Start is dimmed to 45% where
   dictation cannot run here.
 - **The recording wave** (`DotWave`, pure, tested): one row of white dots

@@ -815,7 +815,7 @@ private struct DictationIsland: View {
 }
 
 /// The ridge mark with the session's dot (`SessionDot`), on Start and in the menu, so the two always agree: its line in
-/// `line`, `side` points across, at `weight` times the icon's (a little heavier on the island, so the W reads at this
+/// `line`, `side` points across, at `weight` times its drawn weight (a little heavier on the island, so the W reads at this
 /// size), its dot in `dot` drawn as `look` says: with the heartbeat's ring rippling out of it, breathing (its opacity
 /// down to 35% and back every 1.2 s), lit and still, or unlit. Each change of `pops` (a tap on Start without a session)
 /// swells the dot once, quickly.

@@ -1,7 +1,7 @@
 import Foundation
 
-/// The ridge mark (ARCHITECTURE.md, "Keyboard look"), as the app icon draws it (Resources/AppIcon.svg, the earlier
-/// maker's 32-unit favicon): a W-shaped ridge line, round-capped and round-joined, over a dot. The
+/// The ridge mark (ARCHITECTURE.md, "Keyboard look"), on the 32-unit grid it was first drawn on: a W-shaped ridge
+/// line, round-capped and round-joined, over a dot. It is not the app icon's mark, which is Sorello's row of dots. The
 /// keyboard draws it as a vector on Start and in the menu. Pure.
 enum RidgeMark {
     struct Point: Equatable, Sendable {
@@ -33,7 +33,7 @@ enum RidgeMark {
     }
 
     /// The mark at one scale, as large as fits in `box`, its ink centred there. `weight` thickens the line and the dot
-    /// (1 is the icon's): at small sizes a heavier mark keeps its W from reading as a scribble.
+    /// (1 is the mark as first drawn): at small sizes a heavier mark keeps its W from reading as a scribble.
     static func fitted(in box: KeyRect, weight: Double = 1) -> Fitted {
         let ink = ink(weight: weight)
         let width = ink.maxX - ink.minX, height = ink.maxY - ink.minY

@@ -12,13 +12,22 @@ import SorelloUI
 // its stars, for Resources/AppIcon-Nightly.icns (the recipe is in SorelloUI's MarkSnapshots.swift):
 //   SorelloSnapshots --icon <file.png>
 //   SorelloSnapshots --nightly-icon <file.png>
+// Writes the iPhone app's icon as a 1024 px PNG, opaque to its edges, for iOS/Resources/AppIcon-Source.png, or its
+// development build's, with the stars, for iOS/Resources/AppIcon-Dev-Source.png (iOS/Resources/ICON.md):
+//   SorelloSnapshots --ios-icon <file.png>
+//   SorelloSnapshots --ios-dev-icon <file.png>
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 guard let first = arguments.first else {
     print("usage: SorelloSnapshots <output-directory> [name-filter] | --demo [seconds] | --icon <file.png>"
-        + " | --nightly-icon <file.png>")
+        + " | --nightly-icon <file.png> | --ios-icon <file.png> | --ios-dev-icon <file.png>")
     exit(64)
 }
+
+/// The icon each icon flag writes.
+let icons: [String: AppIconView.Variant] = [
+    "--icon": .plain, "--nightly-icon": .nightly, "--ios-icon": .iPhone, "--ios-dev-icon": .iPhoneDevelopment,
+]
 
 let application = NSApplication.shared
 Resources.registerFonts()
@@ -30,10 +39,11 @@ case "--demo":
     let demo = PillDemo(seconds: max(seconds, 2))
     demo.start()
     application.run()
-case "--icon", "--nightly-icon":
+case let flag where icons[flag] != nil:
     application.setActivationPolicy(.prohibited)
-    let variant: AppIconView.Variant = first == "--nightly-icon" ? .nightly : .plain
-    guard let path = arguments.dropFirst().first, let data = AppIconView.png(variant: variant) else {
+    guard let variant = icons[flag], let path = arguments.dropFirst().first,
+          let data = AppIconView.png(variant: variant)
+    else {
         print("usage: SorelloSnapshots \(first) <file.png>")
         exit(64)
     }

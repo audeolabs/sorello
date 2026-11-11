@@ -2,8 +2,9 @@ import AppKit
 import DesignCore
 import SwiftUI
 
-/// The mark's scenes: the mark itself, the menu-bar icon on a light and a dark bar, and the app icon, plain and
-/// the nightly's.
+/// The mark's scenes: the mark itself, the menu-bar icon on a light and a dark bar, the app icon, plain and the
+/// nightly's, and the iPhone app's icon, plain and the development build's, as its files hold it and as an iPhone
+/// shows it.
 enum MarkSnapshots {
     static var scenes: [SnapshotScene] {
         [
@@ -44,7 +45,42 @@ enum MarkSnapshots {
                     }
                 }
             },
+            // The iPhone app's icons at full size, 1024 pixels, as iOS/Resources holds them: the App Store build's and
+            // the development build's, with the stars. To regenerate the files on a Mac (iOS/Resources/ICON.md):
+            //   swift run SorelloSnapshots --ios-icon iOS/Resources/AppIcon-Source.png
+            //   swift run SorelloSnapshots --ios-dev-icon iOS/Resources/AppIcon-Dev-Source.png
+            SnapshotScene(name: "mark-iphone-icon", size: CGSize(width: 512, height: 512)) {
+                AppIconView(.iPhone).frame(width: 512, height: 512)
+            },
+            SnapshotScene(name: "mark-iphone-icon-development", size: CGSize(width: 512, height: 512)) {
+                AppIconView(.iPhoneDevelopment).frame(width: 512, height: 512)
+            },
+            // Both as an iPhone shows them, cut to its shape, on the dark and the light Settings background.
+            iPhoneSizes(name: "mark-iphone-icon-sizes-dark", background: RGB(0, 0, 0)),
+            iPhoneSizes(name: "mark-iphone-icon-sizes-light", background: RGB(hex: 0xF2F2F7)),
         ]
+    }
+
+    /// The iPhone app's icons, the App Store build's above the development build's, cut to the shape iOS cuts an icon
+    /// to, at the sizes an iPhone draws them at three pixels a point: 180 pixels on the Home Screen, 120 in Spotlight
+    /// and 87 in Settings. The snapshot tool renders two pixels a point, so each is half that many points.
+    static func iPhoneSizes(name: String, background: RGB) -> SnapshotScene {
+        SnapshotScene(name: name, size: CGSize(width: 320, height: 240), background: background) {
+            VStack(alignment: .leading, spacing: 24) {
+                ForEach([AppIconView.Variant.iPhone, .iPhoneDevelopment], id: \.self) { variant in
+                    HStack(alignment: .center, spacing: 24) {
+                        ForEach([180.0, 120, 87], id: \.self) { pixels in
+                            let side = pixels / 2
+                            AppIconView(variant)
+                                .frame(width: side, height: side)
+                                .clipShape(RoundedRectangle(cornerRadius: AppIconGeometry.iOSCornerRadius
+                                                                / AppIconGeometry.canvas * side,
+                                                            style: .continuous))
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// The template icon at its real size on a strip of menu bar, tinted as the system tints it.

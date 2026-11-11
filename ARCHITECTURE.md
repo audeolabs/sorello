@@ -841,15 +841,18 @@ field, around the mark and clear of it and of the aurora dot's glow, so a
 nightly is told from a release at a glance in the Dock, the app switcher
 and Finder. The stars are always in the same places. Nothing else about a
 nightly looks different: its menu-bar icon, setup and About show the mark
-as every build does, and a development build has the plain icon.
-`Resources/AppIcon-Nightly.icns` holds the nightly's icon, and a nightly
-build carries it as its icon. At 32 pixels and under the stars would be
-only specks of brown, so there the nightly's icon is the plain one.
+as every build does, and a development build of the Mac app has the plain
+icon. `Resources/AppIcon-Nightly.icns` holds the nightly's icon, and a
+nightly build carries it as its icon. At 32 pixels and under the stars
+would be only specks of brown, so there the nightly's icon is the plain
+one.
 
 The iPhone app's icon is the same picture drawn to the edges, because iOS
 cuts an icon's corners itself: the field fills the whole square, with no
 transparent pixel, and the mark lies across its middle as it does on the
-Mac's. The App Store build has the plain one. A development build, which
+Mac's. It has neither the Mac icon's shadow, which would fall outside the
+square, nor its rim of light, which follows corners this square does not
+have. The App Store build has the plain one. A development build, which
 can be on one iPhone beside it, has the stars, in the same places
 relative to the mark. `iOS/Resources` holds both as 1024 pixel PNG files,
 which `SorelloSnapshots` writes.
@@ -1268,6 +1271,11 @@ and ship it. This section holds what concerns both apps.
   else is Sorello: the name on the Home
   Screen, in the keyboard list and in every sentence the app shows, its
   icon (section 8), its code, and the files its build makes.
+- **Look.** The iPhone app's display text (its large titles, its
+  onboarding headlines and its name) is set as section 8 sets the Mac
+  app's: Urbanist Medium, tracked in by 0.015 em. Everything else is the
+  system font. The app carries the repository's one copy of the font,
+  from `Resources/Fonts`, with its licence beside it.
 - **Versions.** The iPhone app has its own version and build number, in
   its `Info.plist` templates and its build. `Config/identity.conf` is the
   Mac app's alone.
