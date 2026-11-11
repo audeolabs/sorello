@@ -4,9 +4,9 @@ Sorello includes the following work by others.
 
 ## Speech model
 
-The bundled model, kea-b-0.1, is a 1-bit derivative of NVIDIA Parakeet v2, licensed under CC-BY-4.0. Its
+The speech model, kea-b-0.1, is a 1-bit derivative of NVIDIA Parakeet v2, licensed under CC-BY-4.0. Its
 licence, NVIDIA's attribution, the training-data attribution and the MIT licence of the adapted inference code
-are in `Resources/ModelNotices` and ship inside the app beside the model.
+are in `Resources/ModelNotices` and ship inside the app.
 
 ## Urbanist
 
