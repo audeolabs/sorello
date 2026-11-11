@@ -11,7 +11,7 @@ A Mac with macOS 26 or later and Xcode 27 (Swift 6.4). Sorello is one Swift pack
 ## Build and test
 
 ```sh
-make check        # the rule checks, the build and every test; needs no model and no network
+make check        # the rule checks, the build and every test; needs no model, and no network once Sparkle is fetched
 make app          # build/Sorello Dev.app
 make run          # make app, then open it
 make snapshots    # every pill state and screen as PNG files in build/snapshots
@@ -51,7 +51,10 @@ say -o hello.wav --data-format=LEI16@16000 "Hello from the self test"
 "build/Sorello Dev.app/Contents/MacOS/Sorello" --snapshots build/app-snapshots
 ```
 
-The second command draws every window and every setup step as the app wires them, and lists the menu's rows.
+The self-test needs the model: one the app carries (`SORELLO_MODEL_DIR`), one given with `--model <bundle-dir>`, or
+one that app has already downloaded into its store. A fresh build without the model passes only the `--download`
+form below. The second command draws every window and every setup step as the app wires them, and lists the menu's
+rows.
 `--self-test --cpu` runs the speech model on the processor, as on a Mac without a Neural Engine. `--no-setup` opens
 the app without its setup window.
 
