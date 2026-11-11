@@ -38,6 +38,19 @@ say -o hello.wav --data-format=LEI16@16000 "Hello from the self test"
 The second command draws every window and every setup step as the app wires them, and lists the menu's rows.
 `--no-setup` opens the app without its setup window.
 
+The model's download is proved the same way, without touching the app's own copy of the model. The first command
+makes the packaged app download its model with its own pin into a temporary store, then dictate; the second fetches
+this Mac's build into a store you choose, as the app would, and transcribes with it. Both say what they fetched.
+
+```sh
+"build/Sorello Dev.app/Contents/MacOS/Sorello" --self-test --download hello.wav
+swift run sorello-transcribe --download --pin Models/model.lock.json --store /tmp/model-store hello.wav
+```
+
+Run the second again and nothing is fetched; stop it in the middle and run it again and it goes on from where it
+stopped. Its `--source` fetches from another address instead, such as a server on this Mac at `http://127.0.0.1`,
+to stage a failure.
+
 Sorello asks for the microphone, to hear you, and for Accessibility, to see its shortcut and to paste. An
 ad hoc development build may need both granted again after it is rebuilt.
 
