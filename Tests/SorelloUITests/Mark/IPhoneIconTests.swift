@@ -60,13 +60,28 @@ struct IPhoneIconTests {
         try Picture(try #require(AppIconView.png(pixels: pixels, variant: variant)))
     }
 
-    /// Both are 1024 pixel squares, the size the iPhone build compiles, and no pixel of either is transparent.
+    /// Whether a PNG file has an alpha channel, whatever its pixels hold. The App Store refuses an icon that has one,
+    /// even when every pixel is opaque.
+    static func hasAlphaChannel(_ png: Data) throws -> Bool {
+        let source = try #require(CGImageSourceCreateWithData(png as CFData, nil))
+        let image = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        switch image.alphaInfo {
+        case .none, .noneSkipFirst, .noneSkipLast: return false
+        default: return true
+        }
+    }
+
+    /// Both are 1024 pixel squares, the size the iPhone build compiles. No pixel of either is transparent, and neither
+    /// is written with an alpha channel.
     @Test(arguments: [AppIconView.Variant.iPhone, .iPhoneDevelopment])
     func theIconIsAnOpaqueSquareOf1024Pixels(variant: AppIconView.Variant) throws {
-        let icon = try Self.render(variant)
+        let png = try #require(AppIconView.png(variant: variant))
+        let icon = try Picture(png)
         #expect(icon.width == 1024 && icon.height == 1024)
         let transparent = stride(from: 3, to: icon.bytes.count, by: 4).filter { icon.bytes[$0] < 255 }.count
         #expect(transparent == 0, "\(transparent) pixels are not opaque")
+        let alpha = try Self.hasAlphaChannel(png)
+        #expect(!alpha, "the icon is written with an alpha channel")
     }
 
     /// The field reaches every edge and every corner: the outermost pixels are the field's colour, as it is a little
@@ -176,15 +191,18 @@ struct IPhoneIconTests {
 
     /// `iOS/Resources` holds both icons as the snapshot tool writes them: the App Store build's file is the plain icon
     /// and the development build's the one with stars, each the same picture as a render now, but for the renderer's
-    /// noise, and opaque.
+    /// noise, and without an alpha channel.
     @Test(arguments: zip(["AppIcon-Source.png", "AppIcon-Dev-Source.png"],
                          [AppIconView.Variant.iPhone, .iPhoneDevelopment]))
     func theIPhoneAppHoldsTheIcons(file: String, variant: AppIconView.Variant) throws {
         let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("iOS/Resources").appendingPathComponent(file)
-        let held = try Picture(try Data(contentsOf: url)), drawn = try Self.render(variant)
+        let data = try Data(contentsOf: url)
+        let held = try Picture(data), drawn = try Self.render(variant)
         try #require(held.width == 1024 && held.height == 1024, "\(file) is \(held.width) by \(held.height) pixels")
+        let alpha = try Self.hasAlphaChannel(data)
+        #expect(!alpha, "\(file) has an alpha channel")
         var largest = 0.0, at = (x: 0, y: 0)
         for y in 0 ..< held.height {
             for x in 0 ..< held.width {
