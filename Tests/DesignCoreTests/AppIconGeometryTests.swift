@@ -113,3 +113,87 @@ import Testing
         #expect(RGB.contrast(tangerine, AppIconGeometry.fieldTop) >= 3)
     }
 }
+
+/// ARCHITECTURE.md, section 8, "The mark": the iPhone app's icon is the same picture drawn to the edges, because iOS
+/// cuts an icon's corners itself. It is the Mac icon's field, with everything on it, scaled about the canvas's middle
+/// until the field's sides are the canvas's, with square corners; a development build's stars are the nightly's under
+/// the same scaling.
+@Suite struct IPhoneIconGeometryTests {
+    typealias Icon = AppIconGeometry
+    static let middle = Icon.canvas / 2
+    /// How much larger the iPhone's icon draws everything than the Mac's.
+    static let scale = Icon.iPhone.fieldSide / Icon.mac.fieldSide
+
+    static func near(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 1e-9 }
+
+    /// The Mac's layout is the Mac icon's own values, so both icons are drawn from one description.
+    @Test func theMacsLayoutIsTheMacIcon() {
+        let mac = Icon.mac
+        #expect(mac.fieldSide == Icon.fieldSide && mac.fieldCornerRadius == Icon.fieldCornerRadius)
+        #expect(mac.markWidth == Icon.markWidth && mac.markHeight == Icon.markHeight)
+        #expect(mac.glowRadius == Icon.glowRadius)
+        #expect(mac.stars == Icon.stars)
+        #expect(mac.mark == Icon.mark)
+    }
+
+    /// The field fills the whole square, with square corners: iOS cuts them.
+    @Test func theFieldIsTheWholeCanvas() {
+        #expect(Icon.iPhone.fieldSide == Icon.canvas)
+        #expect(Icon.iPhone.fieldCornerRadius == 0)
+    }
+
+    /// The mark lies across the middle, every dot where the Mac's is, in proportion to the field, and so does the
+    /// aurora dot's glow.
+    @Test func theMarkIsTheMacsInProportionToTheField() throws {
+        let mac = Icon.mac, phone = Icon.iPhone
+        let macDots = mac.mark.row + [mac.mark.accent], dots = phone.mark.row + [phone.mark.accent]
+        try #require(dots.count == macDots.count)
+        let left = dots.map { $0.x - $0.radius }.min() ?? 0, right = dots.map { $0.x + $0.radius }.max() ?? 0
+        #expect(Self.near((left + right) / 2, Self.middle), "the mark's ink is not centred across the canvas")
+        for (dot, macDot) in zip(dots, macDots) {
+            #expect(Self.near((dot.x - Self.middle) / phone.fieldSide, (macDot.x - Self.middle) / mac.fieldSide))
+            #expect(Self.near((dot.y - Self.middle) / phone.fieldSide, (macDot.y - Self.middle) / mac.fieldSide))
+            #expect(Self.near(dot.radius / phone.fieldSide, macDot.radius / mac.fieldSide))
+            #expect(dot.brightness == macDot.brightness)
+            #expect(Self.near(dot.y, Self.middle))
+        }
+        #expect(Self.near(phone.markWidth / phone.fieldSide, mac.markWidth / mac.fieldSide))
+        #expect(Self.near(phone.markHeight / phone.fieldSide, mac.markHeight / mac.fieldSide))
+        #expect(Self.near(phone.glowRadius / phone.fieldSide, mac.glowRadius / mac.fieldSide))
+    }
+
+    /// Each star is the nightly's star, in the same place relative to the mark and the same size beside it.
+    @Test func eachStarIsTheNightlysStarDrawnToTheEdges() {
+        let mac = Icon.mac, phone = Icon.iPhone
+        #expect(phone.stars.count == mac.stars.count)
+        for (star, macStar) in zip(phone.stars, mac.stars) {
+            #expect(Self.near((star.x - Self.middle) / phone.fieldSide, (macStar.x - Self.middle) / mac.fieldSide),
+                    "\(star) is not \(macStar) drawn to the edges")
+            #expect(Self.near((star.y - Self.middle) / phone.fieldSide, (macStar.y - Self.middle) / mac.fieldSide),
+                    "\(star) is not \(macStar) drawn to the edges")
+            #expect(Self.near(star.radius / phone.fieldSide, macStar.radius / mac.fieldSide))
+            #expect(star.brightness == macStar.brightness)
+        }
+    }
+
+    /// No star comes near a dot of the mark or into the aurora dot's glow, by the Mac's margins under the same
+    /// scaling.
+    @Test func theStarsAreClearOfTheMarkAndItsGlow() {
+        let phone = Icon.iPhone, mark = phone.mark
+        for star in phone.stars {
+            for dot in mark.row + [mark.accent] {
+                let gap = AppIconGeometryTests.distance((star.x, star.y), (dot.x, dot.y)) - dot.radius - star.radius
+                #expect(gap >= 64 * Self.scale, "\(star) is \(gap) units from the dot at \(dot.x)")
+            }
+            let fromGlow = AppIconGeometryTests.distance((star.x, star.y), (mark.accent.x, mark.accent.y))
+                - phone.glowRadius - star.radius
+            #expect(fromGlow >= 32 * Self.scale, "\(star) is \(fromGlow) units from the glow")
+        }
+    }
+
+    /// The shape the stars are held inside, and the pictures cut the icon to, is iOS's: a square with continuous
+    /// corners whose radius is about 22.4% of its side.
+    @Test func iOSCutsTheCornersAtAbout22Percent() {
+        #expect(abs(Icon.iOSCornerRadius / Icon.canvas - 0.224) < 0.002)
+    }
+}
