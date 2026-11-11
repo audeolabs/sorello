@@ -972,8 +972,9 @@ Review does.
   connection: start it, go on through setup while it runs, quit in the
   middle and continue, cancel, and try it with the network off. The Dock
   icon: there while setup or the main window is open and gone when the
-  last closes, with the app that was in front before Sorello in front
-  again; another app brought forward and Sorello's window brought
+  last closes; the last window closed while Sorello is in front and the
+  app that was in front before it is still running, and whether that app
+  comes forward; another app brought forward and Sorello's window brought
   back from the Dock and with Command-Tab; the microphone's prompt
   answered from setup, with setup in front afterwards; Sorello hidden
   during a dictation, and a dictation begun while it is hidden, the pill
