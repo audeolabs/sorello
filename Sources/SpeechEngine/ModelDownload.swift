@@ -54,11 +54,14 @@ public final class ModelDownload: Sendable {
     private let freeSpace: @Sendable (URL) -> Int64?
     private let state: Mutex<State>
 
-    /// The download of `model`'s build, over the network, announcing itself as Sorello `version`.
+    #if os(macOS)
+    /// The download of `model`'s build, over the network, announcing itself as Sorello `version`. On the Mac only: the
+    /// iPhone app never downloads its model.
     public convenience init(model: PinnedModel, version: String) {
         self.init(model: model, version: version, transport: { ModelDownloader() }, clock: SystemSessionClock(),
                   freeSpace: Self.freeSpace(at:))
     }
+    #endif
 
     /// `transport` makes what carries one run's requests; the tests pass a server of their own.
     init(model: PinnedModel, version: String, transport: @escaping @Sendable () -> any DownloadTransport,

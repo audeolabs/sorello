@@ -22,7 +22,7 @@ struct DownloadResponse: Sendable {
     var declaredLength: Int64? { headers["content-length"].flatMap { Int64($0) }.flatMap { $0 >= 0 ? $0 : nil } }
 }
 
-/// What carries the download's requests: `ModelDownloader` in the app, a server of the tests' own in the tests.
+/// What carries the download's requests: `ModelDownloader` in the Mac app, a server of the tests' own in the tests.
 /// It only sends and receives. Every decision about what to send, which redirect to follow, how long to wait and how
 /// much to keep is the download's, in `DownloadRules` and `ModelFetch`, which the tests call.
 protocol DownloadTransport: Sendable {
