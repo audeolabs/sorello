@@ -49,7 +49,7 @@ final class SparkleUpdater: Updating {
 
     func start() {
         guard !started else { return }
-        SparkleDelegate.configure(updater, info: info)
+        delegate.configure(updater, info: info)
         do {
             try updater.start()
         } catch {
@@ -71,9 +71,12 @@ final class SparkleUpdater: Updating {
 }
 
 /// What Sparkle asks of the app, for the app's updater and for the self-test's. It never lets Sparkle show an update
-/// it found on its own, never lets it ask whether it may check, allows no system profile, and gives Sparkle no cookie
-/// to send: the cookies of the app's own store are cleared before each check and after the feed has loaded, and the
-/// download of an update neither sends nor keeps one.
+/// it found on its own, never lets it ask whether it may check, allows no system profile, and fetches no release
+/// notes: a page rendered in Sparkle's window, even one not on screen, could open a browser by itself or fetch from
+/// elsewhere. No cookie outlives a check: the cookies of the app's own store are cleared before each check, after
+/// the feed has loaded and when the check ends, however it ends, and the download of an update neither sends nor
+/// keeps one. The download says only the app's name and version, as the feed's request does, even when Sparkle
+/// resumes an update it put off, which it does without the headers it was given.
 @MainActor
 private final class SparkleDelegate: NSObject, SPUUpdaterDelegate {
     /// The only feed Sparkle may read; one left in the preferences is never followed.
@@ -82,6 +85,8 @@ private final class SparkleDelegate: NSObject, SPUUpdaterDelegate {
     var foundUnasked: () -> Void = {}
     var seen: () -> Void = {}
     var canCheckChanged: () -> Void = {}
+    /// The headers every request Sparkle makes carries, set by `configure`.
+    private(set) var headers: [String: String] = [:]
     private weak var observed: SPUUpdater?
 
     init(feed: URL?, relaunches: Bool) {
@@ -95,10 +100,12 @@ private final class SparkleDelegate: NSObject, SPUUpdaterDelegate {
 
     /// What every request Sparkle makes says about the app: its name and version, and nothing about the user's
     /// languages.
-    static func configure(_ updater: SPUUpdater, info: AppInfo) {
-        updater.userAgentString = "\(info.name)/\(info.version)"
+    func configure(_ updater: SPUUpdater, info: AppInfo) {
+        let agent = "\(info.name)/\(info.version)"
+        updater.userAgentString = agent
         updater.httpHeaders = ["Accept-Language": "en"]
-        clearCookies()
+        headers = ["User-Agent": agent, "Accept-Language": "en"]
+        Self.clearCookies()
     }
 
     static func clearCookies() {
@@ -146,6 +153,17 @@ private final class SparkleDelegate: NSObject, SPUUpdaterDelegate {
     @objc(updater:willDownloadUpdate:withRequest:)
     func updater(_ updater: SPUUpdater, willDownloadUpdate item: SUAppcastItem, with request: NSMutableURLRequest) {
         request.httpShouldHandleCookies = false
+        for (field, value) in headers { request.setValue(value, forHTTPHeaderField: field) }
+    }
+
+    @objc(updater:shouldDownloadReleaseNotesForUpdate:)
+    func updater(_ updater: SPUUpdater, shouldDownloadReleaseNotesForUpdate updateItem: SUAppcastItem) -> Bool {
+        false
+    }
+
+    @objc(updater:didFinishUpdateCycleForUpdateCheck:error:)
+    func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: (any Error)?) {
+        Self.clearCookies()
     }
 
     @objc(updaterShouldRelaunchApplication:)
@@ -197,7 +215,7 @@ enum SparkleUpdateTest {
         let delegate = SparkleDelegate(feed: feed, relaunches: false)
         let driver = HeadlessDriver(info: info, report: report)
         let updater = SPUUpdater(hostBundle: .main, applicationBundle: .main, userDriver: driver, delegate: delegate)
-        SparkleDelegate.configure(updater, info: info)
+        delegate.configure(updater, info: info)
         do {
             try updater.start()
         } catch {

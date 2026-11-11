@@ -669,13 +669,15 @@ the other's builds. A development build has no feed.
   user has seen it; choosing the row shows Sparkle's window for it.
 - Nothing is installed without the user's word, given in Sparkle's
   window. Sparkle offers there to install later versions by itself; that
-  is off until the user turns it on.
+  is off until the user turns it on. The window shows no release notes:
+  a page rendered in it, even while it is hidden, could open a browser
+  by itself, and fetches from wherever it likes.
 - What Sparkle downloads is used only if its signature verifies against
   the key in the app, and it is checked before it is opened. Installing
   replaces the app where it is and opens the new one. Its identity is the same, so its settings, model and
   permissions are the ones it had.
 - A check sends nothing about the user or the Mac: Sparkle's system
-  profile is never enabled, and no cookie is kept or sent. Each request
+  profile is never enabled, and no cookie outlives a check. Each request
   says `User-Agent: <name>/<version>` and `Accept-Language: en`. The
   server learns the address the request came from, and the app's name
   and version.
@@ -978,8 +980,8 @@ Review does.
   build, and only an ad hoc build, also carries
   `com.apple.security.cs.disable-library-validation`. A channel with a
   feed gets the feed, the key, a daily check that never asks whether it
-  may, checking before opening and no installing by itself in its
-  `Info.plist`; the feed must be HTTPS and the key 32 bytes.
+  may, checking before opening, no installing by itself and no release
+  notes in its `Info.plist`; the feed must be HTTPS and the key 32 bytes.
 - Identity is one file, `Config/identity.conf`. There are three channels.
   Development builds are "Sorello Dev", `com.audeolabs.sorello.dev`;
   `CHANNEL=nightly` builds are "Sorello Nightly",

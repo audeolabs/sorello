@@ -114,6 +114,8 @@ sed -e "s|__NAME__|$NAME|g" -e "s|__BUNDLE_ID__|$BUNDLE_ID|g" -e "s|__VERSION__|
     Config/Info.plist > "$APP/Contents/Info.plist"
 # A build with a feed checks it once a day without asking whether it may, never sends a system profile, verifies an
 # update's signature before it opens it, and installs nothing by itself until the user says so in Sparkle's window.
+# Sparkle's window shows no release notes: a page rendered there, even while the window is hidden, could open a
+# browser by itself.
 # A build without one has none of these keys, and no updater.
 if [ -n "$FEED" ]; then
   INFO="$APP/Contents/Info.plist"
@@ -123,6 +125,7 @@ if [ -n "$FEED" ]; then
   plutil -insert SUScheduledCheckInterval -integer 86400 "$INFO"
   plutil -insert SUAutomaticallyUpdate -bool NO "$INFO"
   plutil -insert SUVerifyUpdateBeforeExtraction -bool YES "$INFO"
+  plutil -insert SUShowReleaseNotes -bool NO "$INFO"
 fi
 plutil -lint "$APP/Contents/Info.plist" > /dev/null
 
