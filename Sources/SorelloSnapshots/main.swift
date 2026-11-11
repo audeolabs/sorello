@@ -8,12 +8,15 @@ import SorelloUI
 // Shows the real pill on the real screen, cycling through its states with a synthetic voice, then exits; it prints
 // the screen it read and the frames it used, to check the pill against the hardware by eye:
 //   SorelloSnapshots --demo [seconds]
-// Writes the app icon as a 1024 px PNG with transparent corners, for Resources/AppIcon.icns:
+// Writes the app icon as a 1024 px PNG with transparent corners, for Resources/AppIcon.icns, or Sorello Nightly's, with
+// its stars, for Resources/AppIcon-Nightly.icns (the recipe is in SorelloUI's MarkSnapshots.swift):
 //   SorelloSnapshots --icon <file.png>
+//   SorelloSnapshots --nightly-icon <file.png>
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 guard let first = arguments.first else {
-    print("usage: SorelloSnapshots <output-directory> [name-filter] | --demo [seconds] | --icon <file.png>")
+    print("usage: SorelloSnapshots <output-directory> [name-filter] | --demo [seconds] | --icon <file.png>"
+        + " | --nightly-icon <file.png>")
     exit(64)
 }
 
@@ -27,10 +30,11 @@ case "--demo":
     let demo = PillDemo(seconds: max(seconds, 2))
     demo.start()
     application.run()
-case "--icon":
+case "--icon", "--nightly-icon":
     application.setActivationPolicy(.prohibited)
-    guard let path = arguments.dropFirst().first, let data = AppIconView.png() else {
-        print("usage: SorelloSnapshots --icon <file.png>")
+    let variant: AppIconView.Variant = first == "--nightly-icon" ? .nightly : .plain
+    guard let path = arguments.dropFirst().first, let data = AppIconView.png(variant: variant) else {
+        print("usage: SorelloSnapshots \(first) <file.png>")
         exit(64)
     }
     try data.write(to: URL(fileURLWithPath: path))

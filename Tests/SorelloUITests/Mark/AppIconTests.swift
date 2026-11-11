@@ -1,5 +1,6 @@
 import AppKit
 import DesignCore
+import ImageIO
 import Testing
 @testable import SorelloUI
 
@@ -109,6 +110,52 @@ struct AppIconTests {
         let first = try Self.render(variant), second = try Self.render(variant)
         let (largest, at) = Self.largestDifference(first, second)
         #expect(largest <= Self.renderNoise, "two renders differ by \(largest * 255) / 255 at \(at)")
+    }
+
+    /// Every image in one of the repository's icon files, at its width in pixels, as RGBA bytes.
+    static func icon(_ name: String) throws -> [(width: Int, bytes: [UInt8])] {
+        let url = try #require(Resources.directory).appendingPathComponent(name)
+        let source = try #require(CGImageSourceCreateWithURL(url as CFURL, nil), "no \(name)")
+        return try (0 ..< CGImageSourceGetCount(source)).map { index in
+            let image = try #require(CGImageSourceCreateImageAtIndex(source, index, nil))
+            let width = image.width, height = image.height
+            var bytes = [UInt8](repeating: 0, count: width * height * 4)
+            let space = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+            let drawn = bytes.withUnsafeMutableBytes { buffer in
+                guard let context = CGContext(data: buffer.baseAddress, width: width, height: height,
+                                              bitsPerComponent: 8, bytesPerRow: width * 4, space: space,
+                                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+                else { return false }
+                context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+                return true
+            }
+            try #require(drawn && width == height)
+            return (width, bytes)
+        }.sorted { $0.width < $1.width }
+    }
+
+    /// Whether any pixel of an RGBA picture is plainly orange.
+    static func hasOrange(_ bytes: [UInt8]) -> Bool {
+        stride(from: 0, to: bytes.count, by: 4).contains { index in
+            let red = Int(bytes[index]), green = Int(bytes[index + 1]), blue = Int(bytes[index + 2])
+            return bytes[index + 3] > 230 && red > 150 && red - green > 50 && green - blue > 50
+        }
+    }
+
+    /// The icon files the build ships: the nightly's holds every size the plain one does, with stars from 64 pixels
+    /// up, and is the plain icon at 32 pixels and under, where the stars would be only specks.
+    @Test func theNightlyIconFileHasStarsWhereTheyCanBeSeen() throws {
+        let plain = try Self.icon("AppIcon.icns"), nightly = try Self.icon("AppIcon-Nightly.icns")
+        #expect(nightly.map(\.width) == plain.map(\.width))
+        #expect(Set(nightly.map(\.width)) == [16, 32, 64, 128, 256, 512, 1024])
+        for (ours, theirs) in zip(nightly, plain) where ours.width == theirs.width {
+            if ours.width <= 32 {
+                #expect(ours.bytes == theirs.bytes, "the nightly's \(ours.width) px image is not the plain icon's")
+            } else {
+                #expect(Self.hasOrange(ours.bytes), "no stars in the nightly's \(ours.width) px image")
+                #expect(!Self.hasOrange(theirs.bytes), "orange in the plain \(theirs.width) px image")
+            }
+        }
     }
 
     /// The snapshot tool shows the nightly icon beside the plain one, for review.

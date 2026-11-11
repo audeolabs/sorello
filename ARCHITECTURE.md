@@ -772,7 +772,8 @@ and Finder. The stars are always in the same places. Nothing else about a
 nightly looks different: its menu-bar icon, setup and About show the mark
 as every build does, and a development build has the plain icon.
 `Resources/AppIcon-Nightly.icns` holds the nightly's icon, and a nightly
-build carries it as its icon.
+build carries it as its icon. At 32 pixels and under the stars would be
+only specks of brown, so there the nightly's icon is the plain one.
 
 ### Windows
 
