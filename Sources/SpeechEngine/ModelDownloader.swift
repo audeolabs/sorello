@@ -29,7 +29,7 @@ final class ModelDownloader: DownloadTransport {
         urlRequest.httpShouldHandleCookies = false
         for (name, value) in request.headers { urlRequest.setValue(value, forHTTPHeaderField: name) }
         let task = session.dataTask(with: urlRequest)
-        let receiver = Receiver()
+        let receiver = DownloadReceiver()
         task.delegate = receiver
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -46,17 +46,26 @@ final class ModelDownloader: DownloadTransport {
     }
 }
 
-/// One request's events: the head once, then the body's pieces, then its end.
-private final class Receiver: NSObject, URLSessionDataDelegate, Sendable {
+/// One request's events: the head once, then the body's pieces, then its end. The end may come before anyone waits
+/// for the head (a request cancelled at once ends at once), so it is kept and handed to a late waiter.
+final class DownloadReceiver: NSObject, URLSessionDataDelegate, Sendable {
     private struct State {
         var head: CheckedContinuation<DownloadResponse, any Error>?
         var body: AsyncThrowingStream<Data, any Error>.Continuation?
+        /// How the request ended, when it ended before anyone waited for its head.
+        var ended: (any Error)?
     }
 
     private let state = Mutex(State())
 
+    /// Waits for the head with `continuation`, which is resumed at once if the request has already ended.
     func awaitHead(_ continuation: CheckedContinuation<DownloadResponse, any Error>) {
-        state.withLock { $0.head = continuation }
+        let ended = state.withLock { state -> (any Error)? in
+            if let ended = state.ended { return ended }
+            state.head = continuation
+            return nil
+        }
+        if let ended { continuation.resume(throwing: ended) }
     }
 
     /// A redirect comes back as it is, for the download to judge.
@@ -90,8 +99,13 @@ private final class Receiver: NSObject, URLSessionDataDelegate, Sendable {
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
-        let (head, body) = state.withLock { state in (state.head.take(), state.body.take()) }
-        head?.resume(throwing: error ?? URLError(.badServerResponse))
+        let ending = error ?? URLError(.badServerResponse)
+        let (head, body) = state.withLock { state in
+            let waiting = (state.head.take(), state.body.take())
+            if waiting.0 == nil && waiting.1 == nil { state.ended = ending }
+            return waiting
+        }
+        head?.resume(throwing: ending)
         if let error { body?.finish(throwing: error) } else { body?.finish() }
     }
 }
