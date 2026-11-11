@@ -96,9 +96,12 @@ final class AppShell: NSObject, NSApplicationDelegate {
         if showsSetup && models.setupIsNeeded { showSetup() }
     }
 
-    /// Opening the app again (from Finder, Spotlight, `open` or the Dock icon) shows the main window.
+    /// Clicking the Dock icon, or opening the app again from Finder, Spotlight or `open`, brings the open windows
+    /// forward, minimised ones too, and opens the main window only when none is open. The presenter does all of it,
+    /// so AppKit is told to do nothing more.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        showMain(at: nil)
+        guard let models, let app else { return false }
+        windows.reopen(main: models.main, title: app.info.name)
         return false
     }
 

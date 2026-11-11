@@ -107,6 +107,17 @@ final class WindowPresenter {
         show(.notice(title)) { Self.noticeWindow(title: title, files: files) }
     }
 
+    /// Clicking the Dock icon, or opening Sorello again: the open windows come forward, minimised ones out of the
+    /// Dock, in the order they were last in front, so the one in front before is in front again. With none open, the
+    /// main window opens.
+    func reopen(main model: MainWindowModel, title: String) {
+        guard isInDock else { return showMain(model, section: nil, title: title) }
+        dock.activate()
+        for id in open {
+            if let window = made[id] { dock.bringForward(window) }
+        }
+    }
+
     /// The first window to open makes Sorello an ordinary app before it activates, so the window comes forward the
     /// way any app's does; every window is then brought forward with the app active.
     private func show(_ id: AppWindow, make: () -> NSWindow) {
@@ -122,13 +133,20 @@ final class WindowPresenter {
         open.append(id)
     }
 
-    /// Hears `window` close, for as long as the presenter keeps it.
+    /// Hears `window` close, and become key when the user clicks it, for as long as the presenter keeps it.
     private func watch(_ window: NSWindow, as id: AppWindow) -> NSWindow {
         made[id] = window
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: NSWindow.willCloseNotification, object: window,
                                             queue: nil) { [weak self] _ in
             MainActor.assumeIsolated { self?.closed(id) }
+        })
+        observers.append(center.addObserver(forName: NSWindow.didBecomeKeyNotification, object: window,
+                                            queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.isOpen(id) else { return }
+                self.markInFront(id)
+            }
         })
         return window
     }

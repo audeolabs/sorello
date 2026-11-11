@@ -168,4 +168,45 @@ final class RecordingDock: DockPresence {
         #expect(presenter.isInDock)
         #expect(presenter.isOpen(.main))
     }
+
+    // MARK: The Dock icon, and opening Sorello again
+
+    @Test func withNoWindowOpenTheDockIconOpensTheMainWindow() {
+        presenter.reopen(main: main, title: "Sorello Test")
+        #expect(presenter.isOpen(.main))
+        #expect(dock.take() == ["enter Dock", "activate", "front main"])
+    }
+
+    /// With setup open, the Dock icon brings setup forward and opens nothing else.
+    @Test func withAWindowOpenTheDockIconBringsItForwardAndOpensNothingElse() {
+        showSetup()
+        _ = dock.take()
+        presenter.reopen(main: main, title: "Sorello Test")
+        #expect(presenter.open == [.setup])
+        #expect(presenter.window(.main) == nil)
+        #expect(dock.take() == ["activate", "front setup"])
+    }
+
+    /// Every open window comes forward, in the order they were last in front, so the one the user last had in front,
+    /// by clicking it or by opening it, is in front again.
+    @Test func theDockIconBringsEveryOpenWindowForwardInTheOrderTheyWereInFront() throws {
+        showMain()
+        showNotice("Licence")
+        showNotice("Credits")
+        let clicked: NSWindow = try #require(presenter.window(.main))
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: clicked)
+        _ = dock.take()
+        presenter.reopen(main: main, title: "Sorello Test")
+        #expect(dock.take() == ["activate", "front notice Licence", "front notice Credits", "front main"])
+    }
+
+    /// A minimised window comes out of the Dock: the presenter hands it to the same call as any other, which takes a
+    /// minimised window out of the Dock.
+    @Test func theDockIconBringsAMinimisedWindowForward() throws {
+        showMain()
+        try #require(presenter.window(.main)).orderOut(nil)
+        _ = dock.take()
+        presenter.reopen(main: main, title: "Sorello Test")
+        #expect(dock.take() == ["activate", "front main"])
+    }
 }
