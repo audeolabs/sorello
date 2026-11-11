@@ -137,13 +137,13 @@ final class ParakeetTranscriber: ObservableObject {
     }
 }
 
-/// The model the app carries (ARCHITECTURE.md, "Transcription"): a build the pin lists for iOS, which the build checked
-/// against the pin and its manifest. The engine loads it where it lies and checks every file again. Nil when the app
-/// was built without it, and on anything but arm64, as before.
+/// The model the app carries (ARCHITECTURE.md, "Transcription"), in `Model/`: the build the pin lists for iOS, which the
+/// build checked against the pin and its manifest. The engine loads it where it lies and checks every file again. Nil
+/// when the app was built without it, and on anything but arm64, as before.
 enum CarriedModel {
     static var directory: URL? {
         #if arch(arm64)
-        guard let directory = Bundle.main.resourceURL?.appendingPathComponent("Parakeet", isDirectory: true),
+        guard let directory = Bundle.main.resourceURL?.appendingPathComponent("Model", isDirectory: true),
               FileManager.default.fileExists(atPath: directory.appendingPathComponent("bundle.json").path) else {
             return nil
         }

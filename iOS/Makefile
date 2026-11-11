@@ -50,7 +50,11 @@ URL_SCHEME ?= localflow-dev
 UNIVERSAL_LINK ?=
 DISPLAY_NAME ?= Sorello Dev
 DEPLOYMENT_TARGET ?= 26.0
-PARAKEET_BUNDLE_DIR ?=
+# A local copy of the speech model's build that ../Models/model.lock.json lists for iOS: the directory holding its
+# bundle.json, as SORELLO_MODEL_DIR is for the Mac app. The build checks it against the pin and its manifest and copies
+# exactly the manifest's files into Sorello.app/Model/, with the pin and the model's notices. Empty builds an app
+# without the model, which cannot transcribe. The weights stay outside Git.
+SORELLO_MODEL_DIR ?=
 # Optional swipe typing bundle (SwipeEncoder.mlmodelc, lexicon.bin, bundle.json);
 # empty builds a keyboard without swipe typing.
 SWIPE_BUNDLE_DIR ?=
@@ -63,7 +67,7 @@ SWIFT_FLAGS ?=
 # Optional keychain holding the signing identity (device builds signed over SSH).
 CODESIGN_KEYCHAIN ?=
 CODESIGN_KEYCHAIN_FLAG = $(if $(strip $(CODESIGN_KEYCHAIN)),--keychain "$(CODESIGN_KEYCHAIN)")
-SWIFT_OPTIMIZATION ?= $(if $(strip $(PARAKEET_BUNDLE_DIR)),-O,-Onone)
+SWIFT_OPTIMIZATION ?= $(if $(strip $(SORELLO_MODEL_DIR)),-O,-Onone)
 ICON_SOURCE ?= Resources/AppIcon-Dev-Source.png
 PYTHON ?= python3
 
@@ -165,9 +169,12 @@ APP_SIGNATURE = $(APP_BUNDLE)/_CodeSignature/CodeResources
 ICON_CATALOG = $(OBJ_DIR)/Assets.xcassets
 IPA = $(BUILD_DIR)/Sorello.ipa
 CONFIG_STAMP = $(OBJ_DIR)/configuration
-PARAKEET_STAMP = $(OBJ_DIR)/parakeet-selection
+MODEL_STAMP = $(OBJ_DIR)/model-selection
 SWIPE_STAMP = $(OBJ_DIR)/swipe-selection
-PARAKEET_INSTALL_KEY = $(OBJ_DIR)/parakeet-installed
+MODEL_INSTALL_KEY = $(OBJ_DIR)/model-installed
+# What the app's copy of the model is made from, besides the model itself: the pin it is checked against, the model's
+# notices, which ship beside it, and the script that checks and copies it.
+MODEL_INPUTS = ../Models/model.lock.json $(wildcard ../Resources/ModelNotices/*) scripts/copy-model.py
 HOST_BUILD_DIR ?= build/host
 # The shared modules require macOS 26, as the Mac app does.
 HOST_TARGET ?= $(shell uname -m)-apple-macosx26.0
@@ -273,7 +280,7 @@ info_plist_base = cp "$(1)" "$(2)" && \
 	$(if $(strip $(BUILD_NUMBER)),plutil -replace CFBundleVersion -string "$(BUILD_NUMBER)" "$(2)" &&) \
 	plutil -replace MinimumOSVersion -string "$(DEPLOYMENT_TARGET)" "$(2)"
 
-.PHONY: all binaries check typecheck test lint install-sim run-sim smoke-sim clean configuration parakeet-selection swipe-selection signing-requirements FORCE
+.PHONY: all binaries check typecheck test lint install-sim run-sim smoke-sim clean configuration model-selection swipe-selection signing-requirements FORCE
 
 all: signing-requirements $(APP_SIGNATURE)
 
@@ -288,17 +295,18 @@ configuration:
 
 $(CONFIG_STAMP): configuration
 
-# Weights stay outside Git and are copied only into the local app bundle.
-parakeet-selection:
+# Weights stay outside Git and are copied only into the local app bundle. bundle.json lists every file's SHA-256, so
+# its hash stands for the whole model.
+model-selection:
 	@mkdir -p "$(OBJ_DIR)"
-	@printf '%s\n' "$(PARAKEET_BUNDLE_DIR)" > "$(PARAKEET_STAMP).tmp"
-ifneq ($(strip $(PARAKEET_BUNDLE_DIR)),)
-	@test -f "$(PARAKEET_BUNDLE_DIR)/bundle.json" || { echo "PARAKEET_BUNDLE_DIR has no bundle.json." >&2; exit 1; }
-	@shasum -a 256 "$(PARAKEET_BUNDLE_DIR)/bundle.json" >> "$(PARAKEET_STAMP).tmp"
+	@printf '%s\n' "$(SORELLO_MODEL_DIR)" > "$(MODEL_STAMP).tmp"
+ifneq ($(strip $(SORELLO_MODEL_DIR)),)
+	@test -f "$(SORELLO_MODEL_DIR)/bundle.json" || { rm -f "$(MODEL_STAMP).tmp"; echo "SORELLO_MODEL_DIR has no bundle.json." >&2; exit 1; }
+	@shasum -a 256 "$(SORELLO_MODEL_DIR)/bundle.json" >> "$(MODEL_STAMP).tmp"
 endif
-	@if cmp -s "$(PARAKEET_STAMP).tmp" "$(PARAKEET_STAMP)"; then rm -f "$(PARAKEET_STAMP).tmp"; else mv "$(PARAKEET_STAMP).tmp" "$(PARAKEET_STAMP)"; fi
+	@if cmp -s "$(MODEL_STAMP).tmp" "$(MODEL_STAMP)"; then rm -f "$(MODEL_STAMP).tmp"; else mv "$(MODEL_STAMP).tmp" "$(MODEL_STAMP)"; fi
 
-$(PARAKEET_STAMP): parakeet-selection
+$(MODEL_STAMP): model-selection
 
 # The swipe bundle stays outside Git too; bundle.json lists every file's SHA-256,
 # so its hash stands for the whole bundle. The stamp has its own recipe, run every
@@ -327,7 +335,7 @@ ifeq ($(PLATFORM),device)
 	done
 endif
 ifeq ($(CHANNEL),appstore)
-	@[ -n "$(strip $(PARAKEET_BUNDLE_DIR))" ] || { echo "CHANNEL=appstore needs PARAKEET_BUNDLE_DIR (the model ships in the app)." >&2; exit 1; }
+	@[ -n "$(strip $(SORELLO_MODEL_DIR))" ] || { echo "CHANNEL=appstore needs SORELLO_MODEL_DIR (the model ships in the app)." >&2; exit 1; }
 endif
 
 # The app and the keyboard share the App Group; the activity extension has no capability at all.
@@ -429,9 +437,9 @@ $(ACTIVITY_BINARY): $(ACTIVITY_SOURCES) $(CONFIG_STAMP) $(LINKED_ACTIVITY_ENTITL
 
 $(APP_SIGNATURE): $(APP_BINARY) $(KEYBOARD_BINARY) $(ACTIVITY_BINARY) $(APP_ENTITLEMENTS) $(KEYBOARD_ENTITLEMENTS) \
 		$(ACTIVITY_ENTITLEMENTS) Makefile Config/Sorello-Info.plist Config/SorelloKeyboard-Info.plist \
-		Config/SorelloActivity-Info.plist $(ICON_SOURCE) $(PARAKEET_STAMP) Config/Sorello-PrivacyInfo.xcprivacy \
+		Config/SorelloActivity-Info.plist $(ICON_SOURCE) $(MODEL_STAMP) Config/Sorello-PrivacyInfo.xcprivacy \
 		Config/SorelloKeyboard-PrivacyInfo.xcprivacy Config/SorelloActivity-PrivacyInfo.xcprivacy \
-		$(wildcard ../Resources/Parakeet/*) ../scripts/label-localflow-model.py \
+		$(MODEL_INPUTS) \
 		$(SWIPE_STAMP) $(wildcard Resources/Swipe/LICENSE-*) $(APP_FONTS)
 	@rm -rf "$(APPEX_BUNDLE)" "$(ACTIVITY_APPEX_BUNDLE)" "$(APP_BUNDLE)/_CodeSignature" "$(APP_BUNDLE)/embedded.mobileprovision" "$(APP_BUNDLE)/Fonts"
 	@mkdir -p "$(APPEX_BUNDLE)" "$(ACTIVITY_APPEX_BUNDLE)"
@@ -468,22 +476,20 @@ $(APP_SIGNATURE): $(APP_BINARY) $(KEYBOARD_BINARY) $(ACTIVITY_BINARY) $(APP_ENTI
 		--errors --warnings --output-format human-readable-text "$(ICON_CATALOG)" > "$(OBJ_DIR)/actool.log" 2>&1 || \
 		{ cat "$(OBJ_DIR)/actool.log" >&2; exit 1; }
 	@/usr/libexec/PlistBuddy -c "Merge $(OBJ_DIR)/assets-Info.plist" "$(APP_BUNDLE)/Info.plist" >/dev/null
-ifneq ($(strip $(PARAKEET_BUNDLE_DIR)),)
-	@{ cat "$(PARAKEET_STAMP)"; shasum -a 256 ../Resources/Parakeet/* ../scripts/label-localflow-model.py; } > "$(PARAKEET_INSTALL_KEY).tmp"
-	@# Copying 330 MB is slow, so keep the installed copy while its inputs are unchanged.
-	@if [ -f "$(APP_BUNDLE)/Parakeet/bundle.json" ] && cmp -s "$(PARAKEET_INSTALL_KEY).tmp" "$(PARAKEET_INSTALL_KEY)"; then \
+ifneq ($(strip $(SORELLO_MODEL_DIR)),)
+	@{ cat "$(MODEL_STAMP)"; printf '%s\n' "$(DEPLOYMENT_TARGET)"; shasum -a 256 $(MODEL_INPUTS); } > "$(MODEL_INSTALL_KEY).tmp"
+	@# Copying 138 MB is slow, so keep the installed copy while its inputs are unchanged.
+	@if [ -f "$(APP_BUNDLE)/Model/bundle.json" ] && cmp -s "$(MODEL_INSTALL_KEY).tmp" "$(MODEL_INSTALL_KEY)"; then \
 		echo "Reusing installed model files"; \
 	else \
-		rm -f "$(PARAKEET_INSTALL_KEY)" && rm -rf "$(APP_BUNDLE)/Parakeet" && mkdir -p "$(APP_BUNDLE)/Parakeet" && \
-		cp -R -X "$(PARAKEET_BUNDLE_DIR)/Encoder.mlmodelc" "$(APP_BUNDLE)/Parakeet/" && \
-		cp -X "$(PARAKEET_BUNDLE_DIR)/bundle.json" "$(PARAKEET_BUNDLE_DIR)/frontend.json" "$(PARAKEET_BUNDLE_DIR)/frontend.f32bin" "$(PARAKEET_BUNDLE_DIR)/decoder_joint.json" "$(PARAKEET_BUNDLE_DIR)/decoder_joint.f32bin" "$(PARAKEET_BUNDLE_DIR)/vocabulary.json" "$(APP_BUNDLE)/Parakeet/" && \
-		cp -X ../Resources/Parakeet/* "$(APP_BUNDLE)/Parakeet/" && \
-		$(PYTHON) ../scripts/label-localflow-model.py "$(APP_BUNDLE)/Parakeet" && \
-		cp "$(PARAKEET_INSTALL_KEY).tmp" "$(PARAKEET_INSTALL_KEY)"; \
+		rm -f "$(MODEL_INSTALL_KEY)" && \
+		$(PYTHON) scripts/copy-model.py ../Models/model.lock.json "$(SORELLO_MODEL_DIR)" ../Resources/ModelNotices \
+			"$(APP_BUNDLE)" $(DEPLOYMENT_TARGET) && \
+		cp "$(MODEL_INSTALL_KEY).tmp" "$(MODEL_INSTALL_KEY)"; \
 	fi
-	@rm -f "$(PARAKEET_INSTALL_KEY).tmp"
+	@rm -f "$(MODEL_INSTALL_KEY).tmp"
 else
-	@rm -rf "$(APP_BUNDLE)/Parakeet" "$(PARAKEET_INSTALL_KEY)"
+	@rm -rf "$(APP_BUNDLE)/Model" "$(APP_BUNDLE)/model.lock.json" "$(APP_BUNDLE)/ModelNotices" "$(MODEL_INSTALL_KEY)"
 endif
 ifneq ($(strip $(SWIPE_BUNDLE_DIR)),)
 	@# Swipe typing: exactly the files bundle.json lists, each checked against its
@@ -622,7 +628,7 @@ SMOKE_LOG = $(SMOKE_BUILD_DIR)/obj/selftest.log
 # Transcribes invented speech from `say` inside the self-test build. The app
 # prints only a pass/fail line with timings, never the transcript.
 smoke-sim:
-	@[ -n "$(strip $(PARAKEET_BUNDLE_DIR))" ] || { echo "smoke-sim needs PARAKEET_BUNDLE_DIR (the Parakeet model bundle)." >&2; exit 1; }
+	@[ -n "$(strip $(SORELLO_MODEL_DIR))" ] || { echo "smoke-sim needs SORELLO_MODEL_DIR (a copy of the model)." >&2; exit 1; }
 	@$(MAKE) --no-print-directory all PLATFORM=simulator BUILD_DIR="$(SMOKE_BUILD_DIR)" SWIFT_FLAGS="$(SWIFT_FLAGS) -D SORELLO_SELFTEST"
 	@set -e; $(SIM_RESOLVE); $(SIM_BOOT); \
 	trap '[ "$$booted_here" = 1 ] && xcrun simctl shutdown "$$udid"' EXIT; \
@@ -677,7 +683,7 @@ install-device: all
 smoke-device:
 	@[ -n "$(DEVICE)" ] || { echo "smoke-device needs DEVICE, a name or identifier from 'xcrun devicectl list devices'." >&2; exit 1; }
 ifneq ($(SMOKE_DEVICE_INSTALL),0)
-	@[ -n "$(strip $(PARAKEET_BUNDLE_DIR))" ] || { echo "smoke-device needs PARAKEET_BUNDLE_DIR (the Parakeet model bundle)." >&2; exit 1; }
+	@[ -n "$(strip $(SORELLO_MODEL_DIR))" ] || { echo "smoke-device needs SORELLO_MODEL_DIR (a copy of the model)." >&2; exit 1; }
 	@$(MAKE) --no-print-directory all PLATFORM=device BUILD_DIR="$(SMOKE_DEVICE_BUILD_DIR)" SWIFT_FLAGS="$(SWIFT_FLAGS) -D SORELLO_SELFTEST"
 endif
 	@set -e; $(DEVICE_UNLOCKED); obj="$(SMOKE_DEVICE_BUILD_DIR)/obj"; mkdir -p "$$obj"; \
@@ -737,7 +743,7 @@ E2E_KEEP_PRESENCE = $(strip $(E2E_BACKGROUND)$(E2E_FROM_BACKGROUND))
 # given, a relative one is resolved against the iOS directory.
 e2e-sim: SIM_DEVICE = $(E2E_SIM_DEVICE)
 e2e-sim:
-	@[ -n "$(strip $(PARAKEET_BUNDLE_DIR))" ] || { echo "e2e-sim needs PARAKEET_BUNDLE_DIR (the Parakeet model bundle)." >&2; exit 1; }
+	@[ -n "$(strip $(SORELLO_MODEL_DIR))" ] || { echo "e2e-sim needs SORELLO_MODEL_DIR (a copy of the model)." >&2; exit 1; }
 	@$(MAKE) --no-print-directory all PLATFORM=simulator BUILD_DIR="$(E2E_BUILD_DIR)" SWIFT_FLAGS="$(SWIFT_FLAGS) -D SORELLO_SELFTEST"
 	@set -e; $(SIM_RESOLVE); $(SIM_BOOT); \
 	xcrun simctl terminate "$$udid" "$(BUNDLE_ID)" >/dev/null 2>&1 || true; \
