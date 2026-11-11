@@ -53,7 +53,8 @@ def version(text):
 
 def build_for_iphone(pin, target):
     """The first build an iPhone on `target` takes, or None."""
-    for build in pin.get("builds", []):
+    builds = pin.get("builds")
+    for build in builds if isinstance(builds, list) else []:
         requires = build.get("requires") if isinstance(build, dict) else None
         if not isinstance(requires, dict) or not set(requires) <= KNOWN:
             continue
@@ -158,4 +159,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as error:  # Whatever went wrong, a failed run leaves nothing of the model in the app.
+        fail("the model could not be checked or copied (%s)" % type(error).__name__)
