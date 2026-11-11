@@ -57,9 +57,10 @@ struct ModelStoreTests {
         ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.systemFileNumber] as? NSNumber)?.uint64Value
     }
 
-    /// Entries other than the store's lock file, which stays in root by design.
+    /// Entries other than the store's lock files, which stay in root by design.
     private func entries(_ directory: URL) -> [String] {
-        ((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []).filter { $0 != ".lock" }.sorted()
+        ((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? [])
+            .filter { $0 != ".lock" && $0 != ".download.lock" }.sorted()
     }
 
     /// Regular files by relative path, ignoring the store's hidden bookkeeping.

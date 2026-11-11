@@ -1,6 +1,24 @@
 import Foundation
 import Synchronization
 
+/// A held lock on a store's downloads; closing it releases the lock.
+final class DownloadLock: Sendable {
+    private let descriptor: Int32
+    private let closed = Mutex(false)
+
+    init(descriptor: Int32) {
+        self.descriptor = descriptor
+    }
+
+    /// Releases the lock. Safe to call more than once.
+    func close() {
+        guard closed.withLock({ state in defer { state = true }; return !state }) else { return }
+        _ = Darwin.close(descriptor)
+    }
+
+    deinit { close() }
+}
+
 /// The model's stable home, one directory per manifest digest (ARCHITECTURE.md, section 5). Core ML's on-device
 /// specialization cache is keyed by the encoder weight file's path and identity, so a copy that is never rewritten
 /// stays warm across app updates that keep the model. A model comes in two ways, both ending in the same locked,
@@ -22,6 +40,7 @@ final class ModelStore: Sendable {
     private static let stagingPrefix = ".staging-"
     private static let downloadPrefix = ".download-"
     private static let lockName = ".lock"
+    private static let downloadLockName = ".download.lock"
     /// Set once a copy from the app is rejected; the app's copy is then loaded in place until the next launch.
     private let disabled = Mutex(false)
     /// Test seam: runs between an install's completeness check and its replacement of the target. Nil in production.
@@ -69,6 +88,12 @@ final class ModelStore: Sendable {
         } ?? nil
     }
 
+    /// Whether `<root>/<identity>` looks complete, read without the lock: a quick answer for deciding what to show
+    /// at launch. Loading always goes through `stored`, which takes the lock.
+    func appearsComplete(_ identity: String) -> Bool {
+        isComplete(directory(identity), identity: identity)
+    }
+
     // MARK: - Downloads
 
     /// Where a download of `identity` goes: `<root>/.download-<identity>`, made if missing, or the stored model if it
@@ -103,6 +128,37 @@ final class ModelStore: Sendable {
             collectGarbage(keeping: identity)
             return target
         } ?? nil
+    }
+
+    /// The bytes an unfinished download of `identity` holds, read without the lock, for the progress shown as a run
+    /// starts.
+    func downloadedBytes(_ identity: String) -> Int64 {
+        guard let walker = FileManager.default.enumerator(at: downloadDirectory(identity),
+                                                          includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey])
+        else { return 0 }
+        var total: Int64 = 0
+        for case let url as URL in walker {
+            guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
+                  values.isRegularFile == true else { continue }
+            total += Int64(values.fileSize ?? 0)
+        }
+        return total
+    }
+
+    /// Takes the lock that keeps two processes from downloading into one directory, waiting while another holds it.
+    /// Nil if the calling task is cancelled first, or the lock cannot be taken. Closing the lock releases it.
+    func takeDownloadLock() async -> DownloadLock? {
+        let path = root.appendingPathComponent(Self.downloadLockName).path
+        let descriptor = Darwin.open(path, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0o600)
+        guard descriptor >= 0 else { return nil }
+        while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
+            guard errno == EWOULDBLOCK || errno == EINTR, !Task.isCancelled else {
+                close(descriptor)
+                return nil
+            }
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+        return DownloadLock(descriptor: descriptor)
     }
 
     // MARK: - The app's copy, opened in place
@@ -219,11 +275,12 @@ final class ModelStore: Sendable {
         try? excluded.setResourceValues(values)
     }
 
-    /// Removes only root's direct entries; a symbolic link is removed, not followed.
+    /// Removes only root's direct entries; a symbolic link is removed, not followed. The two lock files stay, so a
+    /// process holding one never shares it with one that made a new file.
     private func collectGarbage(keeping identity: String) {
         let files = FileManager.default
         guard let names = try? files.contentsOfDirectory(atPath: root.path) else { return }
-        for name in names where name != identity && name != Self.lockName {
+        for name in names where name != identity && name != Self.lockName && name != Self.downloadLockName {
             try? files.removeItem(at: root.appendingPathComponent(name))
         }
     }
