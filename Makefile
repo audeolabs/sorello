@@ -13,7 +13,8 @@ check:
 	swift build
 	swift test
 
-# build/<name>.app. SORELLO_MODEL_DIR=<pinned bundle> puts the model in; CHANNEL=release builds "Sorello", universal.
+# build/<name>.app. SORELLO_MODEL_DIR=<pinned bundle> puts the model in; CHANNEL=nightly builds "Sorello Nightly" and
+# CHANNEL=release "Sorello", both universal.
 # ARCHS="arm64 x86_64" chooses the architectures; a development build is otherwise for this Mac only.
 app:
 	./scripts/build-app.sh
