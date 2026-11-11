@@ -1,5 +1,5 @@
 #!/bin/sh
-# Checks that a built LocalFlow.app (and optionally its .ipa) is what App Store
+# Checks that a built Sorello.app (and optionally its .ipa) is what App Store
 # Connect accepts and what ARCHITECTURE.md ("App Store packaging") promises:
 # production identifiers, the compiled icon, privacy manifests, Xcode build
 # metadata, matching versions, distribution signing, the universal link and its
@@ -60,23 +60,23 @@ if [ -n "$ipa" ]; then
     if [ ! -f "$ipa" ]; then
         fail "missing $ipa"
     elif unzip -Z1 "$ipa" > "$work/ipa.txt" 2>/dev/null; then
-        grep -Fqx 'Payload/LocalFlow.app/Info.plist' "$work/ipa.txt" || fail "ipa: Payload/LocalFlow.app/Info.plist is missing"
-        stray=$(grep -v '^Payload/LocalFlow\.app/' "$work/ipa.txt" | grep -Fvx 'Payload/' | head -3)
+        grep -Fqx 'Payload/Sorello.app/Info.plist' "$work/ipa.txt" || fail "ipa: Payload/Sorello.app/Info.plist is missing"
+        stray=$(grep -v '^Payload/Sorello\.app/' "$work/ipa.txt" | grep -Fvx 'Payload/' | head -3)
         [ -z "$stray" ] || fail "ipa: unexpected entries: $stray"
-        if mkdir "$work/ipa" && unzip -q "$ipa" -d "$work/ipa" && [ -d "$work/ipa/Payload/LocalFlow.app" ]; then
+        if mkdir "$work/ipa" && unzip -q "$ipa" -d "$work/ipa" && [ -d "$work/ipa/Payload/Sorello.app" ]; then
             # Every file, the keyboard, resources and signatures included.
-            diff -rq "$app" "$work/ipa/Payload/LocalFlow.app" > "$work/ipa-diff.txt" 2>&1 ||
+            diff -rq "$app" "$work/ipa/Payload/Sorello.app" > "$work/ipa-diff.txt" 2>&1 ||
                 fail "ipa: it holds a different build than $app ($(head -1 "$work/ipa-diff.txt"))"
-            app="$work/ipa/Payload/LocalFlow.app"
+            app="$work/ipa/Payload/Sorello.app"
         else
-            fail "ipa: cannot extract Payload/LocalFlow.app"
+            fail "ipa: cannot extract Payload/Sorello.app"
         fi
     else
         fail "ipa: not a readable zip archive"
     fi
 fi
-appex="$app/PlugIns/LocalFlowKeyboard.appex"
-activity="$app/PlugIns/LocalFlowActivity.appex"
+appex="$app/PlugIns/SorelloKeyboard.appex"
+activity="$app/PlugIns/SorelloActivity.appex"
 
 # A scalar at a plutil key path, or empty if absent.
 value() { plutil -extract "$2" raw -o - "$1" 2>/dev/null; }
@@ -117,8 +117,8 @@ for plist in "$app_plist" "$keyboard_plist" "$activity_plist"; do
 done
 # Exactly the two extensions.
 plugins=$(ls "$app/PlugIns" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ')
-[ "$plugins" = "LocalFlowActivity.appex LocalFlowKeyboard.appex " ] ||
-    fail "app: PlugIns holds '$plugins', expected LocalFlowActivity.appex and LocalFlowKeyboard.appex"
+[ "$plugins" = "SorelloActivity.appex SorelloKeyboard.appex " ] ||
+    fail "app: PlugIns holds '$plugins', expected SorelloActivity.appex and SorelloKeyboard.appex"
 if [ -f "$app_plist" ] && [ -f "$keyboard_plist" ] && [ -f "$activity_plist" ]; then
     case "$bundle_id" in *.dev|*.dev.*) fail "bundle identifier '$bundle_id' is a development identifier" ;; esac
     expect "$app_plist" CFBundleIdentifier "$bundle_id" app
@@ -278,7 +278,7 @@ done
 
 # Contents: the model, no self-test code, nothing a build machine left behind.
 [ -f "$app/Parakeet/bundle.json" ] || fail "app: the Parakeet model is missing (build with PARAKEET_BUNDLE_DIR)"
-for binary in "$app/LocalFlow" "$appex/LocalFlowKeyboard" "$activity/LocalFlowActivity"; do
+for binary in "$app/Sorello" "$appex/SorelloKeyboard" "$activity/SorelloActivity"; do
     [ -f "$binary" ] || { fail "missing $binary"; continue; }
     if grep -aq LOCALFLOW_SELFTEST "$binary"; then fail "$(basename "$binary") is a self-test build"; fi
 done

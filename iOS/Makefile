@@ -12,7 +12,7 @@ PLATFORM ?= device
 BUNDLE_ID ?= com.ajbarryiii.localflow.ios
 URL_SCHEME ?= localflow
 UNIVERSAL_LINK ?= https://wildernesslabs.ai/localflow/dictate
-DISPLAY_NAME ?= LocalFlow
+DISPLAY_NAME ?= Sorello
 ICON_SOURCE ?= Resources/AppIcon-Source.png
 BUILD_DIR ?= build/appstore
 ifneq ($(PLATFORM),device)
@@ -44,7 +44,7 @@ URL_SCHEME ?= localflow-dev
 # entitlement for its host, which its profile must grant. Empty (dev, simulator, self-test and e2e
 # builds) keeps the scheme; https://wildernesslabs.ai/localflow-dev/dictate is the dev device opt-in.
 UNIVERSAL_LINK ?=
-DISPLAY_NAME ?= LocalFlow Dev
+DISPLAY_NAME ?= Sorello Dev
 DEPLOYMENT_TARGET ?= 26.0
 PARAKEET_BUNDLE_DIR ?=
 # Optional swipe typing bundle (SwipeEncoder.mlmodelc, lexicon.bin, bundle.json);
@@ -155,21 +155,21 @@ KEYBOARD_SOURCES = $(KEYBOARD_SWIFT_SOURCES) $(SHARED_SOURCES) $(INSERTION_CONTE
 ACTIVITY_SOURCES = $(ACTIVITY_SWIFT_SOURCES) $(ACTIVITYCORE_SOURCES) $(ACTIVITY_KEYBOARDCORE_SOURCES)
 
 OBJ_DIR = $(BUILD_DIR)/obj
-APP_BUNDLE = $(BUILD_DIR)/LocalFlow.app
-APPEX_BUNDLE = $(APP_BUNDLE)/PlugIns/LocalFlowKeyboard.appex
-ACTIVITY_APPEX_BUNDLE = $(APP_BUNDLE)/PlugIns/LocalFlowActivity.appex
-APP_BINARY = $(OBJ_DIR)/LocalFlow
-KEYBOARD_BINARY = $(OBJ_DIR)/LocalFlowKeyboard
-ACTIVITY_BINARY = $(OBJ_DIR)/LocalFlowActivity
+APP_BUNDLE = $(BUILD_DIR)/Sorello.app
+APPEX_BUNDLE = $(APP_BUNDLE)/PlugIns/SorelloKeyboard.appex
+ACTIVITY_APPEX_BUNDLE = $(APP_BUNDLE)/PlugIns/SorelloActivity.appex
+APP_BINARY = $(OBJ_DIR)/Sorello
+KEYBOARD_BINARY = $(OBJ_DIR)/SorelloKeyboard
+ACTIVITY_BINARY = $(OBJ_DIR)/SorelloActivity
 APP_ENTITLEMENTS = $(OBJ_DIR)/Sorello.xcent
 KEYBOARD_ENTITLEMENTS = $(OBJ_DIR)/SorelloKeyboard.xcent
 ACTIVITY_ENTITLEMENTS = $(OBJ_DIR)/SorelloActivity.xcent
 # Swift const values of the intent's source, from each binary's compile, for its Metadata.appintents.
-APP_CONST_VALUES = $(OBJ_DIR)/appintents/LocalFlow.swiftconstvalues
-ACTIVITY_CONST_VALUES = $(OBJ_DIR)/appintents/LocalFlowActivity.swiftconstvalues
+APP_CONST_VALUES = $(OBJ_DIR)/appintents/Sorello.swiftconstvalues
+ACTIVITY_CONST_VALUES = $(OBJ_DIR)/appintents/SorelloActivity.swiftconstvalues
 APP_SIGNATURE = $(APP_BUNDLE)/_CodeSignature/CodeResources
 ICON_CATALOG = $(OBJ_DIR)/Assets.xcassets
-IPA = $(BUILD_DIR)/LocalFlow.ipa
+IPA = $(BUILD_DIR)/Sorello.ipa
 CONFIG_STAMP = $(OBJ_DIR)/configuration
 PARAKEET_STAMP = $(OBJ_DIR)/parakeet-selection
 SWIPE_STAMP = $(OBJ_DIR)/swipe-selection
@@ -187,11 +187,11 @@ ACCELERATE_FLAGS = -Xcc -DACCELERATE_NEW_LAPACK
 SWIFT_JOBS ?= $(shell sysctl -n hw.activecpu)
 SWIFT_PARALLEL_FLAGS = -j$(SWIFT_JOBS)
 SWIFT_COMMON_FLAGS = -swift-version 5 -parse-as-library -target $(TARGET) -sdk "$(SDK_PATH)" $(ACCELERATE_FLAGS) $(SWIFT_PARALLEL_FLAGS) $(SWIFT_FLAGS)
-KEYBOARD_SWIFT_FLAGS = -module-name LocalFlowKeyboard -application-extension
+KEYBOARD_SWIFT_FLAGS = -module-name SorelloKeyboard -application-extension
 KEYBOARD_LINK_FLAGS = -Xlinker -e -Xlinker _NSExtensionMain
 # A WidgetKit extension. As Xcode links every app extension, the entry point is _NSExtensionMain, which starts the
 # @main widget bundle; with the bundle's own main as the entry, the process exits as soon as WidgetKit launches it.
-ACTIVITY_SWIFT_FLAGS = -module-name LocalFlowActivity -application-extension
+ACTIVITY_SWIFT_FLAGS = -module-name SorelloActivity -application-extension
 ACTIVITY_LINK_FLAGS = $(KEYBOARD_LINK_FLAGS)
 
 # App Intents metadata, as Xcode makes it (ARCHITECTURE.md, "Build and targets"). The compile emits the intent
@@ -387,7 +387,7 @@ endif
 $(APP_BINARY): $(APP_SOURCES) $(CONFIG_STAMP) $(LINKED_APP_ENTITLEMENTS) $(APPINTENTS_PROTOCOLS) Makefile
 	@mkdir -p "$(@D)"
 	@$(call write_const_values_map,$(APP_CONST_VALUES))
-	$(SWIFTC) $(SWIFT_COMMON_FLAGS) $(SWIFT_OPTIMIZATION) -module-name LocalFlow $(call const_values_flags,$(APP_CONST_VALUES)) \
+	$(SWIFTC) $(SWIFT_COMMON_FLAGS) $(SWIFT_OPTIMIZATION) -module-name Sorello $(call const_values_flags,$(APP_CONST_VALUES)) \
 		$(call embedded_entitlements,$(APP_ENTITLEMENTS)) -o "$@" $(APP_SOURCES)
 
 $(KEYBOARD_BINARY): $(KEYBOARD_SOURCES) $(CONFIG_STAMP) $(LINKED_KEYBOARD_ENTITLEMENTS) Makefile
@@ -410,11 +410,11 @@ $(APP_SIGNATURE): $(APP_BINARY) $(KEYBOARD_BINARY) $(ACTIVITY_BINARY) $(APP_ENTI
 		$(SWIPE_STAMP) $(wildcard ../Resources/Swipe/*) $(APP_FONTS)
 	@rm -rf "$(APPEX_BUNDLE)" "$(ACTIVITY_APPEX_BUNDLE)" "$(APP_BUNDLE)/_CodeSignature" "$(APP_BUNDLE)/embedded.mobileprovision" "$(APP_BUNDLE)/Fonts"
 	@mkdir -p "$(APPEX_BUNDLE)" "$(ACTIVITY_APPEX_BUNDLE)"
-	@cp "$(APP_BINARY)" "$(APP_BUNDLE)/LocalFlow"
-	@cp "$(KEYBOARD_BINARY)" "$(APPEX_BUNDLE)/LocalFlowKeyboard"
-	@cp "$(ACTIVITY_BINARY)" "$(ACTIVITY_APPEX_BUNDLE)/LocalFlowActivity"
-	@$(call appintents_metadata,LocalFlow,$(BUNDLE_ID),$(APP_BUNDLE),$(APP_BINARY),$(APP_CONST_VALUES))
-	@$(call appintents_metadata,LocalFlowActivity,$(ACTIVITY_BUNDLE_ID),$(ACTIVITY_APPEX_BUNDLE),$(ACTIVITY_BINARY),$(ACTIVITY_CONST_VALUES))
+	@cp "$(APP_BINARY)" "$(APP_BUNDLE)/Sorello"
+	@cp "$(KEYBOARD_BINARY)" "$(APPEX_BUNDLE)/SorelloKeyboard"
+	@cp "$(ACTIVITY_BINARY)" "$(ACTIVITY_APPEX_BUNDLE)/SorelloActivity"
+	@$(call appintents_metadata,Sorello,$(BUNDLE_ID),$(APP_BUNDLE),$(APP_BINARY),$(APP_CONST_VALUES))
+	@$(call appintents_metadata,SorelloActivity,$(ACTIVITY_BUNDLE_ID),$(ACTIVITY_APPEX_BUNDLE),$(ACTIVITY_BINARY),$(ACTIVITY_CONST_VALUES))
 	@$(call info_plist,Config/Sorello-Info.plist,$(APP_BUNDLE)/Info.plist,$(BUNDLE_ID))
 	@plutil -replace CFBundleURLTypes.0.CFBundleURLName -string "$(BUNDLE_ID)" "$(APP_BUNDLE)/Info.plist"
 	@plutil -replace CFBundleURLTypes.0.CFBundleURLSchemes -json '["$(URL_SCHEME)"]' "$(APP_BUNDLE)/Info.plist"
@@ -504,7 +504,7 @@ endif
 # The upload package: exactly the signed app under Payload/.
 ipa: all
 	@rm -rf "$(OBJ_DIR)/ipa" "$(IPA)" && mkdir -p "$(OBJ_DIR)/ipa/Payload"
-	@ditto "$(APP_BUNDLE)" "$(OBJ_DIR)/ipa/Payload/LocalFlow.app"
+	@ditto "$(APP_BUNDLE)" "$(OBJ_DIR)/ipa/Payload/Sorello.app"
 	@# Made absolute in the shell, where a path with spaces stays one word.
 	@ipa=$(call shell_quote,$(IPA)); case "$$ipa" in /*) ;; *) ipa="$$PWD/$$ipa" ;; esac; \
 	mkdir -p "$$(dirname "$$ipa")" && cd "$(OBJ_DIR)/ipa" && zip -qry -X "$$ipa" Payload
@@ -535,9 +535,9 @@ typecheck:
 	@set -e; sdk=$$(xcrun --sdk iphonesimulator --show-sdk-path); \
 	flags="-typecheck -warnings-as-errors -swift-version 5 -parse-as-library -target arm64-apple-ios$(DEPLOYMENT_TARGET)-simulator -sdk $$sdk $(ACCELERATE_FLAGS) $(SWIFT_PARALLEL_FLAGS) $(SWIFT_FLAGS)"; \
 	echo "Type-checking the app"; \
-	xcrun --sdk iphonesimulator swiftc $$flags -module-name LocalFlow $(APP_SOURCES); \
+	xcrun --sdk iphonesimulator swiftc $$flags -module-name Sorello $(APP_SOURCES); \
 	echo "Type-checking the app (self-test variant)"; \
-	xcrun --sdk iphonesimulator swiftc $$flags -D LOCALFLOW_SELFTEST -module-name LocalFlow $(APP_SOURCES); \
+	xcrun --sdk iphonesimulator swiftc $$flags -D LOCALFLOW_SELFTEST -module-name Sorello $(APP_SOURCES); \
 	echo "Type-checking the keyboard"; \
 	xcrun --sdk iphonesimulator swiftc $$flags $(KEYBOARD_SWIFT_FLAGS) $(KEYBOARD_SOURCES); \
 	echo "Type-checking the Live Activity"; \
@@ -550,9 +550,9 @@ ifeq ($(strip $(TEST_SOURCES)),)
 else
 	@mkdir -p "$(HOST_BUILD_DIR)"
 	xcrun --sdk macosx swiftc -swift-version 5 -parse-as-library -warnings-as-errors $(SWIFT_PARALLEL_FLAGS) \
-		-sdk "$$(xcrun --sdk macosx --show-sdk-path)" -target $(HOST_TARGET) -module-name LocalFlowiOSTests \
-		-o "$(HOST_BUILD_DIR)/LocalFlowiOSTests" $(SHARED_SOURCES) $(INSERTION_CONTEXT_SOURCES) $(HOSTCORE_SOURCES) $(ACTIVITYCORE_SOURCES) $(DICTIONARY_TEST_SOURCES) $(KEYBOARDCORE_SOURCES) $(KEYBOARD_TEST_SOURCES) $(TEST_SOURCES)
-	@"$(HOST_BUILD_DIR)/LocalFlowiOSTests"
+		-sdk "$$(xcrun --sdk macosx --show-sdk-path)" -target $(HOST_TARGET) -module-name SorelloiOSTests \
+		-o "$(HOST_BUILD_DIR)/SorelloiOSTests" $(SHARED_SOURCES) $(INSERTION_CONTEXT_SOURCES) $(HOSTCORE_SOURCES) $(ACTIVITYCORE_SOURCES) $(DICTIONARY_TEST_SOURCES) $(KEYBOARDCORE_SOURCES) $(KEYBOARD_TEST_SOURCES) $(TEST_SOURCES)
+	@"$(HOST_BUILD_DIR)/SorelloiOSTests"
 endif
 
 lint:
@@ -599,7 +599,7 @@ smoke-sim:
 	@$(MAKE) --no-print-directory all PLATFORM=simulator BUILD_DIR="$(SMOKE_BUILD_DIR)" SWIFT_FLAGS="$(SWIFT_FLAGS) -D LOCALFLOW_SELFTEST"
 	@set -e; $(SIM_RESOLVE); $(SIM_BOOT); \
 	trap '[ "$$booted_here" = 1 ] && xcrun simctl shutdown "$$udid"' EXIT; \
-	xcrun simctl install "$$udid" "$(SMOKE_BUILD_DIR)/LocalFlow.app"; \
+	xcrun simctl install "$$udid" "$(SMOKE_BUILD_DIR)/Sorello.app"; \
 	say -o "$(SMOKE_BUILD_DIR)/obj/selftest.wav" --data-format=LEI16@16000 "$(SMOKE_PHRASE)"; \
 	container=$$(xcrun simctl get_app_container "$$udid" "$(BUNDLE_ID)" data); \
 	mkdir -p "$$container/tmp"; \
@@ -655,7 +655,7 @@ ifneq ($(SMOKE_DEVICE_INSTALL),0)
 endif
 	@set -e; $(DEVICE_UNLOCKED); obj="$(SMOKE_DEVICE_BUILD_DIR)/obj"; mkdir -p "$$obj"; \
 	if [ "$(SMOKE_DEVICE_INSTALL)" != 0 ]; then \
-		xcrun devicectl device install app --quiet --device "$(DEVICE)" "$(SMOKE_DEVICE_BUILD_DIR)/LocalFlow.app"; \
+		xcrun devicectl device install app --quiet --device "$(DEVICE)" "$(SMOKE_DEVICE_BUILD_DIR)/Sorello.app"; \
 	fi; \
 	copy_audio() { xcrun devicectl device copy to --quiet --device "$(DEVICE)" --domain-type appDataContainer \
 		--domain-identifier "$(BUNDLE_ID)" --source "$$1" --destination tmp/localflow-selftest.wav; }; \
@@ -712,7 +712,7 @@ e2e-sim:
 	@$(MAKE) --no-print-directory all PLATFORM=simulator BUILD_DIR="$(E2E_BUILD_DIR)" SWIFT_FLAGS="$(SWIFT_FLAGS) -D LOCALFLOW_SELFTEST"
 	@set -e; $(SIM_RESOLVE); $(SIM_BOOT); \
 	xcrun simctl terminate "$$udid" "$(BUNDLE_ID)" >/dev/null 2>&1 || true; \
-	xcrun simctl install "$$udid" "$(E2E_BUILD_DIR)/LocalFlow.app"; \
+	xcrun simctl install "$$udid" "$(E2E_BUILD_DIR)/Sorello.app"; \
 	container=$$(xcrun simctl get_app_container "$$udid" "$(BUNDLE_ID)" data); \
 	group=$$(xcrun simctl get_app_container "$$udid" "$(BUNDLE_ID)" "$(APP_GROUP)"); \
 	mkdir -p "$$container/tmp"; \

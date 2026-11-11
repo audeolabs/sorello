@@ -7,13 +7,13 @@
     <key>CFBundleDisplayName</key>
     <string>$(DISPLAY_NAME)</string>
     <key>CFBundleExecutable</key>
-    <string>LocalFlow</string>
+    <string>Sorello</string>
     <key>CFBundleIdentifier</key>
     <string>$(BUNDLE_ID)</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>LocalFlow</string>
+    <string>Sorello</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
