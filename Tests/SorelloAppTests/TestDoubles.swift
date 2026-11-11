@@ -63,8 +63,9 @@ final class ManualClock: SessionClock {
 final class FakeSpeech: AppSpeech {
     let compute: SpeechCompute
 
-    init(compute: SpeechCompute = .neuralEngine) {
+    init(compute: SpeechCompute = .neuralEngine, readiness: EngineReadiness = .ready) {
         self.compute = compute
+        state = Mutex(State(readiness: readiness))
     }
 
     final class Stream: SpeechStreaming {
@@ -84,9 +85,14 @@ final class FakeSpeech: AppSpeech {
         var suggestion: DictionarySuggestion?
         var retried = "a retried transcript"
         var retries = 0
+        var readiness: EngineReadiness
+        /// What the engine becomes when it is asked to prepare; nil leaves it as it is.
+        var afterPrepare: EngineReadiness?
+        var prepares = 0
+        var subscribers: [UUID: AsyncStream<EngineReadiness>.Continuation] = [:]
     }
 
-    private let state = Mutex(State())
+    private let state: Mutex<State>
 
     var transcript: String {
         get { state.withLock { $0.transcript } }
@@ -108,10 +114,39 @@ final class FakeSpeech: AppSpeech {
     var discards: Int { state.withLock { $0.discards } }
     var checks: Int { state.withLock { $0.checks } }
 
-    func prepare() async {}
+    /// How many times the engine was asked to prepare.
+    var prepares: Int { state.withLock { $0.prepares } }
+
+    /// What the engine becomes the next times it is asked to prepare.
+    var afterPrepare: EngineReadiness? {
+        get { state.withLock { $0.afterPrepare } }
+        set { state.withLock { $0.afterPrepare = newValue } }
+    }
+
+    func prepare() async {
+        let next = state.withLock { state in
+            state.prepares += 1
+            return state.afterPrepare
+        }
+        if let next { publish(next) }
+    }
+
+    /// Tells every subscriber the engine's readiness is now `readiness`.
+    func publish(_ readiness: EngineReadiness) {
+        state.withLock { state in
+            state.readiness = readiness
+            for continuation in state.subscribers.values { continuation.yield(readiness) }
+        }
+    }
 
     func readiness() -> AsyncStream<EngineReadiness> {
-        AsyncStream { continuation in continuation.yield(.ready) }
+        let (stream, continuation) = AsyncStream<EngineReadiness>.makeStream()
+        let id = UUID()
+        state.withLock { state in
+            continuation.yield(state.readiness)
+            state.subscribers[id] = continuation
+        }
+        return stream
     }
 
     func openStream(_ options: SpeechStreamOptions) -> any SpeechStreaming {
@@ -141,4 +176,52 @@ final class FakeSpeech: AppSpeech {
     func releaseCorrection(_ correctionID: UInt64) { state.withLock { $0.released.append(correctionID) } }
 
     func discardCorrection() { state.withLock { $0.discards += 1 } }
+}
+
+/// A download that goes where the test says, counting what it is asked to do. It opens no connection.
+final class FakeDownload: ModelDownloading {
+    private struct State {
+        var current: ModelDownloadState
+        var vocabulary: BPEEncoder?
+        var starts = 0
+        var cancels = 0
+        var refreshes = 0
+        var subscribers: [UUID: AsyncStream<ModelDownloadState>.Continuation] = [:]
+    }
+
+    let size: Int64 = 138_084_519
+    private let state: Mutex<State>
+
+    /// A download now in `current`, whose model brings `vocabulary` once it is installed.
+    init(_ current: ModelDownloadState, vocabulary: BPEEncoder? = nil) {
+        state = Mutex(State(current: current, vocabulary: vocabulary))
+    }
+
+    var current: ModelDownloadState { state.withLock { $0.current } }
+    var starts: Int { state.withLock { $0.starts } }
+    var cancels: Int { state.withLock { $0.cancels } }
+    var refreshes: Int { state.withLock { $0.refreshes } }
+
+    func states() -> AsyncStream<ModelDownloadState> {
+        let (stream, continuation) = AsyncStream<ModelDownloadState>.makeStream()
+        let id = UUID()
+        state.withLock { state in
+            continuation.yield(state.current)
+            state.subscribers[id] = continuation
+        }
+        return stream
+    }
+
+    /// Moves the download to `next` and tells every subscriber.
+    func publish(_ next: ModelDownloadState) {
+        state.withLock { state in
+            state.current = next
+            for continuation in state.subscribers.values { continuation.yield(next) }
+        }
+    }
+
+    func start() { state.withLock { $0.starts += 1 } }
+    func cancel() { state.withLock { $0.cancels += 1 } }
+    func refresh() { state.withLock { $0.refreshes += 1 } }
+    func vocabulary() -> BPEEncoder? { state.withLock { $0.current == .installed ? $0.vocabulary : nil } }
 }

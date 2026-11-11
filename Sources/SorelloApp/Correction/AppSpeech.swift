@@ -13,16 +13,15 @@ nonisolated protocol AppSpeech: SpeechTranscribing, CorrectionEngine {
 }
 
 extension SpeechEngine: AppSpeech {
-    /// The engine for an app described by `info`, keeping its model in `store`: the build the app's pin lists for
-    /// this Mac, looked for again at each preparation. A copy with no pin, run from a build tree with a model given
-    /// on the command line, loads that model directly.
-    nonisolated static func forApp(_ info: AppInfo, store: URL, compute: SpeechCompute,
+    /// The engine for an app described by `info`: `model`, the build the app's pin lists for this Mac, looked for
+    /// again at each preparation. A copy with no pin, run from a build tree with a model given on the command line,
+    /// loads that model directly, keeping its stable copy in `store`.
+    nonisolated static func forApp(_ info: AppInfo, model: PinnedModel?, store: URL, compute: SpeechCompute,
                                    dictionary: @escaping @Sendable (String?) -> DictionarySnapshot) -> SpeechEngine {
-        guard let pin = info.pin else {
+        guard let model else {
             return SpeechEngine(modelDirectory: info.modelDirectory, storeDirectory: store, compute: compute,
                                 dictionary: dictionary)
         }
-        let model = PinnedModel(pin: pin, storeDirectory: store, carriedDirectory: info.modelDirectory)
         return SpeechEngine(model: model, compute: compute, dictionary: dictionary)
     }
 }

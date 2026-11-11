@@ -29,6 +29,9 @@ struct WindowPresenter {
         setup?.close()
     }
 
+    /// Whether setup's window is on screen.
+    var isShowingSetup: Bool { setup?.isVisible ?? false }
+
     /// Shows the full text of a notice, one window per notice.
     mutating func showNotice(title: String, files: [URL]) {
         let window = notices[title] ?? Self.noticeWindow(title: title, files: files)

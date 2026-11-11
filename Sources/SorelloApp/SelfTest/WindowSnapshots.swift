@@ -77,6 +77,8 @@ enum WindowSnapshots {
                     .frame(width: size.width, height: size.height).preferredColorScheme(.dark))
             })
         }
+        // Every step, the model's included, as a setup that opens without the model has them.
+        models.setup.steps = SetupStep.allCases
         for step in SetupStep.allCases {
             scenes.append(SnapshotScene(name: "app-setup-\(slug(step))", size: WindowChrome.Kind.setup.defaultSize) {
                 models.setup.step = step

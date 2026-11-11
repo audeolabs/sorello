@@ -9,15 +9,35 @@ import SpeechEngine
 // read the same `AppStatus`, built here from what the session and the adapters report.
 
 extension ModelStatus {
-    /// The engine's readiness as the windows show it.
-    init(_ readiness: EngineReadiness) {
+    /// The engine's readiness, and when the model is missing the download's state, as the windows show them. A copy
+    /// with no download (nil) has no way to get the model.
+    init(_ readiness: EngineReadiness, download: ModelDownloadState? = nil, size: Int64 = 0) {
         switch readiness {
         case .preparing: self = .preparing
         case .ready: self = .ready
-        // This app cannot download its model yet, so a missing model is one there is no way to get.
-        case .failed(.modelMissing): self = .notDownloaded(.unavailable)
         case .failed(.modelCorrupt): self = .failed(.damaged)
         case .failed(.loadFailed): self = .failed(.couldNotLoad)
+        case .failed(.modelMissing):
+            switch download {
+            case .absent: self = .notDownloaded(.notStarted(size: size))
+            case .downloading(let received): self = .notDownloaded(.downloading(received: received, size: size))
+            case .failed(let failure): self = .notDownloaded(.failed(ModelDownloadProblem(failure), size: size))
+            // The model has just arrived and the engine is about to look for it.
+            case .installed: self = .preparing
+            case .unavailable, nil: self = .notDownloaded(.unavailable)
+            }
+        }
+    }
+}
+
+extension ModelDownloadProblem {
+    /// Why the download stopped, in the windows' words.
+    init(_ failure: ModelDownloadFailure) {
+        switch failure {
+        case .connection: self = .connection
+        case .server: self = .server
+        case .check: self = .check
+        case .disk: self = .disk
         }
     }
 }
@@ -44,10 +64,12 @@ extension MicrophoneStatus {
 }
 
 extension AppStatus {
-    /// The status line's inputs: the engine and microphone as the session holds them, Accessibility as last read, and
-    /// whether secure input has paused the shortcuts.
-    init(session: SessionState, accessibilityTrusted: Bool, shortcuts: ShortcutMonitor.Status) {
-        self.init(model: ModelStatus(session.engine), microphone: MicrophoneStatus(session.microphone),
+    /// The status line's inputs: the engine and microphone as the session holds them, the model's download, its size,
+    /// Accessibility as last read, and whether secure input has paused the shortcuts.
+    init(session: SessionState, download: ModelDownloadState? = nil, modelSize: Int64 = 0, accessibilityTrusted: Bool,
+         shortcuts: ShortcutMonitor.Status) {
+        self.init(model: ModelStatus(session.engine, download: download, size: modelSize),
+                  microphone: MicrophoneStatus(session.microphone),
                   accessibility: accessibilityTrusted ? .granted : .missing,
                   shortcutsPaused: shortcuts == .pausedBySecureInput)
     }

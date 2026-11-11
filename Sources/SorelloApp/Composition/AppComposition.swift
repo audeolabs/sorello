@@ -31,6 +31,8 @@ final class LiveState {
     var playingID: String?
     /// Run Log entries being transcribed again.
     var retryingIDs: Set<String> = []
+    /// The speech model's download, as it last reported; nil in a copy that has no pin to download from.
+    var modelDownload: ModelDownloadState?
 }
 
 /// What the windows ask the app shell to do: show a window, or quit.
@@ -56,6 +58,8 @@ final class AppComposition {
     let history: HistoryStore
     let dictionary: DictionaryLibrary
     let speech: any AppSpeech
+    /// The model's download, made beside the engine; nil in a copy that has no pin to download from.
+    let download: (any ModelDownloading)?
     let runtime: SessionRuntime
     let corrections: CorrectionCoordinator
     let pill: any PillPresenting
@@ -71,9 +75,11 @@ final class AppComposition {
     /// Builds the whole graph. Nothing starts until `start()`: no tap, no model, no microphone.
     ///
     /// - `speech`: makes the engine over the dictionary store, whose snapshots it reads.
+    /// - `download`: the model's download, which nothing starts but the user.
     /// - `pill`: where the pill is drawn; `levels` is the feed it draws the voice from.
     init(info: AppInfo, storage: AppStorage, platform: AppPlatform,
-         speech makeSpeech: (DictionaryStore) -> any AppSpeech, pill: any PillPresenting, levels: LevelFeed) {
+         speech makeSpeech: (DictionaryStore) -> any AppSpeech, download: (any ModelDownloading)? = nil,
+         pill: any PillPresenting, levels: LevelFeed) {
         self.info = info
         self.platform = platform
         paths = storage.paths
@@ -88,7 +94,11 @@ final class AppComposition {
         let macros = MacroStore(fileURL: paths.macrosFile)
         self.macros = macros
         history = HistoryStore(directory: paths.historyDirectory, isEnabled: { settings.keepRunLog })
-        let encoder = info.modelDirectory.flatMap { try? BPEEncoder(vocabularyFile: $0.appendingPathComponent("vocabulary.json")) }
+        // The vocabulary comes with the model: from the store or the app's own copy when the app has a pin, and only
+        // once its manifest is the pinned one; otherwise from a model given on the command line.
+        self.download = download
+        let encoder = download.map { $0.vocabulary() }
+            ?? info.modelDirectory.flatMap { try? BPEEncoder(vocabularyFile: $0.appendingPathComponent("vocabulary.json")) }
         let store = DictionaryStore(fileURL: paths.dictionaryFile, encoder: encoder)
         let dictionary = DictionaryLibrary(store: store, encoder: encoder)
         self.dictionary = dictionary
@@ -157,6 +167,17 @@ final class AppComposition {
         platform.shortcuts.start()
         follow()
         watchSystem()
+        watchDownload()
+    }
+
+    /// Starts the model's download. Only the user's Download, in setup or on the General screen, calls this.
+    func startDownload() {
+        download?.start()
+    }
+
+    /// Stops the model's download; what arrived is kept.
+    func cancelDownload() {
+        download?.cancel()
     }
 
     /// The app came to the front: the user may have changed a permission or a login item in System Settings.
@@ -232,6 +253,28 @@ final class AppComposition {
             let on = settings.correctionSuggestions
             defer { suggestionsOn = on }
             if suggestionsOn && !on { corrections.suggestionsTurnedOff() }
+        })
+    }
+
+    /// Follows the download: once it has put the model in the store, the engine is asked to prepare and the
+    /// dictionary takes the vocabulary, without a relaunch. When the engine finds the model missing although the
+    /// download said it was here, the download looks again, so it offers itself once more.
+    private func watchDownload() {
+        guard let download else { return }
+        let live = self.live, runtime = self.runtime, dictionary = self.dictionary
+        live.modelDownload = download.current
+        let states = download.states()
+        watching.append(Task { @MainActor in
+            for await state in states {
+                let arrived = state == .installed && live.modelDownload != .installed
+                live.modelDownload = state
+                guard arrived else { continue }
+                runtime.retryPreparation()
+                if let encoder = download.vocabulary() { dictionary.adoptVocabulary(encoder) }
+            }
+        })
+        following.append(Following {
+            if runtime.state.engine == .failed(.modelMissing) && live.modelDownload == .installed { download.refresh() }
         })
     }
 

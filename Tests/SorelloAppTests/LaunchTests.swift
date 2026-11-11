@@ -33,6 +33,18 @@ import Testing
         #expect(LaunchMode(arguments: ["--cpu"]) == .app(showsSetup: true), "The app itself cannot be forced")
     }
 
+    /// `--download` makes the packaged app download its model into a temporary store first; it is one way to the
+    /// model, so it does not go with `--model`.
+    @Test func theSelfTestCanDownloadTheModel() {
+        let file = URL(fileURLWithPath: "a.wav")
+        #expect(LaunchMode(arguments: ["--self-test", "--download", "a.wav"])
+                == .selfTest(files: [file], model: nil, forcesCPU: false, downloads: true))
+        #expect(LaunchMode(arguments: ["--self-test", "a.wav", "--download", "--cpu"])
+                == .selfTest(files: [file], model: nil, forcesCPU: true, downloads: true))
+        #expect(LaunchMode(arguments: ["--self-test", "--download", "--model", "/m", "a.wav"]) == .usage(LaunchMode.usage))
+        #expect(LaunchMode(arguments: ["--download"]) == .app(showsSetup: true), "The app itself downloads only when asked")
+    }
+
     @Test func snapshotsTakeOneDirectory() {
         #expect(LaunchMode(arguments: ["--snapshots", "/tmp/out"]) == .snapshots(URL(fileURLWithPath: "/tmp/out", isDirectory: true)))
         #expect(LaunchMode(arguments: ["--snapshots"]) == .usage(LaunchMode.usage))

@@ -228,9 +228,10 @@ final class Harness {
     /// `model`: a model directory for the vocabulary (`makeModelDirectory`); without one the dictionary cannot be
     /// edited and nothing is kept for a suggestion. `fontLicence`: where the app says the display font's licence is.
     /// `compute`: where the fake engine says it runs.
+    /// `download`: the model's download, when the app has a pin; `readiness`: the engine's at launch.
     init(directory: URL, defaults: UserDefaults, model: URL? = nil, trusted: Bool = true, fontLicence: URL? = nil,
-         compute: SpeechCompute = .neuralEngine) {
-        speech = FakeSpeech(compute: compute)
+         compute: SpeechCompute = .neuralEngine, download: FakeDownload? = nil, readiness: EngineReadiness = .ready) {
+        speech = FakeSpeech(compute: compute, readiness: readiness)
         let info = AppInfo(name: "Sorello Test", version: "0.0.1", build: "1", modelDirectory: model,
                            modelName: model.flatMap(AppInfo.modelName(in:)), fontLicence: fontLicence)
         let system = self.system
@@ -243,7 +244,8 @@ final class Harness {
                                   openMicrophoneSettings: {}))
         let speech = self.speech
         app = AppComposition(info: info, storage: AppStorage(paths: AppPaths(root: directory), defaults: defaults),
-                             platform: platform, speech: { _ in speech }, pill: pill, levels: LevelFeed())
+                             platform: platform, speech: { _ in speech }, download: download, pill: pill,
+                             levels: LevelFeed())
         windows = WindowModels(app: app)
     }
 

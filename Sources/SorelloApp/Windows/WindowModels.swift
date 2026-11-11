@@ -23,7 +23,8 @@ final class WindowModels {
 
     init(app: AppComposition) {
         self.app = app
-        let status = AppStatus(session: app.runtime.state, accessibilityTrusted: app.live.accessibilityTrusted,
+        let status = AppStatus(session: app.runtime.state, download: app.download?.current,
+                               modelSize: app.download?.size ?? 0, accessibilityTrusted: app.live.accessibilityTrusted,
                                shortcuts: app.platform.shortcuts.status)
         menu = StatusMenuModel(appName: app.info.name, status: status, shortcuts: [:], hasLastDictation: false)
         main = MainWindowModel(
@@ -37,7 +38,8 @@ final class WindowModels {
                               copyright: app.info.copyright, modelNotice: Self.modelNotice(app.info),
                               thirdPartyNotices: Self.thirdPartyNotices))
         setup = SetupModel(appName: app.info.name, microphone: status.microphone, accessibility: status.accessibility,
-                           model: status.model, holdToTalk: ShortcutRecorderState(keys: .function))
+                           model: status.model, modelSize: app.download?.size ?? 0,
+                           holdToTalk: ShortcutRecorderState(keys: .function))
         connectMenu()
         connectGeneral()
         connectShortcuts()
@@ -62,10 +64,11 @@ final class WindowModels {
         following.append(Following(apply))
     }
 
-    /// The status every window shows, from the session, the Accessibility reading and the shortcuts.
+    /// The status every window shows, from the session, the model's download, the Accessibility reading and the
+    /// shortcuts.
     var status: AppStatus {
-        AppStatus(session: app.runtime.state, accessibilityTrusted: app.live.accessibilityTrusted,
-                  shortcuts: app.platform.shortcuts.status)
+        AppStatus(session: app.runtime.state, download: app.live.modelDownload, modelSize: app.download?.size ?? 0,
+                  accessibilityTrusted: app.live.accessibilityTrusted, shortcuts: app.platform.shortcuts.status)
     }
 
     /// Key caps for the current keyboard layout.
