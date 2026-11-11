@@ -79,15 +79,14 @@ private struct IslandSurface<S: InsettableShape>: ViewModifier {
 
 // MARK: Display face
 
-/// Geist Serif Regular (Vercel, SIL OFL 1.1; `Resources/Fonts`), the display face: large titles and hero headlines
-/// only. Everything else stays in the system font. It has one weight, so it is never bolded. Without the font (a build
-/// that failed to bundle it) the display text falls back to the system font.
+/// Urbanist Medium (SIL OFL 1.1; the repository's `Resources/Fonts`), the display face, as it is the Mac app's: large
+/// titles and hero headlines only. Everything else stays in the system font. The app carries this one weight, so it is
+/// never bolded. Without the font (a build that failed to bundle it) the display text falls back to the system font.
 enum DisplayFace {
-    static let name = "GeistSerif-Regular"
+    static let name = "Urbanist-Medium"
     static let isAvailable = UIFont(name: name, size: 17) != nil
 
-    /// The size at the default text size; Dynamic Type scales it with `style`. A touch larger than SF's own sizes:
-    /// a regular serif reads smaller than a bold sans.
+    /// The size at the default text size; Dynamic Type scales it with `style`.
     static func size(_ style: Font.TextStyle) -> CGFloat {
         switch style {
         case .largeTitle: return 36
