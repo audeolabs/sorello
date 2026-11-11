@@ -41,7 +41,7 @@ final class NeverCorrectPromptModel: ObservableObject {
 @MainActor
 final class BarControlFrames {
     // An immutable name, read from SwiftUI's Sendable geometry closure.
-    nonisolated static let space = "lf.bar"
+    nonisolated static let space = "sorello.bar"
     private var regions = BarControlRegions()
 
     /// The controls' frames now, with those a control left while it may still be animating there.
@@ -181,7 +181,7 @@ struct DictationBarView: View {
                 }
                 .buttonStyle(PressableStyle())
                 .accessibilityLabel(chrome.isMenuOpen ? "Close menu" : "LocalFlow menu")
-                .accessibilityIdentifier("lf.menu")
+                .accessibilityIdentifier("sorello.menu")
                 .barControl("menu", in: controls)
                 .position(x: CGFloat(layout.menu.x) + height / 2, y: centreY)
 
@@ -233,7 +233,7 @@ struct DictationBarView: View {
                     }
                     .buttonStyle(PressReportingStyle(pressed: $cancelPressed))
                     .accessibilityLabel("Cancel dictation")
-                    .accessibilityIdentifier("lf.cancel")
+                    .accessibilityIdentifier("sorello.cancel")
                     .barControl("cancel", in: controls) {
                         KeyboardMetrics.cancelTapArea(circle: $0, barHeight: barHeight, compact: compact)
                     }
@@ -342,7 +342,7 @@ private struct Middle: View {
                         client.undoLastDictation()
                     }
                     .accessibilityLabel("Undo last dictation")
-                    .accessibilityIdentifier("lf.undo")
+                    .accessibilityIdentifier("sorello.undo")
                     .barControl("undo", in: controls)
                     .opacity(undoArriving ? 0 : 1)
                     .transition(arrival)
@@ -352,7 +352,7 @@ private struct Middle: View {
                         client.insertLastDictation()
                     }
                     .accessibilityLabel("Insert last dictation")
-                    .accessibilityIdentifier("lf.insertLast")
+                    .accessibilityIdentifier("sorello.insertLast")
                     .barControl("insertLast", in: controls)
                     .transition(arrival)
                 case .status:
@@ -371,7 +371,7 @@ private struct Middle: View {
                 .foregroundStyle(.primary)
                 .lineLimit(lines)
                 .minimumScaleFactor(0.8)
-                .accessibilityIdentifier("lf.notice")
+                .accessibilityIdentifier("sorello.notice")
         case .text(let line, let attention):
             HStack(spacing: 5) {
                 if attention {
@@ -389,7 +389,7 @@ private struct Middle: View {
                             .foregroundStyle(attention ? AnyShapeStyle(.primary) : statusInk)
                             .lineLimit(2)
                             .minimumScaleFactor(0.8)
-                            .accessibilityIdentifier("lf.status")
+                            .accessibilityIdentifier("sorello.status")
                     }
                 } else {
                     Text(line)
@@ -397,7 +397,7 @@ private struct Middle: View {
                         .foregroundStyle(attention ? AnyShapeStyle(.primary) : statusInk)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
-                        .accessibilityIdentifier("lf.status")
+                        .accessibilityIdentifier("sorello.status")
                 }
             }
             // A line that goes (an error's as Undo arrives) gets out of the way at once, first.
@@ -416,7 +416,7 @@ private struct Middle: View {
             .foregroundStyle(ink)
             .lineLimit(1)
             .fixedSize()
-            .accessibilityIdentifier("lf.status")
+            .accessibilityIdentifier("sorello.status")
     }
 
     /// The status line's ink: the palette's where the system's secondary text is too faint (the light keyboard).
@@ -478,7 +478,7 @@ private struct CandidateStrip: View {
                 .accessibilityLabel(quoted ? "Keep \(word)" : word)
                 .accessibilityHint(strip.live != nil && emphasized ? "Space puts this in" : "")
                 .accessibilityAddTraits(emphasized ? .isSelected : [])
-                .accessibilityIdentifier("lf.swipe.candidate.\(index)")
+                .accessibilityIdentifier("sorello.swipe.candidate.\(index)")
             }
         }
         .frame(maxWidth: .infinity)
@@ -541,7 +541,7 @@ private struct NeverCorrectChip: View {
         .buttonStyle(PressableStyle())
         .accessibilityLabel("Never correct \(word)")
         .accessibilityHint("Autocorrect leaves this word alone from now on")
-        .accessibilityIdentifier("lf.neverCorrect")
+        .accessibilityIdentifier("sorello.neverCorrect")
     }
 }
 
@@ -706,7 +706,7 @@ private struct DictationIsland: View {
         .accessibilityLabel(KeyboardMessages.capsuleAccessibilityLabel(for: state.mode))
         .accessibilityValue(accessibilityValue)
         .accessibilityHint(accessibilityHint)
-        .accessibilityIdentifier("lf.mic")
+        .accessibilityIdentifier("sorello.mic")
     }
 
     /// What it holds hands over as it changes form: what leaves goes first, quickly, and what arrives in the grown
@@ -1022,7 +1022,7 @@ struct MenuPanelView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(color(palette.primary))
                         .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("lf.menu.session")
+                        .accessibilityIdentifier("sorello.menu.session")
                 case .details:
                     if let details {
                         Text(details)
@@ -1039,7 +1039,7 @@ struct MenuPanelView: View {
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(color(palette.link))
                     }
-                    .accessibilityIdentifier("lf.menu.open")
+                    .accessibilityIdentifier("sorello.menu.open")
                 case .divider:
                     Divider()
                 case .tip:
@@ -1073,7 +1073,7 @@ struct MenuPanelView: View {
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(color(palette.track)))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Text width for moving the cursor")
-        .accessibilityIdentifier("lf.layoutToggle")
+        .accessibilityIdentifier("sorello.layoutToggle")
     }
 
     private func segment(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {

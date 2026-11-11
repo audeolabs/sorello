@@ -136,7 +136,7 @@ final class IslandBodyView: UIView {
             let fade = CATransition()
             fade.type = .fade
             fade.duration = 0.15
-            for part in [islandEdge, budEdge, islandFill, budFill, glyph, label] { part.add(fade, forKey: "lf.fade") }
+            for part in [islandEdge, budEdge, islandFill, budFill, glyph, label] { part.add(fade, forKey: "sorello.fade") }
         }
         draw(at: now)
         reportFlight()

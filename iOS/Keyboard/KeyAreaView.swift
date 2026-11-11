@@ -176,7 +176,7 @@ final class KeyAreaView: UIView {
                              for: .normal)
         globeButton.tintColor = .label
         globeButton.accessibilityLabel = "Next keyboard"
-        globeButton.accessibilityIdentifier = "lf.globe"
+        globeButton.accessibilityIdentifier = "sorello.globe"
         // Its whole nearest-key region, so no point beside it is dead (ARCHITECTURE.md, "Reach and touch regions",
         // The globe).
         globeButton.claims = { [weak self] point in
@@ -651,7 +651,7 @@ final class KeyAreaView: UIView {
             switch action {
             case .character(let character):
                 element.accessibilityLabel = displayed(character)
-                element.accessibilityIdentifier = "lf.key.\(character)"
+                element.accessibilityIdentifier = "sorello.key.\(character)"
                 // The press-and-hold alternates, each typed as the row would type it.
                 element.accessibilityCustomActions = KeyAlternates.accessibilityActions(for: character, layer: keyLayer, field: field)
                     .map { alternate in
@@ -665,18 +665,18 @@ final class KeyAreaView: UIView {
             case .shift:
                 element.accessibilityLabel = "Shift"
                 element.accessibilityValue = shift == .capsLock ? "Caps lock" : (shift == .once ? "On" : nil)
-                element.accessibilityIdentifier = "lf.shift"
+                element.accessibilityIdentifier = "sorello.shift"
             case .delete:
                 element.accessibilityLabel = "Delete"
-                element.accessibilityIdentifier = "lf.delete"
+                element.accessibilityIdentifier = "sorello.delete"
             case .space:
                 element.accessibilityLabel = "Space"
                 element.accessibilityHint = "Touch and hold to move the cursor"
-                element.accessibilityIdentifier = "lf.space"
+                element.accessibilityIdentifier = "sorello.space"
             case .returnKey:
                 element.accessibilityLabel = returnKeyType.keyTitle?.capitalized ?? "Return"
                 if !returnKeyEnabled { element.accessibilityTraits.insert(.notEnabled) }
-                element.accessibilityIdentifier = "lf.return"
+                element.accessibilityIdentifier = "sorello.return"
             case .layer(let layer):
                 switch layer {
                 case .letters: element.accessibilityLabel = "Letters"
@@ -684,7 +684,7 @@ final class KeyAreaView: UIView {
                 case .symbols: element.accessibilityLabel = "More symbols"
                 case .emoji: element.accessibilityLabel = "Emoji"
                 }
-                element.accessibilityIdentifier = "lf.layer.\(layer)"
+                element.accessibilityIdentifier = "sorello.layer.\(layer)"
             case .nextKeyboard:
                 break
             }

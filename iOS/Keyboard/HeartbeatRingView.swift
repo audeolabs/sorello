@@ -25,7 +25,7 @@ struct HeartbeatRing: UIViewRepresentable {
 
 final class HeartbeatRingView: UIView {
     private let ring = CAShapeLayer()
-    private static let key = "lf.heartbeat"
+    private static let key = "sorello.heartbeat"
     private var timer: Timer?
 
     var weight = 1.0 {
