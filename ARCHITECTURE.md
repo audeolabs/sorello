@@ -1051,12 +1051,15 @@ Review does.
   has not moved since the last nightly, it does nothing. Otherwise it
   packages "Sorello Nightly" from `main` and publishes it in the
   prerelease `nightly`, in place of the last one: `Sorello-Nightly.dmg`,
-  the same image under a name of its own build, such as
-  `Sorello-Nightly-240.dmg`, and `appcast.xml`, the feed installed
-  nightlies follow. The feed gives the address that names the build, and
-  the images of the last seven builds stay, so an app that was offered
-  one night's build is still given that build after the next is
-  published. The `nightly` tag is moved to the commit the nightly was
+  the same image under a name of its own, which holds its build number
+  and the start of its SHA-256, such as
+  `Sorello-Nightly-240-3f8a088e0b19.dmg`, and `appcast.xml`, the feed
+  installed nightlies follow. The feed gives the image's own address. An
+  image published under its own name is never replaced by other bytes,
+  and the images of the last thirty builds stay, so an app that was
+  offered one night's build is still given that build after later ones
+  are published. An app that has held an offer for longer than that is
+  told the download failed, and its next check offers the newest. The `nightly` tag is moved to the commit the nightly was
   built from before anything is published, so a nightly is never
   published on a tag that is on another commit. The release's notes,
   which say what it was built from, are written last: if publishing

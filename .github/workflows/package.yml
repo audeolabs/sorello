@@ -151,8 +151,8 @@ jobs:
           echo "sha256=$(shasum -a 256 "build/$DMG" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
       # The feed lists this build at the address its release will serve it from, signed with the update key. Only
       # this step holds that key. A feed is written only for an app that follows this repository's releases. A
-      # nightly's address names its build: the next nightly takes the plain name, and an app that was offered this
-      # build must still be given this build.
+      # nightly's address names its build and the image's own hash: the next nightly takes the plain name, and an
+      # app that was offered this image must still be given these bytes, even if the same commit is built again.
       - name: Write the update feed
         id: feed
         env:
@@ -162,11 +162,12 @@ jobs:
           DMG: ${{ steps.build.outputs.dmg }}
           VERSION: ${{ steps.build.outputs.version }}
           BUILD: ${{ steps.build.outputs.build }}
+          SHA256: ${{ steps.notarize.outputs.sha256 }}
           RELEASES: ${{ github.server_url }}/${{ github.repository }}/releases
         run: |
           [ -n "$UPDATE_SIGNING_KEY" ] || { echo "::error::The UPDATE_SIGNING_KEY secret is not set"; exit 1; }
           case "$CHANNEL" in
-            nightly) address="$RELEASES/download/nightly/${DMG%.dmg}-$BUILD.dmg" ;;
+            nightly) address="$RELEASES/download/nightly/${DMG%.dmg}-$BUILD-${SHA256:0:12}.dmg" ;;
             release) address="$RELEASES/download/v$VERSION/$DMG" ;;
             *) echo "::error::No release is made for the $CHANNEL channel"; exit 1 ;;
           esac
