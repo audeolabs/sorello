@@ -54,5 +54,13 @@ to stage a failure.
 Sorello asks for the microphone, to hear you, and for Accessibility, to see its shortcut and to paste. An
 ad hoc development build may need both granted again after it is rebuilt.
 
+## Nightly builds
+
+Each night that `main` has changed, GitHub builds "Sorello Nightly" from it, signed with Audeo Labs' Developer ID
+and notarized by Apple, and publishes it as the [`nightly` prerelease](../../releases/tag/nightly), in place of
+the night before's. It keeps its own settings, model and permissions, so it can be installed beside Sorello. Quit
+one before opening the other: both answer the same shortcuts. Its build number, in About, rises with every commit
+to `main`.
+
 [ARCHITECTURE.md](ARCHITECTURE.md) describes how the app is put together, and [AGENTS.md](AGENTS.md) how to
 work on it. [ThirdPartyNotices.md](ThirdPartyNotices.md) lists the work by others that Sorello includes.

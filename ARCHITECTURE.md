@@ -891,13 +891,23 @@ Review does.
 - `make app` assembles `build/<name>.app` with `scripts/build-app.sh`:
   the release executable, `Info.plist`, fonts, icon, notices, the model's
   notices and the pin, then signs it with the hardened runtime and the
-  audio-input entitlement. `CODESIGN_IDENTITY` defaults to ad hoc.
-- Identity is one file, `Config/identity.conf`. Development builds are
-  "Sorello Dev", `com.audeolabs.sorello.dev`; `CHANNEL=release` builds are
-  "Sorello", `com.audeolabs.sorello`. Minimum system: macOS 26, on Apple
+  audio-input entitlement. `CODESIGN_IDENTITY` defaults to ad hoc. A
+  signature made with a certificate carries Apple's timestamp.
+- Identity is one file, `Config/identity.conf`. There are three channels.
+  Development builds are "Sorello Dev", `com.audeolabs.sorello.dev`;
+  `CHANNEL=nightly` builds are "Sorello Nightly",
+  `com.audeolabs.sorello.nightly`; `CHANNEL=release` builds are "Sorello",
+  `com.audeolabs.sorello`. Each channel's app has its own data, model and
+  permissions, so the three can be installed on one Mac; two that are
+  running both answer the shortcuts. Minimum system: macOS 26, on Apple
   silicon or Intel.
-- A development build is made for the Mac that builds it. A
-  `CHANNEL=release` build is universal (arm64 and x86_64). `ARCHS` chooses
+- The version is `VERSION` in that file. The build number is `BUILD`
+  there unless `BUILD_NUMBER` gives another, one to three whole numbers
+  separated by dots. The workflows below give the number of commits in
+  the history of the commit they build, so of two builds of `main` the
+  later has the higher number. About shows both.
+- A development build is made for the Mac that builds it. A nightly or
+  release build is universal (arm64 and x86_64). `ARCHS` chooses
   otherwise, for example `ARCHS="arm64 x86_64"` for a universal
   development build. Each architecture is built on its own and joined
   with `lipo`; the build fails unless the signed executable holds exactly
@@ -914,6 +924,49 @@ Review does.
   and the tools run from a build tree.
 - The app is not sandboxed: the event tap and Accessibility calls do not
   work in the sandbox.
+
+### Signed builds
+
+- `scripts/notarize-app.sh <app> <zip>` has Apple notarize an app, staples
+  the ticket to it, and writes the zip that is handed out. Before it
+  uploads anything it refuses an app that is not signed with a Developer
+  ID, the hardened runtime and Apple's timestamp. It writes no zip unless
+  Apple accepts the app, the ticket is stapled, and Gatekeeper judges the
+  app notarized. Notarizing uploads the app to Apple. The credentials are
+  an App Store Connect API key, given in the environment.
+- GitHub Actions runs the workflows in `.github/workflows` on GitHub's
+  runners, on macOS with Xcode 27 for everything that builds. They use
+  only GitHub's own actions, each pinned to a commit.
+- **Check** runs `make check` on every pull request and on every push to
+  `main`. A push to `main` is checked to the end, whatever is pushed
+  after it.
+- **Package** is what Nightly and Release share. It builds only a commit
+  that is on `main` and whose push to `main` passed the check. It builds
+  the channel's app signed with the Developer ID, notarizes it, and
+  proves the app out of the zip: `--snapshots`, then `--self-test
+  --download` with a recording made by `say`, whose words must come
+  back. A build that fails any of this is not handed on.
+- **Nightly** runs every night, and when it is started by hand. If `main`
+  has not moved since the last nightly, it does nothing. Otherwise it
+  packages "Sorello Nightly" from `main` and publishes it as the
+  prerelease `nightly`, in place of the last one: one file,
+  `Sorello-Nightly.zip`. The `nightly` tag is moved to the commit it was
+  built from before the release is made on it, so a nightly is never
+  published on a tag that is on another commit. If publishing fails part
+  way there is no nightly until the next run, which builds again.
+- **Release** is started by hand, from `main`. It packages "Sorello" and
+  leaves `Sorello.zip` in a draft release named for the version, such as
+  `v0.0.1`. Publishing the draft, which creates the tag, is the owner's.
+  It fails, before anything is built, if that version already has a
+  release, a draft or a tag.
+- The Developer ID and the notarization key are repository secrets:
+  `DEVELOPER_ID_P12` (the certificate and its key, a .p12 file in
+  base64), `DEVELOPER_ID_P12_PASSWORD`, `NOTARY_KEY_P8` (the API key, a
+  .p8 file in base64), `NOTARY_KEY_ID` and `NOTARY_ISSUER_ID`. Only the
+  job that builds reads them, the certificate from a keychain that exists
+  for that job, and that job cannot write to the repository. The job that
+  publishes has none of them. Without them nothing is published: there is
+  no unsigned nightly.
 
 ## 11. Testing and verification
 

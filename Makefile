@@ -7,13 +7,15 @@ build:
 test:
 	swift test
 
-# What every change must pass. Needs no model and no network.
+# What every change must pass. Needs no model and no network. TEST_FLAGS=--no-parallel runs the tests one at a
+# time, which a Mac with few cores needs: run together there, the heavy tests starve the ones that wait on a clock.
 check:
 	./scripts/check-rules.sh
 	swift build
-	swift test
+	swift test $(TEST_FLAGS)
 
-# build/<name>.app. SORELLO_MODEL_DIR=<pinned bundle> puts the model in; CHANNEL=release builds "Sorello", universal.
+# build/<name>.app. SORELLO_MODEL_DIR=<pinned bundle> puts the model in; CHANNEL=nightly builds "Sorello Nightly" and
+# CHANNEL=release "Sorello", both universal.
 # ARCHS="arm64 x86_64" chooses the architectures; a development build is otherwise for this Mac only.
 app:
 	./scripts/build-app.sh

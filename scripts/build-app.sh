@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Assembles and signs the app bundle (ARCHITECTURE.md, section 10).
-#   CHANNEL=dev|release   which identity from Config/identity.conf (default dev)
+#   CHANNEL               dev, nightly or release: which identity from Config/identity.conf (default dev)
 #   ARCHS                 the executable's architectures, arm64 and/or x86_64, separated by spaces. Default: this
-#                         Mac's for dev, both (universal) for release
+#                         Mac's for dev, both (universal) for nightly and release
+#   BUILD_NUMBER          the bundle's build number, one to three whole numbers separated by dots. Default: BUILD
+#                         in Config/identity.conf
 #   SORELLO_MODEL_DIR     a local copy of a build the pin lists, for an app that carries the model and never
 #                         downloads it. Without it the app downloads its model when it is set up
-#   CODESIGN_IDENTITY     default "-" (ad hoc)
+#   CODESIGN_IDENTITY     default "-" (ad hoc). A signature made with a certificate carries Apple's timestamp,
+#                         which is fetched from Apple while signing
 #   BUILD_DIR             default build
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -15,12 +18,19 @@ source Config/identity.conf
 CHANNEL=${CHANNEL:-dev}
 case "$CHANNEL" in
   dev) NAME=$DEV_NAME; BUNDLE_ID=$DEV_BUNDLE_ID ;;
+  nightly) NAME=$NIGHTLY_NAME; BUNDLE_ID=$NIGHTLY_BUNDLE_ID ;;
   release) NAME=$RELEASE_NAME; BUNDLE_ID=$RELEASE_BUNDLE_ID ;;
-  *) echo "build-app: CHANNEL must be dev or release" >&2; exit 64 ;;
+  *) echo "build-app: CHANNEL must be dev, nightly or release" >&2; exit 64 ;;
 esac
+# The build number a bundle may carry: the system compares it as up to three whole numbers.
+BUILD=${BUILD_NUMBER:-$BUILD}
+if ! [[ "$BUILD" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+  echo "build-app: BUILD_NUMBER must be one to three whole numbers separated by dots, not $BUILD" >&2
+  exit 64
+fi
 # This Mac's architecture is its hardware's, which a shell running under Rosetta would misreport through uname.
 if [ "$(sysctl -n hw.optional.arm64 2>/dev/null || true)" = 1 ]; then NATIVE=arm64; else NATIVE=x86_64; fi
-if [ "$CHANNEL" = release ]; then DEFAULT_ARCHS="arm64 x86_64"; else DEFAULT_ARCHS=$NATIVE; fi
+if [ "$CHANNEL" = dev ]; then DEFAULT_ARCHS=$NATIVE; else DEFAULT_ARCHS="arm64 x86_64"; fi
 # The words of ARCHS, however they are separated, each checked and then held between single spaces.
 REQUESTED=" "
 for arch in ${ARCHS:-$DEFAULT_ARCHS}; do
@@ -123,7 +133,11 @@ else
   echo "build-app: the app downloads its model when it is set up" >&2
 fi
 
-codesign --force --options runtime --sign "$CODESIGN_IDENTITY" --entitlements Config/Sorello.entitlements "$APP"
+# A certificate's signature carries Apple's timestamp: Apple notarizes nothing without one. An ad hoc signature has
+# no certificate for a timestamp to vouch for.
+if [ "$CODESIGN_IDENTITY" = "-" ]; then TIMESTAMP=--timestamp=none; else TIMESTAMP=--timestamp; fi
+codesign --force --options runtime "$TIMESTAMP" --sign "$CODESIGN_IDENTITY" \
+    --entitlements Config/Sorello.entitlements "$APP"
 codesign --verify --deep --strict "$APP"
 
 # The executable that was signed holds exactly the architectures asked for, or there is no app. Sorted, the list

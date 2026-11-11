@@ -1,0 +1,167 @@
+# Builds one channel's app from a commit of main whose check passed: signed with the Developer ID, notarized, proved,
+# and handed on as an artifact (ARCHITECTURE.md, section 10). Nightly and Release call it, and their calling jobs
+# grant what its jobs ask for.
+name: Package
+on:
+  workflow_call:
+    inputs:
+      channel:
+        description: nightly or release
+        required: true
+        type: string
+      commit:
+        description: The commit to build
+        required: true
+        type: string
+    outputs:
+      version:
+        description: The app's version
+        value: ${{ jobs.package.outputs.version }}
+      build:
+        description: The app's build number
+        value: ${{ jobs.package.outputs.build }}
+      zip:
+        description: The name of the zip, which is also the artifact's name
+        value: ${{ jobs.package.outputs.zip }}
+      sha256:
+        description: The zip's SHA-256
+        value: ${{ jobs.package.outputs.sha256 }}
+    secrets:
+      DEVELOPER_ID_P12:
+        required: true
+      DEVELOPER_ID_P12_PASSWORD:
+        required: true
+      NOTARY_KEY_P8:
+        required: true
+      NOTARY_KEY_ID:
+        required: true
+      NOTARY_ISSUER_ID:
+        required: true
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  # Nothing is signed that the check has not passed, or that is not on main.
+  checked:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      # Only the run for the push counts. A pull request's run is of the commit merged with its base, and its
+      # being cancelled says nothing about the commit.
+      - name: The commit is on main and the check of its push passed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ inputs.commit }}
+          BRANCH: main
+        run: |
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$COMMIT...$BRANCH" --jq .status)
+          case "$status" in
+            identical|ahead) ;;
+            *) echo "::error::$COMMIT is not a commit of $BRANCH"; exit 1 ;;
+          esac
+          runs="repos/$GITHUB_REPOSITORY/actions/workflows/check.yml/runs"
+          passed=$(gh api "$runs?head_sha=$COMMIT&event=push&branch=$BRANCH&status=success&per_page=1" \
+            --jq .total_count)
+          if [ "$passed" = 0 ]; then
+            echo "::error::The check has not passed for a push of $COMMIT to $BRANCH"
+            exit 1
+          fi
+  package:
+    needs: checked
+    runs-on: xcode-27
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.build.outputs.version }}
+      build: ${{ steps.build.outputs.build }}
+      zip: ${{ steps.build.outputs.zip }}
+      sha256: ${{ steps.notarize.outputs.sha256 }}
+    env:
+      CHANNEL: ${{ inputs.channel }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+          # The build number is the number of commits behind the one that is built.
+          fetch-depth: 0
+          persist-credentials: false
+      # The certificate goes into a keychain that exists only for this job.
+      - name: Import the Developer ID
+        env:
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          [ -n "$DEVELOPER_ID_P12" ] || { echo "::error::The DEVELOPER_ID_P12 secret is not set"; exit 1; }
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          password=$(uuidgen)
+          printf '%s' "$DEVELOPER_ID_P12" | base64 --decode > "$RUNNER_TEMP/identity.p12"
+          security create-keychain -p "$password" "$KEYCHAIN"
+          security set-keychain-settings -lut 7200 "$KEYCHAIN"
+          security unlock-keychain -p "$password" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/identity.p12" -P "$DEVELOPER_ID_P12_PASSWORD" -f pkcs12 -k "$KEYCHAIN" \
+            -T /usr/bin/codesign > /dev/null
+          rm "$RUNNER_TEMP/identity.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          found=$(security find-identity -v -p codesigning "$KEYCHAIN" | grep -c '"Developer ID Application: ' || true)
+          if [ "$found" != 1 ]; then
+            echo "::error::DEVELOPER_ID_P12 must hold one Developer ID Application certificate with its key, not $found"
+            exit 1
+          fi
+      - name: Build and sign
+        id: build
+        run: |
+          # shellcheck disable=SC1091
+          source Config/identity.conf
+          build=$(git rev-list --count HEAD)
+          CODESIGN_IDENTITY="Developer ID Application" BUILD_NUMBER=$build ./scripts/build-app.sh \
+            | tee "$RUNNER_TEMP/build.log"
+          app=$(tail -1 "$RUNNER_TEMP/build.log")
+          zip=$(basename "$app" .app | tr ' ' '-').zip
+          {
+            echo "app=$app"
+            echo "zip=$zip"
+            echo "version=$VERSION"
+            echo "build=$build"
+          } >> "$GITHUB_OUTPUT"
+      - name: Notarize
+        id: notarize
+        env:
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+          NOTARY_KEY_FILE: ${{ runner.temp }}/notary.p8
+          APP: ${{ steps.build.outputs.app }}
+          ZIP: ${{ steps.build.outputs.zip }}
+        run: |
+          [ -n "$NOTARY_KEY_P8" ] || { echo "::error::The NOTARY_KEY_P8 secret is not set"; exit 1; }
+          printf '%s' "$NOTARY_KEY_P8" | base64 --decode > "$NOTARY_KEY_FILE"
+          ./scripts/notarize-app.sh "$APP" "build/$ZIP"
+          rm "$NOTARY_KEY_FILE"
+          echo "sha256=$(shasum -a 256 "build/$ZIP" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      # The app is proved as it will arrive: out of the zip, signed and notarized. It draws its windows, then
+      # downloads its model and dictates a recording made here.
+      - name: Prove the app in the zip
+        env:
+          APP: ${{ steps.build.outputs.app }}
+          ZIP: ${{ steps.build.outputs.zip }}
+        run: |
+          ditto -x -k "build/$ZIP" "$RUNNER_TEMP/unzipped"
+          sorello="$RUNNER_TEMP/unzipped/$(basename "$APP")/Contents/MacOS/Sorello"
+          "$sorello" --snapshots "$RUNNER_TEMP/snapshots" > /dev/null
+          say -o "$RUNNER_TEMP/hello.wav" --data-format=LEI16@16000 "Hello from the self test"
+          "$sorello" --self-test --download "$RUNNER_TEMP/hello.wav" | tee "$RUNNER_TEMP/self-test.log"
+          grep -qi "insert: hello from the self.test" "$RUNNER_TEMP/self-test.log"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.build.outputs.zip }}
+          path: build/${{ steps.build.outputs.zip }}
+          if-no-files-found: error
+          retention-days: 7
+      - name: Delete the keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
