@@ -3,7 +3,8 @@
 Sorello is a menu-bar dictation app for the Mac, on Apple silicon and on
 Intel. You hold a key, speak, and release; the words appear at the cursor.
 Speech recognition runs on the Mac, with a model Sorello downloads once,
-during setup. That download is the only network connection Sorello makes.
+during setup. Sorello makes two kinds of network connection: that download,
+and the check for a newer version of itself.
 
 This document is the contract the code is written against. It states what
 each part does and where the boundaries are. When behaviour and this
@@ -64,7 +65,7 @@ Sendable` without a comment that says which lock or queue makes it safe.
 | `Persistence` | neutral | `DictationCore`, `TextRules` | Settings, macros, Run Log |
 | `SorelloUI` | macOS UI | `DesignCore` | The pill, its overlay window, every screen and control |
 | `MacPlatform` | macOS | `DictationCore`, `DictionaryKit` | Shortcuts, audio capture, text insertion, Accessibility reads, permissions |
-| `SorelloApp` | macOS | all of the above | Composition: builds the objects, connects them, owns windows and the menu bar item |
+| `SorelloApp` | macOS | all of the above, and Sparkle | Composition: builds the objects, connects them, owns windows and the menu bar item, and updates the app |
 | `Sorello` | executable | `SorelloApp` | `@main` only |
 | `SorelloSnapshots` | executable | `SorelloUI` | Renders every pill state and screen to PNG files |
 | `sorello-transcribe` | executable | `SpeechEngine` | Transcribes a WAV file with the real model, and downloads the model as the app does, for verification |
@@ -81,6 +82,13 @@ Rules the compiler enforces through the package graph:
   each other.
 - There is no shared mutable singleton. `SorelloApp` creates each object
   once and passes it to what needs it.
+
+Sorello has one dependency outside this package: Sparkle, at one exact
+version, which checks for, downloads and installs updates (section 6,
+"Updates"). Only `SorelloApp` links it, and one source file imports it,
+`Sources/SorelloApp/Adapters/SparkleUpdater.swift`. The rest of the app
+reaches it through the `Updating` protocol, so tests use a fake and no test
+starts Sparkle.
 
 ## 3. The session
 
@@ -628,6 +636,47 @@ in the meantime. Insertion sits behind `TextInserting` so another strategy
   card to drag in (adapted from Scrawl and AskForPermission, MIT, notices
   in `ThirdPartyNotices.md`).
 
+### Updates
+
+Sorello updates itself with Sparkle. A build has an update feed or it has
+none. `Config/identity.conf` gives each channel's feed and the public key
+updates are signed against, and `scripts/build-app.sh` writes them into the
+app's `Info.plist` (`SUFeedURL`, `SUPublicEDKey`). A nightly follows the
+nightly feed and a release the release feed, so neither is ever offered
+the other's builds. A development build has no feed.
+
+- A build with no feed has no updater: Sparkle is never started, the menu
+  has no update row, General has no update setting, and no connection is
+  opened.
+- With a feed, Sorello checks it once a day while it runs, and when the
+  user chooses Check for Updates… in the menu. General has a switch,
+  "Check for updates automatically", on from the first launch; turned
+  off, only the menu's command checks. Sorello never asks whether it may
+  check.
+- A check the user asked for shows Sparkle's own windows, in front: that
+  it is checking, that Sorello is up to date, or the newer version with
+  Install. They are Sparkle's to draw, as the menu is the system's. They
+  are not windows in the sense of section 8: they do not put Sorello in
+  the Dock.
+- A check Sorello made on its own never shows a window and never takes
+  the keyboard from the app the user is in: a dictation is pasted where
+  the cursor is, and a window arriving in front would take the paste.
+  When such a check finds a newer version, the menu's row reads "Update
+  Available…" instead, until that version is installed or skipped or the
+  user has seen it; choosing the row shows Sparkle's window for it.
+- Nothing is installed without the user's word, given in Sparkle's
+  window. Sparkle offers there to install later versions by itself; that
+  is off until the user turns it on.
+- What Sparkle downloads is used only if its signature verifies against
+  the key in the app. Installing replaces the app where it is and opens
+  the new one. Its identity is the same, so its settings, model and
+  permissions are the ones it had.
+- A check sends nothing about the user or the Mac: Sparkle's system
+  profile is never enabled. The server learns the address the request
+  came from, and the app's name and version.
+- The app follows only the feed in its `Info.plist`. A feed address left
+  in its preferences is removed at launch, not followed.
+
 ## 7. Persistence
 
 Everything is under `Application Support/<bundle id>/`, in a directory only
@@ -790,7 +839,11 @@ only specks of brown, so there the nightly's icon is the plain one.
     opens the Shortcuts screen;
   - Copy Last Dictation, which is unavailable until there is a dictation
     to copy;
-  - Dictionary, Run Log, Settings (⌘,) and Quit (⌘Q).
+  - Dictionary, Run Log and Settings (⌘,);
+  - Check for Updates…, or Update Available… when a check Sorello made
+    on its own has found one (section 6, "Updates"). A build with no
+    update feed has no such row;
+  - Quit (⌘Q).
 
   The rows are one function of the values the windows show, made again
   each time the menu opens and kept current while it is open.
@@ -861,15 +914,21 @@ version are read from the bundle, never written in code.
 
 A reviewer checks every change against these.
 
-1. One connection, for the model. Sorello opens a network connection only
-   to download its speech model (section 5, "Getting the model"), and
-   only when the user asks for it. It sends nothing about the user, the
-   Mac or what was dictated: the server learns the address the request
-   came from and which build was asked for. Nothing downloaded is used
-   before its SHA-256 matches the pin. `URLSession` is named in one
-   source file, `Sources/SpeechEngine/ModelDownloader.swift`. No other
-   source opens a connection, and no source names a host: the address is
-   in `Models/model.lock.json`.
+1. Two connections: the model and updates. Sorello opens a network
+   connection to download its speech model (section 5, "Getting the
+   model"), only when the user asks for it, and to check its update feed
+   and download an update (section 6, "Updates"). Neither sends anything
+   about the user, the Mac or what was dictated: the server learns the
+   address the request came from, which build of the model was asked for
+   and, for an update, the app's name and version. Nothing downloaded is
+   used before it is verified: the model against the pin's SHA-256, an
+   update against the signing key in the app. `URLSession` is named in
+   one source file, `Sources/SpeechEngine/ModelDownloader.swift`. An
+   update's connections are Sparkle's, which one source file imports,
+   `Sources/SorelloApp/Adapters/SparkleUpdater.swift`. No other source
+   opens a connection, and no source names a host: the model's address
+   is in `Models/model.lock.json` and the feeds' are in
+   `Config/identity.conf`.
 2. No content in logs. Diagnostics go through one type, `Diagnostics`,
    whose events are a compile-time name and numbers. `print`, `NSLog`,
    `os_log` and `Logger` are not used elsewhere in `Sources`, except in
@@ -897,12 +956,13 @@ Review does.
 ## 10. Build, identity and model
 
 - `swift build` and `swift test` build and test every module.
-  `make check` runs both plus `scripts/check-rules.sh`; it needs no model
-  and no network.
+  `make check` runs both plus `scripts/check-rules.sh`; it needs no model,
+  and no network once SwiftPM has fetched Sparkle.
 - `make app` assembles `build/<name>.app` with `scripts/build-app.sh`:
   the release executable, `Info.plist`, fonts, icon, notices, the model's
-  notices and the pin, then signs it with the hardened runtime and the
-  audio-input entitlement. `CODESIGN_IDENTITY` defaults to ad hoc. A
+  notices, the pin and Sparkle's framework in `Contents/Frameworks`, then
+  signs it, and everything in Sparkle's framework that runs, with the
+  hardened runtime, and the app with the audio-input entitlement. `CODESIGN_IDENTITY` defaults to ad hoc. A
   signature made with a certificate carries Apple's timestamp.
 - Identity is one file, `Config/identity.conf`. There are three channels.
   Development builds are "Sorello Dev", `com.audeolabs.sorello.dev`;
@@ -911,7 +971,10 @@ Review does.
   `com.audeolabs.sorello`. Each channel's app has its own data, model and
   permissions, so the three can be installed on one Mac; two that are
   running both answer the shortcuts. Minimum system: macOS 26, on Apple
-  silicon or Intel.
+  silicon or Intel. The same file gives the nightly's and the release's
+  update feed, `NIGHTLY_FEED` and `RELEASE_FEED`, and the public key
+  their updates are signed against, `UPDATE_PUBLIC_KEY` (section 6,
+  "Updates"). The private half of that key is never in the repository.
 - The version is `VERSION` in that file. The build number is `BUILD`
   there unless `BUILD_NUMBER` gives another, one to three whole numbers
   separated by dots. The workflows below give the number of commits in
@@ -1018,6 +1081,18 @@ Review does.
   menus as text too, since they show only while a window is open.
   `Sorello --no-setup` opens the app without its setup window, so a
   packaged build can be launched and quit without touching a permission.
+- The updater is tested through `Updating` with a fake: the menu's row,
+  the switch in General, and what each does. No test starts Sparkle or
+  opens a connection, and neither `--snapshots` nor any other
+  `--self-test` does. The packaged app's own updater is proved by
+  `Sorello --self-test --update <feed>`, which is the one way to point
+  the app at another feed, and only for that run. It starts the app's
+  updater against the feed it is given, with the key in the app, and
+  prints what it found. When the feed lists a newer build it downloads
+  it, verifies it as any update is verified, and installs it over the
+  app the command was run from as the command ends, without opening it.
+  It shows no window. It is run on a copy of the app, against a feed on
+  the same Mac that lists a build signed for the test.
 - The Intel half of a universal build is compiled and linked on every
   release build, but it cannot run on the Apple silicon Macs Sorello is
   built on. What it does differently, the fallback, is proved there with
@@ -1042,7 +1117,11 @@ Review does.
   back from the Dock and with Command-Tab; the microphone's prompt
   answered from setup, with setup in front afterwards; Sorello hidden
   during a dictation, and a dictation begun while it is hidden, the pill
-  showing in both.
+  showing in both. Updates, on a build that has a feed: Check for
+  Updates… from the menu, Sparkle's window and Install, the app that
+  opens afterwards with its settings, model and permissions; and, once a
+  check Sorello made on its own has found a version, the menu's row and
+  that no window arrived by itself.
 
 ## 12. Provenance
 
