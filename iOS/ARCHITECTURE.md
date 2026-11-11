@@ -3165,9 +3165,7 @@ app reads only the count. The models are fixed.
   `PlugIns/SorelloKeyboard.appex` and `PlugIns/SorelloActivity.appex`.
   The default platform is the arm64 simulator; `PLATFORM=device` builds for
   arm64 devices.
-  - All three are compiled for `arm64-apple-ios26.0[-simulator]` with
-    `-Xcc -DACCELERATE_NEW_LAPACK`, kept from when this build compiled the
-    decoder, which used the CBLAS interface the iOS 26 SDK deprecates.
+  - All three are compiled for `arm64-apple-ios26.0[-simulator]`.
   - The shared modules come from the package: SwiftPM builds its two static
     libraries for each target triple in `build/package/<triple>/`
     (`swift build -c release --product … --triple … --sdk …`), again whenever

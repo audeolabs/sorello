@@ -199,15 +199,12 @@ package_modules = -I "$$(cat "$(1)")"
 package_library = $(call package_modules,$(1)) -L "$$(cat "$(1)")" -l$(2)
 
 SWIFTC = xcrun --sdk $(SDK) swiftc
-# iOS 26 deprecates the legacy CBLAS declarations the shared decoder calls; the
-# new LAPACK headers keep the same 32-bit signatures.
-ACCELERATE_FLAGS = -Xcc -DACCELERATE_NEW_LAPACK
 # Without -j, swiftc compiles one file at a time. (-enable-batch-mode would save a
 # little more, but Swift 6.4 then links temporary objects it never wrote unless
 # given an output file map.)
 SWIFT_JOBS ?= $(shell sysctl -n hw.activecpu)
 SWIFT_PARALLEL_FLAGS = -j$(SWIFT_JOBS)
-SWIFT_COMMON_FLAGS = -swift-version 5 -parse-as-library -target $(TARGET) -sdk "$(SDK_PATH)" $(ACCELERATE_FLAGS) $(SWIFT_PARALLEL_FLAGS) $(SWIFT_FLAGS)
+SWIFT_COMMON_FLAGS = -swift-version 5 -parse-as-library -target $(TARGET) -sdk "$(SDK_PATH)" $(SWIFT_PARALLEL_FLAGS) $(SWIFT_FLAGS)
 KEYBOARD_SWIFT_FLAGS = -module-name SorelloKeyboard -application-extension
 KEYBOARD_LINK_FLAGS = -Xlinker -e -Xlinker _NSExtensionMain
 # A WidgetKit extension. As Xcode links every app extension, the entry point is _NSExtensionMain, which starts the
@@ -578,7 +575,7 @@ check: typecheck test lint check-binaries
 # variant is checked too, so it cannot rot outside its builds.
 typecheck: $(SIMULATOR_PACKAGE)
 	@set -e; sdk=$$(xcrun --sdk iphonesimulator --show-sdk-path); \
-	flags="-typecheck -warnings-as-errors -swift-version 5 -parse-as-library -target $(SIMULATOR_TARGET) -sdk $$sdk $(ACCELERATE_FLAGS) $(SWIFT_PARALLEL_FLAGS) $(SWIFT_FLAGS) $(call package_modules,$(SIMULATOR_PACKAGE))"; \
+	flags="-typecheck -warnings-as-errors -swift-version 5 -parse-as-library -target $(SIMULATOR_TARGET) -sdk $$sdk $(SWIFT_PARALLEL_FLAGS) $(SWIFT_FLAGS) $(call package_modules,$(SIMULATOR_PACKAGE))"; \
 	echo "Type-checking the app"; \
 	xcrun --sdk iphonesimulator swiftc $$flags -module-name Sorello $(APP_SOURCES); \
 	echo "Type-checking the app (self-test variant)"; \
