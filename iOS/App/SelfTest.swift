@@ -1,10 +1,12 @@
 #if SORELLO_SELFTEST
 import CoreML
 import Darwin
+import DictationCore
 import Foundation
+import SpeechEngine
 
 /// Self-test builds only. Options come from the launch environment (`SIMCTL_CHILD_…`):
-/// - `SORELLO_SELFTEST_AUDIO=<path>`: transcribes an invented synthetic recording with the bundled
+/// - `SORELLO_SELFTEST_AUDIO=<path>`: transcribes an invented synthetic recording with the carried
 ///   model and prints one content-free line, never the transcript, the audio path or error messages,
 ///   then exits. `SORELLO_SELFTEST_EXPECTED` and `SORELLO_SELFTEST_COMPUTE=cpuOnly` refine it.
 /// - `SORELLO_SYNTHETIC_MIC=<path>`: replaces the microphone with that recording (`SyntheticCapture`).
@@ -53,7 +55,7 @@ enum SelfTest {
         var samples: [Float] = []
         do {
             guard !path.isEmpty else { throw SelfTestFailure.syntheticInputUnusable }
-            try ParakeetAudioReader.read(fileURL: resolve(path), check: {}) { samples.append(contentsOf: $0) }
+            samples = try AudioFileReader.samples(contentsOf: resolve(path))
             guard !samples.isEmpty else { throw SelfTestFailure.syntheticInputUnusable }
         } catch {
             print("Sorello self-test: synthetic_mic=unusable")
@@ -100,7 +102,7 @@ enum SelfTest {
         let expected = environment["SORELLO_SELFTEST_EXPECTED"] ?? defaultPhrase
         let cpuOnly = environment["SORELLO_SELFTEST_COMPUTE"] == "cpuOnly"
         Task.detached(priority: .userInitiated) {
-            let passed = await run(audio: audio, expected: expected, computeUnits: cpuOnly ? .cpuOnly : .cpuAndNeuralEngine)
+            let passed = await run(audio: audio, expected: expected, compute: cpuOnly ? .cpu : .neuralEngine)
             exit(passed ? 0 : 1)
         }
     }
@@ -109,26 +111,28 @@ enum SelfTest {
         URL(fileURLWithPath: path, relativeTo: URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true))
     }
 
-    private static func run(audio: URL, expected: String, computeUnits: MLComputeUnits) async -> Bool {
+    private static func run(audio: URL, expected: String, compute: SpeechCompute) async -> Bool {
         let appGroup = appGroupState()
         var stage = "model", failure = "none", matched = false
         var preparation = -1.0, transcription = -1.0, seconds = 0.0
         do {
-            guard LocalParakeetService.isAvailable, let directory = LocalParakeetService.bundleDirectory else {
-                throw SelfTestFailure.modelMissing
-            }
-            let service = LocalParakeetService(computeUnits: computeUnits)
+            guard let directory = CarriedModel.directory else { throw SelfTestFailure.modelMissing }
+            let engine = SpeechEngine(modelDirectory: directory, storeDirectory: nil, compute: compute,
+                                      dictionary: { _ in .empty })
             stage = "prepare"
             var start = Date()
-            try await service.prepare(directory: directory)
+            await engine.prepare()
+            for await readiness in engine.readiness() {
+                if case .failed(let failure) = readiness { throw failure }
+                break
+            }
             preparation = Date().timeIntervalSince(start)
             stage = "read"
-            var samples: [Float] = []
-            try ParakeetAudioReader.read(fileURL: audio, check: {}) { samples.append(contentsOf: $0) }
-            seconds = Double(samples.count) / Double(LocalParakeetCore.sampleRate)
+            let samples = try AudioFileReader.samples(contentsOf: audio)
+            seconds = Double(samples.count) / AudioFormat.sampleRate
             stage = "transcribe"
             start = Date()
-            let text = try await service.transcribe(samples: samples)
+            let text = try await engine.transcribe(samples)
             transcription = Date().timeIntervalSince(start)
             stage = "compare"
             matched = normalized(text) == normalized(expected)
@@ -139,7 +143,7 @@ enum SelfTest {
         let passed = matched && appGroup == "usable"
         print(String(format: "Sorello self-test: result=%@ stage=%@ transcript_match=%@ app_group=%@ compute=%@ preparation_s=%.3f transcription_s=%.3f audio_s=%.2f peak_footprint_mb=%.0f available_devices=%@ error=%@",
                      passed ? "pass" : "fail", stage, String(matched), appGroup,
-                     computeUnits == .cpuOnly ? "cpuOnly" : "cpuAndNeuralEngine", preparation, transcription, seconds,
+                     compute == .cpu ? "cpuOnly" : "cpuAndNeuralEngine", preparation, transcription, seconds,
                      ProcessMemory.footprint()?.peakMB ?? -1, availableDevices(), failure))
         return passed
     }
@@ -163,7 +167,8 @@ enum SelfTest {
 
     // Error class only; messages could carry details we do not print.
     private static func describe(_ error: Error) -> String {
-        if error is LocalParakeetError || error is SelfTestFailure || error is CancellationError {
+        if error is EngineFailure || error is SpeechFailure || error is AudioFileReader.ReadError
+            || error is SelfTestFailure || error is CancellationError {
             return String(describing: type(of: error))
         }
         let error = error as NSError

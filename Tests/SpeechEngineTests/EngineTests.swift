@@ -276,6 +276,64 @@ struct EngineTests {
         #expect(log.projected.isEmpty)
     }
 
+    /// The end of a stream's model work, which the iPhone app waits for before it lets the engine go or makes another:
+    /// a cancel returns at once, but the chunk the model is working on runs to its end, and waiting for the model's
+    /// work returns only after that. Nothing of the stream is transcribed afterwards.
+    @Test func waitingForTheModelsWorkOutlastsTheChunkInProgress() async throws {
+        let log = ModelLog()
+        let model = HeldModel(log: log)
+        let engine = SpeechEngine(loader: { model }, dictionary: { _ in .empty })
+        await prepare(engine)
+        let stream = engine.openStream(SpeechStreamOptions())
+        stream.append(Self.speech(31))
+        #expect(await within { await model.entered() } != nil, "The first chunk reached the model")
+        stream.cancel()
+        let ended = Mutex(false)
+        let waiting = Task {
+            await engine.waitUntilModelWorkEnds()
+            ended.withLock { $0 = true }
+        }
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(!ended.withLock { $0 }, "The chunk in progress still holds the model")
+        model.release()
+        _ = await within { await waiting.value }
+        #expect(ended.withLock { $0 })
+        #expect(model.projections == 1, "The chunk in progress ended before the wait did")
+        stream.append(Self.speech(16))
+        await engine.waitUntilModelWorkEnds()
+        try await Task.sleep(for: .milliseconds(50))
+        await engine.waitUntilModelWorkEnds()
+        #expect(model.projections == 1, "Nothing of a cancelled stream is transcribed afterwards")
+    }
+
+    /// A finished stream's work has ended when its finish returns, and an engine let go once its streams have ended is
+    /// freed with its model: the iPhone app releases the model on a memory warning by letting the engine go.
+    @Test func anEngineLetGoAfterItsStreamsEndIsFreedWithItsModel() async throws {
+        let log = ModelLog()
+        weak var freedEngine: SpeechEngine?
+        weak var freedModel: HeldModel?
+        do {
+            let model = HeldModel(log: log, holds: false)
+            freedModel = model
+            let engine = SpeechEngine(loader: { model }, dictionary: { _ in .empty })
+            freedEngine = engine
+            await prepare(engine)
+            let finished = engine.openStream(SpeechStreamOptions())
+            finished.append(Self.speech(2))
+            #expect(await finish(finished) == .success(SpeechResult(text: Self.words(seconds: 2))))
+            let cancelled = engine.openStream(SpeechStreamOptions())
+            cancelled.append(Self.speech(16))
+            cancelled.cancel()
+            await engine.waitUntilModelWorkEnds()
+        }
+        let deadline = ContinuousClock.now + .seconds(5)
+        while (freedEngine != nil || freedModel != nil) && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(freedEngine == nil, "Nothing else keeps the engine")
+        #expect(freedModel == nil, "The model goes with the engine")
+    }
+
     @Test func aSecondFinishAndLateAppendsAreIgnored() async throws {
         let log = ModelLog()
         let engine = engine(log)

@@ -82,3 +82,49 @@ func fakeLoader(_ log: ModelLog, failures: Int = 0, failure: EngineFailure = .lo
         return FakeModel(log: log, projectDelay: projectDelay)
     }
 }
+
+/// The fake model, except that its first projection, when it `holds`, waits for `release()` after saying it has
+/// `entered()`, so a test can act while the model is busy with a chunk. Every projection is counted once it has ended,
+/// whether it returned or threw.
+final class HeldModel: SpeechModel, Sendable {
+    let encoder = BPEEncoder(pieces: FakeModel.pieces)
+    private let log: ModelLog
+    private let holds: Bool
+    private let arrived = DispatchSemaphore(value: 0)
+    private let gate = DispatchSemaphore(value: 0)
+    private let ended = Mutex(0)
+
+    init(log: ModelLog, holds: Bool = true) {
+        self.log = log
+        self.holds = holds
+    }
+
+    /// Projections that have ended.
+    var projections: Int { ended.withLock { $0 } }
+
+    /// Returns once the first projection is waiting.
+    func entered() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global().async {
+                self.arrived.wait()
+                continuation.resume()
+            }
+        }
+    }
+
+    /// Lets the first projection go on.
+    func release() { gate.signal() }
+
+    func project(_ samples: [Float], check: () throws -> Void) throws -> Projection? {
+        if holds && projections == 0 {
+            arrived.signal()
+            gate.wait()
+        }
+        defer { ended.withLock { $0 += 1 } }
+        return try FakeModel(log: log).project(samples, check: check)
+    }
+
+    func decode(_ projection: Projection, offset: Int, bias: BiasGraph?, check: () throws -> Void) throws -> [HeardWord] {
+        try FakeModel(log: log).decode(projection, offset: offset, bias: bias, check: check)
+    }
+}

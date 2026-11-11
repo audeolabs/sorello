@@ -4,18 +4,21 @@
 # production identifiers, the compiled icon, privacy manifests, Xcode build
 # metadata, matching versions, distribution signing, the universal link and its
 # Associated Domains entitlement, the Live Activity extension without any
-# capability, and no self-test code.
-# It reads only the bundle; it never uploads or contacts Apple.
+# capability, no self-test code, the model the pin lists for iOS with the pin
+# and the model's notices beside it, and executables that name no networking
+# API (check-binaries.sh).
+# It reads only the bundle, the pin and the notices; it never uploads or
+# contacts Apple.
 #
 # Usage: check-appstore-bundle.sh --app PATH --bundle-id ID --app-group GROUP
 #          --url-scheme SCHEME --universal-link URL --display-name NAME
-#          --team-id TEAM [--ipa PATH]
+#          --team-id TEAM --pin PATH --model-notices DIR [--ipa PATH]
 # With --ipa, every check runs on the app inside the .ipa, which is what Apple
 # receives; it must hold the same build as --app. Prints every failure and
 # exits 1 if there is any.
 set -u
 
-app= bundle_id= app_group= url_scheme= universal_link= display_name= team_id= ipa=
+app= bundle_id= app_group= url_scheme= universal_link= display_name= team_id= pin= model_notices= ipa=
 while [ $# -gt 0 ]; do
     case "$1" in
         --app) app=$2 ;;
@@ -25,12 +28,14 @@ while [ $# -gt 0 ]; do
         --universal-link) universal_link=$2 ;;
         --display-name) display_name=$2 ;;
         --team-id) team_id=$2 ;;
+        --pin) pin=$2 ;;
+        --model-notices) model_notices=$2 ;;
         --ipa) ipa=$2 ;;
         *) echo "Unknown option: $1" >&2; exit 2 ;;
     esac
     shift 2 || { echo "Missing value for $1" >&2; exit 2; }
 done
-for required in app bundle_id app_group url_scheme universal_link display_name team_id; do
+for required in app bundle_id app_group url_scheme universal_link display_name team_id pin model_notices; do
     eval "value=\$$required"
     [ -n "$value" ] || { echo "Missing --$(echo "$required" | tr _ -)" >&2; exit 2; }
 done
@@ -42,6 +47,8 @@ esac
 link_host=${universal_link#https://}
 link_host=${link_host%%/*}
 [ -d "$app" ] || { echo "Not a directory: $app" >&2; exit 2; }
+[ -f "$pin" ] || { echo "Not a file: $pin" >&2; exit 2; }
+[ -d "$model_notices" ] || { echo "Not a directory: $model_notices" >&2; exit 2; }
 built=$app
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/sorello-appstore-check.XXXXXX") || exit 2
@@ -277,11 +284,47 @@ for target in app keyboard activity; do
 done
 
 # Contents: the model, no self-test code, nothing a build machine left behind.
-[ -f "$app/Parakeet/bundle.json" ] || fail "app: the Parakeet model is missing (build with PARAKEET_BUNDLE_DIR)"
+# The model is the build the pin lists for the app's oldest iOS: its
+# bundle.json has that build's SHA-256, and Model/ holds exactly the files it
+# lists, each matching its own, with the pin and the model's notices beside it.
+model="$app/Model"
+if [ ! -f "$model/bundle.json" ]; then
+    fail "app: the model is missing (build with SORELLO_MODEL_DIR)"
+else
+    cmp -s "$pin" "$app/model.lock.json" || fail "app: model.lock.json is missing or is not $pin"
+    diff -r "$model_notices" "$app/ModelNotices" > /dev/null 2>&1 || fail "app: ModelNotices is missing or differs from $model_notices"
+    # The build the app takes on its oldest iPhone, chosen as the build chose it (copy-model.py).
+    digest=$(shasum -a 256 "$model/bundle.json" | awk '{ print $1 }')
+    minimum=$(value "$app/Info.plist" MinimumOSVersion)
+    if ! pinned=$(${PYTHON:-python3} "$(dirname "$0")/copy-model.py" --pinned "$pin" "$minimum" 2>/dev/null); then
+        fail "app: $pin lists no build of the model for iOS $minimum"
+    elif [ "$pinned" != "$digest" ]; then
+        fail "app: the model is not the build $pin lists for iOS $minimum"
+    fi
+    tab=$(printf '\t')
+    plutil -extract files xml1 -o - "$model/bundle.json" 2>/dev/null |
+        sed -n -E 's,^[[:space:]]*<(key|string)>(.*)</(key|string)>[[:space:]]*$,\2,p' | paste - - > "$work/model-files"
+    listed=$(wc -l < "$work/model-files" | tr -d ' ')
+    [ "$listed" -gt 0 ] || fail "app: the model's bundle.json lists no files"
+    while IFS="$tab" read -r path expected; do
+        case "$path" in ""|/*|../*|*/../*|*/..|..|*"&"*) fail "app: the model's bundle.json lists an invalid path"; continue ;; esac
+        if [ ! -f "$model/$path" ]; then
+            fail "app: the model's $path is missing"
+        elif [ "$(shasum -a 256 "$model/$path" | awk '{ print $1 }')" != "$expected" ]; then
+            fail "app: the model's $path does not match its SHA-256"
+        fi
+    done < "$work/model-files"
+    present=$(find "$model" -type f | wc -l | tr -d ' ')
+    [ "$present" = "$((listed + 1))" ] || fail "app: Model/ holds $present files, but bundle.json lists $listed besides itself"
+fi
 for binary in "$app/Sorello" "$appex/SorelloKeyboard" "$activity/SorelloActivity"; do
     [ -f "$binary" ] || { fail "missing $binary"; continue; }
     if grep -aq SORELLO_SELFTEST "$binary"; then fail "$(basename "$binary") is a self-test build"; fi
 done
+# No networking API in any executable; the keyboard and the Live Activity hold
+# only what they may of the shared modules.
+sh "$(dirname "$0")/check-binaries.sh" "$app/Sorello" "$appex/SorelloKeyboard" "$activity/SorelloActivity" \
+    > "$work/binaries.txt" 2>&1 || { grep '^FAIL:' "$work/binaries.txt"; fail "the executables' checks failed (above)"; }
 junk=$(find "$app" \( -name .DS_Store -o -name '*.xcent' -o -name '*.der' -o -name '__MACOSX' \) -print | head -5)
 [ -z "$junk" ] || fail "app contains build leftovers: $junk"
 

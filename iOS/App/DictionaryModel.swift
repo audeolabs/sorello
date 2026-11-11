@@ -1,3 +1,4 @@
+import DictionaryKit
 import Foundation
 import UIKit
 
@@ -8,14 +9,15 @@ final class DictionaryModel: ObservableObject {
     @Published private(set) var loadFailed = false
     @Published private(set) var canEdit = false
 
-    /// The bundled model's vocabulary, so entries the model can't produce are rejected.
+    /// The carried model's vocabulary, so entries the model can't produce are rejected.
     let encoder: BPEEncoder?
     private let library: DictionaryLibrary
     private let transcriber: ParakeetTranscriber
 
     init(transcriber: ParakeetTranscriber, defaults: UserDefaults = .standard) {
-        let directory = LocalParakeetService.isAvailable ? LocalParakeetService.bundleDirectory : nil
-        encoder = directory.flatMap { try? BPEEncoder(vocabularyFile: $0.appendingPathComponent("vocabulary.json")) }
+        encoder = CarriedModel.directory.flatMap {
+            try? BPEEncoder(vocabularyFile: $0.appendingPathComponent("vocabulary.json"))
+        }
         library = DictionaryLibrary(defaults: defaults, encoder: encoder)
         self.transcriber = transcriber
         library.onChange = { [weak self] in self?.sync() }
@@ -43,7 +45,7 @@ final class DictionaryModel: ObservableObject {
 
     /// Inline validation for the editor; nil while the text is blank.
     func validationMessage(text: String, strength: Float) -> String? {
-        guard !text.unicodeScalars.allSatisfy(DictionaryText.isWhitespace) else { return nil }
+        guard !text.unicodeScalars.allSatisfy(\.properties.isWhitespace) else { return nil }
         if case .failure(let error) = DictionaryValidation.validate(text: text, strength: strength, encoder: encoder) {
             return error.message
         }

@@ -1,3 +1,4 @@
+import DictionaryKit
 import SwiftUI
 
 /// The custom dictionary (contract: "Custom dictionary"): words with their strength, ▲/▼ arrows that save
@@ -76,7 +77,7 @@ struct DictionaryView: View {
             }
         } footer: {
             if !dictionary.hasVocabulary {
-                Text(DictionaryEditor.unavailableMessage).foregroundStyle(Theme.coral)
+                Text(DictionaryChangeError.noVocabulary.message).foregroundStyle(Theme.coral)
             } else if !dictionary.entries.isEmpty {
                 // A legend for the row's glyphs, a few words each, in the row's order. Each phrase stays whole with its
                 // glyph; at accessibility sizes each has its own line instead, and its words wrap where words do.
@@ -224,7 +225,7 @@ struct DictionaryEntryEditor: View {
     @State private var saveError: String?
     @State private var probeWord: ProbeWord?
 
-    private var isBlank: Bool { text.unicodeScalars.allSatisfy(DictionaryText.isWhitespace) }
+    private var isBlank: Bool { text.unicodeScalars.allSatisfy(\.properties.isWhitespace) }
     private var validationError: String? { dictionary.validationMessage(text: text, strength: strength) }
     private var canProbe: Bool { !isBlank && validationError == nil && dictionary.canEdit }
 

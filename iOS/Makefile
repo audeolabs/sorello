@@ -1,6 +1,7 @@
-# Sorello for iPhone, built with swiftc and make only (no Xcode project or
-# SwiftPM). Run `make -C iOS <target>` from the repository root, or `make` in
-# this directory. README.md documents usage; ARCHITECTURE.md is the contract.
+# Sorello for iPhone, built with swiftc and make (no Xcode project), against
+# the package's shared modules, which SwiftPM builds. Run `make -C iOS <target>`
+# from the repository root, or `make` in this directory. README.md documents
+# usage; ARCHITECTURE.md is the contract.
 .DEFAULT_GOAL := all
 
 # dev (the default) or appstore. appstore presets the production identifiers
@@ -49,7 +50,11 @@ URL_SCHEME ?= localflow-dev
 UNIVERSAL_LINK ?=
 DISPLAY_NAME ?= Sorello Dev
 DEPLOYMENT_TARGET ?= 26.0
-PARAKEET_BUNDLE_DIR ?=
+# A local copy of the speech model's build that ../Models/model.lock.json lists for iOS: the directory holding its
+# bundle.json, as SORELLO_MODEL_DIR is for the Mac app. The build checks it against the pin and its manifest and copies
+# exactly the manifest's files into Sorello.app/Model/, with the pin and the model's notices. Empty builds an app
+# without the model, which cannot transcribe. The weights stay outside Git.
+SORELLO_MODEL_DIR ?=
 # Optional swipe typing bundle (SwipeEncoder.mlmodelc, lexicon.bin, bundle.json);
 # empty builds a keyboard without swipe typing.
 SWIPE_BUNDLE_DIR ?=
@@ -62,7 +67,7 @@ SWIFT_FLAGS ?=
 # Optional keychain holding the signing identity (device builds signed over SSH).
 CODESIGN_KEYCHAIN ?=
 CODESIGN_KEYCHAIN_FLAG = $(if $(strip $(CODESIGN_KEYCHAIN)),--keychain "$(CODESIGN_KEYCHAIN)")
-SWIFT_OPTIMIZATION ?= $(if $(strip $(PARAKEET_BUNDLE_DIR)),-O,-Onone)
+SWIFT_OPTIMIZATION ?= $(if $(strip $(SORELLO_MODEL_DIR)),-O,-Onone)
 ICON_SOURCE ?= Resources/AppIcon-Dev-Source.png
 PYTHON ?= python3
 
@@ -113,7 +118,8 @@ XCODE_BUILD := $(shell xcodebuild -version 2>/dev/null | awk '/^Build version / 
 DT_XCODE := $(shell printf '%s\n' '$(XCODE_VERSION)' | awk -F. 'NF { printf "%02d%d%d", $$1, $$2, $$3 }')
 BUILD_MACHINE_OS_BUILD := $(shell sw_vers -buildVersion 2>/dev/null)
 
-# Every list can be overridden, e.g. `make SHARED_SOURCES= HOSTCORE_SOURCES=`.
+# Every list can be overridden, e.g. `make SHARED_SOURCES= HOSTCORE_SOURCES=`. The shared modules are not
+# among them: they come from the package (PACKAGE_SOURCES, below).
 swift_sources = $(shell find $(1) -name '*.swift' -type f 2>/dev/null | LC_ALL=C sort)
 APP_SWIFT_SOURCES ?= $(call swift_sources,App)
 KEYBOARD_SWIFT_SOURCES ?= $(call swift_sources,Keyboard)
@@ -141,20 +147,9 @@ TEST_SOURCES ?= $(call swift_sources,Tests)
 # messages and model loader are Foundation only.
 KEYBOARD_TEST_SOURCES ?= Keyboard/SwipeEngine.swift Keyboard/AutocorrectLoader.swift Keyboard/KeyboardMessages.swift \
 	Keyboard/BundleModelLoader.swift
-PARAKEET_SOURCES ?= $(call swift_sources,../Sources/Parakeet)
-# The custom dictionary (boosting, casing and "Find strength"), shared with the
-# macOS app. HostCore's DictionaryLibrary uses it, so the host tests compile it too.
-DICTIONARY_SOURCES ?= $(call swift_sources,../Sources/Dictionary)
-# The dictionary needs the Foundation-only Parakeet core (tokens, errors), which uses the
-# silence compactor; the host tests compile all three.
-DICTIONARY_TEST_SOURCES = $(DICTIONARY_SOURCES) ../Sources/Parakeet/LocalParakeetCore.swift ../Sources/Parakeet/ParakeetSilenceCompactor.swift
-DICTATION_CORE_SOURCES ?= ../Sources/LocalDictationCore.swift ../Sources/SpokenNumberFormatter.swift
-# Fits a dictation to the text around the cursor, shared with the macOS app; Shared's
-# TextInsertionFormatter uses it, so the app, the keyboard and the host tests compile it.
-INSERTION_CONTEXT_SOURCES ?= ../Sources/InsertionContextFormatter.swift
-APP_SOURCES = $(APP_SWIFT_SOURCES) $(SHARED_SOURCES) $(INSERTION_CONTEXT_SOURCES) $(HOSTCORE_SOURCES) $(PARAKEET_SOURCES) $(DICTIONARY_SOURCES) $(DICTATION_CORE_SOURCES) \
+APP_SOURCES = $(APP_SWIFT_SOURCES) $(SHARED_SOURCES) $(HOSTCORE_SOURCES) \
 	$(ACTIVITYCORE_SOURCES) $(ACTIVITY_ATTRIBUTES_SOURCES) $(SESSION_CONTROL_INTENT_SOURCES) $(APP_KEYBOARDCORE_SOURCES)
-KEYBOARD_SOURCES = $(KEYBOARD_SWIFT_SOURCES) $(SHARED_SOURCES) $(INSERTION_CONTEXT_SOURCES) $(KEYBOARDCORE_SOURCES)
+KEYBOARD_SOURCES = $(KEYBOARD_SWIFT_SOURCES) $(SHARED_SOURCES) $(KEYBOARDCORE_SOURCES)
 ACTIVITY_SOURCES = $(ACTIVITY_SWIFT_SOURCES) $(ACTIVITYCORE_SOURCES) $(ACTIVITY_KEYBOARDCORE_SOURCES)
 
 OBJ_DIR = $(BUILD_DIR)/obj
@@ -174,22 +169,42 @@ APP_SIGNATURE = $(APP_BUNDLE)/_CodeSignature/CodeResources
 ICON_CATALOG = $(OBJ_DIR)/Assets.xcassets
 IPA = $(BUILD_DIR)/Sorello.ipa
 CONFIG_STAMP = $(OBJ_DIR)/configuration
-PARAKEET_STAMP = $(OBJ_DIR)/parakeet-selection
+MODEL_STAMP = $(OBJ_DIR)/model-selection
 SWIPE_STAMP = $(OBJ_DIR)/swipe-selection
-PARAKEET_INSTALL_KEY = $(OBJ_DIR)/parakeet-installed
+MODEL_INSTALL_KEY = $(OBJ_DIR)/model-installed
+# What the app's copy of the model is made from, besides the model itself: the pin it is checked against, the model's
+# notices, which ship beside it, and the script that checks and copies it.
+MODEL_INPUTS = ../Models/model.lock.json $(wildcard ../Resources/ModelNotices/*) scripts/copy-model.py
 HOST_BUILD_DIR ?= build/host
-HOST_TARGET ?= $(shell uname -m)-apple-macosx13.0
+# The shared modules require macOS 26, as the Mac app does.
+HOST_TARGET ?= $(shell uname -m)-apple-macosx26.0
+
+# Sorello's shared modules (../ARCHITECTURE.md, section 13), built by SwiftPM from the package as two static
+# libraries: the app links SorelloSpeech (SpeechEngine, DictionaryKit, TextRules and DictationCore), the keyboard
+# SorelloText (TextRules alone), and the Live Activity neither. Each target triple has a build directory of its own,
+# $(PACKAGE_BUILD_DIR)/<triple>, built again whenever the package's manifest or a source of those modules changes, and
+# SwiftPM rebuilds only what changed. <triple>.bin-path records where SwiftPM put the libraries and their modules, as
+# SwiftPM says (--show-bin-path). The first build of a checkout fetches the package's one dependency, Sparkle, which
+# only the Mac app links.
+PACKAGE_BUILD_DIR ?= build/package
+PACKAGE_SOURCES := ../Package.swift ../Package.resolved \
+	$(call swift_sources,../Sources/DictationCore ../Sources/TextRules ../Sources/DictionaryKit ../Sources/SpeechEngine)
+SIMULATOR_TARGET = arm64-apple-ios$(DEPLOYMENT_TARGET)-simulator
+PACKAGE = $(PACKAGE_BUILD_DIR)/$(TARGET).bin-path
+SIMULATOR_PACKAGE = $(PACKAGE_BUILD_DIR)/$(SIMULATOR_TARGET).bin-path
+HOST_PACKAGE = $(PACKAGE_BUILD_DIR)/$(HOST_TARGET).bin-path
+# $(1): a .bin-path file. Shell words that find the modules of that build.
+package_modules = -I "$$(cat "$(1)")"
+# $(1): a .bin-path file, $(2): a library of that build. Shell words that find its modules and link the library.
+package_library = $(call package_modules,$(1)) -L "$$(cat "$(1)")" -l$(2)
 
 SWIFTC = xcrun --sdk $(SDK) swiftc
-# iOS 26 deprecates the legacy CBLAS declarations the shared decoder calls; the
-# new LAPACK headers keep the same 32-bit signatures.
-ACCELERATE_FLAGS = -Xcc -DACCELERATE_NEW_LAPACK
 # Without -j, swiftc compiles one file at a time. (-enable-batch-mode would save a
 # little more, but Swift 6.4 then links temporary objects it never wrote unless
 # given an output file map.)
 SWIFT_JOBS ?= $(shell sysctl -n hw.activecpu)
 SWIFT_PARALLEL_FLAGS = -j$(SWIFT_JOBS)
-SWIFT_COMMON_FLAGS = -swift-version 5 -parse-as-library -target $(TARGET) -sdk "$(SDK_PATH)" $(ACCELERATE_FLAGS) $(SWIFT_PARALLEL_FLAGS) $(SWIFT_FLAGS)
+SWIFT_COMMON_FLAGS = -swift-version 5 -parse-as-library -target $(TARGET) -sdk "$(SDK_PATH)" $(SWIFT_PARALLEL_FLAGS) $(SWIFT_FLAGS)
 KEYBOARD_SWIFT_FLAGS = -module-name SorelloKeyboard -application-extension
 KEYBOARD_LINK_FLAGS = -Xlinker -e -Xlinker _NSExtensionMain
 # A WidgetKit extension. As Xcode links every app extension, the entry point is _NSExtensionMain, which starts the
@@ -262,7 +277,7 @@ info_plist_base = cp "$(1)" "$(2)" && \
 	$(if $(strip $(BUILD_NUMBER)),plutil -replace CFBundleVersion -string "$(BUILD_NUMBER)" "$(2)" &&) \
 	plutil -replace MinimumOSVersion -string "$(DEPLOYMENT_TARGET)" "$(2)"
 
-.PHONY: all binaries check typecheck test lint install-sim run-sim smoke-sim clean configuration parakeet-selection swipe-selection signing-requirements FORCE
+.PHONY: all binaries check typecheck test lint check-binaries install-sim run-sim smoke-sim clean configuration model-selection swipe-selection signing-requirements FORCE
 
 all: signing-requirements $(APP_SIGNATURE)
 
@@ -277,17 +292,19 @@ configuration:
 
 $(CONFIG_STAMP): configuration
 
-# Weights stay outside Git and are copied only into the local app bundle.
-parakeet-selection:
+# Weights stay outside Git and are copied only into the local app bundle. bundle.json lists every file's SHA-256, so
+# its hash stands for the whole model.
+model-selection:
 	@mkdir -p "$(OBJ_DIR)"
-	@printf '%s\n' "$(PARAKEET_BUNDLE_DIR)" > "$(PARAKEET_STAMP).tmp"
-ifneq ($(strip $(PARAKEET_BUNDLE_DIR)),)
-	@test -f "$(PARAKEET_BUNDLE_DIR)/bundle.json" || { echo "PARAKEET_BUNDLE_DIR has no bundle.json." >&2; exit 1; }
-	@shasum -a 256 "$(PARAKEET_BUNDLE_DIR)/bundle.json" >> "$(PARAKEET_STAMP).tmp"
+	@printf '%s\n' "$(SORELLO_MODEL_DIR)" > "$(MODEL_STAMP).tmp"
+ifneq ($(strip $(SORELLO_MODEL_DIR)),)
+	@test -f "$(SORELLO_MODEL_DIR)/bundle.json" || { rm -rf "$(MODEL_STAMP).tmp" "$(MODEL_INSTALL_KEY)" "$(APP_BUNDLE)/Model" \
+		"$(APP_BUNDLE)/model.lock.json" "$(APP_BUNDLE)/ModelNotices"; echo "SORELLO_MODEL_DIR has no bundle.json." >&2; exit 1; }
+	@shasum -a 256 "$(SORELLO_MODEL_DIR)/bundle.json" >> "$(MODEL_STAMP).tmp"
 endif
-	@if cmp -s "$(PARAKEET_STAMP).tmp" "$(PARAKEET_STAMP)"; then rm -f "$(PARAKEET_STAMP).tmp"; else mv "$(PARAKEET_STAMP).tmp" "$(PARAKEET_STAMP)"; fi
+	@if cmp -s "$(MODEL_STAMP).tmp" "$(MODEL_STAMP)"; then rm -f "$(MODEL_STAMP).tmp"; else mv "$(MODEL_STAMP).tmp" "$(MODEL_STAMP)"; fi
 
-$(PARAKEET_STAMP): parakeet-selection
+$(MODEL_STAMP): model-selection
 
 # The swipe bundle stays outside Git too; bundle.json lists every file's SHA-256,
 # so its hash stands for the whole bundle. The stamp has its own recipe, run every
@@ -316,7 +333,7 @@ ifeq ($(PLATFORM),device)
 	done
 endif
 ifeq ($(CHANNEL),appstore)
-	@[ -n "$(strip $(PARAKEET_BUNDLE_DIR))" ] || { echo "CHANNEL=appstore needs PARAKEET_BUNDLE_DIR (the model ships in the app)." >&2; exit 1; }
+	@[ -n "$(strip $(SORELLO_MODEL_DIR))" ] || { echo "CHANNEL=appstore needs SORELLO_MODEL_DIR (the model ships in the app)." >&2; exit 1; }
 endif
 
 # The app and the keyboard share the App Group; the activity extension has no capability at all.
@@ -387,15 +404,38 @@ ifeq ($(PLATFORM),simulator)
 	@derq query -f xml -i "$@" -o "$@.der" --raw
 endif
 
-$(APP_BINARY): $(APP_SOURCES) $(CONFIG_STAMP) $(LINKED_APP_ENTITLEMENTS) $(APPINTENTS_PROTOCOLS) Makefile
+# The SDK a triple builds against.
+package_sdk = case "$(1)" in *-simulator) sdk=iphonesimulator ;; *-macosx*) sdk=macosx ;; *) sdk=iphoneos ;; esac
+# What a triple's libraries are built from besides the sources' contents: the toolchain, the SDK and the list of
+# sources, so a different Xcode or SDK, or a source added or deleted, builds them again. Rewritten only when it changes.
+$(PACKAGE_BUILD_DIR)/%.inputs: FORCE
+	@set -e; $(call package_sdk,$*); mkdir -p "$(@D)"; \
+	printf '%s\n' "$(TOOLCHAIN_DIR)|$(XCODE_BUILD)|$$(xcrun --sdk $$sdk --show-sdk-path)|$$(xcrun --sdk $$sdk --show-sdk-build-version)|$(PACKAGE_SOURCES)" > "$@.$$$$"; \
+	if cmp -s "$@.$$$$" "$@"; then rm -f "$@.$$$$"; else mv "$@.$$$$" "$@"; fi
+
+# Both are kept between runs; neither is an intermediate file make may delete.
+.PRECIOUS: $(PACKAGE_BUILD_DIR)/%.inputs $(PACKAGE_BUILD_DIR)/%.bin-path
+
+# $*: the target triple; the SDK follows from it. Both libraries, then where SwiftPM put them.
+$(PACKAGE_BUILD_DIR)/%.bin-path: $(PACKAGE_BUILD_DIR)/%.inputs $(PACKAGE_SOURCES) Makefile
+	@set -e; $(call package_sdk,$*); \
+	sdk_path=$$(xcrun --sdk $$sdk --show-sdk-path); scratch="$(abspath $(PACKAGE_BUILD_DIR))/$*"; \
+	package() { swift build --package-path .. -c release --triple "$*" --sdk "$$sdk_path" --scratch-path "$$scratch" "$$@"; }; \
+	echo "Building SorelloSpeech and SorelloText for $*"; \
+	package --product SorelloSpeech; package --product SorelloText; \
+	mkdir -p "$(@D)"; package --product SorelloSpeech --show-bin-path > "$@.$$$$"; mv "$@.$$$$" "$@"
+
+$(APP_BINARY): $(APP_SOURCES) $(PACKAGE) $(CONFIG_STAMP) $(LINKED_APP_ENTITLEMENTS) $(APPINTENTS_PROTOCOLS) Makefile
 	@mkdir -p "$(@D)"
 	@$(call write_const_values_map,$(APP_CONST_VALUES))
 	$(SWIFTC) $(SWIFT_COMMON_FLAGS) $(SWIFT_OPTIMIZATION) -module-name Sorello $(call const_values_flags,$(APP_CONST_VALUES)) \
+		$(call package_library,$(PACKAGE),SorelloSpeech) \
 		$(call embedded_entitlements,$(APP_ENTITLEMENTS)) -o "$@" $(APP_SOURCES)
 
-$(KEYBOARD_BINARY): $(KEYBOARD_SOURCES) $(CONFIG_STAMP) $(LINKED_KEYBOARD_ENTITLEMENTS) Makefile
+$(KEYBOARD_BINARY): $(KEYBOARD_SOURCES) $(PACKAGE) $(CONFIG_STAMP) $(LINKED_KEYBOARD_ENTITLEMENTS) Makefile
 	@mkdir -p "$(@D)"
 	$(SWIFTC) $(SWIFT_COMMON_FLAGS) $(SWIFT_OPTIMIZATION) $(KEYBOARD_SWIFT_FLAGS) $(KEYBOARD_LINK_FLAGS) \
+		$(call package_library,$(PACKAGE),SorelloText) \
 		$(call embedded_entitlements,$(KEYBOARD_ENTITLEMENTS)) -o "$@" $(KEYBOARD_SOURCES)
 
 $(ACTIVITY_BINARY): $(ACTIVITY_SOURCES) $(CONFIG_STAMP) $(LINKED_ACTIVITY_ENTITLEMENTS) $(APPINTENTS_PROTOCOLS) Makefile
@@ -407,10 +447,10 @@ $(ACTIVITY_BINARY): $(ACTIVITY_SOURCES) $(CONFIG_STAMP) $(LINKED_ACTIVITY_ENTITL
 
 $(APP_SIGNATURE): $(APP_BINARY) $(KEYBOARD_BINARY) $(ACTIVITY_BINARY) $(APP_ENTITLEMENTS) $(KEYBOARD_ENTITLEMENTS) \
 		$(ACTIVITY_ENTITLEMENTS) Makefile Config/Sorello-Info.plist Config/SorelloKeyboard-Info.plist \
-		Config/SorelloActivity-Info.plist $(ICON_SOURCE) $(PARAKEET_STAMP) Config/Sorello-PrivacyInfo.xcprivacy \
+		Config/SorelloActivity-Info.plist $(ICON_SOURCE) $(MODEL_STAMP) Config/Sorello-PrivacyInfo.xcprivacy \
 		Config/SorelloKeyboard-PrivacyInfo.xcprivacy Config/SorelloActivity-PrivacyInfo.xcprivacy \
-		$(wildcard ../Resources/Parakeet/*) ../scripts/label-localflow-model.py \
-		$(SWIPE_STAMP) $(wildcard ../Resources/Swipe/*) $(APP_FONTS)
+		$(MODEL_INPUTS) \
+		$(SWIPE_STAMP) $(wildcard Resources/Swipe/LICENSE-*) $(APP_FONTS)
 	@rm -rf "$(APPEX_BUNDLE)" "$(ACTIVITY_APPEX_BUNDLE)" "$(APP_BUNDLE)/_CodeSignature" "$(APP_BUNDLE)/embedded.mobileprovision" "$(APP_BUNDLE)/Fonts"
 	@mkdir -p "$(APPEX_BUNDLE)" "$(ACTIVITY_APPEX_BUNDLE)"
 	@cp "$(APP_BINARY)" "$(APP_BUNDLE)/Sorello"
@@ -446,22 +486,20 @@ $(APP_SIGNATURE): $(APP_BINARY) $(KEYBOARD_BINARY) $(ACTIVITY_BINARY) $(APP_ENTI
 		--errors --warnings --output-format human-readable-text "$(ICON_CATALOG)" > "$(OBJ_DIR)/actool.log" 2>&1 || \
 		{ cat "$(OBJ_DIR)/actool.log" >&2; exit 1; }
 	@/usr/libexec/PlistBuddy -c "Merge $(OBJ_DIR)/assets-Info.plist" "$(APP_BUNDLE)/Info.plist" >/dev/null
-ifneq ($(strip $(PARAKEET_BUNDLE_DIR)),)
-	@{ cat "$(PARAKEET_STAMP)"; shasum -a 256 ../Resources/Parakeet/* ../scripts/label-localflow-model.py; } > "$(PARAKEET_INSTALL_KEY).tmp"
-	@# Copying 330 MB is slow, so keep the installed copy while its inputs are unchanged.
-	@if [ -f "$(APP_BUNDLE)/Parakeet/bundle.json" ] && cmp -s "$(PARAKEET_INSTALL_KEY).tmp" "$(PARAKEET_INSTALL_KEY)"; then \
+ifneq ($(strip $(SORELLO_MODEL_DIR)),)
+	@{ cat "$(MODEL_STAMP)"; printf '%s\n' "$(DEPLOYMENT_TARGET)"; shasum -a 256 $(MODEL_INPUTS); } > "$(MODEL_INSTALL_KEY).tmp"
+	@# Copying 138 MB is slow, so keep the installed copy while its inputs are unchanged.
+	@if [ -f "$(APP_BUNDLE)/Model/bundle.json" ] && cmp -s "$(MODEL_INSTALL_KEY).tmp" "$(MODEL_INSTALL_KEY)"; then \
 		echo "Reusing installed model files"; \
 	else \
-		rm -f "$(PARAKEET_INSTALL_KEY)" && rm -rf "$(APP_BUNDLE)/Parakeet" && mkdir -p "$(APP_BUNDLE)/Parakeet" && \
-		cp -R -X "$(PARAKEET_BUNDLE_DIR)/Encoder.mlmodelc" "$(APP_BUNDLE)/Parakeet/" && \
-		cp -X "$(PARAKEET_BUNDLE_DIR)/bundle.json" "$(PARAKEET_BUNDLE_DIR)/frontend.json" "$(PARAKEET_BUNDLE_DIR)/frontend.f32bin" "$(PARAKEET_BUNDLE_DIR)/decoder_joint.json" "$(PARAKEET_BUNDLE_DIR)/decoder_joint.f32bin" "$(PARAKEET_BUNDLE_DIR)/vocabulary.json" "$(APP_BUNDLE)/Parakeet/" && \
-		cp -X ../Resources/Parakeet/* "$(APP_BUNDLE)/Parakeet/" && \
-		$(PYTHON) ../scripts/label-localflow-model.py "$(APP_BUNDLE)/Parakeet" && \
-		cp "$(PARAKEET_INSTALL_KEY).tmp" "$(PARAKEET_INSTALL_KEY)"; \
+		rm -f "$(MODEL_INSTALL_KEY)" && \
+		$(PYTHON) scripts/copy-model.py ../Models/model.lock.json "$(SORELLO_MODEL_DIR)" ../Resources/ModelNotices \
+			"$(APP_BUNDLE)" $(DEPLOYMENT_TARGET) && \
+		cp "$(MODEL_INSTALL_KEY).tmp" "$(MODEL_INSTALL_KEY)"; \
 	fi
-	@rm -f "$(PARAKEET_INSTALL_KEY).tmp"
+	@rm -f "$(MODEL_INSTALL_KEY).tmp"
 else
-	@rm -rf "$(APP_BUNDLE)/Parakeet" "$(PARAKEET_INSTALL_KEY)"
+	@rm -rf "$(APP_BUNDLE)/Model" "$(APP_BUNDLE)/model.lock.json" "$(APP_BUNDLE)/ModelNotices" "$(MODEL_INSTALL_KEY)"
 endif
 ifneq ($(strip $(SWIPE_BUNDLE_DIR)),)
 	@# Swipe typing: exactly the files bundle.json lists, each checked against its
@@ -487,7 +525,7 @@ ifneq ($(strip $(SWIPE_BUNDLE_DIR)),)
 		cp -X "$$src/$$path" "$$dest/$$path"; \
 		[ "$$(shasum -a 256 "$$dest/$$path" | awk '{ print $$1 }')" = "$$digest" ] || fail "$$path does not match its SHA-256 in bundle.json"; \
 	done < "$$list"; \
-	cp -X "$$src/bundle.json" ../Resources/Swipe/* "$$dest/"; \
+	cp -X "$$src/bundle.json" Resources/Swipe/LICENSE-* "$$dest/"; \
 	count=$$(wc -l < "$$list" | tr -d ' '); rm -f "$$list"; \
 	echo "Copied the swipe bundle ($$count files verified)"
 endif
@@ -520,7 +558,8 @@ ipa: all
 appstore-check: $(filter ipa,$(MAKECMDGOALS))
 	@sh scripts/check-appstore-bundle.sh --app "$(APP_BUNDLE)" --ipa "$(IPA)" --bundle-id "$(BUNDLE_ID)" \
 		--app-group "$(APP_GROUP)" --url-scheme "$(URL_SCHEME)" --universal-link "$(UNIVERSAL_LINK)" \
-		--display-name "$(DISPLAY_NAME)" --team-id "$(TEAM_ID)"
+		--display-name "$(DISPLAY_NAME)" --team-id "$(TEAM_ID)" --pin ../Models/model.lock.json \
+		--model-notices ../Resources/ModelNotices
 
 # Apple's own checks, then the upload, with an App Store Connect API key
 # (ASC_KEY_ID, ASC_ISSUER_ID; the .p8 in ~/.appstoreconnect/private_keys). Both
@@ -530,13 +569,13 @@ appstore-validate appstore-upload: appstore-check
 	xcrun altool $(if $(filter appstore-upload,$@),--upload-package,--validate-app) "$(IPA)" -t ios \
 		--api-key "$(ASC_KEY_ID)" --api-issuer "$(ASC_ISSUER_ID)"
 
-check: typecheck test lint
+check: typecheck test lint check-binaries
 
 # Always against the simulator SDK, independent of PLATFORM. The self-test
 # variant is checked too, so it cannot rot outside its builds.
-typecheck:
+typecheck: $(SIMULATOR_PACKAGE)
 	@set -e; sdk=$$(xcrun --sdk iphonesimulator --show-sdk-path); \
-	flags="-typecheck -warnings-as-errors -swift-version 5 -parse-as-library -target arm64-apple-ios$(DEPLOYMENT_TARGET)-simulator -sdk $$sdk $(ACCELERATE_FLAGS) $(SWIFT_PARALLEL_FLAGS) $(SWIFT_FLAGS)"; \
+	flags="-typecheck -warnings-as-errors -swift-version 5 -parse-as-library -target $(SIMULATOR_TARGET) -sdk $$sdk $(SWIFT_PARALLEL_FLAGS) $(SWIFT_FLAGS) $(call package_modules,$(SIMULATOR_PACKAGE))"; \
 	echo "Type-checking the app"; \
 	xcrun --sdk iphonesimulator swiftc $$flags -module-name Sorello $(APP_SOURCES); \
 	echo "Type-checking the app (self-test variant)"; \
@@ -546,21 +585,31 @@ typecheck:
 	echo "Type-checking the Live Activity"; \
 	xcrun --sdk iphonesimulator swiftc $$flags $(ACTIVITY_SWIFT_FLAGS) $(ACTIVITY_SOURCES)
 
-# Shared, HostCore, ActivityCore, KeyboardCore and the shared dictionary are Foundation-only, so their tests run on the Mac.
-test:
+# Shared, HostCore, ActivityCore and KeyboardCore are Foundation-only, and so are the shared modules, so their tests run
+# on the Mac, against the Mac's build of SorelloSpeech.
+test: $(HOST_PACKAGE)
 ifeq ($(strip $(TEST_SOURCES)),)
 	@echo "No iOS host tests yet; skipping."
 else
 	@mkdir -p "$(HOST_BUILD_DIR)"
 	xcrun --sdk macosx swiftc -swift-version 5 -parse-as-library -warnings-as-errors $(SWIFT_PARALLEL_FLAGS) \
 		-sdk "$$(xcrun --sdk macosx --show-sdk-path)" -target $(HOST_TARGET) -module-name SorelloiOSTests \
-		-o "$(HOST_BUILD_DIR)/SorelloiOSTests" $(SHARED_SOURCES) $(INSERTION_CONTEXT_SOURCES) $(HOSTCORE_SOURCES) $(ACTIVITYCORE_SOURCES) $(DICTIONARY_TEST_SOURCES) $(KEYBOARDCORE_SOURCES) $(KEYBOARD_TEST_SOURCES) $(TEST_SOURCES)
+		$(call package_library,$(HOST_PACKAGE),SorelloSpeech) \
+		-o "$(HOST_BUILD_DIR)/SorelloiOSTests" $(SHARED_SOURCES) $(HOSTCORE_SOURCES) $(ACTIVITYCORE_SOURCES) $(KEYBOARDCORE_SOURCES) $(KEYBOARD_TEST_SOURCES) $(TEST_SOURCES)
 	@"$(HOST_BUILD_DIR)/SorelloiOSTests"
 endif
 
 lint:
 	plutil -lint Config/*.plist Config/*.entitlements Config/*.xcprivacy
 	@for script in scripts/*.sh; do sh -n "$$script" || exit 1; done
+
+# The three executables, built for the simulator, name no networking API, and the keyboard and the Live Activity hold
+# nothing of the shared modules they must not reach (scripts/check-binaries.sh).
+CHECK_BUILD_DIR = build/simulator
+check-binaries:
+	@$(MAKE) --no-print-directory binaries PLATFORM=simulator CHANNEL=dev BUILD_DIR="$(CHECK_BUILD_DIR)"
+	@sh scripts/check-binaries.sh "$(CHECK_BUILD_DIR)/obj/Sorello" "$(CHECK_BUILD_DIR)/obj/SorelloKeyboard" \
+		"$(CHECK_BUILD_DIR)/obj/SorelloActivity"
 
 SIM_DEVICE ?= Sorello-Smoke
 SIM_DEVICE_TYPE ?= iPhone 17 Pro
@@ -598,7 +647,7 @@ SMOKE_LOG = $(SMOKE_BUILD_DIR)/obj/selftest.log
 # Transcribes invented speech from `say` inside the self-test build. The app
 # prints only a pass/fail line with timings, never the transcript.
 smoke-sim:
-	@[ -n "$(strip $(PARAKEET_BUNDLE_DIR))" ] || { echo "smoke-sim needs PARAKEET_BUNDLE_DIR (the Parakeet model bundle)." >&2; exit 1; }
+	@[ -n "$(strip $(SORELLO_MODEL_DIR))" ] || { echo "smoke-sim needs SORELLO_MODEL_DIR (a copy of the model)." >&2; exit 1; }
 	@$(MAKE) --no-print-directory all PLATFORM=simulator BUILD_DIR="$(SMOKE_BUILD_DIR)" SWIFT_FLAGS="$(SWIFT_FLAGS) -D SORELLO_SELFTEST"
 	@set -e; $(SIM_RESOLVE); $(SIM_BOOT); \
 	trap '[ "$$booted_here" = 1 ] && xcrun simctl shutdown "$$udid"' EXIT; \
@@ -653,7 +702,7 @@ install-device: all
 smoke-device:
 	@[ -n "$(DEVICE)" ] || { echo "smoke-device needs DEVICE, a name or identifier from 'xcrun devicectl list devices'." >&2; exit 1; }
 ifneq ($(SMOKE_DEVICE_INSTALL),0)
-	@[ -n "$(strip $(PARAKEET_BUNDLE_DIR))" ] || { echo "smoke-device needs PARAKEET_BUNDLE_DIR (the Parakeet model bundle)." >&2; exit 1; }
+	@[ -n "$(strip $(SORELLO_MODEL_DIR))" ] || { echo "smoke-device needs SORELLO_MODEL_DIR (a copy of the model)." >&2; exit 1; }
 	@$(MAKE) --no-print-directory all PLATFORM=device BUILD_DIR="$(SMOKE_DEVICE_BUILD_DIR)" SWIFT_FLAGS="$(SWIFT_FLAGS) -D SORELLO_SELFTEST"
 endif
 	@set -e; $(DEVICE_UNLOCKED); obj="$(SMOKE_DEVICE_BUILD_DIR)/obj"; mkdir -p "$$obj"; \
@@ -713,7 +762,7 @@ E2E_KEEP_PRESENCE = $(strip $(E2E_BACKGROUND)$(E2E_FROM_BACKGROUND))
 # given, a relative one is resolved against the iOS directory.
 e2e-sim: SIM_DEVICE = $(E2E_SIM_DEVICE)
 e2e-sim:
-	@[ -n "$(strip $(PARAKEET_BUNDLE_DIR))" ] || { echo "e2e-sim needs PARAKEET_BUNDLE_DIR (the Parakeet model bundle)." >&2; exit 1; }
+	@[ -n "$(strip $(SORELLO_MODEL_DIR))" ] || { echo "e2e-sim needs SORELLO_MODEL_DIR (a copy of the model)." >&2; exit 1; }
 	@$(MAKE) --no-print-directory all PLATFORM=simulator BUILD_DIR="$(E2E_BUILD_DIR)" SWIFT_FLAGS="$(SWIFT_FLAGS) -D SORELLO_SELFTEST"
 	@set -e; $(SIM_RESOLVE); $(SIM_BOOT); \
 	xcrun simctl terminate "$$udid" "$(BUNDLE_ID)" >/dev/null 2>&1 || true; \
@@ -817,6 +866,9 @@ e2e-sim-probe:
 #   arriving in the foreground admits, judging freshness then: a fresh intent
 #   records, and one past pendingRecordTTL is neither admitted nor rejected.
 # Relaunches end any session; the app is left running with no session.
+# Settings is opened once before the first case. The cases send the app to the background by launching Settings and
+# waiting two seconds, and its first launch in a simulator takes far longer than that: a case that believes the app is
+# behind Settings while it is still in front fails, because an app in front admits a fresh intent, as it should.
 e2e-sim-scenarios:
 	@set -e; $(E2E_SHELL); \
 	until_phase() { i=0; while [ "$$(field dictation.requestID)" != "$$1" ] || [ "$$(field dictation.phase)" != "$$2" ]; do \
@@ -824,6 +876,7 @@ e2e-sim-scenarios:
 	pass() { echo "e2e-scenario: $$1 result=pass"; }; \
 	fail() { echo "e2e-scenario: $$1 result=fail $$2" >&2; exit 1; }; \
 	to_background() { xcrun simctl launch "$$udid" com.apple.Preferences >/dev/null; sleep 2; }; \
+	xcrun simctl launch "$$udid" com.apple.Preferences >/dev/null; sleep 10; \
 	r=$$(uuidgen); intent record "$$r"; launch_app; \
 	until_phase "$$r" recording || fail cancel "not recording: $$(status_of "$$r")"; \
 	intent cancel "$$r"; until_phase "$$r" cancelled || fail cancel "$$(status_of "$$r")"; \

@@ -1,3 +1,6 @@
+// The Mac's alone: the iPhone app carries its model, opens no connection and holds no networking code
+// (ARCHITECTURE.md, sections 9 and 13), so on iOS this file compiles to nothing.
+#if os(macOS)
 import Foundation
 import Synchronization
 
@@ -109,3 +112,4 @@ final class DownloadReceiver: NSObject, URLSessionDataDelegate, Sendable {
         if let error { body?.finish(throwing: error) } else { body?.finish() }
     }
 }
+#endif

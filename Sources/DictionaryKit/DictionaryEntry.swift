@@ -111,6 +111,19 @@ public struct CustomDictionary: Equatable, Sendable {
 
     public init() {}
 
+    /// The dictionary that holds exactly `entries` and `ignore`, in that order, as a store rebuilds it from what it
+    /// saved. Nil when it could not have been saved that way: an entry or a key that repeats, one whose key is not
+    /// valid (pin P6), or more than the dictionary holds. Entries are taken as they are given, so a store validates
+    /// each one first (`DictionaryValidation.validate`), as it validates a new one.
+    public init?(entries: [DictionaryEntry], ignore: [DictionaryKey]) {
+        for entry in entries {
+            guard !contains(entry.key), upsert(entry) == nil else { return nil }
+        }
+        for key in ignore {
+            guard !isIgnored(key), addIgnore(key) == nil else { return nil }
+        }
+    }
+
     public func contains(_ key: DictionaryKey) -> Bool { entries.contains { $0.key == key } }
 
     public func isIgnored(_ key: DictionaryKey) -> Bool { ignore.contains(key) }

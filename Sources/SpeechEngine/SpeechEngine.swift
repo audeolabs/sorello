@@ -199,14 +199,14 @@ public actor SpeechEngine: SpeechTranscribing {
             readinessHub.publish(.preparing)
             do {
                 model = try loader()
-                Diagnostics.record("speech.prepared", ["seconds": Self.seconds(since: started)])
+                Self.record("speech.prepared", ["seconds": Self.seconds(since: started)])
                 outcome = .ready
             } catch {
-                Diagnostics.record("speech.preparationFailed", ["seconds": Self.seconds(since: started)])
+                Self.record("speech.preparationFailed", ["seconds": Self.seconds(since: started)])
                 outcome = .failed(error)
             }
         } else {
-            Diagnostics.record("speech.modelMissing")
+            Self.record("speech.modelMissing")
             outcome = .failed(.modelMissing)
         }
         readinessHub.publish(outcome)
@@ -258,6 +258,17 @@ public actor SpeechEngine: SpeechTranscribing {
         }
         return SpeechStream(id: id, engine: self, snapshot: dictionary(options.appBundleID),
                             retainsAudio: options.retainForCorrection)
+    }
+
+    /// Returns once the model work running now has ended. A stream cancelled before this is called, and one whose
+    /// `finish` has returned, does no model work after it returns. The iPhone app lets the engine go when nothing uses
+    /// it and never holds two models at once (ARCHITECTURE.md, section 13), so it waits for this before it counts a
+    /// stream as ended. The engine's work all runs on its one serial queue, so whatever runs there now ends before
+    /// this does.
+    public nonisolated func waitUntilModelWorkEnds() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            queue.async { continuation.resume() }
+        }
     }
 
     /// Stops a running correction check, so finishing a dictation never waits behind one.
@@ -518,6 +529,15 @@ public actor SpeechEngine: SpeechTranscribing {
     }
 
     private static func uptime() -> TimeInterval { ProcessInfo.processInfo.systemUptime }
+
+    /// Records one of the engine's events through `Diagnostics` (ARCHITECTURE.md, section 9), on the Mac only: the
+    /// iPhone app writes no log at all (iOS/ARCHITECTURE.md, "Privacy and security invariants"), and the runtime it
+    /// used before wrote none.
+    private static func record(_ event: StaticString, _ values: KeyValuePairs<StaticString, Double> = [:]) {
+        #if os(macOS)
+        Diagnostics.record(event, values)
+        #endif
+    }
 
     private static func seconds(since start: ContinuousClock.Instant) -> Double {
         let elapsed = ContinuousClock.now - start

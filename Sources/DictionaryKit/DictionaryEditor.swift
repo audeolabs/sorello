@@ -39,14 +39,22 @@ public enum DictionaryChangeError: Error, Equatable, Sendable {
 }
 
 /// Every change to the entries and the ignore list is made here. Each call returns the proposed state; the store
-/// writes it before publishing it.
-struct DictionaryEditor: Sendable {
+/// writes it before publishing it. It is public, with `CustomDictionary.init(entries:ignore:)`, for an app that keeps
+/// its dictionary in a store of its own, as the iPhone app does (ARCHITECTURE.md, section 13): that app edits and
+/// rebuilds its dictionary by these rules and has no copy of them.
+public struct DictionaryEditor: Sendable {
     let encoder: BPEEncoder?
 
-    var canEdit: Bool { encoder != nil }
+    /// An editor that checks entries against the speech model's vocabulary. Without one (nil) it changes nothing.
+    public init(encoder: BPEEncoder?) {
+        self.encoder = encoder
+    }
+
+    /// Whether anything can be changed: only with a vocabulary.
+    public var canEdit: Bool { encoder != nil }
 
     /// Adds, or edits the entry `original` (its key may change).
-    func saving(text: String, strength: Float, replacing original: DictionaryKey?,
+    public func saving(text: String, strength: Float, replacing original: DictionaryKey?,
                 in dictionary: CustomDictionary) -> Result<CustomDictionary, DictionaryChangeError> {
         guard let encoder else { return .failure(.noVocabulary) }
         switch DictionaryValidation.validate(text: text, strength: strength, encoder: encoder) {
@@ -64,14 +72,15 @@ struct DictionaryEditor: Sendable {
     }
 
     /// nil when there is nothing to remove.
-    func removing(_ key: DictionaryKey,
+    public func removing(_ key: DictionaryKey,
                   in dictionary: CustomDictionary) -> Result<CustomDictionary, DictionaryChangeError>? {
         guard canEdit else { return .failure(.noVocabulary) }
         var updated = dictionary
         return updated.remove(key) ? .success(updated) : nil
     }
 
-    func ignoring(_ key: DictionaryKey,
+    /// Adds `key` to the ignore list. Ignoring a key that is ignored already changes nothing.
+    public func ignoring(_ key: DictionaryKey,
                   in dictionary: CustomDictionary) -> Result<CustomDictionary, DictionaryChangeError> {
         guard canEdit else { return .failure(.noVocabulary) }
         var updated = dictionary
@@ -83,7 +92,7 @@ struct DictionaryEditor: Sendable {
     }
 
     /// nil when the key is not ignored.
-    func unignoring(_ key: DictionaryKey,
+    public func unignoring(_ key: DictionaryKey,
                     in dictionary: CustomDictionary) -> Result<CustomDictionary, DictionaryChangeError>? {
         guard canEdit else { return .failure(.noVocabulary) }
         var updated = dictionary

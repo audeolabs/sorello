@@ -18,9 +18,10 @@ Every statement in it describes the code as it is on `main`.
 ## Goal
 
 A Wispr Flow–style iPhone experience that is fully local: a custom keyboard
-with a dictation button, backed by the same bundled Parakeet model the macOS
-app uses. Audio, transcripts and model inference stay on the device. There is
-no network code, telemetry, analytics or logging.
+with a dictation button, backed by the same speech model and the same speech
+engine the macOS app uses, which the app carries. Audio, transcripts and model
+inference stay on the device. There is no network code, telemetry, analytics
+or logging.
 
 Custom keyboards do not appear everywhere. iOS substitutes the system keyboard
 in secure text fields and phone-pad fields, and apps can reject custom
@@ -29,8 +30,8 @@ keyboards entirely. Those fields are out of scope.
 ## Platform constraints
 
 1. **Keyboard extensions cannot use the microphone** and have a small memory
-   limit (tens of MB). The model (about 330 MB compiled encoder) and audio
-   capture live in the containing app.
+   limit (tens of MB). The model (about 138 MB) and audio capture live in the
+   containing app.
 2. **An app cannot start recording from the background**, except while
    iOS runs one of its `AudioRecordingIntent`s, which must show a Live
    Activity as recording starts or iOS stops the recording
@@ -85,7 +86,7 @@ These lead to the "Flow session" design:
 iOS/
   ARCHITECTURE.md          this contract
   README.md                build, run, simulator, device and manual-test instructions
-  Makefile                 swiftc + make build (no Xcode project, no SwiftPM)
+  Makefile                 swiftc + make build (no Xcode project); SwiftPM builds the shared modules
   Shared/                  protocol, store and settings: app, keyboard and tests
   HostCore/                host logic: app and tests
   KeyboardCore/            keyboard logic: keyboard and tests
@@ -100,22 +101,27 @@ iOS/
 ```
 
 - `Shared/`, `HostCore/`, `ActivityCore/` and `KeyboardCore/` import only Foundation, plus
-  CoreFoundation for Darwin notifications in `Shared/` and Accelerate for the
-  tap and word models in `KeyboardCore/`, so they compile for the macOS test
-  runner. UIKit, SwiftUI, AVFoundation and Core ML belong in
-  `App/` and `Keyboard/`.
+  CoreFoundation for Darwin notifications in `Shared/`, Accelerate for the
+  tap and word models in `KeyboardCore/`, and two of Sorello's shared modules,
+  which are Foundation-only too: `TextRules` in `Shared/` and `DictionaryKit`
+  in `HostCore/`. So they compile for the macOS test runner. UIKit, SwiftUI,
+  AVFoundation and Core ML belong in `App/` and `Keyboard/`.
+- The shared modules are the package's at the repository root
+  ([../ARCHITECTURE.md](../ARCHITECTURE.md), sections 2 and 13), linked as
+  static libraries that SwiftPM builds. This app has no copy of what they
+  hold.
 - The app is compiled from `App/`, `Shared/`, `HostCore/`, `ActivityCore/`,
-  `Activity/SessionActivityAttributes.swift`,
-  `Activity/SessionControlIntent.swift` and these macOS sources:
-  - `Sources/Parakeet/*.swift`: the model runtime (`LocalParakeetService`).
-  - `Sources/Dictionary/*.swift`: the custom dictionary
-    ([Custom dictionary](#custom-dictionary)).
-  - `Sources/LocalDictationCore.swift` and
-    `Sources/SpokenNumberFormatter.swift`: "press enter", spoken delimiters
-    and spoken numbers.
+  `Activity/SessionActivityAttributes.swift` and
+  `Activity/SessionControlIntent.swift`, and links `SorelloSpeech`:
+  - `SpeechEngine`: the model runtime ([Transcription](#transcription)).
+  - `DictionaryKit`: the custom dictionary's entries, validation, tokenizer,
+    bias and casing ([Custom dictionary](#custom-dictionary)).
+  - `TextRules`: "press enter", spoken delimiters and spoken numbers, and
+    fitting a dictation to the text around the cursor.
+  - `DictationCore`: the speech port's types the engine speaks in.
 - The keyboard is compiled from `Keyboard/`, `Shared/` and `KeyboardCore/`
-  only. It never links Parakeet, the dictionary, `LocalDictationCore` or
-  `HostCore`, and it never captures audio.
+  and links `SorelloText`, which is `TextRules` alone. It never links
+  `SpeechEngine`, `DictionaryKit` or `HostCore`, and it never captures audio.
 - The Live Activity extension is compiled from `Activity/`, `ActivityCore/`
   and `KeyboardCore/RidgeMark.swift` with `KeyboardCore/KeyboardLayout.swift`
   (the ridge mark and its box) and `KeyboardCore/DotWave.swift` (the strip's
@@ -334,7 +340,7 @@ struct DictationResult: Codable, Equatable, Sendable {
     var schema: Int = DictationProtocol.schema
     var requestID: UUID
     var hostRunID: UUID
-    var text: String               // already post-processed by LocalDictationCore
+    var text: String               // already post-processed by the text rules (DictationRules)
     var pressEnter: Bool
     var createdAt: Date
 }
@@ -562,8 +568,8 @@ none runs after `cancel()` returns on main.
 lifecycle, idle expiry, reconciliation, run recovery, the watchdog, capture
 supervision, transcription and status publishing. It is Foundation-only and
 tested on the Mac. Platform hooks (`HostEnvironment`: the clock, foreground
-state, protected-data availability, UIKit background tasks and
-`LocalDictationCore` formatting) are injected. `HostSessionController` (App)
+state, protected-data availability, UIKit background tasks and the text
+rules' formatting) are injected. `HostSessionController` (App)
 drives it ([Host app](#host-app-app)).
 
 ### Session
@@ -797,6 +803,19 @@ synthetic source in self-test builds, a fake in tests.
   most one runtime is alive: it is released only while nothing prepares,
   transcribes, runs a "Find strength" check or drains a stream, and a new one
   is created only after that.
+- **The runtime** is the shared `SpeechEngine` over the model the app carries
+  in `Model/` (the build the pin lists for iOS, which the build checked),
+  loaded where it lies: no store, no copy and no download
+  ([../ARCHITECTURE.md](../ARCHITECTURE.md), section 13). The engine checks
+  every file against the manifest each time it loads. The app can transcribe
+  only when it carries the model and runs on arm64; otherwise the model is
+  unavailable. The engine's failures become the app's own: a cancellation is
+  a `CancellationError`, a failed preparation `.modelFailed`, and any other
+  failure `.transcriptionFailed`. A stream counts as drained, and a batch
+  transcription that ends early returns, only once the engine's model work
+  for it has ended (`SpeechEngine.waitUntilModelWorkEnds`), so a runtime is
+  never released or replaced under that work. The engine records no
+  diagnostics on iOS.
 - **Preparation backoff** (`ModelPreparationBackoff`, pure, tested). After
   the n-th failed preparation in a row, the next automatic attempt (an
   admission, the user's session start, or a transcription waiting for
@@ -819,9 +838,10 @@ synthetic source in self-test builds, a fake in tests.
   starts model work.
 - Each transcription runs inside a UIKit background task; expiry fails the
   request with `.backgroundTimeExpired`.
-- After transcription, the core formats the text with
-  `LocalDictationCore.process(text, macros: [], pressEnterEnabled:,
-  spokenDelimitersEnabled:, spokenNumbersEnabled:)`, writes `result-R.json`,
+- After transcription, the core formats the text with the shared
+  `DictationRules.process(text, options:, promptStyle: false)`, with no
+  macros, no prompt tag and no context (`TextRuleOptions(pressEnterCommand:,
+  spokenNumbers:, spokenDelimiters:, promptTag: "")`), writes `result-R.json`,
   posts `.result`, then publishes `completed`. A failed result write fails the
   request with `.transcriptionFailed`.
 - **Memory.** On a memory warning the model runtime is released as soon as
@@ -844,14 +864,20 @@ user's own "Start session" tap, does.
 
 ### Custom dictionary
 
-The macOS custom dictionary (`Sources/Dictionary`: a fixed bonus per entry
-with a strength) decodes iPhone dictations too. There is no correction
-detection on iOS: entries are added by hand.
+The shared custom dictionary (`DictionaryKit`: a fixed bonus per entry with a
+strength) decodes iPhone dictations as it decodes the Mac's. There is no
+correction detection on iOS: entries are added by hand.
 
 - **Storage.** The host app's own `UserDefaults.standard`, never the App
-  Group, with the macOS keys and payloads (`custom_dictionary`,
-  `custom_dictionary_ignore`, `DictionaryStorage` JSON version 1). The iOS UI
-  shows no ignore list but keeps what is stored.
+  Group, under the keys and in the payloads the earlier build of this app
+  wrote (`custom_dictionary`, `custom_dictionary_ignore`, `DictionaryStorage`
+  JSON version 1: `{"entries":[{"strength":…,"text":…}],"version":1}` and
+  `{"ignore":[…],"version":1}`, sorted keys). The dictionary's value and its
+  editor are `DictionaryKit`'s (`CustomDictionary`, `DictionaryEditor`), which
+  validate every entry and refuse what could not have been saved. Only this
+  storage is the app's own (`HostCore/DictionaryStorage.swift`, ported from
+  the earlier build), because the Mac app keeps its dictionary in a file of
+  another shape. The iOS UI shows no ignore list but keeps what is stored.
 - **`DictionaryLibrary`** (HostCore, `@MainActor`, tested) owns loading,
   edits and persistence. Every edit is validated, persisted, then published,
   and raises `revision`. Without a vocabulary nothing can be edited. Saved
@@ -870,10 +896,10 @@ detection on iOS: entries are added by hand.
   foreground only and in memory only, with its own `MicrophoneCapture` and
   `DictationSampleBuffer`. A running Flow session is ended first and started
   again when the sheet closes, if the app is still in front; it is not offered
-  while a dictation is in progress. `LocalParakeetService.probeStrength`
+  while a dictation is in progress. `SpeechEngine.probeStrength`
   transcribes the samples with the dictionary minus the word, then re-decodes
   the same encoder output with the word at each of `VerifyDecision.strengths`
-  (×1 to ×8). `StrengthProbe` (pure, `Sources/Dictionary`) decides "already
+  (×1 to ×8). `StrengthProbe` (pure, `DictionaryKit`) decides "already
   recognized", "recognized at ×n" (the decode contains the word, and every
   difference from the unboosted transcript is a block whose new side is
   exactly the word and whose old side has at most two words more), or "not
@@ -914,10 +940,11 @@ transcripts or other user data.
   - It calls `setAllowHapticsAndSystemSoundsDuringRecording(true)`, because
     iOS otherwise mutes the keyboard's haptics for the whole session.
   - Audio is never written to disk or logged.
-- **`ParakeetTranscriber`** wraps `TranscriptionEngine` with the Parakeet
-  runtime, `LocalParakeetService`, which loads only the 15 s encoder function
-  (as on macOS) to bound memory. The model loads from the app
-  bundle (`Sorello.app/Parakeet/`). It keeps the last 10 dictation
+- **`ParakeetTranscriber`** wraps `TranscriptionEngine` with the shared
+  `SpeechEngine`, whose encoder holds one 15 s function, as on macOS, which
+  bounds memory. The model loads where it lies in the app bundle
+  (`Sorello.app/Model/`), with no store and no copy
+  ([Transcription](#transcription)). It keeps the last 10 dictation
   measurements in memory for Diagnostics.
 - **App-only preferences** (`AppPreferences`, the app's own `UserDefaults`):
   onboarding completion, "Use iPhone microphone", and the last model
@@ -3138,9 +3165,15 @@ app reads only the count. The models are fixed.
   `PlugIns/SorelloKeyboard.appex` and `PlugIns/SorelloActivity.appex`.
   The default platform is the arm64 simulator; `PLATFORM=device` builds for
   arm64 devices.
-  - All three are compiled for `arm64-apple-ios26.0[-simulator]` with
-    `-Xcc -DACCELERATE_NEW_LAPACK`, because the iOS 26 SDK deprecates the
-    CBLAS interface the shared decoder uses.
+  - All three are compiled for `arm64-apple-ios26.0[-simulator]`.
+  - The shared modules come from the package: SwiftPM builds its two static
+    libraries for each target triple in `build/package/<triple>/`
+    (`swift build -c release --product … --triple … --sdk …`), again whenever
+    the package's manifest or a source of those modules changes, and says
+    where it put them (`--show-bin-path`). The app links `SorelloSpeech`, the
+    keyboard `SorelloText`, the Live Activity neither, and the host tests the
+    Mac's `SorelloSpeech`. The first build of a checkout fetches the package's
+    one dependency, Sparkle, which only the Mac app links.
   - The keyboard is compiled with `-application-extension`, the
     `_NSExtensionMain` entry point and module `SorelloKeyboard`; the Live
     Activity likewise, as module `SorelloActivity`.
@@ -3155,17 +3188,30 @@ app reads only the count. The models are fixed.
   - Every build compiles the app icon into `Assets.car` with `actool`,
     records Xcode's build metadata (`DTXcode`, `DTSDKBuild` and the rest) in
     every Info.plist, copies each target's privacy manifest, and copies the
-    display face and its license into the app's `Fonts/` (`UIAppFonts`).
-- `PARAKEET_BUNDLE_DIR` copies the model into `Sorello.app/Parakeet/` and
-  relabels it with `scripts/label-localflow-model.py`; repeat builds keep an
-  unchanged copy. `SWIPE_BUNDLE_DIR` adds swipe typing
+    display face and its license, the repository's one copy in
+    `../Resources/Fonts`, into the app's `Fonts/` (`UIAppFonts`).
+- `SORELLO_MODEL_DIR` is a local copy of the model's build that
+  `../Models/model.lock.json` lists for iOS, as it is for the Mac app.
+  `scripts/copy-model.py` takes the first build in the pin that an iPhone on
+  `DEPLOYMENT_TARGET` meets, refuses a copy whose `bundle.json` is not that
+  build's or in which a file does not match the manifest, and copies exactly
+  the manifest's files into `Sorello.app/Model/`, each checked as it is
+  written, with the pin as `model.lock.json` and the model's notices
+  (`../Resources/ModelNotices`, its licence and attribution) in
+  `ModelNotices/`. On a failure nothing of the model is left. Repeat builds
+  keep an unchanged copy. `SWIPE_BUNDLE_DIR` adds swipe typing
   ([Swipe typing](#swipe-typing)).
 - `make -C iOS check` runs:
   1. a simulator type-check, with `-warnings-as-errors`, of the app, the app's
      self-test variant, the keyboard and the Live Activity;
   2. the host tests ([Testing and verification](#testing-and-verification));
   3. lint: `plutil -lint` of the plists, entitlements and privacy manifests,
-     and `sh -n` of `scripts/*.sh`.
+     and `sh -n` of `scripts/*.sh`;
+  4. a simulator build of the three executables, and
+     `scripts/check-binaries.sh` on them: none names a networking API, as an
+     undefined symbol or a linked library; the keyboard holds nothing of
+     `SpeechEngine`, `DictionaryKit` or `DictationCore`; and the Live Activity
+     nothing of any shared module.
 - `make PLATFORM=device binaries` compiles and links without signing. Device
   builds need `CODESIGN_IDENTITY`, `TEAM_ID` and three provisioning profiles:
   `APP_PROFILE` and `KEYBOARD_PROFILE` with the App Group, and
@@ -3235,7 +3281,10 @@ app reads only the count. The models are fixed.
    by either process, or on a run change. There is no history.
 3. There are no network APIs, no telemetry and no logging in any iOS target.
    The only output is the self-test build's content-free `Sorello
-   self-test:` lines.
+   self-test:` lines. The shared modules hold no networking code on iOS (the
+   model's downloader is the Mac's alone) and record no diagnostics there;
+   `make -C iOS check` and the App Store checker fail if an executable names a
+   networking API.
 4. URLs and Darwin notifications carry no authority. A URL, the custom scheme
    or the universal link, can never start capture. The keyboard opens the
    universal link universal-links-only when the build sets one, so no other
@@ -3275,12 +3324,12 @@ app reads only the count. The models are fixed.
 
 ### Host tests (`make -C iOS test`)
 
-- The host test binary is compiled for macOS from `Shared/`, `HostCore/`,
+- The host test binary is compiled for macOS 26 from `Shared/`, `HostCore/`,
   `ActivityCore/`, `KeyboardCore/`, `Keyboard/SwipeEngine.swift` (with a fake encoder),
   `Keyboard/AutocorrectLoader.swift`, `Keyboard/KeyboardMessages.swift`,
-  `Sources/Dictionary/*.swift`, `Sources/Parakeet/LocalParakeetCore.swift`,
-  `Sources/Parakeet/ParakeetSilenceCompactor.swift` and `Tests/`. Every pure
-  rule in this contract has tests there. They use synthetic fixtures only.
+  `Keyboard/BundleModelLoader.swift` and `Tests/`, and links the Mac's build of
+  `SorelloSpeech`. Every pure rule in this contract has tests there; the shared
+  modules have their own in the package. They use synthetic fixtures only.
 - `FakeTextHost` models the measured proxy: UTF-16 or grapheme offsets,
   offsets past either end ignored, context windows (whole, UIKit's sentences,
   line-break-only, or a fixed grapheme window), lagging adjustments,
@@ -3313,9 +3362,10 @@ app reads only the count. The models are fixed.
   onboarding, the bounce and adoption, field binding (Reminders' title, then
   its notes mid-request; another app opened mid-request), cancel, the host
   terminated during recording, and idle expiry.
-- The simulator has no Neural Engine; it runs the encoder on the CPU and
-  prepares it on every cold launch (about 72 s and 840 MB), so simulator
-  timings say nothing about devices.
+- The simulator has no Neural Engine; it runs the encoder on the CPU (with
+  kea-b-0.1 on an M5 Pro: about 4.5 s to prepare at first launch, 1.2 s to
+  transcribe 2.4 s of speech, 120 MB at peak), so simulator timings say
+  nothing about devices.
 
 ### Manual verification
 
@@ -3387,7 +3437,9 @@ merge (AGENTS.md).
 
 ### Reference measurements
 
-iPhone 15 Pro, iOS 26.6.2, 2.42 s of invented synthetic speech:
+iPhone 15 Pro, iOS 26.6.2, 2.42 s of invented synthetic speech, with the
+runtime and model the app used before it moved onto the shared `SpeechEngine`
+and kea-b-0.1, which have not been measured on a device yet:
 
 | Compute | Preparation | Transcription | Peak footprint |
 | --- | --- | --- | --- |

@@ -53,6 +53,29 @@ struct PinnedModelTests {
         #expect(!unlisted.isOnThisMac)
     }
 
+    /// An app's copy is judged on the system the app runs on: an iPhone uses a build the pin lists for iPhones, which
+    /// a Mac never takes, and a build the pin lists for Macs alone is never an iPhone's.
+    @Test func aCarriedCopyIsJudgedOnTheSystemItRunsOn() throws {
+        defer { try? FileManager.default.removeItem(at: base) }
+        let build = ModelDownloadTests.Build()
+        let carried = base.appendingPathComponent("Sorello.app/Model", isDirectory: true)
+        try write(build, to: carried)
+        let forIPhones = try ModelPin(data: Data("""
+            {"model": "kea-invented", "manifest": "bundle.json", "source": "\(ModelDownloadTests.source)",
+             "builds": [{"directory": "ios26", "manifest_sha256": "\(build.identity)", "bytes": \(build.size),
+                         "requires": {"ios": "26.0"}}]}
+            """.utf8))
+        let iPhone = MacDescription(system: try #require(SystemVersion("26.0")), platform: .iOS)
+        let onIPhone = PinnedModel(pin: forIPhones, storeDirectory: store, carriedDirectory: carried, mac: iPhone)
+        #expect(onIPhone.carriedDirectory == carried)
+        #expect(onIPhone.build?.directory == "ios26")
+        let onMac = PinnedModel(pin: forIPhones, storeDirectory: store, carriedDirectory: carried, mac: try mac("27.2"))
+        #expect(onMac.carriedDirectory == nil)
+        #expect(onMac.build == nil)
+        #expect(PinnedModel(pin: build.pin, storeDirectory: store, carriedDirectory: carried, mac: iPhone)
+            .carriedDirectory == nil, "A build the pin lists for Macs alone is not an iPhone's")
+    }
+
     /// The dictionary reads the vocabulary only from a stored copy whose manifest is pinned and whose file matches it.
     @Test func theVocabularyComesFromAVerifiedStoredCopy() throws {
         defer { try? FileManager.default.removeItem(at: base) }

@@ -8,8 +8,8 @@ public enum ModelPinError: Error, Sendable, Equatable {
     case notHTTPS
 }
 
-/// A macOS version as the pin writes it, "26" or "26.0" or "26.0.1", compared as numbers, so 9.0 comes before 10.0
-/// and 26.0 equals 26.
+/// A macOS or iOS version as the pin writes it, "26" or "26.0" or "26.0.1", compared as numbers, so 9.0 comes before
+/// 10.0 and 26.0 equals 26.
 public struct SystemVersion: Sendable, Comparable, Hashable, CustomStringConvertible {
     /// Major, minor and patch; a part not written is 0.
     public let parts: [Int]
@@ -39,29 +39,45 @@ public struct SystemVersion: Sendable, Comparable, Hashable, CustomStringConvert
     public var description: String { parts.map(String.init).joined(separator: ".") }
 }
 
-/// What a build's requirements are judged against. Today a build can require only a lowest macOS version, so that is
-/// all this holds; a fact about the hardware joins it when a requirement in the pin needs one.
+/// What a build's requirements are judged against: which system this is, a Mac's or an iPhone's, and its version. The
+/// type keeps the Mac app's name; on an iPhone it describes the iPhone. A fact about the hardware joins it when a
+/// requirement in the pin needs one.
 public struct MacDescription: Sendable, Equatable {
-    /// The system's version.
-    public var system: SystemVersion
-
-    /// A Mac running `system`.
-    public init(system: SystemVersion) {
-        self.system = system
+    /// The systems a build can name in `requires`.
+    public enum Platform: Sendable, Equatable {
+        /// A Mac, which reads `macos`.
+        case macOS
+        /// An iPhone, which reads `ios`.
+        case iOS
     }
 
-    /// The Mac this process runs on.
+    /// The system's version.
+    public var system: SystemVersion
+    /// Which system this is.
+    public var platform: Platform
+
+    /// A Mac running `system`, or with `platform`, an iPhone running it.
+    public init(system: SystemVersion, platform: Platform = .macOS) {
+        self.system = system
+        self.platform = platform
+    }
+
+    /// The Mac, or the iPhone, this process runs on.
     public static func current() -> MacDescription {
+        #if os(iOS)
+        MacDescription(system: SystemVersion(ProcessInfo.processInfo.operatingSystemVersion), platform: .iOS)
+        #else
         MacDescription(system: SystemVersion(ProcessInfo.processInfo.operatingSystemVersion))
+        #endif
     }
 }
 
 /// The pin, `Models/model.lock.json` (ARCHITECTURE.md, section 5, "Getting the model"): which model Sorello uses,
-/// where its builds are, and what each needs of the Mac. The app ships it as `Contents/Resources/model.lock.json`,
-/// and it is all Sorello knows about where the model is and what it must be. Every byte downloaded is checked against
-/// it before anything is loaded.
+/// where its builds are, and what each needs of the Mac or the iPhone. The Mac app ships it as
+/// `Contents/Resources/model.lock.json`, and it is all Sorello knows about where the model is and what it must be.
+/// Every byte downloaded is checked against it before anything is loaded.
 public struct ModelPin: Sendable, Equatable {
-    /// One complete model under `source`, for the Macs that meet its requirements.
+    /// One complete model under `source`, for the Macs and iPhones that meet its requirements.
     public struct Build: Sendable, Equatable {
         /// The build's directory under `source`, a relative path.
         public let directory: String
@@ -69,12 +85,19 @@ public struct ModelPin: Sendable, Equatable {
         public let manifestSHA256: String
         /// The whole build's size, `bundle.json` included. A download never writes more.
         public let bytes: Int64
-        /// The lowest macOS the build runs on; nil when it names none.
-        public let minimumSystem: SystemVersion?
+        /// The lowest macOS the build runs on; nil when it names none, and then it runs on no Mac.
+        public let minimumMacOS: SystemVersion?
+        /// The lowest iOS the build runs on; nil when it names none, and then it runs on no iPhone.
+        public let minimumIOS: SystemVersion?
 
-        /// Whether `mac` meets every requirement of this build.
+        /// Whether `mac` meets every requirement of this build. Each system reads only its own: a Mac `macos`, an
+        /// iPhone `ios`. A build fits only a system it names.
         public func fits(_ mac: MacDescription) -> Bool {
-            minimumSystem.map { mac.system >= $0 } ?? true
+            let minimum = switch mac.platform {
+            case .macOS: minimumMacOS
+            case .iOS: minimumIOS
+            }
+            return minimum.map { mac.system >= $0 } ?? false
         }
     }
 
@@ -106,7 +129,7 @@ public struct ModelPin: Sendable, Equatable {
                 throw .unreadable
             }
             guard let minimum = Self.judgeable(requires) else { continue }
-            builds.append(try Self.build(fields, minimumSystem: minimum))
+            builds.append(try Self.build(fields, minimumMacOS: minimum.macOS, minimumIOS: minimum.iOS))
         }
         self.init(model: model, source: source, builds: builds)
     }
@@ -123,7 +146,8 @@ public struct ModelPin: Sendable, Equatable {
         self.builds = builds
     }
 
-    /// The first build whose requirements `mac` meets; nil when none does, which is an answer, not an error.
+    /// The first build whose requirements `mac`, a Mac or an iPhone, meets; nil when none does, which is an answer, not
+    /// an error.
     public func build(for mac: MacDescription) -> Build? {
         builds.first { $0.fits(mac) }
     }
@@ -142,25 +166,30 @@ public struct ModelPin: Sendable, Equatable {
 
     // MARK: - Reading
 
-    /// The requirement keys this version knows how to judge.
-    private static let knownRequirements: Set<String> = ["macos"]
+    /// The requirement keys this version knows how to judge: the lowest macOS and the lowest iOS.
+    private static let knownRequirements: Set<String> = ["macos", "ios"]
 
-    /// The lowest system `requires` names, `.some(nil)` when it names none, or nil when the build must be passed
-    /// over: it requires something unknown, or a known requirement cannot be judged.
-    private static func judgeable(_ requires: [String: Any]) -> SystemVersion?? {
+    /// The lowest macOS and the lowest iOS `requires` names, each nil when it names none; or nil when the build must be
+    /// passed over, on both systems: it requires something unknown, or a known requirement cannot be judged.
+    private static func judgeable(_ requires: [String: Any]) -> (macOS: SystemVersion?, iOS: SystemVersion?)? {
         guard Set(requires.keys).isSubset(of: knownRequirements) else { return nil }
-        guard let value = requires["macos"] else { return .some(nil) }
-        guard let text = value as? String, let version = SystemVersion(text) else { return nil }
-        return .some(version)
+        var minimum: [String: SystemVersion] = [:]
+        for (key, value) in requires {
+            guard let text = value as? String, let version = SystemVersion(text) else { return nil }
+            minimum[key] = version
+        }
+        return (minimum["macos"], minimum["ios"])
     }
 
-    private static func build(_ fields: [String: Any], minimumSystem: SystemVersion?) throws(ModelPinError) -> Build {
+    private static func build(_ fields: [String: Any], minimumMacOS: SystemVersion?,
+                              minimumIOS: SystemVersion?) throws(ModelPinError) -> Build {
         guard let directory = fields["directory"] as? String, isRelativePath(directory),
               let digest = fields["manifest_sha256"] as? String, isDigest(digest),
               let bytes = wholeNumber(fields["bytes"]), bytes > 0 else {
             throw .unreadable
         }
-        return Build(directory: directory, manifestSHA256: digest, bytes: bytes, minimumSystem: minimumSystem)
+        return Build(directory: directory, manifestSHA256: digest, bytes: bytes, minimumMacOS: minimumMacOS,
+                     minimumIOS: minimumIOS)
     }
 
     /// A path that stays where it is put: not empty, not absolute, no empty, `.` or `..` part, no backslash or NUL.

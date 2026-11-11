@@ -100,7 +100,7 @@ struct DictationResult: Codable, Equatable, Sendable {
     var schema: Int = DictationProtocol.schema
     var requestID: UUID
     var hostRunID: UUID
-    var text: String               // already post-processed by LocalDictationCore
+    var text: String               // already post-processed by the text rules (DictationRules)
     var pressEnter: Bool
     var createdAt: Date
 }

@@ -8,7 +8,7 @@
       "directory": "macos26",
       "manifest_sha256": "84d9aea06797cb2d08c77c1514edca0885f179a48a5d5e16ee72d47d1d4c870c",
       "bytes": 138084560,
-      "requires": { "macos": "26.0" }
+      "requires": { "macos": "26.0", "ios": "26.0" }
     }
   ]
 }
