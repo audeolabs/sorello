@@ -1,6 +1,8 @@
 import AppKit
+import DictationCore
 import Foundation
 import SorelloUI
+import Synchronization
 import Testing
 @testable import SorelloApp
 
@@ -208,5 +210,106 @@ final class RecordingDock: DockPresence {
         _ = dock.take()
         presenter.reopen(main: main, title: "Sorello Test")
         #expect(dock.take() == ["activate", "front main"])
+    }
+
+    // MARK: After the microphone's prompt
+
+    @Test func theWindowThatAskedComesBackInFront() {
+        showMain()
+        showSetup()
+        _ = dock.take()
+        presenter.bringBack(.setup)
+        #expect(dock.take() == ["activate", "front setup"])
+    }
+
+    @Test func aWindowClosedDuringThePromptStaysClosed() {
+        showSetup()
+        presenter.closeSetup()
+        _ = dock.take()
+        presenter.bringBack(.setup)
+        #expect(!presenter.isInDock)
+        #expect(dock.take() == [])
+    }
+}
+
+/// A microphone that has never been asked for, whose prompt waits for the test to answer it.
+final class AskingMicrophone: MicrophoneAuthorizing {
+    private struct State {
+        var access = MicrophoneAccess.unknown
+        var requests = 0
+        var waiting: [CheckedContinuation<MicrophoneAccess, Never>] = []
+    }
+
+    private let state = Mutex(State())
+
+    func current() -> MicrophoneAccess { state.withLock { $0.access } }
+
+    func request() async -> MicrophoneAccess {
+        await withCheckedContinuation { continuation in
+            state.withLock { state in
+                state.requests += 1
+                state.waiting.append(continuation)
+            }
+        }
+    }
+
+    var requests: Int { state.withLock { $0.requests } }
+
+    /// Answers every prompt on screen with `access`.
+    func answer(_ access: MicrophoneAccess) {
+        let waiting = state.withLock { state in
+            state.access = access
+            defer { state.waiting = [] }
+            return state.waiting
+        }
+        for continuation in waiting { continuation.resume(returning: access) }
+    }
+}
+
+/// ARCHITECTURE.md, section 8, "Windows": when a window asks for the microphone, that window is in front again once
+/// the system's prompt has been answered; a dictation never brings Sorello forward.
+@MainActor
+@Suite struct MicrophonePromptTests {
+    @Test(arguments: [AppWindow.setup, .main])
+    func allowBringsTheWindowThatAskedBackOnceThePromptIsAnswered(_ window: AppWindow) async throws {
+        let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
+        let microphone = AskingMicrophone()
+        let harness = Harness(directory: directory.url, defaults: suite.defaults, microphone: microphone)
+        var broughtBack: [AppWindow] = []
+        harness.app.navigation.bringBack = { broughtBack.append($0) }
+        harness.app.start()
+
+        if window == .setup {
+            harness.windows.setup.actions.requestMicrophone()
+        } else {
+            harness.windows.main.general.actions.requestMicrophone()
+        }
+        await eventually { microphone.requests == 1 }
+        #expect(broughtBack == [], "Not while the prompt is on screen")
+
+        microphone.answer(.granted)
+        await eventually { broughtBack == [window] }
+        #expect(harness.app.runtime.state.microphone == .granted)
+    }
+
+    @Test func aDictationsOwnRequestBringsNothingForward() async throws {
+        let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
+        let microphone = AskingMicrophone()
+        let harness = Harness(directory: directory.url, defaults: suite.defaults, microphone: microphone)
+        var asked: [String] = []
+        harness.app.navigation.bringBack = { asked.append("bring back \($0)") }
+        harness.app.navigation.openMain = { asked.append("open main \(String(describing: $0))") }
+        harness.app.navigation.openSetup = { asked.append("open setup") }
+        let app = harness.app
+        app.start()
+        await eventually { app.runtime.state.engine == .ready }
+
+        app.relay.handle(.holdPressed, at: harness.clock.now)
+        await eventually { microphone.requests == 1 }
+        microphone.answer(.granted)
+        await eventually { if case .recording = app.runtime.state.capture { true } else { false } }
+        app.relay.handle(.holdReleased(.keyUp), at: harness.clock.now)
+        await eventually { app.runtime.state.microphone == .granted && app.runtime.state.capture == .idle }
+        #expect(asked == [])
     }
 }

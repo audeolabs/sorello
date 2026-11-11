@@ -118,6 +118,15 @@ final class WindowPresenter {
         }
     }
 
+    /// Brings `window` in front again if it is still open, as after the system's microphone prompt, which leaves
+    /// whatever it likes in front. A window that was closed meanwhile stays closed.
+    func bringBack(_ id: AppWindow) {
+        guard isOpen(id), let window = made[id] else { return }
+        dock.activate()
+        dock.bringForward(window)
+        markInFront(id)
+    }
+
     /// The first window to open makes Sorello an ordinary app before it activates, so the window comes forward the
     /// way any app's does; every window is then brought forward with the app active.
     private func show(_ id: AppWindow, make: () -> NSWindow) {

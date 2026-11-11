@@ -80,6 +80,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
             openMain: { [weak self] section in self?.showMain(at: section) },
             openSetup: { [weak self] in self?.showSetup() },
             closeSetup: { [weak self] in self?.windows.closeSetup() },
+            bringBack: { [weak self] window in self?.windows.bringBack(window) },
             showNotice: { [weak self] title, files in self?.windows.showNotice(title: title, files: files) },
             alert: { title, message in
                 let alert = NSAlert()

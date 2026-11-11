@@ -102,7 +102,7 @@ extension WindowModels {
             setup.holdToTalk = recorders()[.holdToTalk] ?? ShortcutRecorderState(keys: nil)
         }
         setup.actions = SetupActions(
-            requestMicrophone: { [unowned self] in requestMicrophone() },
+            requestMicrophone: { [unowned self] in requestMicrophone(from: .setup) },
             openMicrophoneSettings: { app.platform.system.openMicrophoneSettings() },
             openAccessibilitySettings: { [unowned self] in grantAccessibility() },
             openKeyboardSettings: { if let pane = SettingsPane.keyboard { app.platform.system.open(pane) } },
