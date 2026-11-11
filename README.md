@@ -1,37 +1,30 @@
-# Sorello
+<p align="center"><img src="docs/images/icon.png" width="128" alt="Sorello"></p>
 
-Sorello is dictation for the Mac that runs on the Mac. Hold a key, speak, and let go: your words are pasted where
-the cursor is, in any app. Speech is recognised on your Mac, and nothing you say is sent anywhere. It is made by
-Audeo Labs and is in early development, at version 0.0.1. It understands English only.
+<h1 align="center">Sorello</h1>
 
-## Download
+- [Sorello](https://github.com/audeolabs/sorello/releases/latest/download/Sorello.dmg), the latest release. There is
+  none yet, so get the nightly for now.
+- [Sorello Nightly](https://github.com/audeolabs/sorello/releases/download/nightly/Sorello-Nightly.dmg), built each
+  night that the code has changed.
 
-- Sorello Nightly, built each night that the code has changed:
-  https://github.com/audeolabs/sorello/releases/download/nightly/Sorello-Nightly.dmg
-- Sorello, from the latest release, once there is one:
-  https://github.com/audeolabs/sorello/releases/latest/download/Sorello.dmg
-
-Until the first release is published, the nightly is the build to get.
-
-Both are signed with Audeo Labs' Developer ID and notarized by Apple.
+Sorello is an English dictation app for Mac that runs entirely on device. Hold a key, speak, and let go: your words
+are pasted where the cursor is. It is powered by the Kea family of English speech models by
+[Audeo Labs](https://huggingface.co/audeolabs). [Using Sorello](docs/USING.md) covers setup, shortcuts and settings,
+and [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) how to build it.
 
 ## Requirements
 
 - macOS 26 or later.
-- A Mac with Apple silicon. Sorello is also built for Intel Macs, where speech is recognised on the processor, more
-  slowly, but nobody has run it on an Intel Mac yet.
-- A 138 MB download for the speech model.
+- A Mac with Apple silicon (M series).
 - The microphone and Accessibility permissions.
 
-## More
+## Privacy
 
-- [docs/USING.md](docs/USING.md): how to set up and use Sorello, and what to do when something is wrong.
-- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md): how to build Sorello and check a build.
-- [ARCHITECTURE.md](ARCHITECTURE.md): how the app is put together.
-- [ThirdPartyNotices.md](ThirdPartyNotices.md): the work by others that Sorello includes.
+Speech is recognised on your Mac, and nothing you say leaves it. Sorello connects to the network for two things only:
+the one-time download of the speech model (138 MB, from Hugging Face), and checking for and downloading updates
+(from GitHub). Neither sends anything about you. There are no analytics and no crash reporting.
 
-## Licence
+## License
 
-Sorello's code is under the MIT licence: see [LICENSE](LICENSE). The speech model, kea-b-0.1, is derived from NVIDIA
-Parakeet v2 and licensed under CC BY 4.0; its notices ship inside the app and are listed in
-[ThirdPartyNotices.md](ThirdPartyNotices.md).
+Sorello's code is under the [MIT License](LICENSE). The speech model, kea-b-0.1, is under CC BY 4.0. Its notices,
+and the other work Sorello includes, are in [ThirdPartyNotices.md](ThirdPartyNotices.md).
