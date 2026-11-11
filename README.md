@@ -2,15 +2,15 @@
 
 <h1 align="center">Sorello</h1>
 
-- [Sorello](https://github.com/audeolabs/sorello/releases/latest/download/Sorello.dmg), the latest release. There is
+- [Sorello](https://github.com/audeolabs/sorello/releases/latest/download/Sorello.dmg), the latest stable release. There is
   none yet, so get the nightly for now.
-- [Sorello Nightly](https://github.com/audeolabs/sorello/releases/download/nightly/Sorello-Nightly.dmg), built each
-  night that the code has changed.
+- [Sorello Nightly](https://github.com/audeolabs/sorello/releases/download/nightly/Sorello-Nightly.dmg), to stay on top of
+  the latest updates. Things may break, you never will.
 
 Sorello is an English dictation app for Mac that runs entirely on device. Hold a key, speak, and let go: your words
 are pasted where the cursor is. It is powered by the Kea family of English speech models by
-[Audeo Labs](https://huggingface.co/audeolabs). [Using Sorello](docs/USING.md) covers setup, shortcuts and settings,
-and [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) how to build it.
+[Audeo Labs](https://huggingface.co/audeolabs). [Using Sorello](docs/USING.md) covers in depth setup, shortcuts and settings. 
+Consult [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for how to contribute or build your own.
 
 ## Requirements
 
@@ -20,9 +20,8 @@ and [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) how to build it.
 
 ## Privacy
 
-Speech is recognised on your Mac, and nothing you say leaves it. Sorello connects to the network for two things only:
-the one-time download of the speech model (138 MB, from Hugging Face), and checking for and downloading updates
-(from GitHub). Neither sends anything about you. There are no analytics and no crash reporting.
+We take privacy very seriously. As such, no audio or transcription data ever leaves your device, and all 
+transcription is done fully on your machine. We collect no analytics, crash reporting, or identifiable information.
 
 ## License
 
