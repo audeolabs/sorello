@@ -156,7 +156,8 @@ The menu's first line says what is wrong, and the command under it leads to the 
 
 Sorello checks for a newer version once a day while it runs. Choose Check for Updates… in the menu to check now.
 When a check Sorello made by itself finds a version, it never interrupts you: the menu's row reads Update
-Available… instead, and choosing it shows the new version. Nothing is installed until you say so. The new version
+Available… instead, and choosing it shows the new version. Nothing is installed until you choose Install. The same
+window offers to install later versions by itself; that is off unless you turn it on there. The new version
 replaces the old one and keeps its settings, speech model and permissions. "Check for updates automatically" on
 the General screen turns the daily check off. A release follows releases and a nightly follows nightlies.
 
@@ -167,8 +168,8 @@ analytics or crash reporting. It makes two kinds of network connection:
 
 - **The speech model's download,** from Hugging Face, only when you press Download. The server learns your address
   and which build of the model was asked for. Every file is checked before it is used.
-- **The update check,** from GitHub. The server learns your address and Sorello's name and version. An update is
-  installed only if its signature matches the key in the app.
+- **The update check, and an update's download,** from GitHub. The server learns your address and Sorello's name
+  and version. An update is installed only if its signature matches the key in the app.
 
 Your audio and transcripts are kept only in the Run Log, on this Mac. To fit the words, Sorello reads up to 16
 characters either side of the cursor, and to offer a dictionary word it watches what it pasted for up to a minute.
