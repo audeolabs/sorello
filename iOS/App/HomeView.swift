@@ -86,6 +86,7 @@ struct HomeView: View {
                         RowLabel(title: "Report a bug", symbol: "envelope")
                     }
                     .accessibilityIdentifier("home.reportBug")
+                    // Kept: the privacy page is published at this address, outside this repository, until it moves.
                     Link(destination: URL(string: "https://ajbarryiii.github.io/LocalFlow/privacy.html")!) {
                         HStack {
                             RowLabel(title: "Privacy policy", symbol: "hand.raised")
@@ -116,6 +117,7 @@ struct HomeView: View {
                 case .keyboardSetup: KeyboardSetupScreen()
                 case .dictionary: DictionaryView(dictionary: host.dictionary)
                 case .diagnostics: DiagnosticsView(transcriber: transcriber)
+                // Kept: bug reports are still read at this address, outside this repository, until it moves.
                 case .reportBug: ReportBugView(recipient: "localflow@wildernesslabs.ai")
                 }
             }

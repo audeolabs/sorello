@@ -7,6 +7,7 @@ import WidgetKit
 /// settings or App Group; the Live Activity and the microphone indicator show the session.
 struct SessionControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
+        // Kept: iOS binds a control placed on the Action button or in Control Center to this kind.
         StaticControlConfiguration(kind: "SessionControl") {
             ControlWidgetButton(action: ToggleFlowSessionIntent()) {
                 Label("Flow Session", systemImage: "waveform")

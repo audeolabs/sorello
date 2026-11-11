@@ -162,6 +162,34 @@ hardcodes an identifier.
   `https://wildernesslabs.ai/.well-known/apple-app-site-association`, deployed
   from the separate `wilderness-labs-site` repository, itself; the app has no
   network code for it.
+- **Stored names.** A name that an installed copy, or iOS on its behalf, has
+  stored keeps the value it had under the app's first name in every build,
+  and is written in one place with a comment that says it is kept. People
+  have that app through TestFlight, and an update must replace it and keep
+  what they set up. Besides every identifier in the table but the display
+  name, these keep their names:
+  - `Library/Caches/LocalFlowDictation/` in the App Group container, the
+    shared files ([Files](#files); `SharedDictationStore`, and the
+    Makefile's `E2E_SHARED_DIR`);
+  - `Library/Application Support/LocalFlowAutocorrect/` in the App Group
+    container, the never-correct words ([Word autocorrect](#word-autocorrect);
+    `NeverCorrectStore`);
+  - `lf.emojiRecents` in the keyboard's own `UserDefaults`, the emoji
+    recents (`EmojiPanelView`);
+  - the session control's kind `SessionControl` (`SessionControlWidget`),
+    the type name of its App Intent `ToggleFlowSessionIntent`, and the Live
+    Activity's attributes type `SessionActivityAttributes`, which iOS binds
+    a placed control and a running activity to;
+  - the `LF` binary formats and their magic numbers (`LFBinaryFile`), made
+    outside this repository ([Swipe typing](#swipe-typing)).
+
+  The other `UserDefaults` keys ([Shared settings](#shared-settings-sharedsorellosettingsswift),
+  `AppPreferences`, the dictionary's) and the files inside those two
+  directories carry no product name, and keep theirs too. The privacy
+  page's URL (Home) and the bug report's address
+  ([Bug report](#bug-report-hostcorebugreportemailswift)) are not stored
+  but are outside this repository, so they also keep their old names until
+  they move.
 
 ## Shared store and protocol (Shared/)
 

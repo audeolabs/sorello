@@ -9,6 +9,8 @@
 CHANNEL ?= dev
 ifeq ($(CHANNEL),appstore)
 PLATFORM ?= device
+# Kept from the app's first name, as are the dev values below: an update must replace the app people already have
+# (ARCHITECTURE.md, "Identifiers").
 BUNDLE_ID ?= com.ajbarryiii.localflow.ios
 URL_SCHEME ?= localflow
 UNIVERSAL_LINK ?= https://wildernesslabs.ai/localflow/dictate
@@ -34,6 +36,7 @@ endif
 endif
 
 PLATFORM ?= simulator
+# Kept from the app's first name, as the App Store values above.
 BUNDLE_ID ?= com.ajbarryiii.localflow.ios.dev
 KEYBOARD_BUNDLE_ID = $(BUNDLE_ID).keyboard
 ACTIVITY_BUNDLE_ID = $(BUNDLE_ID).activity
@@ -681,6 +684,8 @@ E2E_BUILD_DIR ?= build/e2e-simulator
 E2E_SIM_DEVICE ?= Sorello-E2E
 E2E_PHRASE ?= $(SMOKE_PHRASE)
 E2E_AUDIO = tmp/sorello-synthetic-mic.wav
+# The App Group's dictation directory (SharedDictationStore), whose name is kept from the app's first name.
+E2E_SHARED_DIR = Library/Caches/LocalFlowDictation
 E2E_LOG = $(E2E_BUILD_DIR)/obj/e2e-app.log
 # Launch options of the self-test build (see App/SelfTest.swift).
 E2E_SKIP_ONBOARDING ?=
@@ -732,7 +737,7 @@ e2e-sim:
 	echo "  Keyboard:      Settings > General > Keyboard > Keyboards > Add New Keyboard > $(DISPLAY_NAME), then Allow Full Access"; \
 	echo "  Every dictation hears the invented phrase \"$(E2E_PHRASE)\", then silence."; \
 	echo "  Headless test: make -C iOS e2e-sim-probe [E2E_BACKGROUND=1 or E2E_FROM_BACKGROUND=1]"; \
-	echo "  Shared files:  $$group/Library/Caches/LocalFlowDictation"; \
+	echo "  Shared files:  $$group/$(E2E_SHARED_DIR)"; \
 	echo "  App output:    $(E2E_LOG) (content-free self-test lines only)"; \
 	echo "  Shut down:     xcrun simctl shutdown $$udid"
 
@@ -744,7 +749,7 @@ e2e-sim:
 E2E_SHELL = udid=$$(xcrun simctl list devices | grep -F "    $(E2E_SIM_DEVICE) (" | grep -F "(Booted)" | head -n 1 | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/'); \
 	[ -n "$$udid" ] || { echo "$(E2E_SIM_DEVICE) is not booted; run make e2e-sim first." >&2; exit 1; }; \
 	group=$$(xcrun simctl get_app_container "$$udid" "$(BUNDLE_ID)" "$(APP_GROUP)"); \
-	dir="$$group/Library/Caches/LocalFlowDictation"; mkdir -p "$$dir"; \
+	dir="$$group/$(E2E_SHARED_DIR)"; mkdir -p "$$dir"; \
 	request=$$(uuidgen); instance=$$(uuidgen); \
 	intent() { printf '{"action":"%s","issuedAt":%s,"keyboardInstanceID":"%s","requestID":"%s","schema":1}' \
 		"$$1" "$$(date +%s)" "$$instance" "$${2:-$$request}" > "$$dir/.e2e-intent.tmp"; mv "$$dir/.e2e-intent.tmp" "$$dir/intent.json"; }; \

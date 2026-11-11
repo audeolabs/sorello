@@ -10,7 +10,8 @@ protocol LFBinaryFileError: Error {
 
 /// Reads the LF binary model files: the swipe lexicon (LFLX), the tap model (LFTP) and the word files
 /// (LFWL, LFWN, LFWR, LFWE). Each is little-endian and starts with a 4-byte magic and a u32 version; the rest
-/// of each header and its data are the format's own.
+/// of each header and its data are the format's own. Kept: LF is the formats' name, in the magic of files made
+/// outside this repository (ARCHITECTURE.md, "Swipe typing").
 enum LFBinaryFile {
     /// Checks the magic and version of a file at least `header` bytes long, in this order: shorter than the
     /// magic is `wrongSize`, another magic `badMagic`, shorter than the header `wrongSize`, another version

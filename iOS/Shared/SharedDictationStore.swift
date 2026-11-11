@@ -18,6 +18,7 @@ struct SharedDictationStore: Sendable {
     }
 
     static func directory(inContainer container: URL) -> URL {
+        // Kept from the app's first name: this directory is on people's iPhones (ARCHITECTURE.md, "Identifiers").
         container.appendingPathComponent("Library/Caches/LocalFlowDictation", isDirectory: true)
     }
 

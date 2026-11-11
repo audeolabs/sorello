@@ -19,7 +19,8 @@ protocol SessionControlHandling: AnyObject {
 /// The session control's action (ARCHITECTURE.md, "Session control"): starts a Flow session, or ends the one
 /// running, without opening the app. An `AudioRecordingIntent` may start the microphone in the background, and as a
 /// `LiveActivityIntent` iOS runs it in the app's process, where it may start the session's Live Activity. Compiled
-/// into the app, which performs it, and the widget extension, whose control names it.
+/// into the app, which performs it, and the widget extension, whose control names it. Kept: iOS binds a placed control
+/// to this type's name (ARCHITECTURE.md, "Identifiers").
 struct ToggleFlowSessionIntent: AudioRecordingIntent, LiveActivityIntent {
     static let title: LocalizedStringResource = "Flow Session"
     /// On a locked iPhone, iOS asks for Face ID or the passcode on this iPhone first (an unlocked Apple Watch does not
