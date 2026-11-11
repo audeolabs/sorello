@@ -30,7 +30,7 @@ protocol SpeechModel: AnyObject {
     func decode(_ projection: Projection, offset: Int, bias: BiasGraph?, check: () throws -> Void) throws -> [HeardWord]
 }
 
-/// The bundled model: a Core ML encoder holding the 15 s function, run where `compute` says, with the native front end
+/// The speech model: a Core ML encoder holding the 15 s function, run where `compute` says, with the native front end
 /// and decoder. Every file is checked against the manifest's SHA-256 before anything is loaded. The manifest's
 /// `compute_units` says how the bundle was exported; it is not read.
 final class CoreMLSpeechModel: SpeechModel {

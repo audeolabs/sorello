@@ -144,7 +144,7 @@ public actor SpeechEngine: SpeechTranscribing {
         return model
     }
 
-    /// The bundled model on `compute`, from the store's stable copy when there is one.
+    /// A model bundle given directly, on `compute`, from the store's stable copy when there is one.
     private static func loader(bundle: URL, store: ModelStore?, compute: SpeechCompute) -> ModelLoader {
         { () throws(EngineFailure) -> any SpeechModel in
             guard let store else {
