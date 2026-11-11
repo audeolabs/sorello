@@ -182,10 +182,11 @@ final class WindowPresenter {
         return window
     }
 
-    /// The last window to close makes Sorello a menu-bar app again and, if it was in front, hands the front to the
-    /// app that was in front before it, if that app is still running. Sorello never hides itself to give up the front,
-    /// since that would hide the pill as well. With no such app it stays in front, without a window, until the user
-    /// clicks elsewhere. A window that closes while another app is in front leaves the front where it is.
+    /// The last window to close makes Sorello a menu-bar app again and, if it was in front, asks for the app that was
+    /// in front before it to come forward, if that app is still running. Sorello never hides itself to give up the
+    /// front, since that would hide the pill as well. With no such app, or when the system refuses the request, it
+    /// stays in front, without a window, until the user clicks elsewhere. A window that closes while another app is in
+    /// front leaves the front where it is.
     ///
     /// This runs while the window is closing (`willCloseNotification`; AppKit offers no notice once a close is done,
     /// and waiting for a later turn would be a guess at timing). Apple's documentation of `setActivationPolicy` and
@@ -290,11 +291,11 @@ private struct NoticeText: View {
     }
 }
 
-/// The app's menus, in the menu bar while Sorello is in front, which it can be only while one of its windows is open
-/// (ARCHITECTURE.md, section 8, "Windows"): its own, Edit and Window, as a small Mac app has them and no more. Every
-/// row sends a standard action up the responder chain, or to the shell for About, Settings and Quit, so AppKit enables
-/// each row where it can act and disables it where it cannot, as it does in any app. Their key equivalents work in
-/// the app's windows: without Edit, ⌘V would not paste into setup's test field.
+/// The app's menus, in the menu bar while Sorello is an ordinary app and in front, as it is while one of its windows
+/// is open (ARCHITECTURE.md, section 8, "Windows"): its own, Edit and Window, as a small Mac app has them and no
+/// more. Every row sends a standard action up the responder chain, or to the shell for About, Settings and Quit, so
+/// AppKit enables each row where it can act and disables it where it cannot, as it does in any app. Their key
+/// equivalents work in the app's windows: without Edit, ⌘V would not paste into setup's test field.
 @MainActor
 enum MainMenu {
     /// The menu bar's menus, and the Window menu among them, which the app gives AppKit as its Window menu so that
