@@ -53,8 +53,8 @@ These use Hold to Talk's shortcut, `fn` unless you chose another.
 - **Hands-free.** Tap `fn` twice quickly and speak with nothing held. Tap it once more to stop and paste.
 - **Tap to Toggle.** Press once to start and again to stop. It has no shortcut until you give it one.
 - **Cancel.** Press Escape to throw away the dictation you are recording. When nothing is recording, Escape
-  throws away the dictations still waiting to be transcribed. Text that is already being pasted is not taken
-  back.
+  throws away every dictation that has not been pasted yet, transcribed or not. A paste already under way is
+  left alone.
 - **Paste Again.** Pastes your last dictation again. It has no shortcut until you give it one.
 - **Copy Last Dictation,** in the menu, puts your last dictation on the clipboard.
 
@@ -109,7 +109,7 @@ words fit: the first word is not capitalised, and a full stop the sentence doesn
 
 A macro pastes saved text when you say its phrase. Add one in Settings, on the Macros screen: what you say, and
 what to paste. Say the phrase on its own and the saved text is pasted as you saved it, untouched by the rules
-above, except that spaces and blank lines at its ends are left off. Case and punctuation in what you say don't
+above, except that spaces, tabs and line breaks at its ends are left off. Case and punctuation in what you say don't
 matter; said inside a longer dictation, the phrase is just words.
 
 ### Dictionary
