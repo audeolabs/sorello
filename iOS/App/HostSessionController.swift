@@ -213,7 +213,7 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
             isProtectedDataAvailable: { UIApplication.shared.isProtectedDataAvailable },
             beginBackgroundTask: { onExpiration in
                 let task = BackgroundTask()
-                task.identifier = UIApplication.shared.beginBackgroundTask(withName: "LocalFlow transcription") {
+                task.identifier = UIApplication.shared.beginBackgroundTask(withName: "Sorello transcription") {
                     MainActor.assumeIsolated { onExpiration() }
                 }
                 return { task.end() }

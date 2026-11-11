@@ -97,7 +97,7 @@ enum KeyboardMessagesTests {
         TestSupport.expectEqual(spoken(.ready), session)
         TestSupport.expectEqual(spoken(.ready, .notPrepared), session + ". " + KeyboardMessages.modelLoadsWhenDictating)
         TestSupport.expectEqual(spoken(.preparingModel, .preparing), "Preparing model. " + session)
-        TestSupport.expectEqual(spoken(.hostUnavailable, host: false), "No session. Start opens LocalFlow")
+        TestSupport.expectEqual(spoken(.hostUnavailable, host: false), "No session. Start opens Sorello")
         TestSupport.expectEqual(spoken(.hostUnavailable, failed: true, host: false), nil)
         TestSupport.expectEqual(spoken(.recording(level: 0.3, startedAt: now), .preparing), KeyboardMessages.modelLoadingCaption)
         TestSupport.expectEqual(spoken(.recording(level: 0.3, startedAt: now)), nil)
@@ -171,7 +171,7 @@ enum KeyboardMessagesTests {
     /// A tap on the bar's text types the top-row key under it, so no status line or title says "Tap"; it describes.
     /// The idle line without a session names what Start does.
     private static func testStatusTextNeverInvitesATap() {
-        TestSupport.expectEqual(KeyboardMessages.title(for: .hostUnavailable, launcherFailed: false), "Start opens LocalFlow")
+        TestSupport.expectEqual(KeyboardMessages.title(for: .hostUnavailable, launcherFailed: false), "Start opens Sorello")
         let modes: [KeyboardMode] = [.needsFullAccess, .configurationError, .incompatible, .starting,
                                      .recording(level: 0, startedAt: Fixture.now), .transcribing, .waitingForModel, .preparingModel,
                                      .ready, .hostUnavailable, .error(.modelFailed), .error(.sessionInactive)]

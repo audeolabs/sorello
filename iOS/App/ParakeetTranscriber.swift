@@ -228,7 +228,7 @@ extension ComputeFailureHint {
     var message: String {
         switch self {
         case .backgroundNeuralEngineNeedsEntitlement:
-            return "Transcription failed in the background. From iOS 27 the Neural Engine needs an entitlement this build does not have yet, so dictate with LocalFlow in the foreground for now."
+            return "Transcription failed in the background. From iOS 27 the Neural Engine needs an entitlement this build does not have yet, so dictate with Sorello in the foreground for now."
         }
     }
 }

@@ -446,7 +446,7 @@ struct StrengthProbeSheet: View {
         case .alreadyRecognized:
             VStack(spacing: 0) {
                 outcomeHeader(symbol: "checkmark", tint: Theme.aurora, title: "Already recognized",
-                              subtitle: "LocalFlow heard it without a boost, so \(DictionaryValidation.label(current)) is fine.")
+                              subtitle: "Sorello heard it without a boost, so \(DictionaryValidation.label(current)) is fine.")
                 comparison(base: result.base, boosted: nil, strength: nil)
             }
         case .notRecognized where result.base.isEmpty:

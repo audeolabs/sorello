@@ -51,7 +51,7 @@ struct DiagnosticsView: View {
             } header: {
                 Text("Recent dictations")
             } footer: {
-                Text("Timings and memory only, never audio or text. Kept in memory and gone when LocalFlow quits.")
+                Text("Timings and memory only, never audio or text. Kept in memory and gone when Sorello quits.")
             }
             .listRowBackground(Theme.cardBackground)
         }

@@ -3,7 +3,7 @@ import Foundation
 /// The short, content-free text the keyboard shows for a mode, an error or the host status. Pure and
 /// Foundation-only, so it can move to Shared with tests.
 enum KeyboardMessages {
-    static let openSorello = "Open LocalFlow to start a session"
+    static let openSorello = "Open Sorello to start a session"
     static let noSpeech = "No speech detected"
     static let preparingModel = "Preparing model…"
     static let starting = "Starting…"
@@ -17,13 +17,13 @@ enum KeyboardMessages {
     /// words for it: the wave says it is listening, and the wait will show it is busy).
     static let modelLoadingCaption = "Model loading"
     /// VoiceOver's words for Start with no session (the bar shows Start's dot, still, instead of these words).
-    static let noSessionSpoken = "No session. Start opens LocalFlow"
-    static let storeWriteFailed = "Couldn't reach LocalFlow"
-    static let fullAccessExplanation = "Full Access lets this keyboard talk to the LocalFlow app, which transcribes "
+    static let noSessionSpoken = "No session. Start opens Sorello"
+    static let storeWriteFailed = "Couldn't reach Sorello"
+    static let fullAccessExplanation = "Full Access lets this keyboard talk to the Sorello app, which transcribes "
         + "your speech on this iPhone. Nothing leaves your phone."
-    static let configurationErrorDetail = "The keyboard cannot reach LocalFlow's shared storage. Reinstall LocalFlow, "
+    static let configurationErrorDetail = "The keyboard cannot reach Sorello's shared storage. Reinstall Sorello, "
         + "then add the keyboard again."
-    static let incompatibleDetail = "The keyboard and the LocalFlow app are different versions. Update LocalFlow, "
+    static let incompatibleDetail = "The keyboard and the Sorello app are different versions. Update Sorello, "
         + "then open it once."
 
     static func fullAccessSteps(keyboardName: String) -> String {
@@ -35,8 +35,8 @@ enum KeyboardMessages {
     static func title(for mode: KeyboardMode, launcherFailed: Bool) -> String {
         switch mode {
         case .needsFullAccess: return "Allow Full Access to dictate"
-        case .configurationError: return "LocalFlow is not installed correctly"
-        case .incompatible: return "Update LocalFlow"
+        case .configurationError: return "Sorello is not installed correctly"
+        case .incompatible: return "Update Sorello"
         case .starting: return starting
         case .recording: return "Listening"
         case .transcribing: return "Transcribing…"
@@ -44,7 +44,7 @@ enum KeyboardMessages {
         case .error(let code): return text(for: code)
         case .ready: return "Ready to dictate"
         // Describes, never instructs: a tap on the bar's text types the top-row key under it.
-        case .hostUnavailable: return launcherFailed ? openSorello : "Start opens LocalFlow"
+        case .hostUnavailable: return launcherFailed ? openSorello : "Start opens Sorello"
         }
     }
 
@@ -97,7 +97,7 @@ enum KeyboardMessages {
 
     static func text(for code: HostErrorCode) -> String {
         switch code {
-        case .microphonePermissionDenied: return "Allow microphone access in LocalFlow"
+        case .microphonePermissionDenied: return "Allow microphone access in Sorello"
         case .audioSessionFailed: return "The microphone could not start"
         case .startupTimeout: return "The microphone took too long to start"
         case .interrupted: return "Dictation was interrupted"

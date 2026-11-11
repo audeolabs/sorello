@@ -99,7 +99,7 @@ struct OnboardingView: View {
             RidgeMarkView(dot: Theme.aurora, side: compact ? 52 : 84)
                 .padding(.top, compact ? 4 : 64)
             VStack(spacing: 8) {
-                Text("LocalFlow")
+                Text("Sorello")
                     .font(.display(.largeTitle))
                     .accessibilityAddTraits(.isHeader)
                 StepLine("Dictate into any app.")

@@ -52,7 +52,7 @@
     <key>MinimumOSVersion</key>
     <string>$(DEPLOYMENT_TARGET)</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>LocalFlow uses the microphone to transcribe your dictation on this iPhone. Audio is never saved or sent anywhere.</string>
+    <string>Sorello uses the microphone to transcribe your dictation on this iPhone. Audio is never saved or sent anywhere.</string>
     <key>NSSupportsLiveActivities</key>
     <true/>
     <key>UIApplicationSceneManifest</key>

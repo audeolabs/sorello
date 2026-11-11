@@ -727,7 +727,7 @@ e2e-sim:
 	SIMCTL_CHILD_SORELLO_SELFTEST_START_SESSION="$(E2E_START_SESSION)" \
 		xcrun simctl launch --terminate-running-process --stdout="$$log" \
 		"$$udid" "$(BUNDLE_ID)" >/dev/null; \
-	echo "LocalFlow (self-test build, synthetic microphone) is running on $(E2E_SIM_DEVICE) $$udid."; \
+	echo "Sorello (self-test build, synthetic microphone) is running on $(E2E_SIM_DEVICE) $$udid."; \
 	echo "  Window:        open -a Simulator --args -CurrentDeviceUDID $$udid"; \
 	echo "  Keyboard:      Settings > General > Keyboard > Keyboards > Add New Keyboard > $(DISPLAY_NAME), then Allow Full Access"; \
 	echo "  Every dictation hears the invented phrase \"$(E2E_PHRASE)\", then silence."; \
@@ -771,10 +771,10 @@ e2e-sim-probe:
 	if [ -n "$(E2E_FROM_BACKGROUND)" ]; then \
 		[ "$$(field session)" = active ] || { echo "E2E_FROM_BACKGROUND needs an active session." >&2; exit 1; }; \
 		presence; xcrun simctl launch "$$udid" com.apple.Preferences >/dev/null; sleep 1; presence; \
-		echo "Request $$request: record intent with LocalFlow in the background"; \
+		echo "Request $$request: record intent with Sorello in the background"; \
 		intent record; \
 	else \
-		echo "Request $$request: record intent, then LocalFlow to the foreground"; \
+		echo "Request $$request: record intent, then Sorello to the foreground"; \
 		intent record; \
 		launch_app; \
 		if [ -n "$(E2E_OPEN_URL)" ]; then xcrun simctl openurl "$$udid" "$(URL_SCHEME)://dictate"; fi; \
@@ -783,7 +783,7 @@ e2e-sim-probe:
 	[ "$$(phase)" = recording ] || { echo "Not recording: $$(field dictation.error)" >&2; exit 1; }; \
 	if [ -n "$(E2E_BACKGROUND)" ]; then \
 		presence; xcrun simctl launch "$$udid" com.apple.Preferences >/dev/null; \
-		echo "  $$(date +%T) LocalFlow sent to the background; writing keyboard presence"; \
+		echo "  $$(date +%T) Sorello sent to the background; writing keyboard presence"; \
 	fi; \
 	end=$$(( $$(date +%s) + $(E2E_SPEAK_SECONDS) )); \
 	while [ "$$(date +%s)" -lt "$$end" ]; do if [ -n "$(E2E_KEEP_PRESENCE)" ]; then presence; fi; sleep 0.5; done; \

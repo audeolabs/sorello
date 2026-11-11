@@ -12,7 +12,7 @@ enum BugReportEmailTests {
     private static func testDraft() {
         let draft = BugReportEmail(recipient: "support@example.invalid", appVersion: "0.1.0 (8)",
                                    systemVersion: "26.0", deviceModel: "iPad")
-        TestSupport.expectEqual(draft.subject, "LocalFlow bug report")
+        TestSupport.expectEqual(draft.subject, "Sorello bug report")
         TestSupport.expectEqual(draft.body, """
         Steps to reproduce:
         1.
@@ -21,7 +21,7 @@ enum BugReportEmailTests {
 
         What happened:
 
-        App: LocalFlow 0.1.0 (8)
+        App: Sorello 0.1.0 (8)
         iOS: 26.0
         Device: iPad
         """)

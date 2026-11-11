@@ -8,7 +8,7 @@ struct BugReportEmail {
     let systemVersion: String
     let deviceModel: String
 
-    let subject = "LocalFlow bug report"
+    let subject = "Sorello bug report"
 
     var body: String {
         """
@@ -19,7 +19,7 @@ struct BugReportEmail {
 
         What happened:
 
-        App: LocalFlow \(appVersion)
+        App: Sorello \(appVersion)
         iOS: \(systemVersion)
         Device: \(deviceModel)
         """

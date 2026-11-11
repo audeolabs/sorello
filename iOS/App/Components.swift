@@ -119,7 +119,7 @@ extension Font {
 /// The app's name as installed ("LocalFlow Dev" for development builds), for setup instructions.
 enum AppIdentity {
     static var displayName: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "LocalFlow"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Sorello"
     }
 
     static var version: String {

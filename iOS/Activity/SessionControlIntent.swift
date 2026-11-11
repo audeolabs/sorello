@@ -48,10 +48,10 @@ struct ToggleFlowSessionIntent: AudioRecordingIntent, LiveActivityIntent {
 /// The start needs the app: microphone permission, Live Activities, or a capture iOS would not start in the
 /// background. Opening the app soon starts the session there.
 struct SessionControlNeedsApp: Error, CustomLocalizedStringResourceConvertible {
-    var localizedStringResource: LocalizedStringResource { "Open LocalFlow to start the session." }
+    var localizedStringResource: LocalizedStringResource { "Open Sorello to start the session." }
 }
 
 /// The intent ran where no session can start: in the extension, or in a misconfigured build.
 struct SessionControlUnavailable: Error, CustomLocalizedStringResourceConvertible {
-    var localizedStringResource: LocalizedStringResource { "Open LocalFlow to start a session." }
+    var localizedStringResource: LocalizedStringResource { "Open Sorello to start a session." }
 }

@@ -101,16 +101,16 @@ struct HomeView: View {
                     .accessibilityIdentifier("home.privacyPolicy")
                 } footer: {
                     // No lock here: on Home the lock means "needs Full Access".
-                    Text("LocalFlow \(AppIdentity.version)")
+                    Text("Sorello \(AppIdentity.version)")
                         .frame(maxWidth: .infinity)
                         .padding(.top, 8)
-                        .accessibilityLabel("LocalFlow \(AppIdentity.version). Nothing you say leaves this iPhone.")
+                        .accessibilityLabel("Sorello \(AppIdentity.version). Nothing you say leaves this iPhone.")
                 }
                 .listRowBackground(Theme.cardBackground)
             }
             .listStyle(.insetGrouped)
             .themedListBackground()
-            .navigationTitle("LocalFlow")
+            .navigationTitle("Sorello")
             .navigationDestination(for: HomeRoute.self) { route in
                 switch route {
                 case .keyboardSetup: KeyboardSetupScreen()

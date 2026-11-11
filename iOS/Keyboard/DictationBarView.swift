@@ -180,7 +180,7 @@ struct DictationBarView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(PressableStyle())
-                .accessibilityLabel(chrome.isMenuOpen ? "Close menu" : "LocalFlow menu")
+                .accessibilityLabel(chrome.isMenuOpen ? "Close menu" : "Sorello menu")
                 .accessibilityIdentifier("sorello.menu")
                 .barControl("menu", in: controls)
                 .position(x: CGFloat(layout.menu.x) + height / 2, y: centreY)
@@ -807,7 +807,7 @@ private struct DictationIsland: View {
 
     private var accessibilityHint: String {
         switch state.mode {
-        case .hostUnavailable: return "Opens LocalFlow to start a session"
+        case .hostUnavailable: return "Opens Sorello to start a session"
         case .starting, .recording: return "Stops listening and inserts what you said"
         default: return ""
         }
@@ -935,7 +935,7 @@ struct MenuPanelView: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private let keyboardName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "LocalFlow"
+    private let keyboardName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Sorello"
 
     private static let cardShape = RoundedRectangle(cornerRadius: CGFloat(MenuCover.cornerRadius), style: .continuous)
     /// The content's parts above and below the divider, whose heights (without the space that spreads them) pick the card's
@@ -1035,7 +1035,7 @@ struct MenuPanelView: View {
                         onClose()
                         client.openSorello()
                     } label: {
-                        Label("Open LocalFlow", systemImage: "arrow.up.forward.app")
+                        Label("Open Sorello", systemImage: "arrow.up.forward.app")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(color(palette.link))
                     }

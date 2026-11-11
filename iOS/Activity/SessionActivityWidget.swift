@@ -34,7 +34,7 @@ struct SessionActivityWidget: Widget {
             } compactLeading: {
                 MarkView(state: state, isStale: stale, width: 20, height: 18)
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("LocalFlow")
+                    .accessibilityLabel("Sorello")
             } compactTrailing: {
                 CompactTrailing(state: state, isStale: stale)
             } minimal: {
@@ -287,7 +287,7 @@ private struct MinimalView: View {
         .phaseMotion(state.phase)
         // The one element VoiceOver reads here: what the session is doing.
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("LocalFlow, \(ActivityLook.title(state.phase, isStale: isStale))")
+        .accessibilityLabel("Sorello, \(ActivityLook.title(state.phase, isStale: isStale))")
     }
 }
 
@@ -298,7 +298,7 @@ private struct ExpandedLeading: View {
     var body: some View {
         HStack(spacing: 7) {
             MarkView(state: state, isStale: isStale, width: 24, height: 22)
-            Text("LocalFlow")
+            Text("Sorello")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                 .foregroundStyle(.white)
         }
@@ -400,7 +400,7 @@ struct LockScreenView: View {
 
     @ViewBuilder private var subtitle: some View {
         if isStale {
-            Text("Open LocalFlow to start a new one")
+            Text("Open Sorello to start a new one")
         } else {
             switch state.phase {
             case .ready:
