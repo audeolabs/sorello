@@ -29,7 +29,7 @@ final class WindowModels {
         main = MainWindowModel(
             general: GeneralModel(modelName: "", status: status, microphones: [], selectedMicrophoneID: nil,
                                   defaultMicrophoneName: nil, toggles: [:]),
-            shortcuts: ShortcutsModel(recorders: [:], promptModeEnabled: false, promptTag: ""),
+            shortcuts: ShortcutsModel(recorders: [:], doubleTap: .handsFree, promptTag: ""),
             dictionary: DictionaryModel(words: [], ignored: [], knownApps: []),
             macros: MacrosModel(macros: []),
             runLog: RunLogModel(items: []),

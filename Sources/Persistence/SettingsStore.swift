@@ -48,9 +48,9 @@ public final class SettingsStore {
         didSet { Keys.pressEnterCommand.write(pressEnterCommand, to: defaults) }
     }
 
-    /// A double tap of Hold to Talk starts a prompt-style dictation. Off by default.
-    public var promptMode: Bool {
-        didSet { Keys.promptMode.write(promptMode, to: defaults) }
+    /// What a double tap of Hold to Talk starts. A hands-free dictation by default.
+    public var doubleTap: DoubleTapAction {
+        didSet { Keys.doubleTap.write(doubleTap, to: defaults) }
     }
 
     /// Put before a prompt-style dictation. `[dictated]` by default.
@@ -93,7 +93,7 @@ public final class SettingsStore {
         spokenNumbers = Keys.spokenNumbers.read(from: defaults)
         spokenDelimiters = Keys.spokenDelimiters.read(from: defaults)
         pressEnterCommand = Keys.pressEnterCommand.read(from: defaults)
-        promptMode = Keys.promptMode.read(from: defaults)
+        doubleTap = Keys.doubleTap.read(from: defaults)
         promptTag = Keys.promptTag.read(from: defaults)
         correctionSuggestions = Keys.correctionSuggestions.read(from: defaults)
         keepRunLog = Keys.keepRunLog.read(from: defaults)
@@ -133,7 +133,7 @@ enum Keys {
     static let spokenNumbers = PlainKey("spokenNumbers", default: true)
     static let spokenDelimiters = PlainKey("spokenDelimiters", default: false)
     static let pressEnterCommand = PlainKey("pressEnterCommand", default: false)
-    static let promptMode = PlainKey("promptMode", default: false)
+    static let doubleTap = PlainKey<DoubleTapAction>("doubleTap", default: .handsFree)
     static let promptTag = PlainKey("promptTag", default: "[dictated]")
     static let correctionSuggestions = PlainKey("correctionSuggestions", default: true)
     static let keepRunLog = PlainKey("keepRunLog", default: true)
@@ -164,6 +164,27 @@ extension Bool: PlainValue {
 }
 
 extension String: PlainValue {}
+
+extension DoubleTapAction: PlainValue {
+    /// Stored as its name, so the stored value reads the same whatever the cases are called in code. Any other
+    /// value, including a name in another case, is not one.
+    static func value(of object: Any?) -> DoubleTapAction? {
+        switch object as? String {
+        case "handsFree": .handsFree
+        case "prompt": .prompt
+        case "off": .off
+        default: nil
+        }
+    }
+
+    var storedObject: Any? {
+        switch self {
+        case .handsFree: "handsFree"
+        case .prompt: "prompt"
+        case .off: "off"
+        }
+    }
+}
 
 extension Optional: PlainValue where Wrapped: PlainValue {
     /// A stored value of the wrapped type is `.some`; anything else (including nothing) is not a value.

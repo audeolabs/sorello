@@ -56,12 +56,24 @@ private struct NoLayout: KeyboardLayout {
     @Test func copiesWhatTheSessionReads() throws {
         let suite = try TemporaryDefaults()
         let settings = SettingsStore(defaults: suite.defaults)
-        settings.promptMode = true
+        settings.doubleTap = .prompt
         settings.restoreClipboard = false
         settings.microphoneID = "mic-7"
         let session = SessionSettings(settings: settings, dictionaryEditable: true, accessibilityTrusted: true)
-        #expect(session == SessionSettings(promptMode: true, restoreClipboard: false, microphoneID: "mic-7",
+        #expect(session == SessionSettings(doubleTap: .prompt, restoreClipboard: false, microphoneID: "mic-7",
                                            retainForCorrection: true))
+    }
+
+    @Test func carriesTheDoubleTapAsStored() throws {
+        let suite = try TemporaryDefaults()
+        let settings = SettingsStore(defaults: suite.defaults)
+        #expect(SessionSettings(settings: settings, dictionaryEditable: true, accessibilityTrusted: true).doubleTap
+            == .handsFree)
+        for action in DoubleTapAction.allCases {
+            settings.doubleTap = action
+            #expect(SessionSettings(settings: settings, dictionaryEditable: true, accessibilityTrusted: true)
+                .doubleTap == action)
+        }
     }
 
     @Test func keepsAudioOnlyWhenASuggestionCouldFollow() throws {

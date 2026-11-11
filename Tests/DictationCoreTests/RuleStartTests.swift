@@ -97,8 +97,12 @@ struct RuleStartTests {
 
 @Suite("Rule 2: Permission")
 struct RulePermissionTests {
+    /// The tests that compare a whole hold intent use a double tap set to nothing, so the intent they build matches
+    /// one that takes no part in the double tap (rule 5).
+    private static let noDoubleTap = SessionSettings(doubleTap: .off)
+
     @Test func aPressWithUnknownAccessRequestsItAndHoldsTheIntent() {
-        var machine = Machine(microphone: .unknown)
+        var machine = Machine(microphone: .unknown, settings: Self.noDoubleTap)
         let outcome = machine.trigger(.holdPressed, at: 10)
         #expect(outcome.acted)
         #expect(outcome.effects == [.requestMicrophoneAccess])
@@ -161,7 +165,7 @@ struct RulePermissionTests {
     }
 
     @Test func aNewPressReplacesTheIntent() {
-        var machine = Machine(microphone: .unknown)
+        var machine = Machine(microphone: .unknown, settings: Self.noDoubleTap)
         machine.trigger(.holdPressed, at: 10)
         machine.release(at: 10.5)
         machine.trigger(.holdPressed, at: 12)
@@ -194,7 +198,7 @@ struct RulePermissionTests {
     }
 
     @Test func anUndecidedAnswerKeepsWaiting() {
-        var machine = Machine(microphone: .unknown)
+        var machine = Machine(microphone: .unknown, settings: Self.noDoubleTap)
         machine.trigger(.holdPressed, at: 10)
         #expect(machine.send(.microphoneAccess(.unknown)).isEmpty)
         #expect(machine.state.capture == .awaitingPermission(PermissionIntent(mode: .hold, pressTime: 10)))
@@ -255,8 +259,8 @@ struct RuleStopTests {
         .setTimer(.captureDrain(id1), after: SessionTiming.captureDrain),
     ]
 
-    private func recording(_ mode: TriggerMode) -> Machine {
-        var machine = Machine()
+    private func recording(_ mode: TriggerMode, settings: SessionSettings = SessionSettings()) -> Machine {
+        var machine = Machine(settings: settings)
         machine.press(mode, at: 10)
         machine.started(id1)
         return machine
@@ -336,7 +340,8 @@ struct RuleStopTests {
     }
 
     @Test func tooLittleAudioIsDiscardedWithoutANotice() {
-        var machine = recording(.hold)
+        // A hold this short would be a tap of the double tap (rule 5), so the double tap is set to nothing.
+        var machine = recording(.hold, settings: SessionSettings(doubleTap: .off))
         machine.release(at: 10.1)
         let effects = machine.ended(id1, audio: 0.1)
         #expect(effects == [.cancelTimer(.captureDrain(id1)), .discard(id1),
@@ -346,7 +351,8 @@ struct RuleStopTests {
     }
 
     @Test func exactlyTheMinimumIsTranscribed() {
-        var machine = recording(.hold)
+        // A hold this short would be a tap of the double tap (rule 5), so the double tap is set to nothing.
+        var machine = recording(.hold, settings: SessionSettings(doubleTap: .off))
         machine.release(at: 10.2)
         #expect(machine.ended(id1, audio: SessionTiming.minimumAudio).contains(.finishStream(id1)))
     }

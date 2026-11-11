@@ -142,6 +142,21 @@ import Testing
         #expect(app.settings.tapToToggleShortcut == nil)
     }
 
+    @Test func theShortcutsScreenShowsAndChangesWhatTheDoubleTapDoes() async throws {
+        let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
+        let harness = Harness(directory: directory.url, defaults: suite.defaults)
+        let app = harness.app, shortcuts = harness.windows.main.shortcuts
+        app.start()
+
+        #expect(shortcuts.doubleTap == .handsFree, "hands-free by default")
+        shortcuts.choose(.prompt)
+        #expect(app.settings.doubleTap == .prompt)
+        shortcuts.choose(.off)
+        #expect(app.settings.doubleTap == .off)
+        app.settings.doubleTap = .handsFree
+        await eventually { shortcuts.doubleTap == .handsFree }
+    }
+
     @Test func turningSuggestionsOffDropsTheirAudio() async throws {
         let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
         let harness = Harness(directory: directory.url, defaults: suite.defaults,

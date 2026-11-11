@@ -99,14 +99,15 @@ struct RuleOtherTriggerTests {
         #expect(machine.state.capture.live?.mode == .hold)
     }
 
-    @Test func aHoldPressDuringAToggleRecordingIsIgnored() {
+    @Test func aHoldPressDuringAToggleRecordingStartsNothingAndItsReleaseStopsIt() {
         var machine = Machine()
         machine.press(.toggle, at: 10)
         machine.started(id1)
         let outcome = machine.trigger(.holdPressed, at: 11)
-        #expect(!outcome.acted && outcome.effects.isEmpty)
-        #expect(machine.trigger(.holdReleased(.keyUp), at: 11.5).effects.isEmpty, "its release is ignored too")
+        #expect(!outcome.acted && outcome.effects.isEmpty, "the press starts nothing")
         #expect(machine.state.capture.live?.mode == .toggle)
+        #expect(machine.trigger(.holdReleased(.keyUp), at: 11.5).effects.contains(.stopCapture(id1)),
+                "its release stops the recording (rule 5)")
     }
 
     @Test func anAbandonedHoldIsDiscardedWithoutANotice() {

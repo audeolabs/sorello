@@ -18,7 +18,7 @@ import Testing
         #expect(settings.spokenNumbers)
         #expect(!settings.spokenDelimiters)
         #expect(!settings.pressEnterCommand)
-        #expect(!settings.promptMode)
+        #expect(settings.doubleTap == .handsFree)
         #expect(settings.promptTag == "[dictated]")
         #expect(settings.correctionSuggestions)
         #expect(settings.keepRunLog)
@@ -39,7 +39,7 @@ import Testing
         settings.spokenNumbers = false
         settings.spokenDelimiters = true
         settings.pressEnterCommand = true
-        settings.promptMode = true
+        settings.doubleTap = .prompt
         settings.promptTag = "[voice]"
         settings.correctionSuggestions = false
         settings.keepRunLog = false
@@ -55,7 +55,7 @@ import Testing
         #expect(!reopened.spokenNumbers)
         #expect(reopened.spokenDelimiters)
         #expect(reopened.pressEnterCommand)
-        #expect(reopened.promptMode)
+        #expect(reopened.doubleTap == .prompt)
         #expect(reopened.promptTag == "[voice]")
         #expect(!reopened.correctionSuggestions)
         #expect(!reopened.keepRunLog)
@@ -114,7 +114,7 @@ import Testing
         settings.spokenNumbers = false
         settings.spokenDelimiters = true
         settings.pressEnterCommand = true
-        settings.promptMode = true
+        settings.doubleTap = .prompt
         settings.promptTag = "[voice]"
         settings.correctionSuggestions = false
         settings.keepRunLog = false
@@ -124,9 +124,35 @@ import Testing
         let stored = Set(suite.defaults.persistentDomain(forName: suite.suiteName)?.keys.map { $0 } ?? [])
         #expect(stored == [
             "holdToTalkShortcut", "tapToToggleShortcut", "pasteAgainShortcut", "restoreClipboard", "spokenNumbers",
-            "spokenDelimiters", "pressEnterCommand", "promptMode", "promptTag", "correctionSuggestions", "keepRunLog",
+            "spokenDelimiters", "pressEnterCommand", "doubleTap", "promptTag", "correctionSuggestions", "keepRunLog",
             "launchAtLogin", "microphoneID", "setupCompleted",
         ])
+    }
+
+    @Test(arguments: DoubleTapAction.allCases)
+    func theDoubleTapIsStoredByName(action: DoubleTapAction) throws {
+        let suite = try TemporaryDefaults()
+        let settings = SettingsStore(defaults: suite.defaults)
+        settings.doubleTap = action
+        #expect(SettingsStore(defaults: suite.defaults).doubleTap == action)
+        let names: [DoubleTapAction: String] = [.handsFree: "handsFree", .prompt: "prompt", .off: "off"]
+        #expect(suite.defaults.object(forKey: "doubleTap") as? String == names[action])
+    }
+
+    @Test func anUnrecognisedDoubleTapReadsAsHandsFree() throws {
+        let suite = try TemporaryDefaults()
+        for stored: Any in ["Prompt", "twice", "", true, 1, Data("prompt".utf8)] {
+            suite.defaults.set(stored, forKey: "doubleTap")
+            #expect(SettingsStore(defaults: suite.defaults).doubleTap == .handsFree, "\(stored)")
+        }
+        suite.defaults.set("off", forKey: "doubleTap")
+        #expect(SettingsStore(defaults: suite.defaults).doubleTap == .off)
+    }
+
+    @Test func anOldPromptModeIsNotCarriedOver() throws {
+        let suite = try TemporaryDefaults()
+        suite.defaults.set(true, forKey: "promptMode")
+        #expect(SettingsStore(defaults: suite.defaults).doubleTap == .handsFree, "nothing has shipped to migrate")
     }
 
     @Test func shortcutsCanBeReachedByAction() throws {

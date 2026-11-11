@@ -307,6 +307,72 @@ struct KeyBindingTests {
     }
 }
 
+/// What the session's double tap relies on (ARCHITECTURE.md, section 3, rule 5): every press and release of Hold to
+/// Talk reaches the session whatever it answered, and after a chord nothing more of that press does.
+@Suite("Hold to Talk as the session sees it")
+struct HoldDeliveryTests {
+    @Test("A modifier-only Hold to Talk is delivered press by press, whatever the handler answers")
+    func modifierHoldIgnoringAnswers() {
+        var keys = Keyboard([.holdToTalk: .function])
+        keys.handled = false
+        for _ in 0..<3 {
+            keys.press(.function)
+            keys.advance(0.1)
+            keys.release(.function)
+            keys.advance(0.2)
+        }
+        #expect(keys.take() == Array(repeating: [.holdPressed, .holdReleased(.keyUp)], count: 3).flatMap { $0 })
+    }
+
+    @Test("A key Hold to Talk is delivered press by press, whatever the handler answers")
+    func keyHoldIgnoringAnswers() {
+        var keys = Keyboard([.holdToTalk: optionSpace])
+        keys.handled = false
+        keys.press(.leftOption)
+        for _ in 0..<3 {
+            #expect(keys.down(kVK_Space).consume)
+            keys.advance(0.1)
+            #expect(keys.up(kVK_Space).consume)
+            keys.advance(0.2)
+        }
+        #expect(keys.take() == Array(repeating: [.holdPressed, .holdReleased(.keyUp)], count: 3).flatMap { $0 })
+    }
+
+    @Test("A modifier-only hold abandoned as a chord delivers nothing more, however its keys come up")
+    func nothingAfterAModifierChord() {
+        for keyFirst in [false, true] {
+            var keys = Keyboard([.holdToTalk: .function])
+            keys.press(.function)
+            keys.advance(0.1)
+            keys.down(kVK_DownArrow)
+            #expect(keys.take() == [.holdPressed, .holdAbandoned])
+            keys.advance(1)
+            if keyFirst {
+                keys.up(kVK_DownArrow)
+                keys.release(.function)
+            } else {
+                keys.release(.function)
+                keys.up(kVK_DownArrow)
+            }
+            #expect(keys.take() == [], "no release follows an abandoned hold")
+        }
+    }
+
+    @Test("A key Hold to Talk is never abandoned: another key leaves it running, and its release ends it")
+    func keyHoldIsNeverAChord() {
+        var keys = Keyboard([.holdToTalk: optionSpace])
+        keys.press(.leftOption)
+        keys.down(kVK_Space)
+        keys.advance(0.05)
+        keys.down(kVK_ANSI_E)
+        keys.up(kVK_ANSI_E)
+        keys.press(.leftShift)
+        #expect(keys.take() == [.holdPressed])
+        keys.up(kVK_Space)
+        #expect(keys.take() == [.holdReleased(.keyUp)])
+    }
+}
+
 @Suite("Escape")
 struct EscapeTests {
     @Test("Escape is consumed only when the handler cancelled something")

@@ -113,7 +113,6 @@ enum WindowSnapshots {
     private static func fill(_ app: AppComposition, capture: FileCapture, clock: SystemSessionClock) async {
         app.start()
         app.settings.tapToToggleShortcut = .key(code: 49, modifiers: [.control, .option])
-        app.settings.promptMode = true
         app.settings.setupCompleted = true
         _ = try? app.macros.add(command: "sign off", text: "Warm regards,\nAda")
         _ = try? app.macros.add(command: "my address", text: "14 Larkspur Lane, Northwind")

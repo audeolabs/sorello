@@ -1,30 +1,63 @@
 import SwiftUI
 
+/// What tapping Hold to Talk twice does, as the Shortcuts screen offers it. The app layer maps it to the session's
+/// setting; SorelloUI only names the choices and says what each does.
+nonisolated public enum DoubleTapChoice: CaseIterable, Hashable, Sendable {
+    /// A dictation that goes on with no key held until Hold to Talk is tapped once more. The default.
+    case handsFree
+    /// A held dictation whose text starts with the prompt tag.
+    case prompt
+    /// Nothing special.
+    case off
+
+    /// The choice's name in the pop-up.
+    public var title: String {
+        switch self {
+        case .handsFree: String(localized: "Dictate hands-free", comment: "Double tap choice")
+        case .prompt: String(localized: "Start a prompt", comment: "Double tap choice")
+        case .off: String(localized: "Do nothing", comment: "Double tap choice")
+        }
+    }
+
+    /// One sentence that says what the choice does.
+    public var explanation: String {
+        switch self {
+        case .handsFree:
+            String(localized: "Tap Hold to Talk twice to start. Tap it once more to stop and paste.")
+        case .prompt:
+            String(localized: "Tap Hold to Talk, then hold it as you speak. The text starts with a tag, so an AI agent knows it was dictated.")
+        case .off:
+            String(localized: "Tapping Hold to Talk twice does nothing.")
+        }
+    }
+}
+
 /// The Shortcuts screen's values.
 @Observable
 public final class ShortcutsModel {
     /// Each action's recorder.
     public var recorders: [ShortcutKind: ShortcutRecorderState]
-    /// Double-tapping Hold to Talk starts a dictation whose text begins with the prompt tag.
-    public var promptModeEnabled: Bool
-    /// The tag prompt mode puts before the text, as the text rules write it.
+    /// What tapping Hold to Talk twice does.
+    public var doubleTap: DoubleTapChoice
+    /// The tag a prompt puts before the text, as the text rules write it.
     public var promptTag: String
     /// Record, cancel and clear a shortcut.
     public var recorderActions: ShortcutRecorderActions
-    /// Prompt mode was switched; the model already shows the new value.
-    public var setPromptMode: (Bool) -> Void
+    /// The user chose what the double tap does; the model already shows the new value.
+    public var setDoubleTap: (DoubleTapChoice) -> Void
     /// Open the Keyboard pane of System Settings, where the fn key's own action is chosen.
     public var openKeyboardSettings: () -> Void
 
     /// The Shortcuts screen's values.
-    public init(recorders: [ShortcutKind: ShortcutRecorderState], promptModeEnabled: Bool, promptTag: String,
+    public init(recorders: [ShortcutKind: ShortcutRecorderState], doubleTap: DoubleTapChoice, promptTag: String,
                 recorderActions: ShortcutRecorderActions = ShortcutRecorderActions(),
-                setPromptMode: @escaping (Bool) -> Void = { _ in }, openKeyboardSettings: @escaping () -> Void = {}) {
+                setDoubleTap: @escaping (DoubleTapChoice) -> Void = { _ in },
+                openKeyboardSettings: @escaping () -> Void = {}) {
         self.recorders = recorders
-        self.promptModeEnabled = promptModeEnabled
+        self.doubleTap = doubleTap
         self.promptTag = promptTag
         self.recorderActions = recorderActions
-        self.setPromptMode = setPromptMode
+        self.setDoubleTap = setDoubleTap
         self.openKeyboardSettings = openKeyboardSettings
     }
 
@@ -33,13 +66,23 @@ public final class ShortcutsModel {
         recorders[kind] ?? ShortcutRecorderState(keys: nil)
     }
 
+    /// The user chose what the double tap does: show it, and report it.
+    public func choose(_ choice: DoubleTapChoice) {
+        doubleTap = choice
+        setDoubleTap(choice)
+    }
+
+    /// Whether the prompt tag is in use, which is only when the double tap starts a prompt.
+    var usesTag: Bool { doubleTap == .prompt }
+
     /// Whether any shortcut uses fn, which has a system action of its own.
     var usesFunctionKey: Bool {
         recorders.values.contains { $0.keys?.modifiers.contains(.function) == true }
     }
 }
 
-/// Shortcuts: a recorder for each action, prompt mode with its tag, and a note about the fn key.
+/// Shortcuts: a recorder for each action, what the double tap does with the prompt's tag, and a note about the fn
+/// key.
 public struct ShortcutsScreen: View {
     @Bindable private var model: ShortcutsModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -62,16 +105,12 @@ public struct ShortcutsScreen: View {
             } footer: {
                 Text("While a recorder is listening, no shortcut starts a dictation.")
             }
-            CardGroup(String(localized: "Prompt mode")) {
+            CardGroup(String(localized: "Double tap")) {
                 Card(dividerInset: Metrics.wordsInset) {
-                    ToggleRow(String(localized: "Double-tap for a prompt"),
-                              detail: String(localized: "Double-tap Hold to Talk, then hold. The text starts with a tag, so an AI agent knows it was dictated."),
-                              symbol: "text.bubble",
-                              isOn: Binding(get: { model.promptModeEnabled },
-                                            set: { value in
-                                                model.promptModeEnabled = value
-                                                model.setPromptMode(value)
-                                            }))
+                    SettingRow(String(localized: "Double-tap Hold to Talk"), detail: model.doubleTap.explanation,
+                               symbol: "hand.tap") {
+                        DoubleTapPicker(model: model)
+                    }
                     SettingRow(String(localized: "Tag"), symbol: "tag") {
                         Text(verbatim: model.promptTag)
                             .font(.system(size: 12, design: .monospaced))
@@ -81,13 +120,41 @@ public struct ShortcutsScreen: View {
                             .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Theme.controlFill))
                             .accessibilityLabel(String(localized: "Tag: \(model.promptTag)"))
                     }
-                    .opacity(model.promptModeEnabled ? 1 : 0.5)
+                    .opacity(model.usesTag ? 1 : 0.5)
                 }
             }
             if model.usesFunctionKey {
                 FunctionKeyNote(openKeyboardSettings: model.openKeyboardSettings)
             }
         }
+    }
+}
+
+/// The double tap's three choices as a pop-up, like the General screen's microphone.
+private struct DoubleTapPicker: View {
+    @Bindable var model: ShortcutsModel
+
+    var body: some View {
+        Menu {
+            Picker(selection: Binding(get: { model.doubleTap }, set: { model.choose($0) })) {
+                ForEach(DoubleTapChoice.allCases, id: \.self) { choice in
+                    Text(choice.title).tag(choice)
+                }
+            } label: {
+                EmptyView()
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } label: {
+            MenuLabel(title: model.doubleTap.title)
+        }
+        .menuStyle(.button)
+        .buttonStyle(MenuLabelStyle())
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel(String(localized: "Double-tap Hold to Talk"))
+        .accessibilityValue(model.doubleTap.title)
+        .accessibilityHint(model.doubleTap.explanation)
     }
 }
 
