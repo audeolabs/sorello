@@ -869,6 +869,9 @@ e2e-sim-probe:
 #   arriving in the foreground admits, judging freshness then: a fresh intent
 #   records, and one past pendingRecordTTL is neither admitted nor rejected.
 # Relaunches end any session; the app is left running with no session.
+# Settings is opened once before the first case. The cases send the app to the background by launching Settings and
+# waiting two seconds, and its first launch in a simulator takes far longer than that: a case that believes the app is
+# behind Settings while it is still in front fails, because an app in front admits a fresh intent, as it should.
 e2e-sim-scenarios:
 	@set -e; $(E2E_SHELL); \
 	until_phase() { i=0; while [ "$$(field dictation.requestID)" != "$$1" ] || [ "$$(field dictation.phase)" != "$$2" ]; do \
@@ -876,6 +879,7 @@ e2e-sim-scenarios:
 	pass() { echo "e2e-scenario: $$1 result=pass"; }; \
 	fail() { echo "e2e-scenario: $$1 result=fail $$2" >&2; exit 1; }; \
 	to_background() { xcrun simctl launch "$$udid" com.apple.Preferences >/dev/null; sleep 2; }; \
+	xcrun simctl launch "$$udid" com.apple.Preferences >/dev/null; sleep 10; \
 	r=$$(uuidgen); intent record "$$r"; launch_app; \
 	until_phase "$$r" recording || fail cancel "not recording: $$(status_of "$$r")"; \
 	intent cancel "$$r"; until_phase "$$r" cancelled || fail cancel "$$(status_of "$$r")"; \

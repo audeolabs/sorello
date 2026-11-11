@@ -194,10 +194,12 @@ It prints only phases and pass/fail, then deletes the result file.
 - `url-hint-fresh`
 - `url-hint-stale`
 
-On the 26.4 simulator, `simctl openurl` with a custom scheme leaves an
-"Open in Sorello Dev?" alert that cannot be tapped headlessly, so the probes
-bring the app forward with `simctl launch`. The next simulator reboot clears
-the alert.
+In the simulator (26.4 and 27.0), `simctl openurl` with a custom scheme leaves
+an "Open in Sorello Dev?" alert that cannot be tapped headlessly, and the app
+stays behind it, so the probes bring the app forward with `simctl launch`. The
+next simulator reboot clears the alert. The scenarios open Settings once
+before their first case: they send the app to the background by launching
+Settings, and its first launch in a simulator is slow.
 
 Simulator timings: the simulator has no Neural Engine, so the encoder runs on
 the CPU. With kea-b-0.1 on an M5 Pro, the self-test prepared the model in
