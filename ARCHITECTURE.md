@@ -827,9 +827,11 @@ it is in the app switcher, and its menus (its own, Edit and Window) are in
 the menu bar while it is in front. So a window of Sorello's comes back the
 way any app's does: from the Dock, with Command-Tab, and after the system
 has shown a prompt of its own. A minimised window is still open. When the
-last window closes, Sorello leaves the Dock and, if it was in front, hands
-the front to the app that was in front before it, if that app is still
-running. It never hides itself to do so. Clicking the Dock icon, or
+last window closes, Sorello leaves the Dock and, if it was in front, asks
+for the app that was in front before it to come forward, if that app is
+still running. That is a request, which the system may refuse: Sorello
+then stays in front, without a window, until the user goes elsewhere. It
+never hides itself to give up the front. Clicking the Dock icon, or
 opening Sorello again, brings forward the windows that are open, and opens
 the main window only when none is. The pill, the Accessibility card and
 the system's own panels are not windows in this sense: they never put
@@ -970,7 +972,8 @@ Review does.
   connection: start it, go on through setup while it runs, quit in the
   middle and continue, cancel, and try it with the network off. The Dock
   icon: there while setup or the main window is open and gone when the
-  last closes; another app brought forward and Sorello's window brought
+  last closes, with the app that was in front before Sorello in front
+  again; another app brought forward and Sorello's window brought
   back from the Dock and with Command-Tab; the microphone's prompt
   answered from setup, with setup in front afterwards; Sorello hidden
   during a dictation, and a dictation begun while it is hidden, the pill
