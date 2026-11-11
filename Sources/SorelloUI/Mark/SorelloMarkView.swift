@@ -58,15 +58,27 @@ public enum SorelloMarkImages {
 
 /// The app icon (ARCHITECTURE.md, section 8, "The mark"): the mark on a near-black field, laid out on the macOS icon
 /// grid (an 824-unit rounded square in a 1024-unit canvas, with the grid's drop shadow), so the system's mask and
-/// spacing suit it. Sorello Nightly's icon adds a few small orange stars to the field. Drawn in any square; the
-/// snapshot tool renders it at 1024 px. `AppIconGeometry` holds the layout.
+/// spacing suit it. Sorello Nightly's icon adds a few small orange stars to the field. The iPhone app's icon is the
+/// same picture drawn to the edges, with square corners, because iOS cuts an icon's corners itself; its development
+/// build's has the stars. Drawn in any square; the snapshot tool renders it at 1024 px. `AppIconGeometry` holds the
+/// layout.
 public struct AppIconView: View {
     /// Which build's icon this is.
     public enum Variant: Sendable {
-        /// Sorello's own icon, which release and development builds carry.
+        /// Sorello's own icon, which the Mac app's release and development builds carry.
         case plain
         /// Sorello Nightly's: the plain icon with stars on its field, so a nightly is told from a release at a glance.
         case nightly
+        /// The iPhone app's, which its App Store build carries: the plain icon drawn to the edges.
+        case iPhone
+        /// The iPhone app's development build's, which can be on one iPhone beside the App Store build: the iPhone's
+        /// icon with the nightly's stars.
+        case iPhoneDevelopment
+
+        /// Whether this is an iPhone's icon, whose field fills the square.
+        var fillsTheSquare: Bool { self == .iPhone || self == .iPhoneDevelopment }
+        var hasStars: Bool { self == .nightly || self == .iPhoneDevelopment }
+        var layout: AppIconGeometry.Layout { fillsTheSquare ? AppIconGeometry.iPhone : AppIconGeometry.mac }
     }
 
     private let variant: Variant
@@ -78,32 +90,43 @@ public struct AppIconView: View {
     public var body: some View {
         GeometryReader { geometry in
             let unit = min(geometry.size.width, geometry.size.height) / AppIconGeometry.canvas
+            let layout = variant.layout
+            let field = LinearGradient(colors: [Color(AppIconGeometry.fieldTop), Color(AppIconGeometry.fieldBottom)],
+                                       startPoint: .top, endPoint: .bottom)
             ZStack {
-                RoundedRectangle(cornerRadius: AppIconGeometry.fieldCornerRadius * unit, style: .continuous)
-                    .fill(LinearGradient(colors: [Color(AppIconGeometry.fieldTop), Color(AppIconGeometry.fieldBottom)],
-                                         startPoint: .top, endPoint: .bottom))
-                    .overlay(
-                        // A faint rim of light at the top edge, as a polished black surface catches it.
-                        RoundedRectangle(cornerRadius: AppIconGeometry.fieldCornerRadius * unit, style: .continuous)
-                            .strokeBorder(LinearGradient(colors: [.white.opacity(0.16), .white.opacity(0.02)],
-                                                         startPoint: .top, endPoint: .center),
-                                          lineWidth: 3 * unit)
-                    )
-                    .frame(width: AppIconGeometry.fieldSide * unit, height: AppIconGeometry.fieldSide * unit)
-                    .shadow(color: .black.opacity(0.35), radius: 14 * unit, y: 10 * unit)
-                if variant == .nightly {
+                if variant.fillsTheSquare {
+                    // No rim and no shadow. The Mac's rim of light follows its rounded corners; on this square the
+                    // corners iOS cuts would leave it only along the straight middle of each edge, a line that stops
+                    // short. The shadow would fall outside the square.
+                    Rectangle()
+                        .fill(field)
+                        .frame(width: layout.fieldSide * unit, height: layout.fieldSide * unit)
+                } else {
+                    RoundedRectangle(cornerRadius: layout.fieldCornerRadius * unit, style: .continuous)
+                        .fill(field)
+                        .overlay(
+                            // A faint rim of light at the top edge, as a polished black surface catches it.
+                            RoundedRectangle(cornerRadius: layout.fieldCornerRadius * unit, style: .continuous)
+                                .strokeBorder(LinearGradient(colors: [.white.opacity(0.16), .white.opacity(0.02)],
+                                                             startPoint: .top, endPoint: .center),
+                                              lineWidth: 3 * unit)
+                        )
+                        .frame(width: layout.fieldSide * unit, height: layout.fieldSide * unit)
+                        .shadow(color: .black.opacity(0.35), radius: 14 * unit, y: 10 * unit)
+                }
+                if variant.hasStars {
                     Canvas { context, size in
-                        Self.drawStars(in: context, size: size, unit: unit)
+                        Self.draw(layout.stars, in: context, size: size, unit: unit)
                     }
                 }
                 // The aurora dot's glow, under the mark.
                 Circle()
                     .fill(RadialGradient(colors: [Color(Palette.aurora).opacity(0.32), .clear], center: .center,
-                                         startRadius: 0, endRadius: AppIconGeometry.glowRadius * unit))
-                    .frame(width: 2 * AppIconGeometry.glowRadius * unit, height: 2 * AppIconGeometry.glowRadius * unit)
-                    .offset(x: Self.accentOffset * unit)
+                                         startRadius: 0, endRadius: layout.glowRadius * unit))
+                    .frame(width: 2 * layout.glowRadius * unit, height: 2 * layout.glowRadius * unit)
+                    .offset(x: Self.accentOffset(layout) * unit)
                 SorelloMarkView()
-                    .frame(width: AppIconGeometry.markWidth * unit, height: AppIconGeometry.markHeight * unit)
+                    .frame(width: layout.markWidth * unit, height: layout.markHeight * unit)
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
         }
@@ -111,18 +134,19 @@ public struct AppIconView: View {
     }
 
     /// Where the aurora dot's centre falls, in icon units from the middle, when the mark fills its box.
-    private static var accentOffset: CGFloat {
-        let mark = SorelloMark.fitted(x: -AppIconGeometry.markWidth / 2, y: -AppIconGeometry.markHeight / 2,
-                                      width: AppIconGeometry.markWidth, height: AppIconGeometry.markHeight)
+    private static func accentOffset(_ layout: AppIconGeometry.Layout) -> CGFloat {
+        let mark = SorelloMark.fitted(x: -layout.markWidth / 2, y: -layout.markHeight / 2, width: layout.markWidth,
+                                      height: layout.markHeight)
         return CGFloat(mark.accent.x)
     }
 
-    /// Draws the nightly's stars in `tangerine`, each at its brightness, on a canvas of `size` whose middle is the
-    /// icon's middle and whose icon unit is `unit` points.
-    private static func drawStars(in context: GraphicsContext, size: CGSize, unit: CGFloat) {
+    /// Draws `stars` in `tangerine`, each at its brightness, on a canvas of `size` whose middle is the icon's middle
+    /// and whose icon unit is `unit` points.
+    private static func draw(_ stars: [AppIconGeometry.Star], in context: GraphicsContext, size: CGSize,
+                             unit: CGFloat) {
         let originX = size.width / 2 - AppIconGeometry.canvas / 2 * unit
         let originY = size.height / 2 - AppIconGeometry.canvas / 2 * unit
-        for star in AppIconGeometry.stars {
+        for star in stars {
             func point(_ dx: Double, _ dy: Double) -> CGPoint {
                 CGPoint(x: originX + (star.x + dx * star.radius) * unit,
                         y: originY + (star.y + dy * star.radius) * unit)
@@ -143,12 +167,15 @@ public struct AppIconView: View {
 }
 
 public extension AppIconView {
-    /// The icon as a PNG `pixels` square, its corners transparent, for building `Resources/AppIcon.icns` (the plain
-    /// icon) or `Resources/AppIcon-Nightly.icns` (the nightly's).
+    /// The icon as a PNG `pixels` square: for the Mac, its corners transparent, for building `Resources/AppIcon.icns`
+    /// (the plain icon) or `Resources/AppIcon-Nightly.icns` (the nightly's); for the iPhone, opaque to every edge with
+    /// no alpha channel, as `iOS/Resources/AppIcon-Source.png` (the App Store build's) and
+    /// `iOS/Resources/AppIcon-Dev-Source.png` (the development build's).
     static func png(pixels: Int = 1024, variant: Variant = .plain) -> Data? {
         let renderer = ImageRenderer(content: AppIconView(variant)
             .frame(width: CGFloat(pixels), height: CGFloat(pixels)))
         renderer.scale = 1
+        renderer.isOpaque = variant.fillsTheSquare
         guard let image = renderer.cgImage else { return nil }
         return NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
     }
