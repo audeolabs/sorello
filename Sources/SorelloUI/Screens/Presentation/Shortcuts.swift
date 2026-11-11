@@ -160,14 +160,6 @@ nonisolated public enum ShortcutKind: CaseIterable, Hashable, Sendable {
         }
     }
 
-    /// One line on what the action does.
-    public var detail: String {
-        switch self {
-        case .holdToTalk: String(localized: "Records while the keys are down and pastes when you let go.")
-        case .tapToToggle: String(localized: "Press once to start and again to stop.")
-        case .pasteAgain: String(localized: "Pastes the last dictation again.")
-        }
-    }
 
     /// Hold to Talk always has a shortcut; the other two can be left unset.
     public var canBeUnset: Bool { self != .holdToTalk }

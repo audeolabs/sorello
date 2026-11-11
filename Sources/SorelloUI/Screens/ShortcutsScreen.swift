@@ -19,7 +19,7 @@ nonisolated public enum DoubleTapChoice: CaseIterable, Hashable, Sendable {
         }
     }
 
-    /// One sentence that says what the choice does.
+    /// One sentence that says what the choice does, for VoiceOver.
     public var explanation: String {
         switch self {
         case .handsFree:
@@ -93,8 +93,7 @@ public struct ShortcutsScreen: View {
     }
 
     public var body: some View {
-        ScreenPage(String(localized: "Shortcuts"),
-                   subtitle: String(localized: "They work in any app. Escape cancels a dictation.")) {
+        ScreenPage(String(localized: "Shortcuts")) {
             CardGroup(String(localized: "Dictation")) {
                 Card {
                     ForEach(ShortcutKind.allCases, id: \.self) { kind in
@@ -102,13 +101,10 @@ public struct ShortcutsScreen: View {
                     }
                 }
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: model.recorders)
-            } footer: {
-                Text("While a recorder is listening, no shortcut starts a dictation.")
             }
             CardGroup(String(localized: "Double tap")) {
                 Card(dividerInset: Metrics.wordsInset) {
-                    SettingRow(String(localized: "Double-tap Hold to Talk"), detail: model.doubleTap.explanation,
-                               symbol: "hand.tap") {
+                    SettingRow(String(localized: "Double-tap Hold to Talk"), symbol: "hand.tap") {
                         DoubleTapPicker(model: model)
                     }
                     SettingRow(String(localized: "Tag"), symbol: "tag") {

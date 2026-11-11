@@ -107,17 +107,15 @@ public extension SettingRow where Accessory == EmptyView {
     }
 }
 
-/// A switch row: a glyph, a title and its line, and Sorello's switch.
+/// A switch row: a glyph, a title, and Sorello's switch. The title says what the switch does; nothing explains it.
 public struct ToggleRow: View {
     private let title: String
-    private let detail: String?
     private let symbol: String?
     @Binding private var isOn: Bool
 
     /// A switch row bound to `isOn`.
-    public init(_ title: String, detail: String? = nil, symbol: String? = nil, isOn: Binding<Bool>) {
+    public init(_ title: String, symbol: String? = nil, isOn: Binding<Bool>) {
         self.title = title
-        self.detail = detail
         self.symbol = symbol
         _isOn = isOn
     }
@@ -126,12 +124,11 @@ public struct ToggleRow: View {
         Toggle(isOn: $isOn) {
             HStack(spacing: Metrics.glyphGap) {
                 if let symbol { RowGlyph(symbol) }
-                RowWords(title: title, detail: detail)
+                RowWords(title: title, detail: nil)
             }
         }
         .toggleStyle(.sorello)
         .accessibilityLabel(title)
-        .accessibilityHint(detail ?? "")
         .rowPadding()
     }
 }
@@ -186,19 +183,16 @@ extension View {
     }
 }
 
-/// A screen of the main window: its title in the display face, a line under it, then its groups, in a column that
-/// stops growing at a readable width and scrolls when it is taller than the window.
+/// A screen of the main window: its title in the display face, then its groups, in a column that stops growing at a
+/// readable width and scrolls when it is taller than the window.
 public struct ScreenPage<Content: View, Trailing: View>: View {
     private let title: String
-    private let subtitle: String?
     private let content: Content
     private let trailing: Trailing
 
     /// A page titled `title`, with `trailing` beside the title (a count, a button) and `content` under it.
-    public init(_ title: String, subtitle: String? = nil, @ViewBuilder trailing: () -> Trailing,
-                @ViewBuilder content: () -> Content) {
+    public init(_ title: String, @ViewBuilder trailing: () -> Trailing, @ViewBuilder content: () -> Content) {
         self.title = title
-        self.subtitle = subtitle
         self.content = content()
         self.trailing = trailing()
     }
@@ -207,18 +201,10 @@ public struct ScreenPage<Content: View, Trailing: View>: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Metrics.groupGap) {
                 HStack(alignment: .lastTextBaseline, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(title)
-                            .displayType(.screenTitle)
-                            .foregroundStyle(Theme.ink)
-                            .accessibilityAddTraits(.isHeader)
-                        if let subtitle {
-                            Text(subtitle)
-                                .font(.system(size: 13))
-                                .foregroundStyle(Theme.secondaryInk)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
+                    Text(title)
+                        .displayType(.screenTitle)
+                        .foregroundStyle(Theme.ink)
+                        .accessibilityAddTraits(.isHeader)
                     Spacer(minLength: 0)
                     trailing
                 }
@@ -238,7 +224,7 @@ public struct ScreenPage<Content: View, Trailing: View>: View {
 
 /// A page with nothing beside its title.
 public extension ScreenPage where Trailing == EmptyView {
-    init(_ title: String, subtitle: String? = nil, @ViewBuilder content: () -> Content) {
-        self.init(title, subtitle: subtitle, trailing: { EmptyView() }, content: content)
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.init(title, trailing: { EmptyView() }, content: content)
     }
 }

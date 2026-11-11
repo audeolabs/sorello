@@ -111,7 +111,6 @@ public struct DictionaryScreen: View {
 
     public var body: some View {
         ScreenPage(String(localized: "Dictionary"),
-                   subtitle: String(localized: "Names and terms the recognizer should expect, each with a strength."),
                    trailing: {
                        Text(DictionaryCount.label(count: model.words.count, capacity: model.capacity))
                            .font(.system(size: 12).monospacedDigit())
@@ -131,10 +130,6 @@ public struct DictionaryScreen: View {
                         }
                     }
                 }
-            } footer: {
-                if !model.words.isEmpty {
-                    Text("A word limited to apps is used only when you dictate into one of them.")
-                }
             }
             CardGroup(String(localized: "Never suggested")) {
                 if model.ignored.isEmpty {
@@ -152,10 +147,6 @@ public struct DictionaryScreen: View {
                     .padding(Metrics.rowInset)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .cardSurface()
-                }
-            } footer: {
-                if !model.ignored.isEmpty {
-                    Text("Remove a word to let it be suggested again.")
                 }
             }
         }

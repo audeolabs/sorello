@@ -28,21 +28,6 @@ nonisolated public enum GeneralToggle: CaseIterable, Hashable, Sendable {
         }
     }
 
-    /// One line under the title.
-    public var detail: String {
-        switch self {
-        case .launchAtLogin: String(localized: "Starts quietly in the menu bar.")
-        case .restoreClipboard: String(localized: "Puts back what you had copied, a second after each paste.")
-        case .spokenNumbers: String(localized: "“Twenty five” becomes 25.")
-        case .spokenDelimiters: String(localized: "“Open quote” and “close bracket” become the marks.")
-        case .pressEnter: String(localized: "Ending with “press enter” presses Return after the paste.")
-        case .correctionSuggestions:
-            String(localized: "When you fix a word right after dictating it, offers to add it.")
-        case .keepRunLog: String(localized: "The last 20 dictations and their audio, kept only on this Mac.")
-        case .checkForUpdates:
-            String(localized: "Once a day. Nothing is installed until you choose Install.")
-        }
-    }
 
     /// The row's glyph.
     var symbol: String {

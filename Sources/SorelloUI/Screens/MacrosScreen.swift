@@ -71,7 +71,6 @@ public struct MacrosScreen: View {
 
     public var body: some View {
         ScreenPage(String(localized: "Macros"),
-                   subtitle: String(localized: "Say a phrase on its own and its saved text is pasted instead."),
                    trailing: {
                        Button { open(MacroDraft()) } label: { Label(String(localized: "Add Macro"), systemImage: "plus") }
                            .buttonStyle(PrimaryButtonStyle())

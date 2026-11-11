@@ -18,7 +18,7 @@ public struct ShortcutRecorderActions {
     }
 }
 
-/// One action's shortcut: its name and what it does, then a well showing the keys as key caps. Clicking the well
+/// One action's shortcut: its name, then a well showing the keys as key caps. Clicking the well
 /// records new keys; while it records it says so and offers Cancel. A refused attempt is explained under the row.
 public struct ShortcutRecorderRow: View {
     private let kind: ShortcutKind
@@ -39,14 +39,14 @@ public struct ShortcutRecorderRow: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if isLong {
-                RowWords(title: kind.title, detail: kind.detail)
+                RowWords(title: kind.title, detail: nil)
                 HStack(alignment: .center, spacing: Metrics.glyphGap) {
                     RecorderWell(kind: kind, state: state, actions: actions, stretches: true)
                     clearButton
                 }
             } else {
                 HStack(alignment: .center, spacing: Metrics.glyphGap) {
-                    RowWords(title: kind.title, detail: kind.detail)
+                    RowWords(title: kind.title, detail: nil)
                     Spacer(minLength: 12)
                     RecorderWell(kind: kind, state: state, actions: actions, stretches: false)
                     clearButton

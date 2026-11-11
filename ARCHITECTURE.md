@@ -859,7 +859,14 @@ only specks of brown, so there the nightly's icon is the plain one.
   text, and the menu is told only whether there is one to copy. So it is
   as wide as its own rows and their keys need, like any other menu.
 - **Main window**: a sidebar (General, Shortcuts, Dictionary, Macros, Run
-  Log, About) over the screen colour, content in cards.
+  Log, About) over the screen colour, content in cards. A screen's title
+  has no line under it, and a row's title is not explained: switches,
+  shortcuts and granted permissions show their title alone, and no
+  footnote says how a control works. A line under a row's title says
+  only what the title cannot: the model's state, where it runs and its
+  download, a permission that is denied or missing, the Run Log's
+  details, and on About the privacy promise and each notice's licence.
+  An empty list still says what goes in it.
 - **Setup**: welcome, the speech model, microphone, Accessibility,
   shortcut, and a live test. The model's step is there only when the
   model is not on the Mac as setup opens, and then it stays for that
