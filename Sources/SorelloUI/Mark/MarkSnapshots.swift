@@ -14,6 +14,7 @@ enum MarkSnapshots {
             menuBar(name: "mark-menu-bar-dark", bar: RGB(hex: 0x1E1E20), ink: .white),
             // The app icon for review, over black. Resources/AppIcon.icns, and Resources/AppIcon-Nightly.icns with the
             // nightly's stars, are built from the same view with its corners transparent; to regenerate them on a Mac:
+            //   mkdir -p build
             //   swift run SorelloSnapshots --icon build/AppIcon-1024.png
             //   swift run SorelloSnapshots --nightly-icon build/AppIcon-Nightly-1024.png
             //   for icon in AppIcon AppIcon-Nightly; do
