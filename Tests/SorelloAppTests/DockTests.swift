@@ -43,9 +43,10 @@ final class RecordingDock: DockPresence {
         _ = NSApplication.shared
         Resources.registerFonts()
         presenter = WindowPresenter(dock: dock)
-        dock.name = { [presenter] window in
+        // Weakly, or the presenter, which holds the dock, would never be released, nor its windows.
+        dock.name = { [weak presenter] window in
             let all: [AppWindow] = [.setup, .main, .notice("Licence"), .notice("Credits")]
-            return all.first { presenter.window($0) === window }.map(Self.describe) ?? "unknown"
+            return all.first { presenter?.window($0) === window }.map(Self.describe) ?? "unknown"
         }
     }
 
