@@ -23,7 +23,7 @@ extension WindowModels {
             retryModel: { app.runtime.retryPreparation() },
             downloadModel: { app.startDownload() },
             cancelDownload: { app.cancelDownload() },
-            requestMicrophone: { [unowned self] in requestMicrophone() },
+            requestMicrophone: { [unowned self] in requestMicrophone(from: .main) },
             openMicrophoneSettings: { app.platform.system.openMicrophoneSettings() },
             openAccessibilitySettings: { [unowned self] in grantAccessibility() },
             selectMicrophone: { app.settings.microphoneID = $0 },
@@ -62,12 +62,16 @@ extension WindowModels {
         }
     }
 
-    /// Asks for the microphone; the system shows its prompt only while access was never decided.
-    func requestMicrophone() {
+    /// Allow, in setup or on the General screen: asks for the microphone (the system shows its prompt only while
+    /// access was never decided) and, once it has answered, brings `window`, which asked, in front again, since the
+    /// prompt leaves whatever it likes in front. A dictation asks through the session instead, and that never brings a
+    /// window forward.
+    func requestMicrophone(from window: AppWindow) {
         let app = self.app
         Task {
             _ = await app.platform.microphone.request()
             app.runtime.refreshMicrophoneAccess()
+            app.navigation.bringBack(window)
         }
     }
 

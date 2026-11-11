@@ -40,6 +40,8 @@ struct Navigation {
     var openMain: @MainActor (MainSection?) -> Void = { _ in }
     var openSetup: @MainActor () -> Void = {}
     var closeSetup: @MainActor () -> Void = {}
+    /// Brings a window that is open in front again, as after the system's microphone prompt; a closed one stays shut.
+    var bringBack: @MainActor (AppWindow) -> Void = { _ in }
     var showNotice: @MainActor (_ title: String, _ files: [URL]) -> Void = { _, _ in }
     var alert: @MainActor (_ title: String, _ message: String) -> Void = { _, _ in }
     var quit: @MainActor () -> Void = {}

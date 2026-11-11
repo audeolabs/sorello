@@ -4,17 +4,17 @@ import Persistence
 import SorelloUI
 import SpeechEngine
 
-/// The menu-bar app (ARCHITECTURE.md, section 8, "Windows"): no Dock icon, a status item with its menu, the main
-/// window and setup, one running instance. It builds the composition at launch, starts the model's preparation,
-/// takes permission changes made in System Settings without a relaunch, and lets go of the microphone and any stream
-/// before it quits, whether by Quit, `osascript … quit` or SIGTERM.
+/// The menu-bar app (ARCHITECTURE.md, section 8, "Windows"): a status item with its menu, the main window and setup,
+/// one running instance, and a Dock icon only while one of its windows is open. It builds the composition at launch,
+/// starts the model's preparation, takes permission changes made in System Settings without a relaunch, and lets go
+/// of the microphone and any stream before it quits, whether by Quit, `osascript … quit` or SIGTERM.
 @MainActor
 final class AppShell: NSObject, NSApplicationDelegate {
     private let showsSetup: Bool
     private var app: AppComposition?
     private var models: WindowModels?
     private var statusItem: StatusItemController?
-    private var windows = WindowPresenter()
+    private let windows = WindowPresenter(dock: SystemDock())
     private var overlay: PillOverlayController?
     private var terminationSignal: (any DispatchSourceSignal)?
     /// The shutdown, once something asked the app to quit.
@@ -33,8 +33,11 @@ final class AppShell: NSObject, NSApplicationDelegate {
         let application = NSApplication.shared
         let shell = AppShell(showsSetup: showsSetup)
         application.delegate = shell
-        // A copy run outside its bundle has no LSUIElement; the app is a menu-bar app either way.
+        // A copy run outside its bundle has no LSUIElement; the app starts as a menu-bar app either way, and is in the
+        // Dock only while one of its windows is open.
         application.setActivationPolicy(.accessory)
+        // No window of Sorello's has tabs, so the Window menu offers none.
+        NSWindow.allowsAutomaticWindowTabbing = false
         application.run()
         exit(0)
     }
@@ -54,7 +57,9 @@ final class AppShell: NSObject, NSApplicationDelegate {
         }
 
         Resources.registerFonts()
-        NSApp.mainMenu = MainMenu.make(appName: info.name, target: self)
+        let menus = MainMenu.make(appName: info.name, target: self)
+        NSApp.mainMenu = menus.bar
+        NSApp.windowsMenu = menus.window
         let platform = AppPlatform.system()
         let levels = LevelFeed()
         let clock = platform.clock
@@ -79,6 +84,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
             openMain: { [weak self] section in self?.showMain(at: section) },
             openSetup: { [weak self] in self?.showSetup() },
             closeSetup: { [weak self] in self?.windows.closeSetup() },
+            bringBack: { [weak self] window in self?.windows.bringBack(window) },
             showNotice: { [weak self] title, files in self?.windows.showNotice(title: title, files: files) },
             alert: { title, message in
                 let alert = NSAlert()
@@ -91,13 +97,17 @@ final class AppShell: NSObject, NSApplicationDelegate {
         statusItem = StatusItemController(model: models.menu, appName: info.name)
         app.start()
         watchActivation(app)
+        watchFrontApps()
         catchTermination()
         if showsSetup && models.setupIsNeeded { showSetup() }
     }
 
-    /// Opening the app again (from Finder, Spotlight or `open`) shows the main window, since there is no Dock icon.
+    /// Clicking the Dock icon, or opening the app again from Finder, Spotlight or `open`, brings the open windows
+    /// forward, minimised ones too, and opens the main window only when none is open. The presenter does all of it,
+    /// so AppKit is told to do nothing more.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        showMain(at: nil)
+        guard let models, let app else { return false }
+        windows.reopen(main: models.main, title: app.info.name)
         return false
     }
 
@@ -157,7 +167,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
     private func showSetup() {
         guard let models, let app else { return }
         // The steps are fixed as setup opens: once the model's step is there, it stays for that setup.
-        if !windows.isShowingSetup { models.setup.steps = models.setupSteps }
+        if !windows.isOpen(.setup) { models.setup.steps = models.setupSteps }
         models.setup.step = models.setupStartStep
         windows.showSetup(models.setup, title: app.info.name)
     }
@@ -175,6 +185,20 @@ final class AppShell: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil,
                                                queue: .main) { _ in
             MainActor.assumeIsolated { app.becameActive() }
+        }
+    }
+
+    /// Tells the presenter which app comes to the front, starting with the one in front at launch, so that when
+    /// Sorello's last window closes the front can go back to the app the user was in before.
+    private func watchFrontApps() {
+        let workspace = NSWorkspace.shared
+        if let front = workspace.frontmostApplication { windows.appCameToFront(front) }
+        workspace.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil,
+                                                 queue: .main) { [weak self] notification in
+            let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            MainActor.assumeIsolated {
+                if let app { self?.windows.appCameToFront(app) }
+            }
         }
     }
 

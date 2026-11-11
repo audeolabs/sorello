@@ -355,6 +355,8 @@ extension PermissionPanel {
             backgroundColor = .clear
             hasShadow = false
             hidesOnDeactivate = false
+            // Hiding Sorello hides its windows, never the card the user is about to drag into System Settings.
+            canHide = false
             isReleasedWhenClosed = false
             becomesKeyOnlyIfNeeded = true
             animationBehavior = .none

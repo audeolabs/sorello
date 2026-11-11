@@ -131,6 +131,14 @@ import Testing
         }
     }
 
+    /// Hiding Sorello, from its own menu or another app's Hide Others, hides its windows and leaves both of the
+    /// pill's panels where they are (ARCHITECTURE.md, section 8, "Windows").
+    @Test func hidingSorelloLeavesThePillUp() {
+        for panel in [OverlayPanel(interactive: false), OverlayPanel(interactive: true)] {
+            #expect(!panel.canHide)
+        }
+    }
+
     /// VoiceOver sees each control as a button with the pill's name for it and can press it; the drawing, the moving
     /// level included, is not exposed at all.
     @Test func voiceOverSeesButtonsAndNoLevel() {

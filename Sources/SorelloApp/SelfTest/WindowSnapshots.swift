@@ -11,7 +11,8 @@ import SwiftUI
 
 /// `Sorello --snapshots <dir>`: the menu-bar item, every main window section and every setup step as the app draws
 /// them, wired to real stores, rendered to PNG files, and the menu-bar item's menu as the app builds it, listed as
-/// text in `app-menu.txt` (the system draws the menu, so there is no picture of it). SorelloUI's own snapshots draw
+/// text in `app-menu.txt` (the system draws the menu, so there is no picture of it), with the app's own menus, which
+/// show only while one of its windows is open, in `app-main-menu.txt`. SorelloUI's own snapshots draw
 /// invented models; these draw the models the app builds, so what is reviewed is what ships. It also builds setup and
 /// the main window as the app shows them, never on screen, and fails if either loses its chrome's size or minimum.
 ///
@@ -93,12 +94,15 @@ enum WindowSnapshots {
         }
         var passed = true
         let menu = StatusMenuController(model: models.menu)
-        if (try? menu.text.write(to: output.appendingPathComponent("app-menu.txt"), atomically: true,
-                                 encoding: .utf8)) != nil {
-            Console.line("app-menu.txt")
-        } else {
-            Console.line("FAILED app-menu.txt")
-            passed = false
+        // The app's own menus show only while a window is open, so they are listed too; nothing here installs them.
+        let menus = MainMenu.make(appName: app.info.name, target: nil)
+        for (name, text) in [("app-menu.txt", menu.text), ("app-main-menu.txt", MainMenu.text(of: menus.bar))] {
+            if (try? text.write(to: output.appendingPathComponent(name), atomically: true, encoding: .utf8)) != nil {
+                Console.line(name)
+            } else {
+                Console.line("FAILED \(name)")
+                passed = false
+            }
         }
         for scene in scenes {
             guard let png = SnapshotRenderer.png(of: scene),
