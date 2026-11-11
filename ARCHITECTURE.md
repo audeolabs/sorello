@@ -835,10 +835,9 @@ the main window only when none is. The pill, the Accessibility card and
 the system's own panels are not windows in this sense: they never put
 Sorello in the Dock, and a dictation never brings Sorello forward. Hiding
 Sorello, from its menu or from another app's Hide Others, hides its
-windows and never the pill or the Accessibility card, so a dictation shows
-its pill whether Sorello is hidden or not. When a window asks for the
-microphone, that window is in front again once the system's prompt has
-been answered.
+windows. The pill and the Accessibility card are kept out of that: one
+that is showing stays where it is. When a window asks for the microphone,
+that window is in front again once the system's prompt has been answered.
 
 Every screen has VoiceOver labels on its controls, because most controls
 are icons. User-facing strings go through `String(localized:)`, so a string
@@ -973,7 +972,9 @@ Review does.
   icon: there while setup or the main window is open and gone when the
   last closes; another app brought forward and Sorello's window brought
   back from the Dock and with Command-Tab; the microphone's prompt
-  answered from setup, with setup in front afterwards.
+  answered from setup, with setup in front afterwards; Sorello hidden
+  during a dictation, and a dictation begun while it is hidden, the pill
+  showing in both.
 
 ## 12. Provenance
 
