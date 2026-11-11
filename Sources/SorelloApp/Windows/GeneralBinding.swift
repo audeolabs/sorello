@@ -10,6 +10,7 @@ extension WindowModels {
     func connectGeneral() {
         let general = main.general, app = self.app
         general.hardware = ModelHardware(app.speech.compute)
+        general.offersUpdates = app.updater != nil
         follow { [unowned self] in
             general.modelName = app.info.modelName ?? String(localized: "Speech model",
                                                              comment: "General: the model's row, when it has no name")
@@ -17,7 +18,9 @@ extension WindowModels {
             general.microphones = app.live.microphones.map { MicrophoneOption(id: $0.id, name: $0.name) }
             general.selectedMicrophoneID = app.settings.microphoneID
             general.defaultMicrophoneName = app.live.microphones.first(where: \.isDefault)?.name
-            general.toggles = Self.toggles(app.settings, login: app.platform.loginItem.state)
+            var toggles = Self.toggles(app.settings, login: app.platform.loginItem.state)
+            if let updater = app.updater { toggles[.checkForUpdates] = updater.checksAutomatically }
+            general.toggles = toggles
         }
         general.actions = GeneralActions(
             retryModel: { app.runtime.retryPreparation() },
@@ -59,7 +62,7 @@ extension WindowModels {
         case .pressEnter: settings.pressEnterCommand = on
         case .correctionSuggestions: settings.correctionSuggestions = on
         case .keepRunLog: settings.keepRunLog = on
-        case .checkForUpdates: break
+        case .checkForUpdates: app.updater?.checksAutomatically = on
         }
     }
 

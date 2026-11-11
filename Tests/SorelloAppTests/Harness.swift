@@ -187,6 +187,27 @@ struct FakeMicrophones: MicrophoneListing {
     }
 }
 
+/// An updater that checks nothing and records what it was asked. Observable, as the real one is, so the menu and
+/// General follow it.
+@MainActor
+@Observable
+final class FakeUpdater: Updating {
+    var canCheck = true
+    var foundUnseen = false
+    var checksAutomatically = true
+    @ObservationIgnored var starts = 0
+    @ObservationIgnored var checks = 0
+    /// Runs as the updater starts, to see what the app had done by then.
+    @ObservationIgnored var onStart: () -> Void = {}
+
+    func start() {
+        starts += 1
+        onStart()
+    }
+
+    func checkForUpdates() { checks += 1 }
+}
+
 /// Records what the pill was shown.
 @MainActor
 final class FakePill: PillPresenting {
@@ -230,9 +251,10 @@ final class Harness {
     /// `compute`: where the fake engine says it runs.
     /// `download`: the model's download, when the app has a pin; `readiness`: the engine's at launch.
     /// `microphone`: the microphone's permission, granted unless a test needs to ask.
+    /// `updater`: the app's updater, in a build with an update feed; none otherwise.
     init(directory: URL, defaults: UserDefaults, model: URL? = nil, trusted: Bool = true, fontLicence: URL? = nil,
          compute: SpeechCompute = .neuralEngine, download: FakeDownload? = nil, readiness: EngineReadiness = .ready,
-         microphone: any MicrophoneAuthorizing = GrantedMicrophone()) {
+         microphone: any MicrophoneAuthorizing = GrantedMicrophone(), updater: FakeUpdater? = nil) {
         speech = FakeSpeech(compute: compute, readiness: readiness)
         let info = AppInfo(name: "Sorello Test", version: "0.0.1", build: "1", modelDirectory: model,
                            modelName: model.flatMap(AppInfo.modelName(in:)), fontLicence: fontLicence)
@@ -246,8 +268,8 @@ final class Harness {
                                   openMicrophoneSettings: {}))
         let speech = self.speech
         app = AppComposition(info: info, storage: AppStorage(paths: AppPaths(root: directory), defaults: defaults),
-                             platform: platform, speech: { _ in speech }, download: download, pill: pill,
-                             levels: LevelFeed())
+                             platform: platform, speech: { _ in speech }, download: download, updater: updater,
+                             pill: pill, levels: LevelFeed())
         windows = WindowModels(app: app)
     }
 

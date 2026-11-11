@@ -26,13 +26,17 @@ nonisolated struct AppInfo: Sendable, Equatable {
     var thirdPartyNotices: URL?
     /// The display font's licence, `Fonts/Urbanist-OFL.txt` in the app's resources.
     var fontLicence: URL?
+    /// Where the app looks for a newer build of itself, `SUFeedURL` in its `Info.plist`; nil in a build with no update
+    /// feed, as every development build is, and then the app has no updater (ARCHITECTURE.md, section 6, "Updates").
+    var updateFeed: URL?
 
     /// The running app's identity and resources.
     static func main() -> AppInfo { AppInfo(bundle: .main) }
 
     init(name: String, version: String, build: String, copyright: String? = nil, bundleIdentifier: String? = nil,
          modelDirectory: URL? = nil, pin: ModelPin? = nil, modelName: String? = nil,
-         modelNoticesDirectory: URL? = nil, thirdPartyNotices: URL? = nil, fontLicence: URL? = nil) {
+         modelNoticesDirectory: URL? = nil, thirdPartyNotices: URL? = nil, fontLicence: URL? = nil,
+         updateFeed: URL? = nil) {
         self.name = name
         self.version = version
         self.build = build
@@ -44,6 +48,7 @@ nonisolated struct AppInfo: Sendable, Equatable {
         self.modelNoticesDirectory = modelNoticesDirectory
         self.thirdPartyNotices = thirdPartyNotices
         self.fontLicence = fontLicence
+        self.updateFeed = updateFeed
     }
 
     /// The identity `bundle` declares. Its resources are used only when it is an app bundle, so a build tree never
@@ -67,7 +72,8 @@ nonisolated struct AppInfo: Sendable, Equatable {
                   modelName: pin?.model ?? (hasModel ? model.flatMap(Self.modelName(in:)) : nil),
                   modelNoticesDirectory: resources?.appendingPathComponent("ModelNotices", isDirectory: true),
                   thirdPartyNotices: resources?.appendingPathComponent("ThirdPartyNotices.md"),
-                  fontLicence: resources?.appendingPathComponent("Fonts/Urbanist-OFL.txt"))
+                  fontLicence: resources?.appendingPathComponent("Fonts/Urbanist-OFL.txt"),
+                  updateFeed: isApp ? string("SUFeedURL").flatMap(URL.init(string:)) : nil)
     }
 
     /// The model's name in its manifest, the base model it was exported from, for a model given on the command line

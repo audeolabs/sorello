@@ -17,10 +17,11 @@ cd "$(dirname "$0")/.."
 source Config/identity.conf
 
 CHANNEL=${CHANNEL:-dev}
+# A nightly follows the nightly feed and a release the release feed; a development build has none, and so no updater.
 case "$CHANNEL" in
-  dev) NAME=$DEV_NAME; BUNDLE_ID=$DEV_BUNDLE_ID ;;
-  nightly) NAME=$NIGHTLY_NAME; BUNDLE_ID=$NIGHTLY_BUNDLE_ID ;;
-  release) NAME=$RELEASE_NAME; BUNDLE_ID=$RELEASE_BUNDLE_ID ;;
+  dev) NAME=$DEV_NAME; BUNDLE_ID=$DEV_BUNDLE_ID; FEED="" ;;
+  nightly) NAME=$NIGHTLY_NAME; BUNDLE_ID=$NIGHTLY_BUNDLE_ID; FEED=$NIGHTLY_FEED ;;
+  release) NAME=$RELEASE_NAME; BUNDLE_ID=$RELEASE_BUNDLE_ID; FEED=$RELEASE_FEED ;;
   *) echo "build-app: CHANNEL must be dev, nightly or release" >&2; exit 64 ;;
 esac
 # The build number a bundle may carry: the system compares it as up to three whole numbers.
@@ -46,6 +47,17 @@ for arch in arm64 x86_64; do
   case "$REQUESTED" in *" $arch "*) WANTED="${WANTED:+$WANTED }$arch" ;; esac
 done
 [ -n "$WANTED" ] || { echo "build-app: ARCHS names no architecture" >&2; exit 64; }
+# A feed is fetched over HTTPS only, and what it offers is installed only if it verifies against the key, so a feed
+# without a well-formed key is not a feed (ARCHITECTURE.md, section 6, "Updates").
+if [ -n "$FEED" ]; then
+  case "$FEED" in
+    https://*) ;;
+    *) echo "build-app: the $CHANNEL feed must be an https address" >&2; exit 64 ;;
+  esac
+  /usr/bin/python3 -c 'import base64, sys; sys.exit(len(base64.b64decode(sys.argv[1], validate=True)) != 32)' \
+      "$UPDATE_PUBLIC_KEY" 2>/dev/null \
+    || { echo "build-app: UPDATE_PUBLIC_KEY must be an Ed25519 public key, 32 bytes in base64" >&2; exit 64; }
+fi
 BUILD_DIR=${BUILD_DIR:-build}
 CODESIGN_IDENTITY=${CODESIGN_IDENTITY:--}
 APP="$BUILD_DIR/$NAME.app"
@@ -100,6 +112,18 @@ rm -rf "$SPARKLE/XPCServices" "$SPARKLE/Versions/B/XPCServices" "$SPARKLE/Header
 sed -e "s|__NAME__|$NAME|g" -e "s|__BUNDLE_ID__|$BUNDLE_ID|g" -e "s|__VERSION__|$VERSION|g" \
     -e "s|__BUILD__|$BUILD|g" -e "s|__MINIMUM_SYSTEM__|$MINIMUM_SYSTEM|g" -e "s|__COPYRIGHT__|$COPYRIGHT|g" \
     Config/Info.plist > "$APP/Contents/Info.plist"
+# A build with a feed checks it once a day without asking whether it may, never sends a system profile, verifies an
+# update's signature before it opens it, and installs nothing by itself until the user says so in Sparkle's window.
+# A build without one has none of these keys, and no updater.
+if [ -n "$FEED" ]; then
+  INFO="$APP/Contents/Info.plist"
+  plutil -insert SUFeedURL -string "$FEED" "$INFO"
+  plutil -insert SUPublicEDKey -string "$UPDATE_PUBLIC_KEY" "$INFO"
+  plutil -insert SUEnableAutomaticChecks -bool YES "$INFO"
+  plutil -insert SUScheduledCheckInterval -integer 86400 "$INFO"
+  plutil -insert SUAutomaticallyUpdate -bool NO "$INFO"
+  plutil -insert SUVerifyUpdateBeforeExtraction -bool YES "$INFO"
+fi
 plutil -lint "$APP/Contents/Info.plist" > /dev/null
 
 cp -R Resources/Fonts "$APP/Contents/Resources/Fonts"

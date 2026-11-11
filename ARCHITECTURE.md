@@ -649,7 +649,8 @@ the other's builds. A development build has no feed.
   has no update row, General has no update setting, and no connection is
   opened.
 - With a feed, Sorello checks it once a day while it runs, and when the
-  user chooses Check for Updates… in the menu. General has a switch,
+  user chooses Check for Updates… in the menu, which cannot be chosen
+  while a check Sorello made on its own is still fetching. General has a switch,
   "Check for updates automatically", on from the first launch; turned
   off, only the menu's command checks. Sorello never asks whether it may
   check.
@@ -668,12 +669,14 @@ the other's builds. A development build has no feed.
   window. Sparkle offers there to install later versions by itself; that
   is off until the user turns it on.
 - What Sparkle downloads is used only if its signature verifies against
-  the key in the app. Installing replaces the app where it is and opens
-  the new one. Its identity is the same, so its settings, model and
+  the key in the app, and it is checked before it is opened. Installing
+  replaces the app where it is and opens the new one. Its identity is the same, so its settings, model and
   permissions are the ones it had.
 - A check sends nothing about the user or the Mac: Sparkle's system
-  profile is never enabled. The server learns the address the request
-  came from, and the app's name and version.
+  profile is never enabled, and no cookie is kept or sent. Each request
+  says `User-Agent: <name>/<version>` and `Accept-Language: en`. The
+  server learns the address the request came from, and the app's name
+  and version.
 - The app follows only the feed in its `Info.plist`. A feed address left
   in its preferences is removed at launch, not followed.
 
@@ -963,7 +966,18 @@ Review does.
   notices, the pin and Sparkle's framework in `Contents/Frameworks`, then
   signs it, and everything in Sparkle's framework that runs, with the
   hardened runtime, and the app with the audio-input entitlement. `CODESIGN_IDENTITY` defaults to ad hoc. A
-  signature made with a certificate carries Apple's timestamp.
+  signature made with a certificate carries Apple's timestamp. The
+  framework goes in without its XPC services, which only a sandboxed app
+  uses, and without its headers. Its installer, its helper app, the
+  framework and then the app are each signed with the same identity, the
+  hardened runtime and the timestamp, and none but the app with an
+  entitlement. The hardened runtime loads only libraries signed by the
+  app's own team, which an ad hoc signature does not have, so an ad hoc
+  build, and only an ad hoc build, also carries
+  `com.apple.security.cs.disable-library-validation`. A channel with a
+  feed gets the feed, the key, a daily check that never asks whether it
+  may, checking before opening and no installing by itself in its
+  `Info.plist`; the feed must be HTTPS and the key 32 bytes.
 - Identity is one file, `Config/identity.conf`. There are three channels.
   Development builds are "Sorello Dev", `com.audeolabs.sorello.dev`;
   `CHANNEL=nightly` builds are "Sorello Nightly",
@@ -1091,8 +1105,10 @@ Review does.
   prints what it found. When the feed lists a newer build it downloads
   it, verifies it as any update is verified, and installs it over the
   app the command was run from as the command ends, without opening it.
-  It shows no window. It is run on a copy of the app, against a feed on
-  the same Mac that lists a build signed for the test.
+  It shows no window. It exits 0 when it installs or the feed offers
+  nothing newer, and 1, with the reason, otherwise. It is run on a copy
+  of the app, against a feed on the same Mac that lists a build signed
+  for the test.
 - The Intel half of a universal build is compiled and linked on every
   release build, but it cannot run on the Apple silicon Macs Sorello is
   built on. What it does differently, the fallback, is proved there with
@@ -1107,7 +1123,7 @@ Review does.
   lock and sleep during a recording; the pill on the built-in display, an
   external display and a full-screen Space, and while the system is
   showing something in the camera island; and no network activity during
-  any of it once the model is on the Mac. The download itself on a real
+  any of it once the model is on the Mac, but for a check for updates. The download itself on a real
   connection: start it, go on through setup while it runs, quit in the
   middle and continue, cancel, and try it with the network off. The Dock
   icon: there while setup or the main window is open and gone when the

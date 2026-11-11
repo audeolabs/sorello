@@ -11,6 +11,8 @@ public enum SorelloMain {
             AppShell.run(showsSetup: showsSetup)
         case .selfTest(let files, let model, let forcesCPU, let downloads):
             SelfTest.run(files: files, model: model, forcesCPU: forcesCPU, downloads: downloads)
+        case .updateTest(let feed):
+            UpdateSelfTest.run(feed: feed)
         case .snapshots(let directory):
             WindowSnapshots.run(into: directory)
         case .usage(let message):
@@ -28,18 +30,22 @@ public enum SorelloMain {
 ///                                                  dictate each file through the real session; exit 0 or 1. `--cpu`
 ///                                                  runs the encoder on the CPU, as on a Mac without a Neural Engine.
 ///                                                  `--download` first downloads the model into a temporary store
+///     Sorello --self-test --update <feed>          run the packaged app's updater against `feed`, an http or https
+///                                                  address, for this run only; install a newer build as it ends
 ///     Sorello --snapshots <dir>                    render the menu-bar item, windows and setup; list the menu
 ///
 /// The app ignores arguments it does not know, because the system can pass its own when it launches an app.
 nonisolated enum LaunchMode: Equatable {
     case app(showsSetup: Bool)
     case selfTest(files: [URL], model: URL?, forcesCPU: Bool, downloads: Bool = false)
+    case updateTest(feed: URL)
     case snapshots(URL)
     case usage(String)
 
     static let usage = """
         usage: Sorello [--no-setup]
                Sorello --self-test [--model <bundle-dir> | --download] [--cpu] <file.wav>...
+               Sorello --self-test --update <feed-url>
                Sorello --snapshots <output-directory>
         """
 
@@ -49,6 +55,14 @@ nonisolated enum LaunchMode: Equatable {
             return
         }
         switch first {
+        case "--self-test" where arguments.count > 1 && arguments[1] == "--update":
+            // The feed alone: an updater test proves the updater, not a dictation.
+            guard arguments.count == 3, let feed = URL(string: arguments[2]),
+                  ["http", "https"].contains(feed.scheme?.lowercased() ?? ""), feed.host != nil else {
+                self = .usage(Self.usage)
+                return
+            }
+            self = .updateTest(feed: feed)
         case "--self-test":
             var rest = arguments.dropFirst()
             var model: URL?

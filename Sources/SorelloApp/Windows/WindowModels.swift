@@ -82,6 +82,7 @@ final class WindowModels {
             menu.status = status
             menu.shortcuts = KeyCombo.all(app.settings.shortcutBindings, formatter: formatter)
             menu.hasLastDictation = app.runtime.state.lastText != nil
+            menu.updates = Updates.row(app.updater)
         }
         menu.actions = StatusMenuActions(
             copyLastDictation: { if let text = app.runtime.state.lastText { app.platform.system.copy(text) } },
@@ -91,6 +92,7 @@ final class WindowModels {
             openDictionary: { app.navigation.openMain(.dictionary) },
             openRunLog: { app.navigation.openMain(.runLog) },
             openSettings: { app.navigation.openMain(nil) },
+            checkForUpdates: { app.updater?.checkForUpdates() },
             quit: { app.navigation.quit() })
     }
 
