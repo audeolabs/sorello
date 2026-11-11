@@ -21,6 +21,8 @@ public actor SpeechEngine: SpeechTranscribing {
     static let retainedBytesLimit = 16 << 20
 
     private let queue = DispatchSerialQueue(label: "sorello.speech", qos: .userInitiated)
+    /// Where the encoder runs, chosen when the engine was made. The General screen says which one this Mac uses.
+    public nonisolated let compute: SpeechCompute
     private let loader: ModelLoader?
     private let dictionary: @Sendable (String?) -> DictionarySnapshot
     private let retainedLifetime: TimeInterval
@@ -41,20 +43,25 @@ public actor SpeechEngine: SpeechTranscribing {
     /// - `modelDirectory`: the model bundle in the app's resources; nil when the app was built without the model,
     ///   which makes the engine `failed(.modelMissing)` for good.
     /// - `storeDirectory`: where the stable copy of the model is kept (`Application Support/<bundle id>/Models`), so
-    ///   the Neural Engine's compiled model survives app updates; nil loads straight from `modelDirectory`.
+    ///   the Neural Engine's compiled model survives app updates; nil loads straight from `modelDirectory`. The CPU
+    ///   fallback loads the same copy, so both paths check the same files and share one store.
+    /// - `compute`: where the encoder runs. The default reads this Mac's hardware, once, now; the verification tools
+    ///   pass `.cpu` to prove the fallback on a Mac that has a Neural Engine.
     /// - `dictionary`: the words for a dictation into an app (nil: no app), read once when its stream opens.
-    public init(modelDirectory: URL?, storeDirectory: URL?,
+    public init(modelDirectory: URL?, storeDirectory: URL?, compute: SpeechCompute = .forThisMac(),
                 dictionary: @escaping @Sendable (String?) -> DictionarySnapshot) {
         let loader = modelDirectory.map { bundle in
-            Self.loader(bundle: bundle, store: storeDirectory.map { ModelStore(root: $0) })
+            Self.loader(bundle: bundle, store: storeDirectory.map { ModelStore(root: $0) }, compute: compute)
         }
-        self.init(loader: loader, dictionary: dictionary)
+        self.init(loader: loader, compute: compute, dictionary: dictionary)
     }
 
     /// `beforeDelivery` runs on the engine's executor after a stream's result is made and before it is handed over,
     /// so tests can land a cancel there.
-    init(loader: ModelLoader?, dictionary: @escaping @Sendable (String?) -> DictionarySnapshot,
+    init(loader: ModelLoader?, compute: SpeechCompute = .neuralEngine,
+         dictionary: @escaping @Sendable (String?) -> DictionarySnapshot,
          retainedLifetime: TimeInterval = 90, beforeDelivery: (@Sendable (UInt64) -> Void)? = nil) {
+        self.compute = compute
         self.beforeDelivery = beforeDelivery
         self.loader = loader
         self.dictionary = dictionary
@@ -62,16 +69,16 @@ public actor SpeechEngine: SpeechTranscribing {
         readinessHub = ReadinessHub(loader == nil ? .failed(.modelMissing) : .preparing)
     }
 
-    /// The bundled model, from the store's stable copy when there is one.
-    private static func loader(bundle: URL, store: ModelStore?) -> ModelLoader {
+    /// The bundled model on `compute`, from the store's stable copy when there is one.
+    private static func loader(bundle: URL, store: ModelStore?, compute: SpeechCompute) -> ModelLoader {
         { () throws(EngineFailure) -> any SpeechModel in
             guard let store else {
-                let model = try CoreMLSpeechModel(directory: bundle)
+                let model = try CoreMLSpeechModel(directory: bundle, compute: compute)
                 try model.prepare()
                 return model
             }
             do {
-                return try store.open(bundle: bundle, make: { try CoreMLSpeechModel(directory: $0) },
+                return try store.open(bundle: bundle, make: { try CoreMLSpeechModel(directory: $0, compute: compute) },
                                       prepare: { try $0.prepare() })
             } catch let failure as EngineFailure {
                 throw failure

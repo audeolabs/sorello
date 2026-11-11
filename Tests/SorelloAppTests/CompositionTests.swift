@@ -4,6 +4,7 @@ import Foundation
 import MacPlatform
 import Persistence
 import SorelloUI
+import SpeechEngine
 import Testing
 @testable import SorelloApp
 
@@ -58,6 +59,14 @@ import Testing
         #expect(app.runtime.state.lastText == nil)
         #expect(harness.speech.discards == 1)
         await eventually { harness.windows.menu.lastDictation == nil && harness.windows.main.runLog.items.isEmpty }
+    }
+
+    /// General says where the engine runs the model, as the engine chose it from the hardware.
+    @Test(arguments: [(SpeechCompute.neuralEngine, ModelHardware.neuralEngine), (.cpu, .processor)])
+    func generalSaysWhereTheModelRuns(compute: SpeechCompute, hardware: ModelHardware) throws {
+        let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
+        let harness = Harness(directory: directory.url, defaults: suite.defaults, compute: compute)
+        #expect(harness.windows.main.general.hardware == hardware)
     }
 
     @Test func theWindowsShowTheRealStoresAndChangeThem() async throws {

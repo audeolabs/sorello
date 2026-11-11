@@ -3,7 +3,9 @@
 Local dictation for macOS, by Audeo Labs. Hold a key, speak, release: the words appear at the cursor. Speech
 recognition runs on your Mac with a bundled model. Sorello makes no network connections.
 
-Sorello needs an Apple Silicon Mac running macOS 26 or later. It is in early development: version 0.0.1.
+Sorello needs a Mac running macOS 26 or later. On a Mac with a Neural Engine, which is every Apple silicon Mac,
+recognition runs there. On an Intel Mac it runs on the processor, more slowly. It is in early development:
+version 0.0.1.
 
 ## Build
 
@@ -16,7 +18,9 @@ make app SORELLO_MODEL_DIR=/path/to/model/bundle
 open "build/Sorello Dev.app"
 ```
 
-Without `SORELLO_MODEL_DIR` the app still builds, but it cannot transcribe.
+Without `SORELLO_MODEL_DIR` the app still builds, but it cannot transcribe. A development build runs on the Mac that
+built it; `CHANNEL=release` builds a universal app for Apple silicon and Intel, and `ARCHS="arm64 x86_64"` makes any
+build universal.
 
 ## Check a build
 

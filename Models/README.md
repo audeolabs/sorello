@@ -26,4 +26,5 @@ swift run sorello-transcribe --model /path/to/bundle --store /tmp/model-store sp
 ```
 
 `make check` needs no model. The first load at a new store path compiles the model for the Neural Engine and can take
-a few minutes; later loads from the same path are quick. Changing the model, or the pin, is the owner's decision.
+a few minutes; later loads from the same path are quick. On a Mac without a Neural Engine, and with `--cpu`, nothing is
+compiled, so there is no such wait. Changing the model, or the pin, is the owner's decision.

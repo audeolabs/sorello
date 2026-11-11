@@ -1,6 +1,7 @@
 import DictationCore
 import DictionaryKit
 import Foundation
+import SpeechEngine
 import Synchronization
 @testable import SorelloApp
 
@@ -58,8 +59,14 @@ final class ManualClock: SessionClock {
     var sleeperCount: Int { state.withLock { $0.sleepers.count } }
 }
 
-/// An engine that is ready at once and hears what the test says it heard.
+/// An engine that is ready at once, on `compute`, and hears what the test says it heard.
 final class FakeSpeech: AppSpeech {
+    let compute: SpeechCompute
+
+    init(compute: SpeechCompute = .neuralEngine) {
+        self.compute = compute
+    }
+
     final class Stream: SpeechStreaming {
         let result: SpeechResult
         init(result: SpeechResult) { self.result = result }

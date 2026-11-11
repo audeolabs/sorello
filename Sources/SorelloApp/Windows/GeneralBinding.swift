@@ -4,10 +4,12 @@ import Persistence
 import SorelloUI
 
 extension WindowModels {
-    /// General: the model's state, the permissions, the microphone and the switches. Launch at login shows what the
-    /// system has, not what was last asked for, because the user can change it in System Settings.
+    /// General: the model's state and where it runs, the permissions, the microphone and the switches. Launch at
+    /// login shows what the system has, not what was last asked for, because the user can change it in System
+    /// Settings. Where the model runs was settled when the engine was made, so it is read once.
     func connectGeneral() {
         let general = main.general, app = self.app
+        general.hardware = ModelHardware(app.speech.compute)
         follow { [unowned self] in
             general.modelName = app.info.modelName ?? String(localized: "No speech model",
                                                              comment: "General: the app was built without a model")

@@ -23,6 +23,9 @@ public enum ScreenSnapshots {
             main("general", height: 1060, .sample(section: .general)),
             main("general-problems", height: 1100, .sample(section: .general, status: problems)),
             main("general-preparing", height: 640, .sample(section: .general, status: preparing)),
+            main("general-cpu", height: 640, window(.general) { $0.generalReplaced(.sample(hardware: .processor)) }),
+            main("general-cpu-preparing", height: 640,
+                 window(.general) { $0.generalReplaced(.sample(status: preparing, hardware: .processor)) }),
             main("shortcuts", height: 720, .sample(section: .shortcuts)),
             main("shortcuts-recording", height: 760, window(.shortcuts) { $0.shortcutsReplaced(.sample(recording: true)) }),
             main("dictionary", height: 940, .sample(section: .dictionary)),
@@ -111,6 +114,11 @@ private extension MainSection {
 }
 
 private extension MainWindowModel {
+    func generalReplaced(_ general: GeneralModel) -> MainWindowModel {
+        MainWindowModel(section: section, general: general, shortcuts: shortcuts, dictionary: dictionary,
+                        macros: macros, runLog: runLog, about: about)
+    }
+
     func shortcutsReplaced(_ shortcuts: ShortcutsModel) -> MainWindowModel {
         MainWindowModel(section: section, general: general, shortcuts: shortcuts, dictionary: dictionary,
                         macros: macros, runLog: runLog, about: about)

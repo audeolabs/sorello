@@ -3,6 +3,7 @@ import DictionaryKit
 import MacPlatform
 import Persistence
 import SorelloUI
+import SpeechEngine
 
 // The windows' words for the app's health and for refused edits. The state line, the sidebar's foot and General all
 // read the same `AppStatus`, built here from what the session and the adapters report.
@@ -16,6 +17,16 @@ extension ModelStatus {
         case .failed(.modelMissing): self = .failed(.missing)
         case .failed(.modelCorrupt): self = .failed(.damaged)
         case .failed(.loadFailed): self = .failed(.couldNotLoad)
+        }
+    }
+}
+
+extension ModelHardware {
+    /// Where the engine runs the encoder, as General says it.
+    init(_ compute: SpeechCompute) {
+        switch compute {
+        case .neuralEngine: self = .neuralEngine
+        case .cpu: self = .processor
         }
     }
 }

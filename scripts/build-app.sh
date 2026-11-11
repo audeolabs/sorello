@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Assembles and signs the app bundle (ARCHITECTURE.md, section 10).
 #   CHANNEL=dev|release   which identity from Config/identity.conf (default dev)
+#   ARCHS                 the executable's architectures, arm64 and/or x86_64, separated by spaces. Default: this
+#                         Mac's for dev, both (universal) for release
 #   SORELLO_MODEL_DIR     the pinned model bundle; required for CHANNEL=release
 #   CODESIGN_IDENTITY     default "-" (ad hoc)
 #   BUILD_DIR             default build
@@ -15,6 +17,23 @@ case "$CHANNEL" in
   release) NAME=$RELEASE_NAME; BUNDLE_ID=$RELEASE_BUNDLE_ID ;;
   *) echo "build-app: CHANNEL must be dev or release" >&2; exit 64 ;;
 esac
+# This Mac's architecture is its hardware's, which a shell running under Rosetta would misreport through uname.
+if [ "$(sysctl -n hw.optional.arm64 2>/dev/null || true)" = 1 ]; then NATIVE=arm64; else NATIVE=x86_64; fi
+if [ "$CHANNEL" = release ]; then DEFAULT_ARCHS="arm64 x86_64"; else DEFAULT_ARCHS=$NATIVE; fi
+# The words of ARCHS, however they are separated, each checked and then held between single spaces.
+REQUESTED=" "
+for arch in ${ARCHS:-$DEFAULT_ARCHS}; do
+  case "$arch" in
+    arm64|x86_64) REQUESTED="$REQUESTED$arch " ;;
+    *) echo "build-app: ARCHS may name only arm64 and x86_64, not $arch" >&2; exit 64 ;;
+  esac
+done
+# Each architecture once, in a fixed order, so the check at the end compares like with like.
+WANTED=""
+for arch in arm64 x86_64; do
+  case "$REQUESTED" in *" $arch "*) WANTED="${WANTED:+$WANTED }$arch" ;; esac
+done
+[ -n "$WANTED" ] || { echo "build-app: ARCHS names no architecture" >&2; exit 64; }
 BUILD_DIR=${BUILD_DIR:-build}
 CODESIGN_IDENTITY=${CODESIGN_IDENTITY:--}
 APP="$BUILD_DIR/$NAME.app"
@@ -24,12 +43,24 @@ if [ -z "${SORELLO_MODEL_DIR:-}" ] && [ "$CHANNEL" = release ]; then
   exit 1
 fi
 
-swift build -c release --arch arm64 --product Sorello
-BIN=$(swift build -c release --arch arm64 --show-bin-path)
+# One build per architecture, joined into one executable. Every --arch build writes to the same products directory,
+# so each slice is copied out before the next one is built.
+SLICES=$(mktemp -d "${TMPDIR:-/tmp}/sorello-slices.XXXXXX")
+trap 'rm -rf "$SLICES"' EXIT
+set --
+for arch in $WANTED; do
+  swift build -c release --arch "$arch" --product Sorello
+  cp "$(swift build -c release --arch "$arch" --show-bin-path)/Sorello" "$SLICES/Sorello-$arch"
+  set -- "$@" "$SLICES/Sorello-$arch"
+done
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN/Sorello" "$APP/Contents/MacOS/Sorello"
+if [ $# -eq 1 ]; then
+  cp "$1" "$APP/Contents/MacOS/Sorello"
+else
+  lipo -create -output "$APP/Contents/MacOS/Sorello" "$@"
+fi
 
 sed -e "s|__NAME__|$NAME|g" -e "s|__BUNDLE_ID__|$BUNDLE_ID|g" -e "s|__VERSION__|$VERSION|g" \
     -e "s|__BUILD__|$BUILD|g" -e "s|__MINIMUM_SYSTEM__|$MINIMUM_SYSTEM|g" -e "s|__COPYRIGHT__|$COPYRIGHT|g" \
@@ -79,4 +110,14 @@ fi
 
 codesign --force --options runtime --sign "$CODESIGN_IDENTITY" --entitlements Config/Sorello.entitlements "$APP"
 codesign --verify --deep --strict "$APP"
+
+# The executable that was signed holds exactly the architectures asked for, or there is no app. Sorted, the list
+# reads in the same order as WANTED.
+PACKAGED=$(lipo -archs "$APP/Contents/MacOS/Sorello" | tr ' ' '\n' | sort | paste -sd ' ' -)
+if [ "$PACKAGED" != "$WANTED" ]; then
+  echo "build-app: the executable holds $PACKAGED, not $WANTED" >&2
+  rm -rf "$APP"
+  exit 1
+fi
+echo "build-app: $NAME for $WANTED" >&2
 echo "$APP"
