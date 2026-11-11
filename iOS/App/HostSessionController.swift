@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import TextRules
 import UIKit
 
 /// Owns the host side for the app's lifetime: the session core (HostCore), the microphone, the model
@@ -219,10 +220,12 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
                 return { task.end() }
             },
             formatTranscript: { text, pressEnterEnabled, spokenDelimitersEnabled, spokenNumbersEnabled in
-                let processed = LocalDictationCore.process(text, macros: [], pressEnterEnabled: pressEnterEnabled,
-                                                           spokenDelimitersEnabled: spokenDelimitersEnabled,
-                                                           spokenNumbersEnabled: spokenNumbersEnabled)
-                return (processed.output, processed.shouldPressEnter)
+                // No macros and no prompt tag on iPhone, and no context: the keyboard fits the text to the
+                // cursor when it inserts it (`TextInsertionFormatter`).
+                let options = TextRuleOptions(pressEnterCommand: pressEnterEnabled, spokenNumbers: spokenNumbersEnabled,
+                                              spokenDelimiters: spokenDelimitersEnabled, promptTag: "")
+                let processed = DictationRules.process(text, options: options, promptStyle: false)
+                return (processed.text, processed.pressEnter)
             })
     }
 

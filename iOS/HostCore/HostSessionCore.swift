@@ -13,7 +13,7 @@ struct HostEnvironment {
     /// Begins a UIKit background task. `onExpiration` runs on main when time runs out; the returned
     /// closure ends the task, and the core calls it exactly once.
     var beginBackgroundTask: @MainActor (_ onExpiration: @escaping @MainActor () -> Void) -> (@MainActor () -> Void)
-    /// `LocalDictationCore.process`, which is compiled into the app only.
+    /// The shared text rules (`DictationRules.process`, from `TextRules`), which only the app links.
     var formatTranscript: @MainActor (_ text: String, _ pressEnterEnabled: Bool, _ spokenDelimitersEnabled: Bool,
                                       _ spokenNumbersEnabled: Bool) -> (text: String, pressEnter: Bool)
 }

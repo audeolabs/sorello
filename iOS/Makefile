@@ -1,6 +1,7 @@
-# Sorello for iPhone, built with swiftc and make only (no Xcode project or
-# SwiftPM). Run `make -C iOS <target>` from the repository root, or `make` in
-# this directory. README.md documents usage; ARCHITECTURE.md is the contract.
+# Sorello for iPhone, built with swiftc and make (no Xcode project), against
+# the package's shared modules, which SwiftPM builds. Run `make -C iOS <target>`
+# from the repository root, or `make` in this directory. README.md documents
+# usage; ARCHITECTURE.md is the contract.
 .DEFAULT_GOAL := all
 
 # dev (the default) or appstore. appstore presets the production identifiers
@@ -148,13 +149,9 @@ DICTIONARY_SOURCES ?= $(call swift_sources,../Sources/Dictionary)
 # The dictionary needs the Foundation-only Parakeet core (tokens, errors), which uses the
 # silence compactor; the host tests compile all three.
 DICTIONARY_TEST_SOURCES = $(DICTIONARY_SOURCES) ../Sources/Parakeet/LocalParakeetCore.swift ../Sources/Parakeet/ParakeetSilenceCompactor.swift
-DICTATION_CORE_SOURCES ?= ../Sources/LocalDictationCore.swift ../Sources/SpokenNumberFormatter.swift
-# Fits a dictation to the text around the cursor, shared with the macOS app; Shared's
-# TextInsertionFormatter uses it, so the app, the keyboard and the host tests compile it.
-INSERTION_CONTEXT_SOURCES ?= ../Sources/InsertionContextFormatter.swift
-APP_SOURCES = $(APP_SWIFT_SOURCES) $(SHARED_SOURCES) $(INSERTION_CONTEXT_SOURCES) $(HOSTCORE_SOURCES) $(PARAKEET_SOURCES) $(DICTIONARY_SOURCES) $(DICTATION_CORE_SOURCES) \
+APP_SOURCES = $(APP_SWIFT_SOURCES) $(SHARED_SOURCES) $(HOSTCORE_SOURCES) $(PARAKEET_SOURCES) $(DICTIONARY_SOURCES) \
 	$(ACTIVITYCORE_SOURCES) $(ACTIVITY_ATTRIBUTES_SOURCES) $(SESSION_CONTROL_INTENT_SOURCES) $(APP_KEYBOARDCORE_SOURCES)
-KEYBOARD_SOURCES = $(KEYBOARD_SWIFT_SOURCES) $(SHARED_SOURCES) $(INSERTION_CONTEXT_SOURCES) $(KEYBOARDCORE_SOURCES)
+KEYBOARD_SOURCES = $(KEYBOARD_SWIFT_SOURCES) $(SHARED_SOURCES) $(KEYBOARDCORE_SOURCES)
 ACTIVITY_SOURCES = $(ACTIVITY_SWIFT_SOURCES) $(ACTIVITYCORE_SOURCES) $(ACTIVITY_KEYBOARDCORE_SOURCES)
 
 OBJ_DIR = $(BUILD_DIR)/obj
@@ -178,7 +175,27 @@ PARAKEET_STAMP = $(OBJ_DIR)/parakeet-selection
 SWIPE_STAMP = $(OBJ_DIR)/swipe-selection
 PARAKEET_INSTALL_KEY = $(OBJ_DIR)/parakeet-installed
 HOST_BUILD_DIR ?= build/host
-HOST_TARGET ?= $(shell uname -m)-apple-macosx13.0
+# The shared modules require macOS 26, as the Mac app does.
+HOST_TARGET ?= $(shell uname -m)-apple-macosx26.0
+
+# Sorello's shared modules (../ARCHITECTURE.md, section 13), built by SwiftPM from the package as two static
+# libraries: the app links SorelloSpeech (SpeechEngine, DictionaryKit, TextRules and DictationCore), the keyboard
+# SorelloText (TextRules alone), and the Live Activity neither. Each target triple has a build directory of its own,
+# $(PACKAGE_BUILD_DIR)/<triple>, built again whenever the package's manifest or a source of those modules changes, and
+# SwiftPM rebuilds only what changed. <triple>.bin-path records where SwiftPM put the libraries and their modules, as
+# SwiftPM says (--show-bin-path). The first build of a checkout fetches the package's one dependency, Sparkle, which
+# only the Mac app links.
+PACKAGE_BUILD_DIR ?= build/package
+PACKAGE_SOURCES := ../Package.swift ../Package.resolved \
+	$(call swift_sources,../Sources/DictationCore ../Sources/TextRules ../Sources/DictionaryKit ../Sources/SpeechEngine)
+SIMULATOR_TARGET = arm64-apple-ios$(DEPLOYMENT_TARGET)-simulator
+PACKAGE = $(PACKAGE_BUILD_DIR)/$(TARGET).bin-path
+SIMULATOR_PACKAGE = $(PACKAGE_BUILD_DIR)/$(SIMULATOR_TARGET).bin-path
+HOST_PACKAGE = $(PACKAGE_BUILD_DIR)/$(HOST_TARGET).bin-path
+# $(1): a .bin-path file. Shell words that find the modules of that build.
+package_modules = -I "$$(cat "$(1)")"
+# $(1): a .bin-path file, $(2): a library of that build. Shell words that find its modules and link the library.
+package_library = $(call package_modules,$(1)) -L "$$(cat "$(1)")" -l$(2)
 
 SWIFTC = xcrun --sdk $(SDK) swiftc
 # iOS 26 deprecates the legacy CBLAS declarations the shared decoder calls; the
@@ -387,15 +404,26 @@ ifeq ($(PLATFORM),simulator)
 	@derq query -f xml -i "$@" -o "$@.der" --raw
 endif
 
-$(APP_BINARY): $(APP_SOURCES) $(CONFIG_STAMP) $(LINKED_APP_ENTITLEMENTS) $(APPINTENTS_PROTOCOLS) Makefile
+# $*: the target triple; the SDK follows from it. Both libraries, then where SwiftPM put them.
+$(PACKAGE_BUILD_DIR)/%.bin-path: $(PACKAGE_SOURCES) Makefile
+	@set -e; case "$*" in *-simulator) sdk=iphonesimulator ;; *-macosx*) sdk=macosx ;; *) sdk=iphoneos ;; esac; \
+	sdk_path=$$(xcrun --sdk $$sdk --show-sdk-path); scratch="$(abspath $(PACKAGE_BUILD_DIR))/$*"; \
+	package() { swift build --package-path .. -c release --triple "$*" --sdk "$$sdk_path" --scratch-path "$$scratch" "$$@"; }; \
+	echo "Building SorelloSpeech and SorelloText for $*"; \
+	package --product SorelloSpeech; package --product SorelloText; \
+	mkdir -p "$(@D)"; package --product SorelloSpeech --show-bin-path > "$@.tmp"; mv "$@.tmp" "$@"
+
+$(APP_BINARY): $(APP_SOURCES) $(PACKAGE) $(CONFIG_STAMP) $(LINKED_APP_ENTITLEMENTS) $(APPINTENTS_PROTOCOLS) Makefile
 	@mkdir -p "$(@D)"
 	@$(call write_const_values_map,$(APP_CONST_VALUES))
 	$(SWIFTC) $(SWIFT_COMMON_FLAGS) $(SWIFT_OPTIMIZATION) -module-name Sorello $(call const_values_flags,$(APP_CONST_VALUES)) \
+		$(call package_library,$(PACKAGE),SorelloSpeech) \
 		$(call embedded_entitlements,$(APP_ENTITLEMENTS)) -o "$@" $(APP_SOURCES)
 
-$(KEYBOARD_BINARY): $(KEYBOARD_SOURCES) $(CONFIG_STAMP) $(LINKED_KEYBOARD_ENTITLEMENTS) Makefile
+$(KEYBOARD_BINARY): $(KEYBOARD_SOURCES) $(PACKAGE) $(CONFIG_STAMP) $(LINKED_KEYBOARD_ENTITLEMENTS) Makefile
 	@mkdir -p "$(@D)"
 	$(SWIFTC) $(SWIFT_COMMON_FLAGS) $(SWIFT_OPTIMIZATION) $(KEYBOARD_SWIFT_FLAGS) $(KEYBOARD_LINK_FLAGS) \
+		$(call package_library,$(PACKAGE),SorelloText) \
 		$(call embedded_entitlements,$(KEYBOARD_ENTITLEMENTS)) -o "$@" $(KEYBOARD_SOURCES)
 
 $(ACTIVITY_BINARY): $(ACTIVITY_SOURCES) $(CONFIG_STAMP) $(LINKED_ACTIVITY_ENTITLEMENTS) $(APPINTENTS_PROTOCOLS) Makefile
@@ -534,9 +562,9 @@ check: typecheck test lint
 
 # Always against the simulator SDK, independent of PLATFORM. The self-test
 # variant is checked too, so it cannot rot outside its builds.
-typecheck:
+typecheck: $(SIMULATOR_PACKAGE)
 	@set -e; sdk=$$(xcrun --sdk iphonesimulator --show-sdk-path); \
-	flags="-typecheck -warnings-as-errors -swift-version 5 -parse-as-library -target arm64-apple-ios$(DEPLOYMENT_TARGET)-simulator -sdk $$sdk $(ACCELERATE_FLAGS) $(SWIFT_PARALLEL_FLAGS) $(SWIFT_FLAGS)"; \
+	flags="-typecheck -warnings-as-errors -swift-version 5 -parse-as-library -target $(SIMULATOR_TARGET) -sdk $$sdk $(ACCELERATE_FLAGS) $(SWIFT_PARALLEL_FLAGS) $(SWIFT_FLAGS) $(call package_modules,$(SIMULATOR_PACKAGE))"; \
 	echo "Type-checking the app"; \
 	xcrun --sdk iphonesimulator swiftc $$flags -module-name Sorello $(APP_SOURCES); \
 	echo "Type-checking the app (self-test variant)"; \
@@ -546,15 +574,17 @@ typecheck:
 	echo "Type-checking the Live Activity"; \
 	xcrun --sdk iphonesimulator swiftc $$flags $(ACTIVITY_SWIFT_FLAGS) $(ACTIVITY_SOURCES)
 
-# Shared, HostCore, ActivityCore, KeyboardCore and the shared dictionary are Foundation-only, so their tests run on the Mac.
-test:
+# Shared, HostCore, ActivityCore and KeyboardCore are Foundation-only, and so are the shared modules, so their tests run
+# on the Mac, against the Mac's build of SorelloSpeech.
+test: $(HOST_PACKAGE)
 ifeq ($(strip $(TEST_SOURCES)),)
 	@echo "No iOS host tests yet; skipping."
 else
 	@mkdir -p "$(HOST_BUILD_DIR)"
 	xcrun --sdk macosx swiftc -swift-version 5 -parse-as-library -warnings-as-errors $(SWIFT_PARALLEL_FLAGS) \
 		-sdk "$$(xcrun --sdk macosx --show-sdk-path)" -target $(HOST_TARGET) -module-name SorelloiOSTests \
-		-o "$(HOST_BUILD_DIR)/SorelloiOSTests" $(SHARED_SOURCES) $(INSERTION_CONTEXT_SOURCES) $(HOSTCORE_SOURCES) $(ACTIVITYCORE_SOURCES) $(DICTIONARY_TEST_SOURCES) $(KEYBOARDCORE_SOURCES) $(KEYBOARD_TEST_SOURCES) $(TEST_SOURCES)
+		$(call package_library,$(HOST_PACKAGE),SorelloSpeech) \
+		-o "$(HOST_BUILD_DIR)/SorelloiOSTests" $(SHARED_SOURCES) $(HOSTCORE_SOURCES) $(ACTIVITYCORE_SOURCES) $(DICTIONARY_TEST_SOURCES) $(KEYBOARDCORE_SOURCES) $(KEYBOARD_TEST_SOURCES) $(TEST_SOURCES)
 	@"$(HOST_BUILD_DIR)/SorelloiOSTests"
 endif
 
