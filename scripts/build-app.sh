@@ -3,7 +3,8 @@
 #   CHANNEL=dev|release   which identity from Config/identity.conf (default dev)
 #   ARCHS                 the executable's architectures, arm64 and/or x86_64, separated by spaces. Default: this
 #                         Mac's for dev, both (universal) for release
-#   SORELLO_MODEL_DIR     the pinned model bundle; required for CHANNEL=release
+#   SORELLO_MODEL_DIR     a local copy of a build the pin lists, for an app that carries the model and never
+#                         downloads it. Without it the app downloads its model when it is set up
 #   CODESIGN_IDENTITY     default "-" (ad hoc)
 #   BUILD_DIR             default build
 set -euo pipefail
@@ -38,10 +39,20 @@ BUILD_DIR=${BUILD_DIR:-build}
 CODESIGN_IDENTITY=${CODESIGN_IDENTITY:--}
 APP="$BUILD_DIR/$NAME.app"
 
-if [ -z "${SORELLO_MODEL_DIR:-}" ] && [ "$CHANNEL" = release ]; then
-  echo "build-app: a release build must include the model; set SORELLO_MODEL_DIR" >&2
-  exit 1
-fi
+# The pin ships in every app: the app downloads the build it lists for the Mac it runs on. A pin that does not read
+# here would not read in the app either.
+/usr/bin/python3 - Models/model.lock.json <<'PY'
+import json, re, sys
+
+try:
+    pin = json.load(open(sys.argv[1]))
+    builds = pin["builds"]
+    assert isinstance(pin["model"], str) and pin["source"].startswith("https://") and isinstance(builds, list)
+    for build in builds:
+        assert re.fullmatch(r"[0-9a-f]{64}", build["manifest_sha256"]) and isinstance(build["requires"], dict)
+except (OSError, ValueError, KeyError, TypeError, AssertionError):
+    sys.exit("build-app: Models/model.lock.json is not a pin the app can read")
+PY
 
 # One build per architecture, joined into one executable. Every --arch build writes to the same products directory,
 # so each slice is copied out before the next one is built.
@@ -71,41 +82,45 @@ cp -R Resources/Fonts "$APP/Contents/Resources/Fonts"
 cp ThirdPartyNotices.md "$APP/Contents/Resources/"
 [ -f Resources/AppIcon.icns ] && cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
+cp Models/model.lock.json "$APP/Contents/Resources/model.lock.json"
+cp -R Resources/ModelNotices "$APP/Contents/Resources/ModelNotices"
+
 if [ -n "${SORELLO_MODEL_DIR:-}" ]; then
-  manifest="$SORELLO_MODEL_DIR/bundle.json"
-  [ -f "$manifest" ] || { echo "build-app: no bundle.json in SORELLO_MODEL_DIR" >&2; exit 1; }
-  pinned=$(sed -n 's/.*"manifest_sha256": *"\([0-9a-f]*\)".*/\1/p' Models/model.lock.json)
-  actual=$(shasum -a 256 "$manifest" | cut -d' ' -f1)
-  if [ "$pinned" != "$actual" ]; then
-    echo "build-app: the model in SORELLO_MODEL_DIR is not the one Models/model.lock.json pins" >&2
-    exit 1
-  fi
   MODEL="$APP/Contents/Resources/Model"
   mkdir -p "$MODEL"
-  cp "$manifest" "$MODEL/"
-  # Copy only the files the manifest lists, each checked against its hash first: the bundle directory may hold
-  # others the app never loads, and a release must not ship a file the app will refuse.
-  /usr/bin/python3 - "$manifest" "$SORELLO_MODEL_DIR" "$MODEL" <<'PY'
+  # The copy must be a build the pin lists. Only the files its manifest lists are copied, each checked against its
+  # hash first: the directory may hold others the app never loads, and an app must not carry a file it will refuse.
+  /usr/bin/python3 - Models/model.lock.json "$SORELLO_MODEL_DIR" "$MODEL" <<'PY'
 import hashlib, json, os, shutil, sys
 
-manifest, source, destination = sys.argv[1:4]
-for name, expected in json.load(open(manifest))["files"].items():
-    if os.path.isabs(name) or ".." in name.split("/"):
-        sys.exit(f"build-app: the model manifest names a path outside the bundle: {name}")
-    path = os.path.join(source, name)
+pin, source, destination = sys.argv[1:4]
+
+def sha256(path):
     digest = hashlib.sha256()
     with open(path, "rb") as handle:
         for block in iter(lambda: handle.read(1 << 20), b""):
             digest.update(block)
-    if digest.hexdigest() != expected:
+    return digest.hexdigest()
+
+manifest = os.path.join(source, "bundle.json")
+if not os.path.isfile(manifest):
+    sys.exit("build-app: no bundle.json in SORELLO_MODEL_DIR")
+if sha256(manifest) not in [build["manifest_sha256"] for build in json.load(open(pin))["builds"]]:
+    sys.exit("build-app: the model in SORELLO_MODEL_DIR is not a build Models/model.lock.json lists")
+shutil.copyfile(manifest, os.path.join(destination, "bundle.json"))
+for name, expected in json.load(open(manifest))["files"].items():
+    parts = name.split("/")
+    if os.path.isabs(name) or "\\" in name or any(part in ("", ".", "..") for part in parts):
+        sys.exit(f"build-app: the model manifest names a path outside the bundle: {name}")
+    path = os.path.join(source, name)
+    if sha256(path) != expected:
         sys.exit(f"build-app: {name} does not match the model manifest")
     target = os.path.join(destination, name)
     os.makedirs(os.path.dirname(target), exist_ok=True)
     shutil.copyfile(path, target)
 PY
-  cp Resources/ModelNotices/* "$MODEL/"
 else
-  echo "build-app: built without the model; dictation cannot run in this bundle" >&2
+  echo "build-app: the app downloads its model when it is set up" >&2
 fi
 
 codesign --force --options runtime --sign "$CODESIGN_IDENTITY" --entitlements Config/Sorello.entitlements "$APP"

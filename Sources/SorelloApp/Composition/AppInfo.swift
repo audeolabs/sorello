@@ -1,4 +1,5 @@
 import Foundation
+import SpeechEngine
 
 /// Who the app is and where its bundled resources are, read from the bundle (ARCHITECTURE.md, sections 8 and 10).
 /// Nothing here is written in code: a copy run from a build tree has no bundle identifier, and then the app does not
@@ -11,10 +12,16 @@ nonisolated struct AppInfo: Sendable, Equatable {
     var copyright: String?
     /// Where the app keeps its data, `Application Support/<bundle id>`; nil outside a bundle.
     var bundleIdentifier: String?
-    /// The model bundle in the app's resources, or nil when the app was built without it.
+    /// The model bundle in the app's resources, or nil when the app was built without it, as it usually is: the app
+    /// downloads its model.
     var modelDirectory: URL?
-    /// The model's name, from its manifest.
+    /// The pin, `model.lock.json` in the app's resources: which model the app uses and where it downloads it from.
+    /// Nil outside a bundle, or when the file cannot be read.
+    var pin: ModelPin?
+    /// The model's name, from the pin.
     var modelName: String?
+    /// The model's notices, `ModelNotices` in the app's resources, which ship whether or not the app carries the model.
+    var modelNoticesDirectory: URL?
     /// `ThirdPartyNotices.md` in the app's resources.
     var thirdPartyNotices: URL?
     /// The display font's licence, `Fonts/Urbanist-OFL.txt` in the app's resources.
@@ -24,15 +31,17 @@ nonisolated struct AppInfo: Sendable, Equatable {
     static func main() -> AppInfo { AppInfo(bundle: .main) }
 
     init(name: String, version: String, build: String, copyright: String? = nil, bundleIdentifier: String? = nil,
-         modelDirectory: URL? = nil, modelName: String? = nil, thirdPartyNotices: URL? = nil,
-         fontLicence: URL? = nil) {
+         modelDirectory: URL? = nil, pin: ModelPin? = nil, modelName: String? = nil,
+         modelNoticesDirectory: URL? = nil, thirdPartyNotices: URL? = nil, fontLicence: URL? = nil) {
         self.name = name
         self.version = version
         self.build = build
         self.copyright = copyright
         self.bundleIdentifier = bundleIdentifier
         self.modelDirectory = modelDirectory
-        self.modelName = modelName
+        self.pin = pin
+        self.modelName = modelName ?? pin?.model
+        self.modelNoticesDirectory = modelNoticesDirectory
         self.thirdPartyNotices = thirdPartyNotices
         self.fontLicence = fontLicence
     }
@@ -46,6 +55,7 @@ nonisolated struct AppInfo: Sendable, Equatable {
         let model = resources?.appendingPathComponent("Model", isDirectory: true)
         let hasModel = model.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent("bundle.json").path) }
             ?? false
+        let pin = resources.flatMap { try? ModelPin(contentsOf: $0.appendingPathComponent("model.lock.json")) }
         self.init(name: string("CFBundleDisplayName") ?? string("CFBundleName")
                       ?? bundle.executableURL?.lastPathComponent ?? ProcessInfo.processInfo.processName,
                   version: string("CFBundleShortVersionString") ?? "",
@@ -53,12 +63,15 @@ nonisolated struct AppInfo: Sendable, Equatable {
                   copyright: string("NSHumanReadableCopyright"),
                   bundleIdentifier: isApp ? bundle.bundleIdentifier : nil,
                   modelDirectory: hasModel ? model : nil,
-                  modelName: hasModel ? model.flatMap(Self.modelName(in:)) : nil,
+                  pin: pin,
+                  modelName: pin?.model ?? (hasModel ? model.flatMap(Self.modelName(in:)) : nil),
+                  modelNoticesDirectory: resources?.appendingPathComponent("ModelNotices", isDirectory: true),
                   thirdPartyNotices: resources?.appendingPathComponent("ThirdPartyNotices.md"),
                   fontLicence: resources?.appendingPathComponent("Fonts/Urbanist-OFL.txt"))
     }
 
-    /// The model's name in its manifest: the base model it was exported from.
+    /// The model's name in its manifest, the base model it was exported from, for a model given on the command line
+    /// to a copy that has no pin.
     static func modelName(in directory: URL) -> String? {
         guard let data = try? Data(contentsOf: directory.appendingPathComponent("bundle.json")),
               let manifest = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
@@ -69,14 +82,14 @@ nonisolated struct AppInfo: Sendable, Equatable {
     func withModel(at directory: URL) -> AppInfo {
         var copy = self
         copy.modelDirectory = directory
-        copy.modelName = Self.modelName(in: directory)
+        copy.modelName = pin?.model ?? Self.modelName(in: directory)
         return copy
     }
 
-    /// The model's notices beside the model: its licence, NVIDIA's attribution, and the inference code's licence.
+    /// The model's notices: its licence, NVIDIA's attribution, and the inference code's licence.
     var modelNotices: [URL] {
-        guard let modelDirectory else { return [] }
-        return ["NOTICE", "LICENSE", "Software-LICENSE"].map { modelDirectory.appendingPathComponent($0) }
+        guard let modelNoticesDirectory else { return [] }
+        return ["NOTICE", "LICENSE", "Software-LICENSE"].map { modelNoticesDirectory.appendingPathComponent($0) }
             .filter { FileManager.default.fileExists(atPath: $0.path) }
     }
 }
