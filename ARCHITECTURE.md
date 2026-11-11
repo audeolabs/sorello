@@ -449,10 +449,11 @@ knows about where the model is and what it must be:
 Sorello uses the first build that fits the system it runs on. It judges a
 model the app carries by the same rule: a carried build is used only if
 the pin lists it and it fits. A build that requires something this
-version of Sorello does not know, or gives a version it cannot read, is
-passed over, so a later pin can list builds for other Macs (an older system, a
-Mac without a Neural Engine) and an app that has never heard of them
-takes none of them by mistake. One build is listed today, for macOS 26 or
+version of Sorello does not know, or gives a version it cannot read, for
+either system, is passed over on both: a Mac does not take a build whose
+`ios` it cannot read. So a later pin can list builds for other Macs (an
+older system, a Mac without a Neural Engine) and an app that has never
+heard of them takes none of them by mistake. One build is listed today, for macOS 26 or
 later and for iOS 26 or later; a Mac without a Neural Engine runs that
 same build on its processor until it has a build of its own. Builds for
 other Macs wait on other branches of the model's repository until they
