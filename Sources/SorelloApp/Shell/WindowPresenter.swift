@@ -258,13 +258,17 @@ private struct NoticeText: View {
     }
 }
 
-/// The app's menu, in the menu bar while Sorello is in front, which it can be only while one of its windows is open.
-/// Its key equivalents work in the app's windows: Quit, Close, Settings, and the Edit commands, without which ⌘V would
-/// not paste into setup's test field.
+/// The app's menus, in the menu bar while Sorello is in front, which it can be only while one of its windows is open
+/// (ARCHITECTURE.md, section 8, "Windows"): its own, Edit and Window, as a small Mac app has them and no more. Every
+/// row sends a standard action up the responder chain, or to the shell for About, Settings and Quit, so AppKit enables
+/// each row where it can act and disables it where it cannot, as it does in any app. Their key equivalents work in
+/// the app's windows: without Edit, ⌘V would not paste into setup's test field.
 @MainActor
 enum MainMenu {
-    static func make(appName: String, target: AnyObject) -> NSMenu {
-        let menu = NSMenu()
+    /// The menu bar's menus, and the Window menu among them, which the app gives AppKit as its Window menu so that
+    /// AppKit lists the open windows at its foot. `target` receives About, Settings and Quit.
+    static func make(appName: String, target: AnyObject?) -> (bar: NSMenu, window: NSMenu) {
+        let bar = NSMenu()
 
         let app = NSMenu(title: appName)
         app.addItem(item(String(localized: "About \(appName)"), #selector(AppShell.showAbout(_:)), "", target))
@@ -272,8 +276,14 @@ enum MainMenu {
         app.addItem(item(String(localized: "Settings…"), #selector(AppShell.showSettings(_:)), ",", target))
         app.addItem(.separator())
         app.addItem(item(String(localized: "Hide \(appName)"), #selector(NSApplication.hide(_:)), "h", nil))
+        let hideOthers = item(String(localized: "Hide Others"), #selector(NSApplication.hideOtherApplications(_:)),
+                              "h", nil)
+        hideOthers.keyEquivalentModifierMask = [.command, .option]
+        app.addItem(hideOthers)
+        app.addItem(item(String(localized: "Show All"), #selector(NSApplication.unhideAllApplications(_:)), "", nil))
+        app.addItem(.separator())
         app.addItem(item(String(localized: "Quit \(appName)"), #selector(AppShell.quit(_:)), "q", target))
-        add(app, to: menu)
+        add(app, to: bar)
 
         let edit = NSMenu(title: String(localized: "Edit"))
         edit.addItem(item(String(localized: "Undo"), Selector(("undo:")), "z", nil))
@@ -285,13 +295,41 @@ enum MainMenu {
         edit.addItem(item(String(localized: "Copy"), #selector(NSText.copy(_:)), "c", nil))
         edit.addItem(item(String(localized: "Paste"), #selector(NSText.paste(_:)), "v", nil))
         edit.addItem(item(String(localized: "Select All"), #selector(NSText.selectAll(_:)), "a", nil))
-        add(edit, to: menu)
+        add(edit, to: bar)
 
         let window = NSMenu(title: String(localized: "Window"))
-        window.addItem(item(String(localized: "Close"), #selector(NSWindow.performClose(_:)), "w", nil))
         window.addItem(item(String(localized: "Minimize"), #selector(NSWindow.performMiniaturize(_:)), "m", nil))
-        add(window, to: menu)
-        return menu
+        window.addItem(item(String(localized: "Zoom"), #selector(NSWindow.performZoom(_:)), "", nil))
+        window.addItem(item(String(localized: "Close"), #selector(NSWindow.performClose(_:)), "w", nil))
+        window.addItem(.separator())
+        window.addItem(item(String(localized: "Bring All to Front"), #selector(NSApplication.arrangeInFront(_:)), "",
+                            nil))
+        add(window, to: bar)
+        return (bar, window)
+    }
+
+    /// The menus as text, for review in place of a picture only the system can draw while a window is open: each
+    /// menu's title, then its rows, indented, each with its key equivalent at the end, aligned with spaces.
+    static func text(of bar: NSMenu) -> String {
+        bar.items.compactMap(\.submenu).map { menu in
+            let rows = menu.items.map { item in
+                item.isSeparatorItem ? ("separator", "") : (item.title, keyEquivalentLabel(item))
+            }
+            let width = rows.map(\.0.count).max() ?? 0
+            let lines = rows.map { title, keys in
+                keys.isEmpty ? "  " + title
+                    : "  " + title + String(repeating: " ", count: width + 2 - title.count) + keys
+            }
+            return ([menu.title] + lines).joined(separator: "\n") + "\n"
+        }.joined(separator: "\n")
+    }
+
+    private static func keyEquivalentLabel(_ item: NSMenuItem) -> String {
+        guard !item.keyEquivalent.isEmpty else { return "" }
+        let mask = item.keyEquivalentModifierMask
+        let modifiers = [(NSEvent.ModifierFlags.control, "⌃"), (.option, "⌥"), (.shift, "⇧"), (.command, "⌘")]
+            .filter { mask.contains($0.0) }.map(\.1).joined()
+        return modifiers + item.keyEquivalent.uppercased()
     }
 
     private static func item(_ title: String, _ action: Selector, _ key: String, _ target: AnyObject?) -> NSMenuItem {

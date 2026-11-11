@@ -313,3 +313,69 @@ final class AskingMicrophone: MicrophoneAuthorizing {
         #expect(asked == [])
     }
 }
+
+/// The app's own menus, as a small Mac app has them (ARCHITECTURE.md, section 8, "Windows").
+@MainActor
+@Suite struct MainMenuTests {
+    @Test func theMenusAreTheAppsOwnEditAndWindow() {
+        let menus = MainMenu.make(appName: "Sorello Test", target: nil)
+        #expect(MainMenu.text(of: menus.bar) == """
+            Sorello Test
+              About Sorello Test
+              separator
+              Settings…           ⌘,
+              separator
+              Hide Sorello Test   ⌘H
+              Hide Others         ⌥⌘H
+              Show All
+              separator
+              Quit Sorello Test   ⌘Q
+
+            Edit
+              Undo        ⌘Z
+              Redo        ⇧⌘Z
+              separator
+              Cut         ⌘X
+              Copy        ⌘C
+              Paste       ⌘V
+              Select All  ⌘A
+
+            Window
+              Minimize            ⌘M
+              Zoom
+              Close               ⌘W
+              separator
+              Bring All to Front
+
+            """)
+    }
+
+    /// The Window menu the app gives AppKit, which lists the open windows at its foot, is the one in the menu bar.
+    @Test func theWindowMenuIsTheMenuBarsLast() {
+        let menus = MainMenu.make(appName: "Sorello Test", target: nil)
+        #expect(menus.bar.items.last?.submenu === menus.window)
+        #expect(menus.window.items.last?.action == #selector(NSApplication.arrangeInFront(_:)))
+    }
+
+    /// Each row of the Window menu sends the standard action, which the window in front validates: AppKit disables a
+    /// row where it cannot act, without code of Sorello's. Setup cannot be resized, so Zoom does nothing there.
+    @Test func theWindowMenusRowsAreValidatedByTheWindowInFront() {
+        _ = NSApplication.shared
+        Resources.registerFonts()
+        let menus = MainMenu.make(appName: "Sorello Test", target: nil)
+        let rows = menus.window.items.filter { !$0.isSeparatorItem }
+        #expect(rows.map(\.action) == [#selector(NSWindow.performMiniaturize(_:)), #selector(NSWindow.performZoom(_:)),
+                                       #selector(NSWindow.performClose(_:)),
+                                       #selector(NSApplication.arrangeInFront(_:))])
+        #expect(rows.allSatisfy { $0.target == nil }, "Sent up the responder chain to the window in front")
+        let zoom = rows[1]
+        let setup = WindowPresenter.setupWindow(SetupModel.sample(step: .welcome), title: "Sorello Test")
+        let main = WindowPresenter.mainWindow(MainWindowModel.sample(section: .general), title: "Sorello Test")
+        defer {
+            setup.close()
+            main.close()
+        }
+        #expect(!setup.validateMenuItem(zoom))
+        #expect(main.validateMenuItem(zoom))
+    }
+}

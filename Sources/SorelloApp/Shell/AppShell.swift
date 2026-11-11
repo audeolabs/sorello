@@ -36,6 +36,8 @@ final class AppShell: NSObject, NSApplicationDelegate {
         // A copy run outside its bundle has no LSUIElement; the app starts as a menu-bar app either way, and is in the
         // Dock only while one of its windows is open.
         application.setActivationPolicy(.accessory)
+        // No window of Sorello's has tabs, so the Window menu offers none.
+        NSWindow.allowsAutomaticWindowTabbing = false
         application.run()
         exit(0)
     }
@@ -55,7 +57,9 @@ final class AppShell: NSObject, NSApplicationDelegate {
         }
 
         Resources.registerFonts()
-        NSApp.mainMenu = MainMenu.make(appName: info.name, target: self)
+        let menus = MainMenu.make(appName: info.name, target: self)
+        NSApp.mainMenu = menus.bar
+        NSApp.windowsMenu = menus.window
         let platform = AppPlatform.system()
         let levels = LevelFeed()
         let clock = platform.clock
