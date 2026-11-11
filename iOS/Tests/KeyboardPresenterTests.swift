@@ -1,0 +1,360 @@
+import Foundation
+
+enum KeyboardPresenterTests {
+    static var tests: [TestCase] {
+        [
+            ("accessComesFirst", testAccessComesFirst),
+            ("incompatibleComesBeforeHostState", testIncompatibleComesBeforeHostState),
+            ("noHostIsUnavailable", testNoHostIsUnavailable),
+            ("readyNeedsLiveHostAndCapture", testReadyNeedsLiveHostAndCapture),
+            ("livenessBoundaryAndSkew", testLivenessBoundaryAndSkew),
+            ("onlyAnActiveSessionIsAlive", testOnlyAnActiveSessionIsAlive),
+            ("showsAdmittedRequestPhases", testShowsAdmittedRequestPhases),
+            ("recordingLevelIsClamped", testRecordingLevelIsClamped),
+            ("newInstanceAdoptsRequestAfterBounce", testNewInstanceAdoptsRequestAfterBounce),
+            ("deadHostHidesProgress", testDeadHostHidesProgress),
+            ("startingWhileRecordIntentIsPending", testStartingWhileRecordIntentIsPending),
+            ("startingWindowAndSkew", testStartingWindowAndSkew),
+            ("otherRequestsDoNotShow", testOtherRequestsDoNotShow),
+            ("failureShowsErrorForFiveSeconds", testFailureShowsErrorForFiveSeconds),
+            ("hostCancellationWithErrorIsShown", testHostCancellationWithErrorIsShown),
+            ("errorShownAfterSessionEnds", testErrorShownAfterSessionEnds),
+            ("finalPhasesReturnToIdle", testFinalPhasesReturnToIdle),
+            ("preparingModelReplacesReady", testPreparingModelReplacesReady),
+            ("transcriptionWaitingForTheModelIsShown", testTranscriptionWaitingForTheModelIsShown),
+            ("modelPreparingOnlyFromALiveHost", testModelPreparingOnlyFromALiveHost),
+            ("staleWriterGuard", testStaleWriterGuard),
+            ("startWithoutASessionStaysStart", testStartWithoutASessionStaysStart),
+        ]
+    }
+
+    private static func mode(_ status: HostStatus?, _ intent: KeyboardIntent?, now: Date = Fixture.now,
+                             access: KeyboardAccess = .fullAccess) -> KeyboardMode {
+        KeyboardPresenter.mode(access: access, status: status.map { .value($0) } ?? .absent,
+                               intent: intent.map { .value($0) } ?? .absent, now: now)
+    }
+
+    private static var startedAt: Date { Fixture.dictation(.recording).startedAt }
+
+    private static func testAccessComesFirst() {
+        let recording = Fixture.status(dictation: Fixture.dictation(.recording), level: 0.5)
+        let cases: [(HostStatus?, KeyboardIntent?)] = [
+            (nil, nil), (recording, Fixture.intent(.record)), (nil, Fixture.intent(.record)),
+        ]
+        for (status, intent) in cases {
+            TestSupport.expectEqual(mode(status, intent, access: .noFullAccess), .needsFullAccess)
+            TestSupport.expectEqual(mode(status, intent, access: .containerUnavailable), .configurationError)
+        }
+        TestSupport.expectEqual(KeyboardPresenter.mode(access: .noFullAccess, status: .incompatible,
+                                                       intent: .incompatible, now: Fixture.now), .needsFullAccess)
+        TestSupport.expectEqual(KeyboardPresenter.mode(access: .containerUnavailable, status: .incompatible,
+                                                       intent: .absent, now: Fixture.now), .configurationError)
+    }
+
+    private static func testIncompatibleComesBeforeHostState() {
+        let recording = Fixture.status(dictation: Fixture.dictation(.recording))
+        let intent = Fixture.intent(.record)
+        TestSupport.expectEqual(KeyboardPresenter.mode(access: .fullAccess, status: .incompatible, intent: .value(intent),
+                                                       now: Fixture.now), .incompatible)
+        TestSupport.expectEqual(KeyboardPresenter.mode(access: .fullAccess, status: .value(recording), intent: .incompatible,
+                                                       now: Fixture.now), .incompatible)
+        // Unreadable records are treated as absent.
+        TestSupport.expectEqual(KeyboardPresenter.mode(access: .fullAccess, status: .unreadable, intent: .value(intent),
+                                                       now: Fixture.now), .starting)
+        TestSupport.expectEqual(KeyboardPresenter.mode(access: .fullAccess, status: .value(Fixture.status()),
+                                                       intent: .unreadable, now: Fixture.now), .ready)
+        TestSupport.expectEqual(KeyboardPresenter.mode(access: .fullAccess, status: .unreadable, intent: .unreadable,
+                                                       now: Fixture.now), .hostUnavailable)
+    }
+
+    private static func testNoHostIsUnavailable() {
+        TestSupport.expectEqual(mode(nil, nil), .hostUnavailable)
+        TestSupport.expectEqual(mode(nil, Fixture.intent(.finish)), .hostUnavailable)
+        TestSupport.expectEqual(mode(nil, Fixture.intent(.cancel)), .hostUnavailable)
+    }
+
+    private static func testReadyNeedsLiveHostAndCapture() {
+        TestSupport.expectEqual(mode(Fixture.status(), nil), .ready)
+        TestSupport.expectEqual(mode(Fixture.status(), Fixture.intent(.finish)), .ready)
+        TestSupport.expectEqual(mode(Fixture.status(), Fixture.intent(.cancel)), .ready)
+        TestSupport.expectEqual(mode(Fixture.status(captureReady: false), nil), .hostUnavailable)
+    }
+
+    private static func testLivenessBoundaryAndSkew() {
+        let timeout = DictationProtocol.livenessTimeout
+        let tolerance = DictationProtocol.clockSkewTolerance
+        let status = Fixture.status()
+        TestSupport.expectEqual(mode(status, nil, now: Fixture.now + timeout), .ready)
+        TestSupport.expectEqual(mode(status, nil, now: Fixture.now + timeout + 0.001), .hostUnavailable)
+        TestSupport.expectEqual(mode(status, nil, now: Fixture.now - tolerance), .ready)
+        // After a backward clock jump, a heartbeat "from the future" cannot keep a dead host alive.
+        TestSupport.expectEqual(mode(status, nil, now: Fixture.now - tolerance - 0.001), .hostUnavailable)
+    }
+
+    private static func testOnlyAnActiveSessionIsAlive() {
+        TestSupport.expectEqual(mode(Fixture.status(.inactive), nil), .hostUnavailable)
+        TestSupport.expectEqual(mode(Fixture.status(.starting), nil), .hostUnavailable)
+        let inactiveRecording = Fixture.status(.inactive, dictation: Fixture.dictation(.recording))
+        TestSupport.expectEqual(mode(inactiveRecording, Fixture.intent(.record)), .hostUnavailable)
+    }
+
+    private static func testShowsAdmittedRequestPhases() {
+        for intent in [Fixture.intent(.record), Fixture.intent(.finish), Fixture.intent(.cancel)] {
+            TestSupport.expectEqual(mode(Fixture.status(dictation: Fixture.dictation(.starting)), intent), .starting)
+            TestSupport.expectEqual(mode(Fixture.status(dictation: Fixture.dictation(.recording), level: 0.4), intent),
+                                    .recording(level: 0.4, startedAt: startedAt))
+            TestSupport.expectEqual(mode(Fixture.status(dictation: Fixture.dictation(.transcribing)), intent), .transcribing)
+        }
+        // Capture readiness only gates `ready`; an admitted request shows regardless.
+        TestSupport.expectEqual(mode(Fixture.status(captureReady: false, dictation: Fixture.dictation(.starting)),
+                                     Fixture.intent(.record)), .starting)
+    }
+
+    private static func testRecordingLevelIsClamped() {
+        for (level, shown) in [(Float(0.4), Float(0.4)), (1.7, 1), (-1, 0), (.nan, 0), (.infinity, 0)] {
+            let status = Fixture.status(dictation: Fixture.dictation(.recording), level: level)
+            TestSupport.expectEqual(mode(status, Fixture.intent(.record)), .recording(level: shown, startedAt: startedAt))
+        }
+    }
+
+    private static func testNewInstanceAdoptsRequestAfterBounce() {
+        // Instance A wrote the record intent and bounced; instance B appears after the swipe back.
+        let intentFromA = Fixture.intent(.record, instance: Fixture.instanceID)
+        TestSupport.expectEqual(mode(nil, intentFromA), .starting)
+        TestSupport.expectEqual(mode(Fixture.status(.starting, captureReady: false), intentFromA, now: Fixture.now + 2),
+                                .starting)
+        let admitted = Fixture.status(heartbeatAt: Fixture.now + 3, dictation: Fixture.dictation(.starting))
+        TestSupport.expectEqual(mode(admitted, intentFromA, now: Fixture.now + 3), .starting)
+        let recording = Fixture.status(heartbeatAt: Fixture.now + 4, dictation: Fixture.dictation(.recording), level: 0.2)
+        TestSupport.expectEqual(mode(recording, intentFromA, now: Fixture.now + 5),
+                                .recording(level: 0.2, startedAt: startedAt))
+        let finishFromB = Fixture.intent(.finish, instance: Fixture.otherInstanceID, at: Fixture.now + 6)
+        let transcribing = Fixture.status(heartbeatAt: Fixture.now + 6, dictation: Fixture.dictation(.transcribing))
+        TestSupport.expectEqual(mode(transcribing, finishFromB, now: Fixture.now + 6), .transcribing)
+    }
+
+    private static func testDeadHostHidesProgress() {
+        let late = Fixture.now + DictationProtocol.livenessTimeout + 1
+        for phase in [DictationStatus.Phase.starting, .recording, .transcribing] {
+            let status = Fixture.status(dictation: Fixture.dictation(phase), level: 0.5)
+            // Not `starting` either: the host already picked the request up.
+            TestSupport.expectEqual(mode(status, Fixture.intent(.record), now: late), .hostUnavailable)
+            TestSupport.expectEqual(mode(status, Fixture.intent(.finish), now: late), .hostUnavailable)
+        }
+    }
+
+    private static func testStartingWhileRecordIntentIsPending() {
+        let intent = Fixture.intent(.record)
+        TestSupport.expectEqual(mode(nil, intent), .starting)
+        TestSupport.expectEqual(mode(Fixture.status(.inactive), intent), .starting)
+        TestSupport.expectEqual(mode(Fixture.status(captureReady: false), intent), .starting)
+        TestSupport.expectEqual(mode(Fixture.status(), intent), .starting)
+        for phase in [DictationStatus.Phase.recording, .completed, .failed] {
+            let other = Fixture.status(dictation: Fixture.dictation(phase, Fixture.otherRequestID, error: .superseded))
+            TestSupport.expectEqual(mode(other, intent), .starting)
+        }
+    }
+
+    private static func testStartingWindowAndSkew() {
+        let ttl = DictationProtocol.pendingRecordTTL
+        let tolerance = DictationProtocol.clockSkewTolerance
+        let intent = Fixture.intent(.record)
+        TestSupport.expectEqual(mode(nil, intent, now: Fixture.now + ttl), .starting)
+        TestSupport.expectEqual(mode(nil, intent, now: Fixture.now + ttl + 0.001), .hostUnavailable)
+        TestSupport.expectEqual(mode(nil, intent, now: Fixture.now - tolerance), .starting)
+        TestSupport.expectEqual(mode(nil, intent, now: Fixture.now - tolerance - 0.001), .hostUnavailable)
+        let alive = Fixture.status(heartbeatAt: Fixture.now + ttl + 1)
+        TestSupport.expectEqual(mode(alive, intent, now: Fixture.now + ttl + 1), .ready)
+    }
+
+    private static func testOtherRequestsDoNotShow() {
+        // A dictation that the latest intent does not name is not this keyboard's to show.
+        let intent = Fixture.intent(.finish)
+        for phase in [DictationStatus.Phase.starting, .recording, .transcribing, .failed] {
+            let status = Fixture.status(dictation: Fixture.dictation(phase, Fixture.otherRequestID, error: .tooLong))
+            TestSupport.expectEqual(mode(status, intent), .ready)
+            TestSupport.expectEqual(mode(status, nil), .ready)
+        }
+    }
+
+    private static func testFailureShowsErrorForFiveSeconds() {
+        let window = KeyboardPresenter.errorDisplayDuration
+        TestSupport.expectEqual(window, 5)
+        let failed = Fixture.dictation(.failed, error: .notRecording)
+        TestSupport.expectEqual(mode(Fixture.status(dictation: failed), Fixture.intent(.finish)), .error(.notRecording))
+        let later = Fixture.status(heartbeatAt: Fixture.now + window + 1, dictation: failed)
+        TestSupport.expectEqual(mode(later, Fixture.intent(.finish), now: Fixture.now + window), .error(.notRecording))
+        TestSupport.expectEqual(mode(later, Fixture.intent(.finish), now: Fixture.now + window + 0.001), .ready)
+        // A failed record does not fall back to `starting` once the host picked it up.
+        TestSupport.expectEqual(mode(later, Fixture.intent(.record), now: Fixture.now + window + 1), .ready)
+        // An error stamped beyond the skew tolerance ahead of now is not shown.
+        let ahead = Fixture.status(heartbeatAt: Fixture.now - 3, dictation: failed)
+        TestSupport.expectEqual(mode(ahead, Fixture.intent(.finish), now: Fixture.now - 2.001), .ready)
+        let missingCode = Fixture.status(dictation: Fixture.dictation(.failed))
+        TestSupport.expectEqual(mode(missingCode, Fixture.intent(.finish)), .error(.transcriptionFailed))
+        // The session-level error is not the request's error.
+        let sessionError = Fixture.status(dictation: Fixture.dictation(.failed, error: .startupTimeout),
+                                          error: .audioSessionFailed)
+        TestSupport.expectEqual(mode(sessionError, Fixture.intent(.record)), .error(.startupTimeout))
+    }
+
+    private static func testHostCancellationWithErrorIsShown() {
+        for code in [HostErrorCode.keyboardDismissed, .backgroundTimeExpired, .superseded] {
+            let cancelled = Fixture.status(dictation: Fixture.dictation(.cancelled, error: code))
+            TestSupport.expectEqual(mode(cancelled, Fixture.intent(.record)), .error(code))
+        }
+        // The user's own cancel carries no error and returns to idle.
+        TestSupport.expectEqual(mode(Fixture.status(dictation: Fixture.dictation(.cancelled)), Fixture.intent(.cancel)), .ready)
+    }
+
+    private static func testErrorShownAfterSessionEnds() {
+        let window = KeyboardPresenter.errorDisplayDuration
+        let ended = Fixture.status(.inactive, captureReady: false, dictation: Fixture.dictation(.failed, error: .interrupted))
+        TestSupport.expectEqual(mode(ended, Fixture.intent(.record), now: Fixture.now + 1), .error(.interrupted))
+        TestSupport.expectEqual(mode(ended, Fixture.intent(.record), now: Fixture.now + window + 1), .hostUnavailable)
+        let rejected = Fixture.status(.inactive, captureReady: false,
+                                      dictation: Fixture.dictation(.failed, error: .sessionInactive))
+        TestSupport.expectEqual(mode(rejected, Fixture.intent(.record)), .error(.sessionInactive))
+    }
+
+    private static func testFinalPhasesReturnToIdle() {
+        for intent in [Fixture.intent(.record), Fixture.intent(.finish), Fixture.intent(.cancel)] {
+            TestSupport.expectEqual(mode(Fixture.status(dictation: Fixture.dictation(.completed)), intent), .ready)
+            TestSupport.expectEqual(mode(Fixture.status(.inactive, dictation: Fixture.dictation(.completed)), intent),
+                                    .hostUnavailable)
+        }
+    }
+
+    private static func testStaleWriterGuard() {
+        let current = StoreRead.value(Fixture.intent(.record))
+        for action in [KeyboardIntent.Action.finish, .cancel] {
+            TestSupport.expect(KeyboardPresenter.mayWrite(action, requestID: Fixture.requestID, currentIntent: current),
+                               "\(action) for the current request")
+            TestSupport.expect(!KeyboardPresenter.mayWrite(action, requestID: Fixture.otherRequestID, currentIntent: current),
+                               "\(action) for a superseded request")
+            for read in [StoreRead<KeyboardIntent>.absent, .incompatible, .unreadable] {
+                TestSupport.expect(!KeyboardPresenter.mayWrite(action, requestID: Fixture.requestID, currentIntent: read),
+                                   "\(action) without a readable intent")
+            }
+        }
+        let finished = StoreRead.value(Fixture.intent(.finish, instance: Fixture.otherInstanceID))
+        TestSupport.expect(KeyboardPresenter.mayWrite(.cancel, requestID: Fixture.requestID, currentIntent: finished),
+                           "cancel after another instance's finish of the same request")
+        for read in [StoreRead<KeyboardIntent>.absent, .unreadable, current] {
+            TestSupport.expect(KeyboardPresenter.mayWrite(.record, requestID: Fixture.otherRequestID, currentIntent: read),
+                               "a new record is always allowed")
+        }
+    }
+
+    // MARK: Model readiness
+
+    private static func status(model: HostStatus.Model, _ session: HostStatus.Session = .active, captureReady: Bool = true,
+                               heartbeatAt: Date = Fixture.now, dictation: DictationStatus? = nil,
+                               level: Float = 0) -> HostStatus {
+        var status = Fixture.status(session, captureReady: captureReady, heartbeatAt: heartbeatAt, dictation: dictation,
+                                    level: level)
+        status.model = model
+        return status
+    }
+
+    /// Idle with a live host and capture, a model that is preparing shows `preparingModel`, not `ready`.
+    /// A model that is not prepared (released after a memory warning), failed or missing is still
+    /// `ready`: nothing is preparing, and a tap prepares it or reports why it cannot.
+    private static func testPreparingModelReplacesReady() {
+        TestSupport.expectEqual(mode(status(model: .preparing), nil), .preparingModel)
+        TestSupport.expectEqual(mode(status(model: .preparing), Fixture.intent(.finish)), .preparingModel)
+        let completed = status(model: .preparing, dictation: Fixture.dictation(.completed))
+        TestSupport.expectEqual(mode(completed, Fixture.intent(.finish)), .preparingModel)
+        for model in [HostStatus.Model.ready, .notPrepared, .failed, .unavailable] {
+            TestSupport.expectEqual(mode(status(model: model), nil), .ready)
+        }
+        // Capture readiness and liveness gate it exactly as they gate `ready`.
+        TestSupport.expectEqual(mode(status(model: .preparing, captureReady: false), nil), .hostUnavailable)
+        TestSupport.expectEqual(mode(status(model: .preparing, .starting), nil), .hostUnavailable)
+        let late = Fixture.now + DictationProtocol.livenessTimeout + 0.001
+        TestSupport.expectEqual(mode(status(model: .preparing), nil, now: late), .hostUnavailable)
+        // A pending record and a fresh error come first.
+        TestSupport.expectEqual(mode(status(model: .preparing), Fixture.intent(.record)), .starting)
+        let failed = status(model: .preparing, dictation: Fixture.dictation(.failed, error: .modelFailed))
+        TestSupport.expectEqual(mode(failed, Fixture.intent(.finish)), .error(.modelFailed))
+    }
+
+    /// A finished recording whose model is not ready yet waits for preparation: `waitingForModel` instead
+    /// of `transcribing`. Starting and recording show as before.
+    private static func testTranscriptionWaitingForTheModelIsShown() {
+        let transcribing = Fixture.dictation(.transcribing)
+        for model in [HostStatus.Model.preparing, .notPrepared] {
+            for intent in [Fixture.intent(.record), Fixture.intent(.finish), Fixture.intent(.cancel)] {
+                TestSupport.expectEqual(mode(status(model: model, dictation: transcribing), intent), .waitingForModel)
+            }
+            TestSupport.expectEqual(mode(status(model: model, dictation: Fixture.dictation(.starting)), Fixture.intent(.record)),
+                                    .starting)
+            TestSupport.expectEqual(mode(status(model: model, dictation: Fixture.dictation(.recording), level: 0.3),
+                                         Fixture.intent(.record)), .recording(level: 0.3, startedAt: startedAt))
+        }
+        for model in [HostStatus.Model.ready, .failed] {
+            TestSupport.expectEqual(mode(status(model: model, dictation: transcribing), Fixture.intent(.finish)), .transcribing)
+        }
+        // Like any progress, it needs a live host, and only for the request the intent names.
+        let late = Fixture.now + DictationProtocol.livenessTimeout + 1
+        TestSupport.expectEqual(mode(status(model: .preparing, dictation: transcribing), Fixture.intent(.finish), now: late),
+                                .hostUnavailable)
+        let other = status(model: .preparing, dictation: Fixture.dictation(.transcribing, Fixture.otherRequestID))
+        TestSupport.expectEqual(mode(other, Fixture.intent(.finish)), .preparingModel)
+    }
+
+    /// `isModelPreparing` (the recording line's "model loads") reads only a live host's status.
+    private static func testModelPreparingOnlyFromALiveHost() {
+        let recording = Fixture.dictation(.recording)
+        TestSupport.expect(KeyboardPresenter.isModelPreparing(status: .value(status(model: .preparing, dictation: recording)),
+                                                              now: Fixture.now), "a live preparing host")
+        for model in [HostStatus.Model.ready, .notPrepared, .failed, .unavailable] {
+            TestSupport.expect(!KeyboardPresenter.isModelPreparing(status: .value(status(model: model)), now: Fixture.now),
+                               "\(model) is not preparing")
+        }
+        let late = Fixture.now + DictationProtocol.livenessTimeout + 0.001
+        TestSupport.expect(!KeyboardPresenter.isModelPreparing(status: .value(status(model: .preparing)), now: late),
+                           "a dead host's last status claimed preparation")
+        TestSupport.expect(!KeyboardPresenter.isModelPreparing(status: .value(status(model: .preparing, .inactive)),
+                                                               now: Fixture.now), "no session, no preparation shown")
+        var otherSchema = status(model: .preparing)
+        otherSchema.schema = DictationProtocol.schema + 1
+        TestSupport.expect(!KeyboardPresenter.isModelPreparing(status: .value(otherSchema), now: Fixture.now),
+                           "another schema's status was read")
+        for read in [StoreRead<HostStatus>.absent, .incompatible, .unreadable] {
+            TestSupport.expect(!KeyboardPresenter.isModelPreparing(status: read, now: Fixture.now), "no status read")
+        }
+    }
+
+    /// With no session, Start must not grow into the dimmed recording form (the stop square and Cancel) while iOS asks
+    /// to open LocalFlow, nor stay so when the user declines. While the request this keyboard bounced to LocalFlow has
+    /// not reached the host, the keyboard shows Start as it was, so a decline leaves Start at once and a second tap
+    /// bounces again. Once the host picks the request up (the user accepted), it shows as usual; a request another
+    /// keyboard instance bounced (adopted after the swipe back) is unaffected.
+    private static func testStartWithoutASessionStaysStart() {
+        let intent = Fixture.intent(.record)
+        func shown(_ status: HostStatus?, bounced: UUID?, now: Date = Fixture.now) -> KeyboardMode {
+            let statusRead: StoreRead<HostStatus> = status.map { .value($0) } ?? .absent
+            let mode = KeyboardPresenter.mode(access: .fullAccess, status: statusRead, intent: .value(intent), now: now)
+            return KeyboardPresenter.shownMode(mode, bouncedRequestID: bounced, intent: .value(intent), status: statusRead)
+        }
+        // No host, or a host without a session, and this keyboard bounced the request: still Start.
+        TestSupport.expectEqual(shown(nil, bounced: Fixture.requestID), .hostUnavailable)
+        TestSupport.expectEqual(shown(Fixture.status(.inactive), bounced: Fixture.requestID), .hostUnavailable)
+        TestSupport.expectEqual(shown(Fixture.status(.starting, captureReady: false), bounced: Fixture.requestID), .hostUnavailable)
+        // Another instance's bounce, or none: the pending request shows as starting, as before.
+        TestSupport.expectEqual(shown(nil, bounced: nil), .starting)
+        TestSupport.expectEqual(shown(nil, bounced: Fixture.otherRequestID), .starting)
+        // The host has it: starting, then recording.
+        let admitted = Fixture.status(heartbeatAt: Fixture.now + 3, dictation: Fixture.dictation(.starting))
+        TestSupport.expectEqual(shown(admitted, bounced: Fixture.requestID, now: Fixture.now + 3), .starting)
+        let recording = Fixture.status(heartbeatAt: Fixture.now + 4, dictation: Fixture.dictation(.recording), level: 0.2)
+        TestSupport.expectEqual(shown(recording, bounced: Fixture.requestID, now: Fixture.now + 4),
+                                .recording(level: 0.2, startedAt: startedAt))
+        // Only a pending start changes: every other mode shows as it is.
+        for mode in [KeyboardMode.ready, .hostUnavailable, .transcribing, .error(.sessionInactive), .needsFullAccess] {
+            TestSupport.expectEqual(KeyboardPresenter.shownMode(mode, bouncedRequestID: Fixture.requestID, intent: .value(intent),
+                                                                status: .absent), mode)
+        }
+    }
+}

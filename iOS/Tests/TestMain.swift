@@ -1,0 +1,91 @@
+import Foundation
+
+@main
+struct LocalFlowIOSTests {
+    static func main() {
+        let suites: [(String, [TestCase])] = [
+            ("BugReportEmail", BugReportEmailTests.tests),
+            ("LocalFlowConfiguration", LocalFlowConfigurationTests.tests),
+            ("DictationProtocol", DictationProtocolTests.tests),
+            ("SharedDictationStore", SharedDictationStoreTests.tests),
+            ("AtomicRecordFiles", AtomicRecordFilesTests.tests),
+            ("HostReconciler", HostReconcilerTests.tests),
+            ("HostRunRecovery", HostRunRecoveryTests.tests),
+            ("HostWatchdog", HostWatchdogTests.tests),
+            ("KeyboardPresenter", KeyboardPresenterTests.tests),
+            ("KeyboardResultLedger", KeyboardResultLedgerTests.tests),
+            ("KeyboardResultInbox", KeyboardResultInboxTests.tests),
+            ("KeyboardMessages", KeyboardMessagesTests.tests),
+            ("TextInsertionFormatter", TextInsertionFormatterTests.tests),
+            ("LocalFlowSettings", LocalFlowSettingsTests.tests),
+            ("DarwinNotifier", DarwinNotifierTests.tests),
+            ("MainLoopTimer", MainLoopTimerTests.tests),
+            ("DictationSampleBuffer", DictationSampleBufferTests.tests),
+            ("HostURLRoute", HostURLRouteTests.tests),
+            ("RecentRequestIDs", RecentRequestIDsTests.tests),
+            ("HostDictationSlot", HostDictationSlotTests.tests),
+            ("HostSessionPolicy", HostSessionPolicyTests.tests),
+            ("ComputePolicy", ComputePolicyTests.tests),
+            ("HostSessionCore", HostSessionCoreTests.tests),
+            ("SessionActivity", SessionActivityTests.tests),
+            ("AppScreens", AppScreensTests.tests),
+            ("CapturePipeline", CapturePipelineTests.tests),
+            ("CaptureTiming", CaptureTimingTests.tests),
+            ("TranscriptionEngine", TranscriptionEngineTests.tests),
+            ("ModelPreparationBackoff", ModelPreparationBackoffTests.tests),
+            ("DictionaryLibrary", DictionaryLibraryTests.tests),
+            ("MicrophoneRoute", MicrophoneRouteTests.tests),
+            ("NotificationObservers", NotificationObserversTests.tests),
+            ("CursorMotion", CursorMotionTests.tests),
+            ("TextNavigator", TextNavigatorTests.tests),
+            ("TrackpadSession", TrackpadSessionTests.tests),
+            ("WordBoundaries", WordBoundariesTests.tests),
+            ("DeleteRepeat", DeleteRepeatTests.tests),
+            ("KeyboardLayout", KeyboardLayoutTests.tests),
+            ("TypingRules", TypingRulesTests.tests),
+            ("UndoTracker", UndoTrackerTests.tests),
+            ("EditingCore", EditingCoreTests.tests),
+            ("ExpectedDocument", ExpectedDocumentTests.tests),
+            ("KeyboardEditor", KeyboardEditorTests.tests),
+            ("SwipeEditor", SwipeEditorTests.tests),
+            ("TouchRate", TouchRateTests.tests),
+            ("FieldProfile", FieldProfileTests.tests),
+            ("KeyTouchModel", KeyTouchModelTests.tests),
+            ("CalloutTracker", CalloutTrackerTests.tests),
+            ("BarControlRegions", BarControlRegionsTests.tests),
+            ("BarContent", BarContentTests.tests),
+            ("MenuPalette", MenuPaletteTests.tests),
+            ("KeyboardLook", KeyboardLookTests.tests),
+            ("DictationIsland", DictationIslandTests.tests),
+            ("IslandBud", IslandBudTests.tests),
+            ("KeyAlternates", KeyAlternatesTests.tests),
+            ("LFBinaryFile", LFBinaryFileTests.tests),
+            ("SwipeCore", SwipeCoreTests.tests),
+            ("TapCore", TapCoreTests.tests),
+            ("AutocorrectSettings", AutocorrectSettingsTests.tests),
+            ("AutocorrectEditor", AutocorrectEditorTests.tests),
+            ("AutocorrectCore", AutocorrectCoreTests.tests),
+            ("TypingSuggestions", TypingSuggestionsTests.tests),
+            ("NextWord", NextWordTests.tests),
+            ("WordChoice", WordChoiceTests.tests),
+            ("ParkedWord", ParkedWordTests.tests),
+            ("ReopenedWord", ReopenedWordTests.tests),
+            ("CompletionEvaluation", CompletionEvaluation.tests),
+            ("CorrectionEvaluation", CorrectionEvaluation.tests),
+            ("NeverCorrect", NeverCorrectTests.tests),
+            ("ModelLoadSlot", ModelLoadSlotTests.tests),
+            ("BundleModelLoader", BundleModelLoaderTests.tests),
+            ("HostSessionLock", HostSessionLockTests.tests),
+            ("HostSessionLockLatch", HostSessionLockLatchTests.tests),
+        ]
+        var count = 0
+        for (suite, tests) in suites {
+            for test in tests {
+                test.run()
+                print("ok \(suite).\(test.name)")
+                count += 1
+            }
+        }
+        print("LocalFlowIOSTests passed (\(count) tests)")
+    }
+}

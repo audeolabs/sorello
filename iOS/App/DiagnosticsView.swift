@@ -1,0 +1,198 @@
+import CoreML
+import SwiftUI
+
+/// Device experiments: cursor tuning, the autocorrect never-correct list (only its count is shown), the
+/// runtime (compute units read-only, as the policy is fixed) and content-free measurements of recent
+/// dictations, held in memory only.
+struct DiagnosticsView: View {
+    @EnvironmentObject private var host: HostSessionController
+    @ObservedObject var transcriber: ParakeetTranscriber
+
+    var body: some View {
+        List {
+            CursorTuningSection(settings: host.settings.settings)
+
+            NeverCorrectSection()
+
+            Section("Runtime") {
+                LabeledContent("Model", value: modelText)
+                LabeledContent("Compute units", value: transcriber.activeUnits?.label ?? "Not loaded")
+                    .accessibilityIdentifier("diagnostics.computeUnits")
+                LabeledContent("Available devices", value: availableDevices)
+                TimelineView(.periodic(from: .now, by: 1)) { _ in
+                    LabeledContent("Memory footprint", value: footprintText(ProcessMemory.footprint()))
+                }
+                LabeledContent("iOS", value: UIDevice.current.systemVersion)
+                Button("Release model now") { host.releaseModel() }
+                    .disabled(transcriber.modelState != .ready && transcriber.modelState != .failed || host.isDictationInProgress)
+            }
+            .listRowBackground(Theme.cardBackground)
+
+            Section("Last preparation") {
+                if let preparation = transcriber.lastPreparation {
+                    LabeledContent("Result", value: preparation.succeeded ? "Ready" : "Failed")
+                    LabeledContent("Duration", value: String(format: "%.1f s", preparation.seconds))
+                    LabeledContent("Compute units", value: preparation.computeUnits)
+                    LabeledContent("Ran in", value: preparation.inBackground ? "Background" : "Foreground")
+                    LabeledContent("Footprint after", value: footprintText(preparation.footprint))
+                } else {
+                    Text("None in this run").foregroundStyle(.secondary)
+                }
+            }
+            .listRowBackground(Theme.cardBackground)
+
+            Section {
+                if transcriber.measurements.isEmpty {
+                    Text("No dictations in this run").foregroundStyle(.secondary)
+                }
+                ForEach(transcriber.measurements) { measurement in
+                    MeasurementRow(measurement: measurement)
+                }
+            } header: {
+                Text("Recent dictations")
+            } footer: {
+                Text("Timings and memory only, never audio or text. Kept in memory and gone when LocalFlow quits.")
+            }
+            .listRowBackground(Theme.cardBackground)
+        }
+        .listStyle(.insetGrouped)
+        .themedListBackground()
+        .navigationTitle("Diagnostics")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var modelText: String {
+        switch transcriber.modelState {
+        case .unavailable: return "Not in this build"
+        case .notPrepared: return "Not prepared"
+        case .preparing: return "Preparing"
+        case .ready: return "Ready"
+        case .failed: return "Failed"
+        }
+    }
+
+    private var availableDevices: String {
+        let names = MLModel.availableComputeDevices.map { device -> String in
+            switch device {
+            case .cpu: return "CPU"
+            case .gpu: return "GPU"
+            case .neuralEngine: return "Neural Engine"
+            @unknown default: return "Other"
+            }
+        }
+        return names.isEmpty ? "—" : names.joined(separator: ", ")
+    }
+}
+
+/// The keyboard's trackpad-mode multipliers (App Group settings, read when a gesture starts), for
+/// tuning on a device side by side with Apple's keyboard.
+private struct CursorTuningSection: View {
+    let settings: LocalFlowSettings?
+    @State private var sensitivity = 1.0
+    @State private var acceleration = 1.0
+    @State private var touchRate: Double?
+    @State private var stepScale: Double?
+
+    var body: some View {
+        Section {
+            slider("Sensitivity", value: $sensitivity, range: 0.5 ... 2, identifier: "diagnostics.cursorSensitivity")
+            slider("Acceleration", value: $acceleration, range: 0.25 ... 3, identifier: "diagnostics.cursorAcceleration")
+            Button("Reset to 1×") {
+                sensitivity = 1
+                acceleration = 1
+            }
+            .disabled(sensitivity == 1 && acceleration == 1)
+            // Measured by the keyboard from its own touch events, written once per gesture; read-only.
+            LabeledContent("Touch rate", value: touchRate.map { String(format: "%.0f Hz", $0) } ?? "Not measured yet")
+                .accessibilityIdentifier("diagnostics.cursorTouchRate")
+            LabeledContent("Step scale", value: stepScale.map { String(format: "%.2f×", $0) } ?? "Not measured yet")
+                .accessibilityIdentifier("diagnostics.cursorStepScale")
+        } header: {
+            Text("Cursor")
+        } footer: {
+            Text("Sensitivity scales cursor travel at every speed; acceleration scales how much faster swipes go. Compare with Apple’s keyboard in Notes: touch and hold the space bar with each and match the feel. Changes apply to the next gesture. The step scale makes each touch event count as a 60 Hz one would (2× at 120 Hz).")
+        }
+        .listRowBackground(Theme.cardBackground)
+        .onAppear {
+            sensitivity = settings?.cursorSensitivity ?? 1
+            acceleration = settings?.cursorAcceleration ?? 1
+            touchRate = settings?.cursorTouchRate
+            stepScale = settings?.cursorEventStepScale
+        }
+        .onChange(of: sensitivity) { _, value in settings?.cursorSensitivity = value }
+        .onChange(of: acceleration) { _, value in settings?.cursorAcceleration = value }
+    }
+
+    private func slider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, identifier: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            LabeledContent(title, value: String(format: "%.2f×", value.wrappedValue))
+            Slider(value: value, in: range, step: 0.05)
+                .accessibilityLabel(title)
+                .accessibilityValue(String(format: "%.2f times", value.wrappedValue))
+                .accessibilityIdentifier(identifier)
+        }
+    }
+}
+
+/// The words the user asked autocorrect never to correct, in the App Group (ARCHITECTURE.md, "Word
+/// autocorrect", Never correct): only their count is read here, never the words, and the button clears them.
+private struct NeverCorrectSection: View {
+    private static let store = LocalFlowConfiguration.main.flatMap(NeverCorrectStore.init(configuration:))
+    @State private var count = 0
+    /// The keyboard may store a word while the app is in the background: the count is read again on return.
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        Section {
+            // Always enabled (with a store): the count can be stale, and a clear also removes a corrupt file or a
+            // staging file a crashed write left, which read as no words.
+            Button("Forget never-correct words (\(count))", role: .destructive) {
+                Self.store?.clear()
+                load()
+            }
+            .foregroundStyle(Theme.coral)
+            .disabled(Self.store == nil)
+            .accessibilityIdentifier("diagnostics.autocorrectForgetNeverCorrect")
+        } header: {
+            Text("Autocorrect")
+        } footer: {
+            Text("Words you asked autocorrect never to correct, kept on this iPhone and not in backups. The keyboard picks up a clear the next time it appears.")
+        }
+        .listRowBackground(Theme.cardBackground)
+        .onAppear(perform: load)
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { load() }
+        }
+    }
+
+    private func load() {
+        count = Self.store?.load().count ?? 0
+    }
+}
+
+private func footprintText(_ footprint: ProcessMemory.Footprint?) -> String {
+    guard let footprint else { return "—" }
+    return String(format: "%.0f MB · peak %.0f MB", footprint.currentMB, footprint.peakMB)
+}
+
+private struct MeasurementRow: View {
+    var measurement: DictationMeasurement
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(String(format: "%.1f s of audio", measurement.audioSeconds)).font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(measurement.outcome.rawValue.capitalized)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(measurement.outcome == .transcribed ? Theme.aurora : Theme.ember)
+            }
+            Text(String(format: "wait %.0f ms · transcribe %.0f ms", measurement.waitMilliseconds,
+                        measurement.transcriptionMilliseconds))
+                .font(.caption).monospacedDigit()
+            Text("\(measurement.computeUnits) · \(measurement.inBackground ? "background" : "foreground") · \(footprintText(measurement.footprint))")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 2)
+    }
+}
