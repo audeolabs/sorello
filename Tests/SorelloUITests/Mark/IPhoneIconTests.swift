@@ -163,4 +163,14 @@ struct IPhoneIconTests {
             #expect(outside.isEmpty, "\(star) is less than \(margin) units inside the shape iOS cuts the icon to")
         }
     }
+
+    /// The snapshot tool shows both icons at full size, and as an iPhone shows them on a dark and a light background,
+    /// for review.
+    @Test func theSnapshotsShowTheIPhoneIcons() {
+        let names = MarkSnapshots.scenes.map(\.name)
+        for name in ["mark-iphone-icon", "mark-iphone-icon-development", "mark-iphone-icon-sizes-dark",
+                     "mark-iphone-icon-sizes-light"] {
+            #expect(names.contains(name), "no scene \(name)")
+        }
+    }
 }
