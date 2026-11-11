@@ -1,7 +1,7 @@
 # Swipe typing licenses
 
 The iPhone keyboard's swipe bundle (`SWIPE_BUNDLE_DIR`, see `iOS/README.md`)
-is copied into `LocalFlowKeyboard.appex/Swipe/` together with these files:
+is copied into `SorelloKeyboard.appex/Swipe/` together with these files:
 
 - `LICENSE-AOSP-wordlist.txt`: the Apache License 2.0 notice of the Android
   Open Source Project's English word list, from which the swipe lexicon

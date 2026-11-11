@@ -1,4 +1,4 @@
-# LocalFlow for iPhone: architecture contract
+# Sorello for iPhone: architecture contract
 
 Status: prototype. This document is the contract between the iOS components.
 Every statement in it describes the code as it is on `main`.
@@ -49,7 +49,7 @@ keyboards entirely. Those fields are out of scope.
 5. **The GPU is unavailable in the background.** On iOS 27, background Neural
    Engine access requires the
    `com.apple.developer.background-tasks.continued-processing.inference`
-   entitlement, which LocalFlow does not have.
+   entitlement, which Sorello does not have.
 6. The encoder targets the `ios19` Core ML opset, so the deployment target is
    **iOS 26.0**.
 7. **A Live Activity starts only from the foreground**, or while iOS runs
@@ -134,12 +134,12 @@ The Makefile injects these into the Info.plists:
 | `APP_GROUP` | `group.$(BUNDLE_ID)` | `group.$(BUNDLE_ID)` |
 | `URL_SCHEME` | `localflow-dev` | `localflow` |
 | `UNIVERSAL_LINK` | empty | `https://wildernesslabs.ai/localflow/dictate` |
-| `DISPLAY_NAME` | `LocalFlow Dev` | `LocalFlow` |
+| `DISPLAY_NAME` | `Sorello Dev` | `Sorello` |
 
-The app's and the keyboard's Info.plists carry `LocalFlowAppGroupIdentifier`
-and `LocalFlowURLScheme`, and `LocalFlowUniversalLink` when `UNIVERSAL_LINK`
+The app's and the keyboard's Info.plists carry `SorelloAppGroupIdentifier`
+and `SorelloURLScheme`, and `SorelloUniversalLink` when `UNIVERSAL_LINK`
 is set. The Live Activity extension's carries none of them.
-`LocalFlowConfiguration.main` (Shared) reads them and rejects an empty value,
+`SorelloConfiguration.main` (Shared) reads them and rejects an empty value,
 an unexpanded `$(VARIABLE)` and an invalid URL scheme, so no Swift file
 hardcodes an identifier.
 
@@ -224,7 +224,7 @@ each carries `schema: Int` (currently `1`).
 
 - `absent`: the file does not exist.
 - `incompatible`: the record has an unknown `schema`. The schema is checked
-  before the rest is decoded. The keyboard shows "Update LocalFlow"; the host
+  before the rest is decoded. The keyboard shows "Update Sorello"; the host
   ignores the record.
 - `unreadable`: corrupt JSON, a file protected because the device is locked,
   an I/O error, or a result file whose `requestID` differs from its name.
@@ -413,7 +413,7 @@ invalidated requests and the consumed requests.
   So a host auto-finish at the maximum duration still lands in the field
   where recording started, if the keyboard stayed visible there. A request
   not bound to the current field when its result arrives is offered only as
-  "Insert last dictation": one stopped on LocalFlow's own screen or by
+  "Insert last dictation": one stopped on Sorello's own screen or by
   another keyboard instance, one whose binding hiding invalidated (a bounce,
   or an auto-finish after the keyboard hid), and every request a new keyboard
   instance (iOS creates one per app) neither started nor finished.
@@ -496,7 +496,7 @@ invalidated requests and the consumed requests.
     precedes it.
   - The context only chooses spacing and is never stored.
 
-### Shared settings (Shared/LocalFlowSettings.swift)
+### Shared settings (Shared/SorelloSettings.swift)
 
 The keyboard reads these, so they live in the App Group's `UserDefaults`
 suite. Every boolean but `leftHanded` defaults to on.
@@ -760,7 +760,7 @@ synthetic source in self-test builds, a fake in tests.
   `.cpuAndNeuralEngine` (`ComputePolicy.units`). There is no CPU fallback and
   no retry on another runtime: the CPU runtime peaks at about 3.2 GB and
   would be terminated in the background. CPU-only runs exist only in the
-  self-test (`LOCALFLOW_SELFTEST_COMPUTE=cpuOnly`).
+  self-test (`SORELLO_SELFTEST_COMPUTE=cpuOnly`).
 - A model or transcription failure in the background on iOS 27 or later fails
   the request and records the content-free hint
   `backgroundNeuralEngineNeedsEntitlement`, which the model status row on
@@ -889,7 +889,7 @@ transcripts or other user data.
 - **`ParakeetTranscriber`** wraps `TranscriptionEngine` with the Parakeet
   runtime, `LocalParakeetService`, which loads only the 15 s encoder function
   (as on macOS) to bound memory. The model loads from the app
-  bundle (`LocalFlow.app/Parakeet/`). It keeps the last 10 dictation
+  bundle (`Sorello.app/Parakeet/`). It keeps the last 10 dictation
   measurements in memory for Diagnostics.
 - **App-only preferences** (`AppPreferences`, the app's own `UserDefaults`):
   onboarding completion, "Use iPhone microphone", and the last model
@@ -962,7 +962,7 @@ transcripts or other user data.
     Anchored at the top, so nothing moves as the preparing line or the route
     arrives; it scrolls when it does not fit (large text on a small iPhone)
     while the buttons and the cue stay on screen. It stays up after the swipe back only while its dictation is in
-    progress, so a later return to LocalFlow shows Home, not an old outcome.
+    progress, so a later return to Sorello shows Home, not an old outcome.
     It is not shown for a Start tapped in the app's own field (the
     Dictionary editor), where it would close the editor and lose its draft;
     a Start in another app shows it even with the editor left on screen:
@@ -978,14 +978,14 @@ transcripts or other user data.
     compute units, foreground or background, memory footprint), held in
     memory only. Its "Autocorrect" section has only "Forget never-correct
     words (N)" ("Never correct", [Word autocorrect](#word-autocorrect)).
-- **Self-test build** (`-D LOCALFLOW_SELFTEST`, never in normal or App Store
-  builds). Environment variables: `LOCALFLOW_SELFTEST_AUDIO`,
-  `LOCALFLOW_SELFTEST_EXPECTED`, `LOCALFLOW_SELFTEST_COMPUTE`,
-  `LOCALFLOW_SYNTHETIC_MIC`, `LOCALFLOW_SELFTEST_SKIP_ONBOARDING`,
-  `LOCALFLOW_SELFTEST_SCREEN` and `LOCALFLOW_SELFTEST_START_SESSION`.
-  - It prints only content-free `LocalFlow self-test:` lines (pass or fail,
+- **Self-test build** (`-D SORELLO_SELFTEST`, never in normal or App Store
+  builds). Environment variables: `SORELLO_SELFTEST_AUDIO`,
+  `SORELLO_SELFTEST_EXPECTED`, `SORELLO_SELFTEST_COMPUTE`,
+  `SORELLO_SYNTHETIC_MIC`, `SORELLO_SELFTEST_SKIP_ONBOARDING`,
+  `SORELLO_SELFTEST_SCREEN` and `SORELLO_SELFTEST_START_SESSION`.
+  - It prints only content-free `Sorello self-test:` lines (pass or fail,
     timings, App Group state, compute units, footprint), never a transcript.
-  - `LOCALFLOW_SYNTHETIC_MIC` replaces the microphone with a real-time-paced
+  - `SORELLO_SYNTHETIC_MIC` replaces the microphone with a real-time-paced
     synthetic source. A requested but unusable synthetic source fails closed
     and never constructs real capture. It does not prove background audio
     behavior; only a device test can.
@@ -1054,7 +1054,7 @@ no buttons.
   - Compact: the mark leading; trailing, a small strip, or the coral dot and
     the elapsed time while recording, so the island grows as recording starts
     and narrows as it stops. Minimal: the mark, or the coral dot while
-    recording. Expanded: the mark and "LocalFlow", the countdown beside a
+    recording. Expanded: the mark and "Sorello", the countdown beside a
     timer glyph or the recording time, the strip and the phase's name. Lock Screen: the
     mark, the phase's name, one line of guidance or the countdown, the
     recording time, and the strip on its own dark background, in either
@@ -1074,7 +1074,7 @@ no buttons.
   the glyph as "Session ends if idle in", then the time
   (`SessionActivityState.countdownSymbol`, `countdownSpokenLead`). Nothing
   animates in Always On.
-- **Build.** `LocalFlowActivity.appex` (`$(BUNDLE_ID).activity`), a
+- **Build.** `SorelloActivity.appex` (`$(BUNDLE_ID).activity`), a
   `com.apple.widgetkit-extension` linked with the `_NSExtensionMain` entry
   point as Xcode links every extension; no entitlements beyond the signing
   identity's, no App Group, no push, no resources other than its App Intents
@@ -1099,7 +1099,7 @@ Center or on the Lock Screen.
   `LiveActivityIntent`, so iOS runs it in the app's process, launching the
   app in the background when it is not running. It has no parameters, no
   dialog and no result value; when the start needs the app it fails with
-  "Open LocalFlow to start the session." (see Foreground).
+  "Open Sorello to start the session." (see Foreground).
   - `authenticationPolicy` is `.requiresLocalDeviceAuthentication`: on a
     locked iPhone iOS asks for Face ID or the passcode on the iPhone itself
     (an unlocked Apple Watch does not count) before it runs, so the control
@@ -1148,7 +1148,7 @@ Center or on the Lock Screen.
 ## Keyboard extension (Keyboard/)
 
 - **`KeyboardViewController`** (`UIInputViewController`, principal class
-  `LocalFlowKeyboard.KeyboardViewController`) hosts a SwiftUI
+  `SorelloKeyboard.KeyboardViewController`) hosts a SwiftUI
   `DictationBarView` (the top row) in a `UIHostingController`, above the UIKit
   `KeyAreaView`, plus a SwiftUI `MenuPanelView` over the key area when the
   menu is open.
@@ -1160,14 +1160,14 @@ Center or on the Lock Screen.
     ([Reach and touch regions](#reach-and-touch-regions)); it draws only the
     top row.
   - **The band above the keyboard.** In most hosts (Messages, Safari,
-    Contacts, Reminders, and LocalFlow itself once the keyboard has been
+    Contacts, Reminders, and Sorello itself once the keyboard has been
     restored after an app switch), iOS 26 draws the host's keyboard backdrop
     17 pt above the top row: the gap it leaves between the host's input
     accessory slot and the keyboard, laid out in the host's process. The
     extension's view, window and safe area are the same with or without it,
     and a taller view moves the backdrop up by the same amount, so the
     keyboard can neither detect nor remove the band. Only a first show in a
-    freshly launched LocalFlow lacks it. Measured on iOS 26.4, October 2026.
+    freshly launched Sorello lacks it. Measured on iOS 26.4, October 2026.
   - Its input view adopts `UIInputViewAudioFeedback`, so key presses play the
     system click, which follows the user's Keyboard Clicks setting.
   - It sets `hasDictationKey = true` in `viewDidAppear`, so iOS drops its own
@@ -1195,13 +1195,13 @@ Center or on the Lock Screen.
     ID, then post `.intent`. `hostUnavailable`: write `record(R)` and open
     `dictateURL` with `HostAppLauncher`, without posting `.intent` (a
     background host without a session would reject it before the app reaches
-    the foreground); if the launcher fails, show "Open LocalFlow". After an
+    the foreground); if the launcher fails, show "Open Sorello". After an
     error the tap starts the way the host's current state allows.
     `starting` or `recording`: write `finish(R)` under the stale-writer guard,
     bind R to the current field, then post `.intent`.
   - **Cancel** writes `cancel(R)` under the same guard while starting,
     recording, transcribing or waiting for the model.
-  - "Open LocalFlow" in the menu uses the same launcher without a request.
+  - "Open Sorello" in the menu uses the same launcher without a request.
 - **`HostAppLauncher`** walks the responder chain to the `UIApplication` object
   and calls `open(_:options:completionHandler:)` through the Objective-C
   runtime. It is experimental and an App Review gray area: validate it on
@@ -1209,7 +1209,7 @@ Center or on the Lock Screen.
   An https URL (the universal link) is opened with
   `UIApplication.OpenExternalURLOptionsKey.universalLinksOnly` set to true, so
   iOS opens only the app verified for the domain, never Safari or another
-  app; when iOS reports it did not open, the keyboard shows "Open LocalFlow".
+  app; when iOS reports it did not open, the keyboard shows "Open Sorello".
   With a universal link configured the keyboard never opens the scheme.
 - **`KeyboardInput`** adapts `KeyboardEditor` (KeyboardCore) to the key area,
   the text proxy and timers. **`TrackpadDriver`** runs `TrackpadController`
@@ -1224,7 +1224,7 @@ Center or on the Lock Screen.
   `keyHapticsEnabled` for a light impact on every key touch-down,
   `hapticsEnabled` for dictation (the mic, cancel and Undo taps, recording
   start, insertion, failures) and the trackpad-mode activation tap. A keyboard extension
-  cannot read the iOS keyboard-feedback setting, so LocalFlow has its own.
+  cannot read the iOS keyboard-feedback setting, so Sorello has its own.
 - The keyboard has no network access and does not log.
 
 ### Top row
@@ -1235,7 +1235,7 @@ only when the strip's words change (suggestions while a word is typed). It repor
 every other point of the bar
 ([Reach and touch regions](#reach-and-touch-regions)).
 
-- **Right: the island** (`lf.mic`), the dictation control: a dark pill in
+- **Right: the island** (`sorello.mic`), the dictation control: a dark pill in
   the spirit of the Dynamic Island, whose parts go where `IslandLayout`
   puts them (pure, tested), its right end always at the bar's trailing
   padding.
@@ -1278,7 +1278,7 @@ every other point of the bar
     No dot leads the middle: beside Start's own dot it would make two.
   - **Start without a session** (`hostUnavailable`) stays Start: the tap
     pops the dot once, plays the press haptic and asks iOS to open
-    LocalFlow. While the request it bounced has not reached the host, the
+    Sorello. While the request it bounced has not reached the host, the
     keyboard shows Start (`KeyboardPresenter.shownMode`), so a decline
     leaves Start at once (rather than the dimmed recording form for about
     15 s) and a second tap bounces again; when the user accepts, the host
@@ -1302,7 +1302,7 @@ every other point of the bar
     the island's label (`KeyboardMessages.capsuleAccessibilityLabel`). When
     the transcript lands it opens back into Start, and Undo arrives in the
     middle.
-  - **Cancel** (`lf.cancel`), a small circle (32 pt; 26 pt in landscape),
+  - **Cancel** (`sorello.cancel`), a small circle (32 pt; 26 pt in landscape),
     shows from starting until the transcript arrives, beside the island in
     the bar's right half, in reach of a right thumb (the left half
     left-handed), a 12 pt gap from it: Cancel discards the dictation, so a
@@ -1329,7 +1329,7 @@ every other point of the bar
     arrives for it (only when this keyboard put in the very dictation the
     island showed, by its request, `KeyboardViewState.lastInsertedRequestID`
     against `IslandBud.Shown`, which the bar feeds from its first appearance,
-    so also for a dictation it first saw midway, back from LocalFlow: an
+    so also for a dictation it first saw midway, back from Sorello: an
     earlier dictation's Undo keeps its chip; `IslandBud.target`) it
     travels to Undo's place, its leading edge first (0.28 s,
     0.76) and the trailing edge 0.02 s later and softer (0.34 s, 0.82), so
@@ -1354,7 +1354,7 @@ every other point of the bar
     (from `CapsuleStyle`). It is never replaced by the candidate strip, the
     chips or a notice. When dictation cannot run here (no Full Access,
     configuration, versions), Start is dimmed and explains why.
-- **Left-handed** (`LocalFlowSettings.leftHanded`, "Left-handed" on Home,
+- **Left-handed** (`SorelloSettings.leftHanded`, "Left-handed" on Home,
   off by default; for accessibility): every part of the bar is reflected
   across its middle (`IslandLayout(leftHanded:)`): Start and the island at
   the bar's left end, growing rightwards; Cancel on the island's right, in a
@@ -1369,8 +1369,8 @@ every other point of the bar
   everything else stay as they are. Every rule of the bar holds mirrored,
   and off the layout is exactly the right-handed one
   (`DictationIslandTests`). The keyboard reads it when it appears.
-- **Left** (right, left-handed): a menu button (`lf.menu`) that opens a panel over the key area
-  with the session status, "Open LocalFlow", the trackpad
+- **Left** (right, left-handed): a menu button (`sorello.menu`) that opens a panel over the key area
+  with the session status, "Open Sorello", the trackpad
   tip with the field's text width ("Full width" or "Chat bubble",
   [Field profiles](#field-profiles)), and details of anything that keeps
   dictation from working. The open menu is one calm layer (`MenuCover`): the
@@ -1391,10 +1391,10 @@ every other point of the bar
   the text-width choice included (two segments, stacked when they do not fit
   side by side), and reads at WCAG AA (4.5:1 or
   better) in light and dark mode (`MenuPalette`: a white card in light
-  mode, a dark grey one in dark mode, "Open LocalFlow" and the session line's
+  mode, a dark grey one in dark mode, "Open Sorello" and the session line's
   ridge mark in the brand's accent, `BrandPalette.link`). When it does not fit (landscape, the largest sizes) it
   scrolls inside its rounded corners. At the accessibility sizes the actions
-  come first ("Open LocalFlow", then the text-width choice), then the
+  come first ("Open Sorello", then the text-width choice), then the
   session status and the tip, which points above
   (`KeyboardMessages.menuItems`), so the first screen is never all status.
   The session line keeps the time left ("Session ends in 5 min if idle",
@@ -1404,12 +1404,12 @@ every other point of the bar
   same state, heartbeat, breathing, still or (with Reduce Motion) unlit in
   the card's grey (`MenuPalette.unlitDot`). A tap outside the panel's card,
   or on the button, closes it.
-- **Middle:** chips for Undo (`lf.undo`) and "Insert last dictation"
-  (`lf.insertLast`) when there is something to act on (neither while a
+- **Middle:** chips for Undo (`sorello.undo`) and "Insert last dictation"
+  (`sorello.insertLast`) when there is something to act on (neither while a
   dictation is in progress), otherwise a one-line status (`BarStatus`).
   Words only where they earn their space.
   - **Words:** what the user must act on (Full Access, a broken install,
-    versions, "Open LocalFlow to start a session" after the launcher
+    versions, "Open Sorello to start a session" after the launcher
     failed or the user declined iOS's prompt), an error (why a dictation
     was lost; the microphone permission), a model that cannot load
     ("Model failed to load", "Model missing"), and a notice. An error or a
@@ -1419,12 +1419,12 @@ every other point of the bar
     the session line ("Session ends in 5 min if idle", "Session on"),
     "Model loads when you dictate", "Preparing model…" idle and in the
     wait, "Transcribing…", the cold start's "Model loading" while
-    recording, and "Start opens LocalFlow".
+    recording, and "Start opens Sorello".
   - **VoiceOver** still hears every state in words: what the bar no longer
     shows is the island's value (`KeyboardMessages.spokenStatus`), on Start
     "Session ends in 5 min if idle" (". Model loads when you dictate"),
     "Preparing model. Session ends in 5 min if idle", "No session. Start
-    opens LocalFlow"; while recording "Recording, 5 seconds. Model
+    opens Sorello"; while recording "Recording, 5 seconds. Model
     loading"; the wait from the label.
 
   | State | The bar shows | VoiceOver |
@@ -1432,8 +1432,8 @@ every other point of the bar
   | Ready, session on | Start, heartbeat (lit with Reduce Motion) | "Start dictation, Session ends in N min if idle" |
   | Ready, model released | Start, heartbeat (lit) | "…if idle. Model loads when you dictate" |
   | Model preparing (idle) | Start, dot breathing (lit) | "Start dictation, Preparing model. Session ends in N min if idle" |
-  | No session | Start, dot still (unlit) | "Start dictation, No session. Start opens LocalFlow" |
-  | No session, launcher failed or declined | Start, dot still (unlit); "Open LocalFlow to start a session" | the middle's words |
+  | No session | Start, dot still (unlit) | "Start dictation, No session. Start opens Sorello" |
+  | No session, launcher failed or declined | Start, dot still (unlit); "Open Sorello to start a session" | the middle's words |
   | Starting | dimmed recording row | "Stop dictation, Starting" |
   | Recording | the wave and time | "Stop dictation, Recording, 5 seconds" (". Model loading") |
   | Transcribing, waiting for the model | the shimmer pill | "Transcribing", "Preparing model" |
@@ -1444,7 +1444,7 @@ every other point of the bar
   Where it is depends on the island's form (`IslandLayout`): beside Start;
   while a dictation runs (starting, recording, the wait) between the menu
   and Cancel. Its content starts beside the menu button, in either hand. While a dictation runs it holds only plain
-  text that invites no tap (a notice, "Open LocalFlow to start a
+  text that invites no tap (a notice, "Open Sorello to start a
   session"); beside Cancel such text may take two lines. The candidate
   strip, after a swipe ([Swipe typing](#swipe-typing)) or a commit key,
   while a word is typed, or with the next words after a space
@@ -1470,10 +1470,10 @@ every other point of the bar
   go blank.
 - **Appearance and accessibility.** The keyboard follows its window's
   traits, which iOS keeps with the host's keyboard backdrop: dark in an app
-  that is always dark (LocalFlow) under a light system, and live switches
+  that is always dark (Sorello) under a light system, and live switches
   included. `keyboardAppearance` is never pinned. The proxy reports the
   host's appearance as of its last traits, so a host that missed a switch in
-  the background (LocalFlow in front with the keyboard up, dark to light,
+  the background (Sorello in front with the keyboard up, dark to light,
   back to Messages) still reports `.dark` while its backdrop is light; dark
   keys pinned from it sit on light glass (simulator, iOS 26.4). Bold Text
   makes key captions and bar text bold; Increase Contrast gives the keys a
@@ -1489,7 +1489,7 @@ every other point of the bar
 
 The keys stay as calm as Apple's: one neutral fill, no colour on letters.
 Every control is monochrome (aurora buttons are very bright and jarring; the
-brand colours are for accents). LocalFlow's colours
+brand colours are for accents). Sorello's colours
 (`BrandPalette`, the app's `Theme`: aurora #6DFFA8, glacier #67E8F9, ember
 #F5C66B) mark only small things that show a state: aurora for the mark's
 dot (always on Start, with the session's heartbeat, and the dot the wave
@@ -2194,7 +2194,7 @@ and `bundle.json` (`format` 1; `decode`: `beam`, `top_k`, `length_power`,
 `freq_weight`, `length_bonus`; a SHA-256 for every other file; optional `tap`
 and `autocorrect` sections, [Soft key edges](#soft-key-edges) and
 [Word autocorrect](#word-autocorrect)). The build
-copies exactly the listed files into `LocalFlowKeyboard.appex/Swipe/`, checks
+copies exactly the listed files into `SorelloKeyboard.appex/Swipe/`, checks
 each hash, and adds `bundle.json` and the licenses in `Resources/Swipe/`.
 Without `SWIPE_BUNDLE_DIR` the keyboard has no swipe typing and long drags
 across the letters are taps. The keyboard loads the bundle off the main
@@ -2301,7 +2301,7 @@ character model predicts from the text before the caret. A tap near a key's
 centre always types that key.
 
 - **When.** On while `softKeyEdgesEnabled` is on (default on;
-  [Shared settings](#shared-settings-sharedlocalflowsettingsswift)) and the
+  [Shared settings](#shared-settings-sharedsorellosettingsswift)) and the
   bundle has a valid `tap` section whose default model has loaded. The
   keyboard reads the switch when it appears. Without Full Access the keyboard
   does not read the settings (iOS would let it read the App Group, though
@@ -2439,7 +2439,7 @@ first be replaced by a lexicon word. A Delete right after puts the typed word
 back.
 
 - **When.** On while `autocorrectEnabled` is on (default on;
-  [Shared settings](#shared-settings-sharedlocalflowsettingsswift)) and the
+  [Shared settings](#shared-settings-sharedsorellosettingsswift)) and the
   bundle has a valid `autocorrect` section whose default model has loaded.
   The keyboard reads the switch when it appears. Without Full Access the
   keyboard does not read the settings (by decision, as for soft key edges),
@@ -2646,7 +2646,7 @@ or a lexicon form.
   or kept with it offered), run through the whole commit
   (`WordAutocorrect.review`) with taps at the key centres. On bundle b34: 36
   as expected and none changed to a wrong word; the test runs with
-  `LF_AUTOCORRECT_BUNDLE=<bundle>` and guards those counts. The completion
+  `SORELLO_AUTOCORRECT_BUNDLE=<bundle>` and guards those counts. The completion
   evaluation (57 and 70) and the 58 common misspellings are unchanged. A
   sweep of generated typos of the lexicon's 317 commonest words of four
   letters or more (every seventh, four invented contexts, centre taps):
@@ -2902,7 +2902,7 @@ finished, the strip shows up to three words for it
   family, each cut after one to three letters of a word
   (`Tests/CompletionEvaluation.swift`). On
   bundle b34 the word meant is the first completion in 57 and among the three
-  in 70; the test runs with `LF_AUTOCORRECT_BUNDLE=<bundle>` and guards those
+  in 70; the test runs with `SORELLO_AUTOCORRECT_BUNDLE=<bundle>` and guards those
   counts. Reweighing context against frequency did not do better on it: the
   lexicon's frequencies added to the model's log probability (weights −0.75
   to 2) at best matched it and fell to 22 and 35 at 2; context specificity
@@ -3103,16 +3103,16 @@ app reads only the count. The models are fixed.
 
 ## Build and targets (iOS/Makefile)
 
-- `make -C iOS` builds `iOS/build/<platform>/LocalFlow.app` with
-  `PlugIns/LocalFlowKeyboard.appex` and `PlugIns/LocalFlowActivity.appex`.
+- `make -C iOS` builds `iOS/build/<platform>/Sorello.app` with
+  `PlugIns/SorelloKeyboard.appex` and `PlugIns/SorelloActivity.appex`.
   The default platform is the arm64 simulator; `PLATFORM=device` builds for
   arm64 devices.
   - All three are compiled for `arm64-apple-ios26.0[-simulator]` with
     `-Xcc -DACCELERATE_NEW_LAPACK`, because the iOS 26 SDK deprecates the
     CBLAS interface the shared decoder uses.
   - The keyboard is compiled with `-application-extension`, the
-    `_NSExtensionMain` entry point and module `LocalFlowKeyboard`; the Live
-    Activity likewise, as module `LocalFlowActivity`.
+    `_NSExtensionMain` entry point and module `SorelloKeyboard`; the Live
+    Activity likewise, as module `SorelloActivity`.
   - Simulator builds embed the entitlements in each executable's
     `__TEXT,__entitlements` and `__TEXT,__ents_der` sections. The extensions
     are signed before the app.
@@ -3125,7 +3125,7 @@ app reads only the count. The models are fixed.
     records Xcode's build metadata (`DTXcode`, `DTSDKBuild` and the rest) in
     every Info.plist, copies each target's privacy manifest, and copies the
     display face and its license into the app's `Fonts/` (`UIAppFonts`).
-- `PARAKEET_BUNDLE_DIR` copies the model into `LocalFlow.app/Parakeet/` and
+- `PARAKEET_BUNDLE_DIR` copies the model into `Sorello.app/Parakeet/` and
   relabels it with `scripts/label-localflow-model.py`; repeat builds keep an
   unchanged copy. `SWIPE_BUNDLE_DIR` adds swipe typing
   ([Swipe typing](#swipe-typing)).
@@ -3203,7 +3203,7 @@ app reads only the count. The models are fixed.
    `Library/Caches`, excluded from backup, and is deleted on claim, on expiry
    by either process, or on a run change. There is no history.
 3. There are no network APIs, no telemetry and no logging in any iOS target.
-   The only output is the self-test build's content-free `LocalFlow
+   The only output is the self-test build's content-free `Sorello
    self-test:` lines.
 4. URLs and Darwin notifications carry no authority. A URL, the custom scheme
    or the universal link, can never start capture. The keyboard opens the
@@ -3295,8 +3295,8 @@ merge (AGENTS.md).
 - **Session and protocol:** onboarding; the bounce on iOS 26 and 27
   ("Listening" only once audio flows, swipe back, the dictation inserts),
   through the universal link in an App Store or opted-in dev build (it opens
-  LocalFlow, never Safari, and with the association missing the keyboard
-  shows "Open LocalFlow");
+  Sorello, never Safari, and with the association missing the keyboard
+  shows "Open Sorello");
   session keep-alive and idle expiry; field binding (dictate into Reminders'
   title, switch to its notes mid-request: no auto-insert into the notes, and
   the chip appears; start in one app, open another before the transcript is ready: no
@@ -3305,7 +3305,7 @@ merge (AGENTS.md).
   phone-call interruption; a Bluetooth
   route change; device lock (indicator on the lock screen, a dictation
   cancelled at lock, dictation from another app after unlock without opening
-  LocalFlow, a session that idles out while locked, then the first bounce
+  Sorello, a session that idles out while locked, then the first bounce
   after unlock starting a new session).
 - **Session control:** the control on the Action button, in Control Center
   and on the Lock Screen; with the app not running, suspended and in front:
@@ -3313,7 +3313,7 @@ merge (AGENTS.md).
   opening the app, the keyboard then dictates without a bounce, and the next
   press ends it; on a locked iPhone it asks for Face ID first; it shows as an
   action, not as opening the app; with the microphone not yet allowed, or
-  Live Activities off, it says to open LocalFlow, and opening it within 30 s
+  Live Activities off, it says to open Sorello, and opening it within 30 s
   starts the session there.
 - **Live Activity:** the compact, minimal and expanded island and the Lock
   Screen while ready, recording, transcribing and preparing, in dark and

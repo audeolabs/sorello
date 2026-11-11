@@ -1,4 +1,4 @@
-# LocalFlow for iPhone (prototype)
+# Sorello for iPhone (prototype)
 
 A custom keyboard with a dictation button, backed by the bundled Parakeet model
 running in the containing app. [ARCHITECTURE.md](ARCHITECTURE.md) is the
@@ -20,14 +20,14 @@ Swift Package Manager.
 Run from the repository root (or `make <target>` inside `iOS/`):
 
 ```bash
-make -C iOS                      # build/simulator/LocalFlow.app, no model
-make -C iOS PARAKEET_BUNDLE_DIR=/path/to/bundle   # with the model in LocalFlow.app/Parakeet/
-make -C iOS SWIPE_BUNDLE_DIR=/path/to/swipe-bundle  # with swipe typing in LocalFlowKeyboard.appex/Swipe/
+make -C iOS                      # build/simulator/Sorello.app, no model
+make -C iOS PARAKEET_BUNDLE_DIR=/path/to/bundle   # with the model in Sorello.app/Parakeet/
+make -C iOS SWIPE_BUNDLE_DIR=/path/to/swipe-bundle  # with swipe typing in SorelloKeyboard.appex/Swipe/
 make -C iOS check                # simulator type-check, host tests, plutil -lint
 ```
 
-The app contains `PlugIns/LocalFlowKeyboard.appex` and
-`PlugIns/LocalFlowActivity.appex` (the session's Live Activity). Repeat builds
+The app contains `PlugIns/SorelloKeyboard.appex` and
+`PlugIns/SorelloActivity.appex` (the session's Live Activity). Repeat builds
 keep an unchanged copy of the 330 MB model instead of copying it again.
 
 | Variable | Default | Purpose |
@@ -38,12 +38,12 @@ keep an unchanged copy of the 330 MB model instead of copying it again.
 | `APP_GROUP` | `group.$(BUNDLE_ID)` | shared container for app and keyboard |
 | `URL_SCHEME` | `localflow-dev` | `<scheme>://dictate` |
 | `UNIVERSAL_LINK` | empty | https URL the keyboard opens instead of the scheme (see [Universal link](#universal-link)) |
-| `DISPLAY_NAME` | `LocalFlow Dev` | home screen and keyboard list name |
+| `DISPLAY_NAME` | `Sorello Dev` | home screen and keyboard list name |
 | `DEPLOYMENT_TARGET` | `26.0` | the encoder uses the `ios19` Core ML opset |
 | `PARAKEET_BUNDLE_DIR` | empty | model bundle to embed |
 | `SWIPE_BUNDLE_DIR` | empty | swipe typing bundle to embed in the keyboard (see [Swipe typing bundle](#swipe-typing-bundle)) |
 | `BUILD_DIR` | `build/$(PLATFORM)` | output directory |
-| `SWIFT_FLAGS` | empty | extra compiler flags, e.g. `-D LOCALFLOW_SELFTEST` |
+| `SWIFT_FLAGS` | empty | extra compiler flags, e.g. `-D SORELLO_SELFTEST` |
 | `SWIFT_JOBS` | the Mac's active cores | parallel compiler jobs for every build, type-check and test compile |
 | `BUILD_NUMBER` | empty | `CFBundleVersion` for all three bundles; empty keeps the template's `1` |
 | `CODESIGN_IDENTITY`, `TEAM_ID`, `APP_PROFILE`, `KEYBOARD_PROFILE`, `ACTIVITY_PROFILE` | `-` on the simulator | device signing |
@@ -60,7 +60,7 @@ repository: `SwipeEncoder.mlmodelc/` (the compiled Core ML encoder),
 decoder settings under `"decode"` (`beam`, `top_k`, `length_power`,
 `freq_weight`, `length_bonus`) and a SHA-256 for every other file under
 `"files"` (relative paths, the model directory's files listed one by one). The
-build copies exactly the listed files into `LocalFlowKeyboard.appex/Swipe/`,
+build copies exactly the listed files into `SorelloKeyboard.appex/Swipe/`,
 checks each copy against its hash and stops on any mismatch, missing file or
 invalid path, then adds `bundle.json` and the licenses in
 `../Resources/Swipe/`. A changed `bundle.json` or `SWIPE_BUNDLE_DIR` rebuilds
@@ -79,14 +79,14 @@ turns off only its own feature.
 ## Simulator
 
 ```bash
-make -C iOS install-sim          # builds, creates/boots LocalFlow-Smoke, installs
+make -C iOS install-sim          # builds, creates/boots Sorello-Smoke, installs
 make -C iOS run-sim              # also opens Simulator and launches the app
 ```
 
-`SIM_DEVICE` (default `LocalFlow-Smoke`) is created on first use with
+`SIM_DEVICE` (default `Sorello-Smoke`) is created on first use with
 `SIM_DEVICE_TYPE` (default `iPhone 17 Pro`) and `SIM_RUNTIME` (default: the
 newest installed iOS runtime). To enable the keyboard in the simulator, open
-Settings → General → Keyboard → Keyboards → Add New Keyboard → LocalFlow Dev,
+Settings → General → Keyboard → Keyboards → Add New Keyboard → Sorello Dev,
 then turn on Allow Full Access.
 
 Simulator builds are ad-hoc signed. As in Xcode simulator builds, the App
@@ -99,21 +99,21 @@ Group entitlement is embedded in each executable's `__TEXT,__entitlements` and
 make -C iOS smoke-sim PARAKEET_BUNDLE_DIR=/path/to/bundle
 ```
 
-This builds the self-test variant (`-D LOCALFLOW_SELFTEST`) into
+This builds the self-test variant (`-D SORELLO_SELFTEST`) into
 `build/smoke-simulator`, installs it on `SIM_DEVICE`, and synthesizes an
 invented phrase with `say`. It copies the WAV into the app's data container and
 launches the app. The app checks that the App Group container is writable,
 prepares the model, transcribes the samples, and prints one line:
 
 ```
-LocalFlow self-test: result=pass stage=done transcript_match=true app_group=usable compute=cpuAndNeuralEngine preparation_s=… transcription_s=… audio_s=… peak_footprint_mb=… available_devices=… error=none
+Sorello self-test: result=pass stage=done transcript_match=true app_group=usable compute=cpuAndNeuralEngine preparation_s=… transcription_s=… audio_s=… peak_footprint_mb=… available_devices=… error=none
 ```
 
 The transcript is never printed. The audio file is deleted afterwards. The log
 is kept in `build/smoke-simulator/obj/selftest.log` only on failure. If
 `smoke-sim` booted the simulator, it shuts it down again. Options:
 `SMOKE_COMPUTE=cpuOnly`, `SMOKE_PHRASE`, `SMOKE_TIMEOUT` (seconds, default
-900). Remove the device with `xcrun simctl delete LocalFlow-Smoke`.
+900). Remove the device with `xcrun simctl delete Sorello-Smoke`.
 
 The simulator has no Neural Engine. Core ML runs a `.cpuAndNeuralEngine` model
 on the CPU there, so simulator timings say nothing about device performance.
@@ -125,7 +125,7 @@ made current without touching Settings. Run these while the simulator is
 booted, then relaunch the app:
 
 ```bash
-dev=LocalFlow-Keyboard; kb=com.ajbarryiii.localflow.ios.dev.keyboard
+dev=Sorello-Keyboard; kb=com.ajbarryiii.localflow.ios.dev.keyboard
 xcrun simctl spawn $dev defaults write -g AppleKeyboards -array $kb "en_US@sw=QWERTY;hw=Automatic" "emoji@sw=Emoji"
 xcrun simctl spawn $dev defaults write com.apple.keyboard.preferences KeyboardsCurrentAndNext -array $kb "en_US@sw=QWERTY;hw=Automatic"
 ```
@@ -144,8 +144,8 @@ make -C iOS e2e-sim-scenarios
 ```
 
 `e2e-sim` builds the self-test variant into `build/e2e-simulator` and installs
-it on `LocalFlow-E2E` (`E2E_SIM_DEVICE`). It generates the invented
-`E2E_PHRASE` with `say` and launches with `LOCALFLOW_SYNTHETIC_MIC`, a
+it on `Sorello-E2E` (`E2E_SIM_DEVICE`). It generates the invented
+`E2E_PHRASE` with `say` and launches with `SORELLO_SYNTHETIC_MIC`, a
 real-time-paced synthetic source. The Mac microphone is never used, and a
 requested but unusable synthetic source fails closed rather than falling back
 to the real microphone. `E2E_SCREEN` accepts `onboarding`,
@@ -153,7 +153,7 @@ to the real microphone. `E2E_SCREEN` accepts `onboarding`,
 `diagnostics`. `E2E_HEADPHONES` sets the route the synthetic microphone
 reports: `bluetooth` stands in for AirPods, with the input following "Use
 iPhone microphone" as iOS routes them, and `none` for the iPhone microphone
-alone. The app's content-free `LocalFlow self-test:` lines go to
+alone. The app's content-free `Sorello self-test:` lines go to
 `build/e2e-simulator/obj/e2e-app.log`.
 
 `e2e-sim-probe` plays the keyboard's side through the App Group files:
@@ -172,7 +172,7 @@ It prints only phases and pass/fail, then deletes the result file.
 - `url-hint-stale`
 
 On the 26.4 simulator, `simctl openurl` with a custom scheme leaves an
-"Open in LocalFlow Dev?" alert that cannot be tapped headlessly, so the probes
+"Open in Sorello Dev?" alert that cannot be tapped headlessly, so the probes
 bring the app forward with `simctl launch`. The next simulator reboot clears
 the alert.
 
@@ -253,7 +253,7 @@ next launch prepares cold again.
 `CHANNEL=appstore` builds the production app: `com.ajbarryiii.localflow.ios`
 (keyboard `.keyboard`, Live Activity `.activity`), App Group `group.com.ajbarryiii.localflow.ios`, URL
 scheme `localflow`, universal link
-`https://wildernesslabs.ai/localflow/dictate`, display name "LocalFlow" and
+`https://wildernesslabs.ai/localflow/dictate`, display name "Sorello" and
 the production icon, into `build/appstore/`. It always builds for the device,
 refuses the self-test variant, an empty or non-https `UNIVERSAL_LINK`, needs
 the model, and accepts only App Store distribution profiles.
@@ -283,7 +283,7 @@ P="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 STORE=(CHANNEL=appstore CODESIGN_IDENTITY="Apple Distribution: Name (XXXXXXXXXX)" TEAM_ID=XXXXXXXXXX
        APP_PROFILE="$P/<app-store-app-uuid>.mobileprovision" KEYBOARD_PROFILE="$P/<app-store-keyboard-uuid>.mobileprovision"
        ACTIVITY_PROFILE="$P/<app-store-activity-uuid>.mobileprovision" PARAKEET_BUNDLE_DIR=/path/to/bundle BUILD_NUMBER=<n>)
-make -C iOS ipa appstore-check "${STORE[@]}"          # build/appstore/LocalFlow.ipa, checked locally
+make -C iOS ipa appstore-check "${STORE[@]}"          # build/appstore/Sorello.ipa, checked locally
 make -C iOS appstore-validate "${STORE[@]}" ASC_KEY_ID=<key id> ASC_ISSUER_ID=<issuer id>   # Apple's checks
 make -C iOS appstore-upload "${STORE[@]}" ASC_KEY_ID=<key id> ASC_ISSUER_ID=<issuer id>     # to App Store Connect
 ```
@@ -305,7 +305,7 @@ make -C iOS appstore-upload "${STORE[@]}" ASC_KEY_ID=<key id> ASC_ISSUER_ID=<iss
     TestFlight, the App Group (none on the Live Activity), and Associated
     Domains `applinks:wildernesslabs.ai` on the app only, granted by its
     profile
-  - `LocalFlowUniversalLink` in the app's and the keyboard's Info.plists
+  - `SorelloUniversalLink` in the app's and the keyboard's Info.plists
   - the `.ipa` layout
 - `appstore-validate` and `appstore-upload` send the `.ipa` to Apple. They run
   `appstore-check` first, and nothing else ever runs them.
@@ -314,10 +314,10 @@ make -C iOS appstore-upload "${STORE[@]}" ASC_KEY_ID=<key id> ASC_ISSUER_ID=<iss
 
 Any app can register the `localflow` scheme, and iOS does not define which app
 opens it, so another app could receive the keyboard's bounce and show a fake
-LocalFlow screen. With `UNIVERSAL_LINK` set, the keyboard opens that https URL
+Sorello screen. With `UNIVERSAL_LINK` set, the keyboard opens that https URL
 instead, universal-links-only: iOS opens it only in the app verified for the
 domain, never in Safari or another app, and if it cannot, the keyboard shows
-"Open LocalFlow". The app is signed with
+"Open Sorello". The app is signed with
 `com.apple.developer.associated-domains` = `["applinks:<host>"]`, and device
 builds check that its profile grants Associated Domains. The keyboard gets no
 new entitlement, and the scheme stays registered for the simulator, e2e and
@@ -334,7 +334,7 @@ dev builds.
   `/localflow/dictate` to `5X346GR227.com.ajbarryiii.localflow.ios` and
   `/localflow-dev/dictate` to `5X346GR227.com.ajbarryiii.localflow.ios.dev`.
   iOS fetches it (through Apple's CDN) when the app is installed; the app has
-  no network code for it. Without it the bounce never opens LocalFlow.
+  no network code for it. Without it the bounce never opens Sorello.
 
 ## Using the keyboard
 
@@ -347,7 +347,7 @@ dev builds.
     dictation.
   - Start's dot shows the session: a heartbeat ring while one is ready,
     breathing while its model prepares, and still while there is none (Start
-    then opens LocalFlow).
+    then opens Sorello).
   - **Left-handed** (Home → Keyboard, off by default; applies the next time
     the keyboard appears) puts Start, the recording and Cancel at the bar's
     left and the menu at its right.
@@ -384,20 +384,20 @@ dev builds.
 While a session is on, it shows as a Live Activity in the Dynamic Island and
 on the Lock Screen: ready with the time left, recording with its elapsed time,
 then transcribing (or preparing the model), and gone the moment the session
-ends. Tapping it opens LocalFlow. It carries only the session's phase and its
+ends. Tapping it opens Sorello. It carries only the session's phase and its
 timer dates, never a transcript, audio or anything about the app you dictate
 into, and the app sends it nothing over the network. iOS asks once whether to
-allow Live Activities from LocalFlow; with them off (Settings → LocalFlow →
+allow Live Activities from Sorello; with them off (Settings → Sorello →
 Live Activities) the session works the same and the app never asks again.
 ARCHITECTURE.md, "Live Activity", has the rules.
 
 ## The Flow Session control
 
-"Flow Session" starts a session without opening LocalFlow, and ends the one
+"Flow Session" starts a session without opening Sorello, and ends the one
 running. Put it on the Action button (Settings → Action Button → Controls →
-LocalFlow), in Control Center or on the Lock Screen. On a locked iPhone it
+Sorello), in Control Center or on the Lock Screen. On a locked iPhone it
 asks for Face ID first. A session it starts needs its Live Activity: with Live
-Activities off, or before the microphone is allowed, it says to open LocalFlow,
+Activities off, or before the microphone is allowed, it says to open Sorello,
 and opening the app within 30 seconds starts the session there.
 ARCHITECTURE.md, "Session control", has the rules.
 
@@ -424,22 +424,22 @@ Setup and session:
 - [x] Model preparation and transcription on a device: Neural Engine cold and warm, and CPU only (self-test, 2026-10-09).
 - [x] Dictation from the keyboard in another app through the bounce, on a device (the user, informally, 2026-10-09).
 - [ ] Onboarding: microphone permission (the step's pill reads Continue and the system prompt asks; Not now skips; Open Settings once access is off), keyboard + Full Access steps, first model preparation with progress.
-- [ ] Wilderness Labs theme: every screen and sheet (Onboarding, Home, Keyboard setup, Dictionary and its sheets, Diagnostics, Report a bug, the bounce) is dark with readable text on its pills and rows, even with the system in light mode; the Home Screen, Settings and Spotlight icons show the ridge mark.
-- [ ] Bounce on iOS 26: the keyboard opens LocalFlow, "Listening" appears only once audio flows, swipe back, dictation inserts.
-- [ ] Universal-link bounce (TestFlight, or a dev build with `UNIVERSAL_LINK=https://wildernesslabs.ai/localflow-dev/dictate`): Start in another app opens LocalFlow, never Safari, from a cold launch and from the background; the menu's "Open LocalFlow" does too. With the association file unreachable or the app not associated (for example a fresh install before iOS fetches it), the keyboard shows "Open LocalFlow" and nothing else opens. Tapping the link in Notes opens LocalFlow without recording.
-- [ ] Live Activity (iPhone with a Dynamic Island, and one without, for the Lock Screen and the banner): starting a session shows the mark in the island; Start on the keyboard in another app grows the coral dot and the elapsed time, Stop gives way to the transcribing glyph (preparing first after a restart) and then back to ready, each change quick and calm; long-press shows the expanded view with the timer glyph and the time left, or the recording time; with another app's Live Activity running, the minimal view; the Lock Screen view in dark and light; it goes at End session, idle expiry and a phone call; after force-quitting LocalFlow the activity reads "Session ended" once its time is past, and the next launch removes it; with Live Activities off, nothing shows and LocalFlow never asks. No sound or screen wake on any change. Simulator verification (iPhone 17 Pro, iOS 26.4, synthetic microphone, recorded with `simctl io recordVideo`, since screenshots leave out the island) passed on 2026-11-01 for the compact and expanded island, the Lock Screen in dark and light, End session, idle expiry, a killed app's "Session ended" and its removal at the next launch. Not yet checked: the minimal view (no other Live Activity source in the simulator), a phone call, Live Activities turned off, and a device.
-- [ ] Flow Session control (device; Action button, Control Center and Lock Screen): with LocalFlow not running, suspended, and in front, a press starts a session without opening the app (the island and the microphone indicator appear), Start on the keyboard in another app then dictates without a bounce, and the next press ends the session. iOS shows it as an action, not as opening LocalFlow. On a locked iPhone it asks for Face ID first; a press within 20 s of locking never starts the microphone on its own. With Live Activities off, or the microphone not yet allowed, it says to open LocalFlow, and opening it within 30 s starts the session there. Simulator verification (iPhone 17 Pro, iOS 26.4) passed on 2026-11-05 for the registration only: linkd indexed the intent from the app and the extension, and chronod listed the "Flow Session" control with `isLauncher: NO`. The press itself is not yet checked.
+- [ ] Dark theme: every screen and sheet (Onboarding, Home, Keyboard setup, Dictionary and its sheets, Diagnostics, Report a bug, the bounce) is dark with readable text on its pills and rows, even with the system in light mode; the Home Screen, Settings and Spotlight icons show the ridge mark.
+- [ ] Bounce on iOS 26: the keyboard opens Sorello, "Listening" appears only once audio flows, swipe back, dictation inserts.
+- [ ] Universal-link bounce (TestFlight, or a dev build with `UNIVERSAL_LINK=https://wildernesslabs.ai/localflow-dev/dictate`): Start in another app opens Sorello, never Safari, from a cold launch and from the background; the menu's "Open Sorello" does too. With the association file unreachable or the app not associated (for example a fresh install before iOS fetches it), the keyboard shows "Open Sorello" and nothing else opens. Tapping the link in Notes opens Sorello without recording.
+- [ ] Live Activity (iPhone with a Dynamic Island, and one without, for the Lock Screen and the banner): starting a session shows the mark in the island; Start on the keyboard in another app grows the coral dot and the elapsed time, Stop gives way to the transcribing glyph (preparing first after a restart) and then back to ready, each change quick and calm; long-press shows the expanded view with the timer glyph and the time left, or the recording time; with another app's Live Activity running, the minimal view; the Lock Screen view in dark and light; it goes at End session, idle expiry and a phone call; after force-quitting Sorello the activity reads "Session ended" once its time is past, and the next launch removes it; with Live Activities off, nothing shows and Sorello never asks. No sound or screen wake on any change. Simulator verification (iPhone 17 Pro, iOS 26.4, synthetic microphone, recorded with `simctl io recordVideo`, since screenshots leave out the island) passed on 2026-11-01 for the compact and expanded island, the Lock Screen in dark and light, End session, idle expiry, a killed app's "Session ended" and its removal at the next launch. Not yet checked: the minimal view (no other Live Activity source in the simulator), a phone call, Live Activities turned off, and a device.
+- [ ] Flow Session control (device; Action button, Control Center and Lock Screen): with Sorello not running, suspended, and in front, a press starts a session without opening the app (the island and the microphone indicator appear), Start on the keyboard in another app then dictates without a bounce, and the next press ends the session. iOS shows it as an action, not as opening Sorello. On a locked iPhone it asks for Face ID first; a press within 20 s of locking never starts the microphone on its own. With Live Activities off, or the microphone not yet allowed, it says to open Sorello, and opening it within 30 s starts the session there. Simulator verification (iPhone 17 Pro, iOS 26.4) passed on 2026-11-05 for the registration only: linkd indexed the intent from the app and the extension, and chronod listed the "Flow Session" control with `isLauncher: NO`. The press itself is not yet checked.
 - [ ] Session keep-alive: second dictation without an app switch; the idle countdown resets; the session ends at idle expiry, a call and End session; a lock cancels a dictation in progress but keeps the session.
 - [ ] Model readiness: start a session, then Diagnostics → Release model now; the model stays "Not prepared yet" while idle, and the keyboard's Start keeps its aurora dot (VoiceOver: "Model loads when you dictate"). Swipe to another app and tap Start: the recording island records while preparation runs (VoiceOver: "Model loading"), and after Stop the wait's shimmer pill shows (also with a swipe candidate strip or the Insert last chip showing) until the transcript inserts (brief on a warm model; long after a cold preparation). While the model prepares with the keyboard idle, Start's dot breathes. Release the model again during a dictation: it is released only after the dictation ends.
-- [ ] Status glyphs: with a session, Start's aurora dot sends out a heartbeat ring and the bar's middle is empty; with none the dot is still, and Start stays Start while iOS asks to open LocalFlow (declining leaves it as it was, with "Open LocalFlow to start a session"); VoiceOver reads the session's time left from Start.
+- [ ] Status glyphs: with a session, Start's aurora dot sends out a heartbeat ring and the bar's middle is empty; with none the dot is still, and Start stays Start while iOS asks to open Sorello (declining leaves it as it was, with "Open Sorello to start a session"); VoiceOver reads the session's time left from Start.
 - [ ] Left-handed (Home → Keyboard, off by default; applies the next time the keyboard appears): Start and the recording island at the bar's left, Cancel on the island's right in reach of the left thumb, the menu, Undo and "Insert last dictation" at the right; Stop's reach takes q and w while recording and p still types; Cancel and Undo work; off, the bar is as before.
 - [ ] Background capture survives a Bluetooth route change, or the session ends with a clear error.
 - [ ] Headphones notice: with AirPods connected and Use iPhone microphone on, the bounce's Listening screen reads "Recording from your iPhone, not your headphones"; with it off, "Recording through your headphones"; with no headphones, no notice. Connecting or disconnecting them while Listening updates it. On an SE-size iPhone while the model prepares, Stop and Cancel stay on screen and the rest scrolls. Simulator verification (synthetic route, `E2E_HEADPHONES`, iPhone 17 Pro and iPhone SE) passed on 2026-10-29; device check pending.
 - [ ] Field binding: dictate into Reminders' title, switch to its notes mid-request; no auto-insert into the notes, and the chip appears.
 - [ ] Undo: removes exactly the dictation; disappears after typing, cursor moves, 30 s, or hiding the keyboard.
-- [ ] Kill LocalFlow during recording: the request reports interrupted and never restarts; no result file remains.
+- [ ] Kill Sorello during recording: the request reports interrupted and never restarts; no result file remains.
 - [ ] Battery: 30 min idle session vs no session (and vs Wispr Flow if installed).
-- [ ] Device lock: with a session open, lock; the orange indicator stays on the lock screen. Unlock and dictate from another app without opening LocalFlow. Lock during a dictation: it is cancelled and the keyboard shows "Dictation stopped when iPhone locked". Leave it locked past the session length: the session ends and the indicator disappears. Then unlock and tap Start on the keyboard in another app: the first bounce starts a new session, with no "iPhone was locked" screen. Swipe back during a dictation, let it finish, then open LocalFlow from the Home Screen: it shows Home, not the old bounce screen.
+- [ ] Device lock: with a session open, lock; the orange indicator stays on the lock screen. Unlock and dictate from another app without opening Sorello. Lock during a dictation: it is cancelled and the keyboard shows "Dictation stopped when iPhone locked". Leave it locked past the session length: the session ends and the indicator disappears. Then unlock and tap Start on the keyboard in another app: the first bounce starts a new session, with no "iPhone was locked" screen. Swipe back during a dictation, let it finish, then open Sorello from the Home Screen: it shows Home, not the old bounce screen.
 - [ ] Peak memory during a 5-minute dictation; no jetsam in the background.
 
 Keyboard (compare side by side with Apple's keyboard in a note with soft-wrapped, short and blank lines):
