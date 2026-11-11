@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import AppKit
 import CoreGraphics
 import DictationCore
 import Foundation
@@ -126,6 +127,21 @@ struct AccessibilityPermissionTests {
     @Test("Reading the real trust never prompts")
     func realTrust() {
         _ = AccessibilityPermission().isTrusted
+    }
+}
+
+/// The card's panels as `PermissionPanel` makes them, built and never put on screen.
+@MainActor
+@Suite("Drag card panels")
+struct PermissionPanelWindowTests {
+    @Test("Hiding Sorello leaves the card and its flight where they are")
+    func hidingLeavesTheCardUp() {
+        _ = NSApplication.shared
+        for level in [NSWindow.Level.floating, NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)] {
+            let panel = PermissionPanel.OverlayPanel(frame: CGRect(x: 0, y: 0, width: 40, height: 40), level: level)
+            #expect(!panel.canHide)
+            #expect(!panel.isVisible)
+        }
     }
 }
 

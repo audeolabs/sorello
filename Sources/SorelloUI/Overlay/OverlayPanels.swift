@@ -16,6 +16,9 @@ final class OverlayPanel: NSPanel {
         isOpaque = false
         hasShadow = false
         hidesOnDeactivate = false
+        // Hiding Sorello, from its own menu or from another app's Hide Others, hides its windows, never the pill
+        // (ARCHITECTURE.md, section 8, "Windows"): a dictation that is under way keeps its pill and its controls.
+        canHide = false
         isReleasedWhenClosed = false
         animationBehavior = .none
         isMovable = false
