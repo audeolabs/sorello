@@ -1,0 +1,955 @@
+import Foundation
+
+/// The word corrector (ARCHITECTURE.md, "Word autocorrect"): replaces a just-typed word with a lexicon form
+/// when the touch evidence and the word model favour it by the margin. Pure and deterministic, Float64.
+/// Reference: localflow-swipe `tap/autocorrect.py` (`Corrector`), whose contract this port follows; it
+/// matches the reference on the generated fixtures (`AutocorrectFixtures`).
+///
+/// - The typed key is the word's letters (apostrophes removed), each paired with its tap. Keys shorter than
+///   `minLength` letters are kept.
+/// - Candidates: every lexicon key within optimal-string-alignment distance `maxEdits` of the typed key
+///   (`maxEditsShort` for keys of at most `shortLength` letters), with all its forms.
+/// - Score: the channel (the best alignment within the edit limit: a typed letter at a candidate letter
+///   scores log(1 − pOmit − pInsert − pTranspose) plus its tap's touch log likelihood there, a letter without
+///   a tap 0 at its own letter and −∞ elsewhere; an omitted candidate letter log pOmit; an inserted typed
+///   letter log pInsert + log q, q mixing a repeat of the previous candidate letter, a slip onto its
+///   neighbours and a uniform stray tap over the letters area; two swapped letters log pTranspose plus both
+///   taps at their keys) plus `lmWeight` × the word model's log probability given the sentence's words.
+/// - Spelling channel ("Word autocorrect", Spelling channel), with `wSpelling` > 0 and `spelling` tables: each step of
+///   an alignment that is an edit scores logaddexp(motor, log `wSpelling` + spelling), motor its score above and
+///   spelling, with m the match log above and t(x) the step's tap's touch log likelihood at key x (0 for a letter
+///   without a tap typed as x): typed x at candidate letter c ≠ x, m + sub[c, x] + t(x); candidate letter c omitted
+///   after p (START for the first), dele[p, c]; typed x inserted after candidate letter c (START before the first,
+///   where the motor term still judges it against the first), m + ins[c, x] + t(x); candidate letters p, c typed as c,
+///   p, 2m + trans[p, c] + both taps' touch log likelihoods. Matches and keep are unchanged. `wSpelling` 0 ignores the
+///   tables: the scores are the motor channel's, bit for bit.
+/// - Keep scores the typed key with every letter matched, plus `lmWeight` × its model log probability if it
+///   is a lexicon form, else `lmWeight` × log P("<unk>") + `logOOV`.
+/// - The best form (ties: higher frequency, then alphabetically first) replaces the word only if it beats
+///   keep by log(margin): `marginOOV` for a word outside the lexicon; for a lexicon word `marginApostrophe`
+///   when the best has the typed key, else `marginKnown`.
+/// - Suggestions (the strip after a commit key) rank the same scores without a margin, for any word, lexicon words
+///   included: the forms other than the word whose odds against keeping it are at least `suggestionFloor`.
+/// - Archaic forms (`archaicForms`: "ne'er", "o'er", ...) are never a candidate, a completion, a spelling match or a next
+///   word (the reference has no such list).
+///
+/// Where the reference raises (taps of the wrong count, a word with characters other than a–z and
+/// apostrophes, invalid parameters, a negative, NaN or infinite `wSpelling`, keys without a letter pitch),
+/// this keeps the word. One exception: `wSpelling` > 0 without tables scores the motor channel alone (the
+/// reference raises; the manifest refuses such presets, so the keyboard never gets here). Main thread
+/// only: the word model caches by context until `forgetContext()`, and the corrector its letters layout
+/// and spelling constants. Nothing here logs, stores or sends its inputs.
+final class Autocorrector: WordCorrecting {
+    /// The model's word for every word outside its vocabulary (`tap.wordlm.UNK`).
+    static let unknown = WordModelVocabulary.unknown
+    /// Neighbours for slips: other letter keys whose centres are within this many letter pitches
+    /// (`tap.typos.NEIGHBOUR_REACH`).
+    static let neighbourReach = 1.5
+
+    let lexicon: WordLexicon
+    let model: WordModel
+    let touch: TapDecoder.TouchModel
+    /// The spelling channel's tables; nil scores the motor channel alone whatever `wSpelling` is.
+    let spelling: SpellingTables?
+
+    private var layout: Layout?
+    private var spellingConstants: SpellingConstants?
+
+    init(lexicon: WordLexicon, model: WordModel, touch: TapDecoder.TouchModel = .standard, spelling: SpellingTables? = nil) {
+        self.lexicon = lexicon
+        self.model = model
+        self.touch = touch
+        self.spelling = spelling
+    }
+
+    // MARK: Correcting
+
+    func correct(context: String, word: String, points: [(x: Double, y: Double)?], keys: [PlacedKey],
+                 params: AutocorrectParams) -> String {
+        guard let typed = Typed(word), points.count == typed.bytes.count else { return word }
+        let p = params
+        let n = typed.codes.count
+        guard n >= p.minLength else { return word }
+        guard n > 0, let constants = Constants(p) else { return word }
+        let known = lexicon.contains(word)
+        let lowest: Double
+        if !known {
+            lowest = constants.thresholdOOV
+        } else if lexicon.forms(ofKey: typed.key).contains(where: { $0 != word }) {
+            lowest = min(constants.thresholdKnown, constants.thresholdApostrophe)
+        } else {
+            lowest = constants.thresholdKnown
+        }
+        guard lowest != .infinity else { return word }
+        guard let search = search(typed, points: points, keys: keys, params: p, constants: constants) else { return word }
+        let words = Self.sentenceWords(context)
+        let keep = keepScore(typed, word: word, known: known, search: search, words: words, params: p, constants: constants)
+
+        // A model log probability is at most 0, so a channel below keep + the lowest threshold cannot win.
+        guard let scored = scoredForms(search, words: words, params: p, bar: p.lmWeight >= 0 ? keep + lowest : nil)
+        else { return word }
+        return choice(scored, keep: keep, word: word, typedKey: typed.key, known: known, constants: constants) ?? word
+    }
+
+    /// The best of the scored forms (ties: higher frequency, then the first form) when it beats keeping the word by
+    /// its margin; nil to keep the word.
+    private func choice(_ scored: (ids: [Int], forms: [String], scores: [Double]), keep: Double, word: String, typedKey: String,
+                        known: Bool, constants: Constants) -> String? {
+        let (ids, forms, scores) = scored
+        var best = -1
+        var bestFrequency = 0
+        for index in forms.indices {
+            let frequency = lexicon.frequency(ofFormAt: ids[index])
+            if best < 0 || Self.precedes(scores[index], frequency, forms[index], scores[best], bestFrequency, forms[best]) {
+                best = index
+                bestFrequency = frequency
+            }
+        }
+        guard best >= 0 else { return nil }
+        let threshold: Double
+        if !known {
+            threshold = constants.thresholdOOV
+        } else if Self.key(of: forms[best]) == typedKey {
+            threshold = constants.thresholdApostrophe
+        } else {
+            threshold = constants.thresholdKnown
+        }
+        guard forms[best] != word, scores[best].isFinite, scores[best] - keep >= threshold else { return nil }
+        return forms[best]
+    }
+
+    // MARK: Suggestions while typing
+
+    /// The context the completions were last ranked in, and every form's model log probability there
+    /// (`WordModel.logProbs(context:allFormsOf:)`): one read-out per context, not per keystroke. Dropped by
+    /// `forgetContext`.
+    private var completionContext: [String]?
+    private var completionLogProbs: [Double] = []
+
+    /// While a word is typed (ARCHITECTURE.md, "Word autocorrect", Suggestions while typing): `correct`'s result for
+    /// it, and the best `limit` other forms by their odds against keeping it (score minus keep's, as in
+    /// `alternatives`):
+    /// - completions: the forms starting with the word (a range of ids, `WordLexicon.formRange`), scored as the word
+    ///   typed so far matched exactly, so by the weighted model log probability in the sentence's context alone;
+    /// - typo-tolerant matches: `alternatives` at the suggestion floor (none below `minLength` letters).
+    /// Ties go to the higher frequency, then the first form. The word itself is never one of them, nor a form less
+    /// likely than the strip's first word by more than `suggestionRatio`.
+    func predictions(context: String, word: String, points: [(x: Double, y: Double)?], keys: [PlacedKey],
+                     params p: AutocorrectParams, limit: Int) -> WordPredictions {
+        guard limit > 0, let typed = Typed(word), !typed.codes.isEmpty else { return WordPredictions(words: [], isWord: false) }
+        let words = Self.sentenceWords(context)
+        let known = lexicon.contains(word)
+        // Keep's model part: completions share its channel, so their odds are their model part minus this.
+        let keepModel = p.lmWeight * (model.logProbs(context: words, words: [known ? word : Self.unknown]).first ?? -.infinity)
+            + (known ? 0 : p.logOOV)
+        var odds: [Int: Double] = [:]
+        var correction: String?
+        let n = typed.codes.count
+        if points.count == typed.bytes.count, n >= p.minLength, let constants = Constants(p),
+           let search = search(typed, points: points, keys: keys, params: p, constants: constants),
+           let scored = scoredForms(search, words: words, params: p, bar: nil) {
+            let keep = keepScore(typed, word: word, known: known, search: search, words: words, params: p, constants: constants)
+            // A typed word the model gives no probability: every match is infinitely better, and they rank by their
+            // scores against keeping's channel alone (as the completions rank against keeping's model part of 0).
+            let reference = keep.isFinite ? keep : keepChannel(typed, search: search, constants: constants)
+            let floor = keep.isFinite ? Self.suggestionFloor : -.infinity
+            // As `correct`: where every margin that could apply is infinite, it keeps the word without looking.
+            let lowest = !known ? constants.thresholdOOV
+                : lexicon.forms(ofKey: typed.key).contains(where: { $0 != word })
+                ? min(constants.thresholdKnown, constants.thresholdApostrophe) : constants.thresholdKnown
+            if lowest != .infinity {
+                correction = choice(scored, keep: keep, word: word, typedKey: typed.key, known: known, constants: constants)
+            }
+            for index in scored.forms.indices where scored.forms[index] != word && scored.scores[index].isFinite {
+                let logOdds = scored.scores[index] - reference
+                if logOdds >= floor { odds[scored.ids[index]] = max(odds[scored.ids[index]] ?? -.infinity, logOdds) }
+            }
+        }
+        readOut(words)
+        // The best few completions only: the range may hold thousands of forms after one letter.
+        var best: [(id: Int, logOdds: Double)] = []
+        let own = known ? lexicon.formID(of: word) : nil
+        for id in lexicon.formRange(prefix: word) where id != own && !archaicIDs.contains(id) {
+            let logOdds = p.lmWeight * completionLogProbs[id] - (keepModel.isFinite ? keepModel : 0)
+            guard logOdds.isFinite else { continue }
+            if best.count == limit, let last = best.last, !ranks(logOdds, id, before: last) { continue }
+            best.insert((id, logOdds), at: best.firstIndex { ranks(logOdds, id, before: $0) } ?? best.count)
+            if best.count > limit { best.removeLast() }
+        }
+        for completion in best { odds[completion.id] = max(odds[completion.id] ?? -.infinity, completion.logOdds) }
+        let ranked = odds.sorted { ranks($0.value, $0.key, before: ($1.key, $1.value)) }
+        // None far less likely than the strip's first word: the typed word when it is a word the model gives a
+        // probability (odds 0 against itself), else the best form.
+        let first = max(known && keepModel.isFinite ? 0 : -.infinity, ranked.first?.value ?? -.infinity)
+        let shown = ranked.prefix(limit).filter { $0.value >= first - log(Self.suggestionRatio) }
+        return WordPredictions(correction: correction, words: shown.map { lexicon.form(at: $0.key) }, isWord: known)
+    }
+
+    /// While a word is typed, the most by which a form offered may be less likely than the strip's first word (its
+    /// odds ratio). Chosen on the bundle's model with invented sentences and centre taps (ARCHITECTURE.md, "Word
+    /// autocorrect", Suggestions while typing): it drops "heyday" for "hey" (1 in 3,300) and "meetinghouse" for "meeti"
+    /// (1 in 1,200) but keeps "defiantly" for "defi" (1 in 220).
+    static let suggestionRatio = 1000.0
+
+    // MARK: Next words
+
+    /// After a finished word and a space (ARCHITECTURE.md, "Word autocorrect", Next words): the forms the word model finds
+    /// likeliest next in the sentence, from the completions' read-out of the context (`completionLogProbs`; the word typed
+    /// next is ranked from the same one). Only forms of probability at least `nextWordFloor` (`sentenceStartFloor` at a
+    /// sentence's start, before its first word) and within `nextWordRatio` of the best; no single letter but "a" and "i",
+    /// no archaic form, never the sentence's last word again, one form per key (the likelier; a fixed correction's target
+    /// for its source, "cant" as "can't"; the last word is compared by its letters). Best first, ties as `ranks`.
+    func nextWords(context: String, limit: Int) -> [String] {
+        guard limit > 0 else { return [] }
+        let words = Self.sentenceWords(context)
+        readOut(words)
+        let floor = log(words.isEmpty ? Self.sentenceStartFloor : Self.nextWordFloor)
+        var likely: [(id: Int, logOdds: Double)] = []
+        // At most 1 / floor forms pass the floor, so only those are looked at by name.
+        for id in completionLogProbs.indices where completionLogProbs[id] >= floor && !archaicIDs.contains(id) {
+            likely.append((id, completionLogProbs[id]))
+        }
+        likely.sort { ranks($0.logOdds, $0.id, before: $1) }
+        guard let best = likely.first?.logOdds else { return [] }
+        var shown: [String] = []
+        var keys: Set<String> = []
+        for item in likely where item.logOdds >= best - log(Self.nextWordRatio) && shown.count < limit {
+            let form = lexicon.form(at: item.id)
+            // The previous word again is compared by spelling, so "cant" after "can't" is a repeat too.
+            guard form.count > 1 || form == "a" || form == "i", words.last.map(Self.key(of:)) != Self.key(of: form),
+                  keys.insert(Self.key(of: form)).inserted else { continue }
+            shown.append(WordAutocorrect.fixedCorrection(form) ?? form)
+        }
+        return shown
+    }
+
+    /// The least probability of a next word offered: 1 in 40. Chosen on the bundle's model with invented messages
+    /// (ARCHITECTURE.md, "Word autocorrect", Next words): "Hi, " keeps "there" (0.036) but not "to" (0.020).
+    static let nextWordFloor = 0.025
+    /// The same at a sentence's start, where the model spreads its probability over many first words: 1 in 100. With
+    /// `nextWordFloor` only "I" (0.11) passed there; with this the bundle's model offers "I", "I'm" (0.022) and "My"
+    /// (0.015), and leaves "So" (0.010) out.
+    static let sentenceStartFloor = 0.01
+    /// The most by which a next word offered may be less likely than the best: "on my " offers "way" (0.72) alone, not
+    /// "phone" (0.026); "thanks so much " offers "for" (0.39) and "to" (0.027).
+    static let nextWordRatio = 20.0
+
+    /// The model's probability of every form in `words`' context, once per context (`completionLogProbs`).
+    private func readOut(_ words: [String]) {
+        guard completionContext != words else { return }
+        completionLogProbs = model.logProbs(context: words, allFormsOf: lexicon)
+        completionContext = words
+    }
+
+    // MARK: Archaic forms
+
+    /// Archaic poetic contractions (ARCHITECTURE.md, "Word autocorrect", Archaic forms): lexicon forms never offered or
+    /// put in, however likely the model finds them ("neer" offered "ne'er"). As the lexicon stores them: no leading
+    /// apostrophe, so "'twas" is "twas".
+    static let archaicForms: Set<String> = [
+        "ne'er", "e'er", "o'er", "e'en", "howe'er", "where'er", "whate'er", "whene'er", "whoe'er", "tis", "twas", "twere",
+    ]
+
+    /// The lexicon's ids of `archaicForms`.
+    private lazy var archaicIDs: Set<Int> = Set(Self.archaicForms.compactMap(lexicon.formID(of:)))
+
+    // MARK: Vowel rivals
+
+    /// For a word outside the lexicon that a commit would correct to `correction` (ARCHITECTURE.md, "Word autocorrect",
+    /// Vowel rivals): the likeliest lexicon form that differs from the word by one vowel typed for another vowel on a key
+    /// not beside it in `keys` (the touch model scores such a key as a far miss, yet people misspell vowels: "neer" for
+    /// "near" lost to "never"), with another key than the correction's, when the word model finds it at least
+    /// `vowelRivalRatio` as likely as the correction given the sentence's words. Ties go to the higher frequency, then the
+    /// first form. Nil for a lexicon word, one shorter than `vowelRivalLength` letters, other characters, keys without a
+    /// letters layout, or no such form.
+    func vowelRival(context: String, word: String, correction: String, keys: [PlacedKey]) -> String? {
+        guard let typed = Typed(word), typed.codes.count >= Self.vowelRivalLength, !lexicon.contains(word),
+              let layout = layout(for: keys) else { return nil }
+        let correctionKey = Self.key(of: correction)
+        var ids: [Int] = []
+        var codes = typed.codes
+        for (index, typedCode) in typed.codes.enumerated() where Self.vowels.contains(typedCode) {
+            for vowel in Self.vowels where vowel != typedCode && !layout.slip[typedCode].contains(where: { $0.letter == vowel }) {
+                codes[index] = vowel
+                let key = String(decoding: codes.map { UInt8(ascii: "a") + UInt8($0) }, as: UTF8.self)
+                if key != correctionKey, let node = lexicon.node(ofKey: key) {
+                    ids += lexicon.formIDs(ofNode: node).filter { !archaicIDs.contains($0) }
+                }
+            }
+            codes[index] = typedCode
+        }
+        guard !ids.isEmpty else { return nil }
+        let words = Self.sentenceWords(context)
+        let logProbs = model.logProbs(context: words, words: [correction] + ids.map(lexicon.form(at:)))
+        guard logProbs.count == ids.count + 1, logProbs[0].isFinite else { return nil }
+        var best: (id: Int, logOdds: Double)?
+        for (index, id) in ids.enumerated() where logProbs[index + 1].isFinite {
+            let candidate = (id: id, logOdds: logProbs[index + 1])
+            if best.map({ ranks(candidate.logOdds, candidate.id, before: $0) }) ?? true { best = candidate }
+        }
+        guard let best, best.logOdds - logProbs[0] >= log(Self.vowelRivalRatio) else { return nil }
+        return lexicon.form(at: best.id)
+    }
+
+    /// The fewest letters a word with a vowel rival has: shorter words have too many forms one vowel away.
+    static let vowelRivalLength = 4
+    /// The least probability of a vowel rival against the correction's: 1 in 8. Chosen on bundle b34 with invented
+    /// messages (ARCHITECTURE.md, "Word autocorrect", Evaluation of corrections): "best pizza neer" keeps "near" (1 in 3.5
+    /// against "never"; 1 in 7 after "thx so much ill best pizza", 1 in 5 after "best coffee"), while "I'm at the stor"
+    /// leaves "star" (1 in 28 against "store") out.
+    static let vowelRivalRatio = 0.125
+
+    /// The letter codes of a, e, i, o and u.
+    private static let vowels = [0, 4, 8, 14, 20]
+
+    // MARK: Apostrophe twins
+
+    /// For a lexicon word that a commit would correct to its apostrophe twin, the same letters with an apostrophe
+    /// (ARCHITECTURE.md, "Word autocorrect", Apostrophe twins): whether the word model finds the twin less than `twinRatio`
+    /// times as likely as the word given the sentence's words, so the word stays as typed. False for a word outside the
+    /// lexicon, another correction, or a model without both.
+    func keepsWordOverTwin(context: String, word: String, correction: String) -> Bool {
+        guard correction != word, lexicon.contains(word), Self.key(of: correction) == Self.key(of: word) else { return false }
+        let logProbs = model.logProbs(context: Self.sentenceWords(context), words: [word, correction])
+        guard logProbs.count == 2, logProbs[0].isFinite, logProbs[1].isFinite else { return false }
+        return logProbs[1] - logProbs[0] < log(Self.twinRatio)
+    }
+
+    /// How many times as likely as a lexicon word its apostrophe twin must be to replace it: 6. Chosen on bundle b34: at a
+    /// sentence's start, before the next word tells them apart, "we're" is 4.7 times "were" ("Were you there?" is kept),
+    /// while "I'll" is 7 times "ill", "I'd" 10 times "id" and "she'll" 12 times "shell"; after "Yes", "I hope" or "I think"
+    /// "we're" is 22 to 58 times "were".
+    static let twinRatio = 6.0
+
+    // MARK: Spelling matches
+
+    /// For a word outside the lexicon (ARCHITECTURE.md, "Word autocorrect", Spelling matches): the forms of every lexicon
+    /// key within the edit limit of its key (`maxEditsShort` up to `shortLength` letters, else `maxEdits`; optimal
+    /// string alignment, so an insertion, deletion, substitution or swap of neighbours is one edit each), whatever the
+    /// keys' distance, as the touch model would not have them. Fewest edits first, then the word model's log probability
+    /// in the sentence's context (the completions' read-out when it is for this context), then frequency, then the
+    /// first form. None for a lexicon word, a limit below 1, a key shorter than `minLength`, or other characters.
+    func spellingMatches(context: String, word: String, params p: AutocorrectParams, limit: Int) -> [String] {
+        guard limit > 0, let typed = Typed(word), !typed.codes.isEmpty, typed.codes.count >= p.minLength,
+              !lexicon.contains(word) else { return [] }
+        let edits = self.limit(typed.codes.count, p)
+        guard edits >= 0 else { return [] }
+        var ids: [Int] = []
+        var distances: [Int] = []
+        for candidate in lexicon.keys(within: edits, of: typed.codes) {
+            let distance = Self.alignmentDistance(typed.codes, candidate.codes)
+            for id in lexicon.formIDs(ofNode: candidate.node) where !archaicIDs.contains(id) {
+                ids.append(id)
+                distances.append(distance)
+            }
+        }
+        guard !ids.isEmpty else { return [] }
+        let words = Self.sentenceWords(context)
+        let logProbs = completionContext == words && completionLogProbs.count == lexicon.formCount
+            ? ids.map { completionLogProbs[$0] } : model.logProbs(context: words, words: ids.map(lexicon.form(at:)))
+        guard logProbs.count == ids.count else { return [] }
+        let order = ids.indices.sorted { a, b in
+            if distances[a] != distances[b] { return distances[a] < distances[b] }
+            if logProbs[a] != logProbs[b] { return logProbs[a] > logProbs[b] }
+            let frequency = lexicon.frequency(ofFormAt: ids[a]), other = lexicon.frequency(ofFormAt: ids[b])
+            if frequency != other { return frequency > other }
+            return ids[a] < ids[b]
+        }
+        return order.prefix(limit).map { lexicon.form(at: ids[$0]) }
+    }
+
+    /// The optimal-string-alignment distance between two letter-code strings (as `WordLexicon.keys(within:of:)`).
+    static func alignmentDistance(_ a: [Int], _ b: [Int]) -> Int {
+        guard !a.isEmpty else { return b.count }
+        guard !b.isEmpty else { return a.count }
+        var rows = [[Int]](repeating: [Int](repeating: 0, count: b.count + 1), count: a.count + 1)
+        for i in 0 ... a.count { rows[i][0] = i }
+        for j in 0 ... b.count { rows[0][j] = j }
+        for i in 1 ... a.count {
+            for j in 1 ... b.count {
+                var best = min(rows[i - 1][j] + 1, rows[i][j - 1] + 1, rows[i - 1][j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1))
+                if i > 1, j > 1, a[i - 1] == b[j - 2], a[i - 2] == b[j - 1] { best = min(best, rows[i - 2][j - 2] + 1) }
+                rows[i][j] = best
+            }
+        }
+        return rows[a.count][b.count]
+    }
+
+    /// Whether form `id` with `logOdds` ranks before `other`: higher odds, then higher frequency, then the first form
+    /// (ids follow code point order).
+    private func ranks(_ logOdds: Double, _ id: Int, before other: (id: Int, logOdds: Double)) -> Bool {
+        if logOdds != other.logOdds { return logOdds > other.logOdds }
+        let frequency = lexicon.frequency(ofFormAt: id), otherFrequency = lexicon.frequency(ofFormAt: other.id)
+        if frequency != otherFrequency { return frequency > otherFrequency }
+        return id < other.id
+    }
+
+    func suggestions(context: String, word: String, points: [(x: Double, y: Double)?], keys: [PlacedKey],
+                     params: AutocorrectParams, limit: Int) -> [String] {
+        guard limit > 0 else { return [] }
+        return alternatives(context: context, word: word, points: points, keys: keys, params: params,
+                            floor: Self.suggestionFloor).prefix(limit).map(\.form)
+    }
+
+    /// The least posterior odds against keeping the word (natural log) at which a form is suggested: 1 in 10, the
+    /// mirror of the bundle's known-word margin (10). A word typed as meant scores far above every other form and
+    /// gets none; a near miss is suggested although no margin replaces it: "too" → "to" (0.16), "its" → "it's"
+    /// (1.9), "were" → "we're" (0.9) with the bundle's model (ARCHITECTURE.md, "Word autocorrect", Suggestions).
+    static let suggestionFloor = log(0.1)
+
+    /// The lexicon forms other than `word`, ranked as `correct` ranks them (score, then frequency, then the first
+    /// form), with their score minus keeping the word's (the log posterior odds against keeping it), those at least
+    /// `floor`; none where `correct` keeps without looking (invalid inputs, a key shorter than `minLength`).
+    func alternatives(context: String, word: String, points: [(x: Double, y: Double)?], keys: [PlacedKey],
+                      params: AutocorrectParams, floor: Double) -> [(form: String, logOdds: Double)] {
+        guard let typed = Typed(word), points.count == typed.bytes.count else { return [] }
+        let n = typed.codes.count
+        let words = Self.sentenceWords(context)
+        guard n >= params.minLength, n > 0, let constants = Constants(params),
+              let search = search(typed, points: points, keys: keys, params: params, constants: constants)
+        else { return [] }
+        let keep = keepScore(typed, word: word, known: lexicon.contains(word), search: search, words: words, params: params,
+                             constants: constants)
+        guard let scored = scoredForms(search, words: words, params: params, bar: nil) else { return [] }
+        let (ids, forms, scores) = scored
+        let frequencies = ids.map(lexicon.frequency(ofFormAt:))
+        let ranked = forms.indices.filter { forms[$0] != word && scores[$0].isFinite && scores[$0] - keep >= floor }.sorted {
+            Self.precedes(scores[$0], frequencies[$0], forms[$0], scores[$1], frequencies[$1], forms[$1])
+        }
+        return ranked.map { (forms[$0], scores[$0] - keep) }
+    }
+
+    /// Keeping the typed word's channel: every letter matched at its tap.
+    private func keepChannel(_ typed: Typed, search: Search, constants: Constants) -> Double {
+        let n = typed.codes.count
+        return Double(n) * constants.match + Self.pairwiseSum((0 ..< n).map { search.table[$0 * 26 + typed.codes[$0]] })
+    }
+
+    /// Keeping the typed word: every letter matched at its tap, plus the weighted model log probability of the
+    /// word (of "<unk>" plus `logOOV` for a word outside the lexicon).
+    private func keepScore(_ typed: Typed, word: String, known: Bool, search: Search, words: [String], params p: AutocorrectParams,
+                           constants: Constants) -> Double {
+        var keep = keepChannel(typed, search: search, constants: constants)
+        keep += p.lmWeight * (model.logProbs(context: words, words: [known ? word : Self.unknown]).first ?? -.infinity)
+        if !known { keep += p.logOOV }
+        return keep
+    }
+
+    /// Drops the word model's caches of sentence contexts, and the completions' ranking of the last one. Otherwise
+    /// the corrector keeps no context or word between calls (only the letters layout it last saw).
+    func forgetContext() {
+        model.forgetContext()
+        completionContext = nil
+        completionLogProbs = []
+    }
+
+    /// The lexicon keys a typed key's corrections are drawn from, sorted (`Corrector.candidates`); empty for
+    /// a key with characters other than a–z.
+    func candidates(key: String, params: AutocorrectParams) -> [String] {
+        guard let typed = Typed(key), typed.key == key else { return [] }
+        let limit = limit(typed.codes.count, params)
+        guard limit >= 0 else { return [] }
+        return lexicon.keys(within: limit, of: typed.codes).map { candidate in
+            String(decoding: candidate.codes.map { UInt8(ascii: "a") + UInt8($0) }, as: UTF8.self)
+        }
+    }
+
+    /// The words a word model sees (`tap.words.sentence_words`): the word tokens (maximal runs of a–z and
+    /// apostrophes, without leading or trailing apostrophes, holding a letter) of the text after its last ".".
+    static func sentenceWords(_ text: String) -> [String] {
+        let bytes = Array(text.utf8)
+        let start = bytes.lastIndex(of: UInt8(ascii: ".")).map { $0 + 1 } ?? 0
+        var words: [String] = []
+        var index = start
+        while index < bytes.count {
+            guard isTokenByte(bytes[index]) else {
+                index += 1
+                continue
+            }
+            var end = index
+            while end < bytes.count, isTokenByte(bytes[end]) { end += 1 }
+            var lo = index, hi = end
+            while lo < hi, bytes[lo] == apostrophe { lo += 1 }
+            while hi > lo, bytes[hi - 1] == apostrophe { hi -= 1 }
+            if lo < hi { words.append(String(decoding: bytes[lo ..< hi], as: UTF8.self)) }
+            index = end
+        }
+        return words
+    }
+
+    /// A word's key: its letters, apostrophes removed (`tap.words.word_key`).
+    static func key(of word: String) -> String {
+        String(decoding: word.utf8.filter { $0 != apostrophe }, as: UTF8.self)
+    }
+
+    // MARK: Pieces
+
+    /// The typed key's candidate keys within its edit limit, its taps' touch table and the channel that scores
+    /// a candidate; nil (the word kept) for a negative limit, no candidate, or keys without a letters layout.
+    private struct Search {
+        let candidates: [(node: Int, codes: [Int])]
+        let table: [Double]
+        let channel: Channel
+    }
+
+    private func search(_ typed: Typed, points: [(x: Double, y: Double)?], keys: [PlacedKey], params p: AutocorrectParams,
+                        constants: Constants) -> Search? {
+        let n = typed.codes.count
+        let limit = limit(n, p)
+        guard limit >= 0 else { return nil }
+        let candidates = lexicon.keys(within: limit, of: typed.codes)
+        guard !candidates.isEmpty, let layout = layout(for: keys) else { return nil }
+        let table = touchTable(typed: typed, points: points, layout: layout)
+        let inserted = insertions(table: table, rows: n, layout: layout, constants: constants)
+        var spelled: SpellingTerms?
+        if let spelling, let logWeight = constants.logSpelling {
+            spelled = spellingTerms(typed: typed.codes, table: table, inserted: inserted, tables: spelling, logWeight: logWeight,
+                                    constants: constants)
+        }
+        let channel = Channel(typed: typed.codes, edits: limit + 1, longest: candidates.map(\.codes.count).max() ?? 0, table: table,
+                              inserted: inserted, spelled: spelled, constants: constants)
+        return Search(candidates: candidates, table: table, channel: channel)
+    }
+
+    /// Every form of the candidates with a finite channel (that reaches `bar`, when given), with its id, scored
+    /// channel + `lmWeight` × its model log probability given `words`; nil when there is none or the model fails.
+    private func scoredForms(_ search: Search, words: [String], params p: AutocorrectParams,
+                             bar: Double?) -> (ids: [Int], forms: [String], scores: [Double])? {
+        var ids: [Int] = []
+        var scores: [Double] = []
+        for candidate in search.candidates {
+            let score = search.channel.score(candidate.codes)
+            guard score.isFinite else { continue }
+            if let bar, !(score >= bar - 1e-9 * (1 + abs(bar))) { continue }
+            for id in lexicon.formIDs(ofNode: candidate.node) where !archaicIDs.contains(id) {
+                ids.append(id)
+                scores.append(score)
+            }
+        }
+        guard !ids.isEmpty else { return nil }
+        let forms = ids.map(lexicon.form(at:))
+        let logProbs = model.logProbs(context: words, words: forms)
+        guard logProbs.count == forms.count else { return nil }
+        for index in forms.indices { scores[index] += p.lmWeight * logProbs[index] }
+        return (ids, forms, scores)
+    }
+
+    private static let apostrophe = UInt8(ascii: "'")
+
+    private static func isTokenByte(_ byte: UInt8) -> Bool {
+        (UInt8(ascii: "a") ... UInt8(ascii: "z")).contains(byte) || byte == apostrophe
+    }
+
+    /// The edit limit for a typed key of `letters` letters, at most letters + the longest key: no alignment
+    /// uses more edits (each typed letter inserted, each candidate letter omitted), so a larger limit is the
+    /// same limit, and bounding it keeps the buffers and their sizes finite.
+    private func limit(_ letters: Int, _ p: AutocorrectParams) -> Int {
+        min(letters <= p.shortLength ? p.maxEditsShort : p.maxEdits, letters + lexicon.longestKey)
+    }
+
+    /// Whether (score, frequency, form) ranks before the other: higher score, then higher frequency, then the
+    /// alphabetically first form (by code point, as Python compares strings).
+    private static func precedes(_ score: Double, _ frequency: Int, _ form: String, _ otherScore: Double, _ otherFrequency: Int,
+                                 _ otherForm: String) -> Bool {
+        if score != otherScore { return score > otherScore }
+        if frequency != otherFrequency { return frequency > otherFrequency }
+        return form.utf8.lexicographicallyPrecedes(otherForm.utf8)
+    }
+
+    /// The typed word: its bytes (a–z and apostrophes only), its key and the key's letter codes (0...25).
+    private struct Typed {
+        let bytes: [UInt8]
+        let key: String
+        let codes: [Int]
+
+        init?(_ word: String) {
+            bytes = Array(word.utf8)
+            var codes: [Int] = []
+            codes.reserveCapacity(bytes.count)
+            for byte in bytes where byte != Autocorrector.apostrophe {
+                guard (UInt8(ascii: "a") ... UInt8(ascii: "z")).contains(byte) else { return nil }
+                codes.append(Int(byte - UInt8(ascii: "a")))
+            }
+            self.codes = codes
+            key = String(decoding: bytes.filter { $0 != Autocorrector.apostrophe }, as: UTF8.self)
+        }
+    }
+
+    /// The parameters' logs, or nil for parameters the reference rejects.
+    struct Constants {
+        let match: Double
+        let omit: Double
+        let insert: Double
+        let transpose: Double
+        let logRepeat: Double
+        let logSlip: Double
+        /// log(1 − wRepeat − wSlip), before dividing by the area.
+        let logStrayWeight: Double
+        let thresholdOOV: Double
+        let thresholdKnown: Double
+        let thresholdApostrophe: Double
+        /// log wSpelling, nil for 0 (the motor channel alone).
+        let logSpelling: Double?
+
+        /// Nil for parameters the reference rejects, except insertion weights summing to more than 1 by at most
+        /// `AutocorrectManifest.weightSumTolerance` (rounding, which the manifest and the settings accept):
+        /// those are scaled to sum to 1, leaving no uniform share. The reference has no tolerance.
+        init?(_ p: AutocorrectParams) {
+            let sum = p.wRepeat + p.wSlip
+            guard p.wRepeat >= 0, p.wSlip >= 0, sum <= 1 + AutocorrectManifest.weightSumTolerance else { return nil }
+            let (wRepeat, wSlip, stray) = sum > 1 ? (p.wRepeat / sum, p.wSlip / sum, 0.0) : (p.wRepeat, p.wSlip, 1 - p.wRepeat - p.wSlip)
+            let keep = 1 - p.pOmit - p.pInsert - p.pTranspose
+            guard keep > 0, keep.isFinite, p.lmWeight.isFinite, !p.logOOV.isNaN, p.wSpelling.isFinite, p.wSpelling >= 0 else { return nil }
+            match = log(keep)
+            omit = Self.log0(p.pOmit)
+            insert = Self.log0(p.pInsert)
+            transpose = Self.log0(p.pTranspose)
+            logRepeat = Self.log0(wRepeat)
+            logSlip = Self.log0(wSlip)
+            logStrayWeight = Self.log0(stray)
+            thresholdOOV = Self.log0(p.marginOOV)
+            thresholdKnown = Self.log0(p.marginKnown)
+            thresholdApostrophe = Self.log0(p.marginApostrophe)
+            logSpelling = p.wSpelling > 0 ? log(p.wSpelling) : nil
+        }
+
+        /// The reference's `_log`: log x for x > 0, else −∞.
+        static func log0(_ x: Double) -> Double { x > 0 ? Foundation.log(x) : -.infinity }
+    }
+
+    /// What the corrector needs of a letters layout: each letter's key (the last with that letter), the
+    /// letters area's log, each letter's neighbours and the touch model over the keys.
+    private struct Layout {
+        let keys: [PlacedKey]
+        let columns: [Int?]
+        let logArea: Double
+        /// Per letter c, its neighbours x (alphabetically) with weight 1 / (c's neighbour count).
+        let slip: [[(letter: Int, weight: Double)]]
+        let decoder: TapDecoder
+    }
+
+    private func layout(for keys: [PlacedKey]) -> Layout? {
+        if let layout, layout.keys == keys { return layout }
+        guard let pitch = KeyboardLayout.letterPitch(in: keys) else { return nil }
+        var columns = [Int?](repeating: nil, count: 26)
+        for (index, key) in keys.enumerated() {
+            if let column = key.action.letterIndex { columns[column] = index }
+        }
+        // The area of the letter and space keys' bounding box: a uniform stray tap.
+        let pad = keys.filter { TapDecoder.outputIndex(of: $0.action) != nil }
+        guard let minX = pad.map(\.frame.x).min(), let maxX = pad.map({ $0.frame.x + $0.frame.width }).max(),
+              let minY = pad.map(\.frame.y).min(), let maxY = pad.map({ $0.frame.y + $0.frame.height }).max() else { return nil }
+        let area = (maxX - minX) * (maxY - minY)
+        guard area > 0, area.isFinite else { return nil }
+        // Neighbours as `tap.typos.neighbours`: every other letter key within the reach, by key.
+        let letters = keys.indices.filter { keys[$0].action.letterIndex != nil }
+        let reach = Self.neighbourReach * pitch
+        var near = [Set<Int>](repeating: [], count: 26)
+        var counted = [Int](repeating: 0, count: 26)
+        for a in letters {
+            let c = keys[a].action.letterIndex!
+            var labels = Set<Int>()
+            var count = 0
+            for b in letters where b != a {
+                let dx = keys[a].frame.midX - keys[b].frame.midX, dy = keys[a].frame.midY - keys[b].frame.midY
+                if (dx * dx + dy * dy).squareRoot() <= reach {
+                    labels.insert(keys[b].action.letterIndex!)
+                    count += 1
+                }
+            }
+            // A later key with the same letter replaces an earlier one, as the reference's dict does.
+            near[c] = labels
+            counted[c] = count
+        }
+        let slip = (0 ..< 26).map { c in
+            near[c].sorted().map { (letter: $0, weight: 1 / Double(counted[c])) }
+        }
+        let layout = Layout(keys: keys, columns: columns, logArea: log(area), slip: slip,
+                            decoder: TapDecoder(touch: touch, rule: TapDecoder.Rule(centre: 1, margin: 1, maxSurprise: nil)))
+        self.layout = layout
+        return layout
+    }
+
+    /// (letters × 26): each typed letter's tap log likelihood at each letter key; a letter without a tap
+    /// scores 0 at its own letter and −∞ elsewhere.
+    private func touchTable(typed: Typed, points: [(x: Double, y: Double)?], layout: Layout) -> [Double] {
+        var table = [Double](repeating: -.infinity, count: typed.codes.count * 26)
+        var row = 0
+        for (byte, point) in zip(typed.bytes, points) where byte != Self.apostrophe {
+            if let point, point.x.isFinite, point.y.isFinite {
+                let likelihoods = layout.decoder.logLikelihoods(x: point.x, y: point.y, keys: layout.keys)
+                if likelihoods.count == layout.keys.count {
+                    for c in 0 ..< 26 { if let column = layout.columns[c] { table[row * 26 + c] = likelihoods[column] } }
+                }
+            } else {
+                table[row * 26 + typed.codes[row]] = 0
+            }
+            row += 1
+        }
+        return table
+    }
+
+    /// (letters × 26): log pInsert + log q of each typed letter's tap inserted after each letter, with
+    /// q = wRepeat touch(tap | c) + wSlip mean over c's neighbours of touch(tap | n) + (1 − wRepeat − wSlip) / area.
+    private func insertions(table: [Double], rows: Int, layout: Layout, constants: Constants) -> [Double] {
+        let logStray = constants.logStrayWeight - layout.logArea
+        var out = [Double](repeating: -.infinity, count: rows * 26)
+        var scaled = [Double](repeating: 0, count: 26)
+        for i in 0 ..< rows {
+            let top = table[i * 26 ..< i * 26 + 26].max() ?? -.infinity
+            for x in 0 ..< 26 { scaled[x] = top.isFinite ? exp(table[i * 26 + x] - top) : 0 }
+            for c in 0 ..< 26 {
+                var sum = 0.0
+                for (x, weight) in layout.slip[c] { sum += scaled[x] * weight }
+                let slip = top.isFinite ? log(sum) + top : -.infinity
+                let mixed = TapDecoder.logAddExp(constants.logRepeat + table[i * 26 + c], constants.logSlip + slip)
+                out[i * 26 + c] = constants.insert + TapDecoder.logAddExp(mixed, logStray)
+            }
+        }
+        return out
+    }
+
+    /// The spelling channel's terms per parameters (the reference's `_spell_omit` and `_spell_trans`), the
+    /// motor cost mixed in: omissions [context p (START 26) × 26 + omitted c] = logaddexp(log pOmit, log w +
+    /// dele[p, c]), transpositions [intended first × 26 + second] = logaddexp(log pTranspose, (log w + 2m) +
+    /// trans), both touches added later. Cached for the last parameters.
+    private struct SpellingConstants {
+        let logWeight: Double, match: Double, omit: Double, transpose: Double
+        let omits: [Double]
+        let transposes: [Double]
+    }
+
+    /// Per word, every spelling alternative mixed into its motor cost as the reference orders the sums (rows
+    /// typed letters, 26 columns): `aligned` [i × 26 + c] typed letter i at candidate letter c (the motor
+    /// cost alone where c is the letter typed), `inserted` [i × 26 + c] inserted after c, `before` [i × 26 + c]
+    /// inserted before a first candidate letter c; then the cached omissions and transpositions.
+    struct SpellingTerms {
+        let aligned: [Double]
+        let inserted: [Double]
+        let before: [Double]
+        let omits: [Double]
+        let transposes: [Double]
+    }
+
+    private func spellingTerms(typed codes: [Int], table: [Double], inserted motor: [Double], tables: SpellingTables, logWeight w: Double,
+                               constants: Constants) -> SpellingTerms {
+        let m = constants.match
+        if spellingConstants.map({ $0.logWeight != w || $0.match != m || $0.omit != constants.omit || $0.transpose != constants.transpose })
+            ?? true {
+            let twice = w + 2 * m
+            spellingConstants = SpellingConstants(
+                logWeight: w, match: m, omit: constants.omit, transpose: constants.transpose,
+                omits: tables.dele.map { TapDecoder.logAddExp(constants.omit, w + $0) },
+                transposes: tables.trans.map { TapDecoder.logAddExp(constants.transpose, twice + $0) })
+        }
+        let shared = spellingConstants!
+        let n = codes.count, wm = w + m, start = SpellingTables.start * 26
+        var aligned = [Double](repeating: -.infinity, count: n * 26)
+        var inserted = motor
+        var before = motor
+        for i in 0 ..< n {
+            let x = codes[i], own = table[i * 26 + x]
+            for c in 0 ..< 26 {
+                let index = i * 26 + c
+                let motorAligned = m + table[index]
+                // A match has sub = −∞ on the diagonal: logaddexp leaves the motor score, so it is taken as is.
+                aligned[index] = c == x ? motorAligned : TapDecoder.logAddExp(motorAligned, (wm + tables.sub[c * 26 + x]) + own)
+                inserted[index] = TapDecoder.logAddExp(motor[index], (wm + tables.ins[c * 26 + x]) + own)
+                before[index] = TapDecoder.logAddExp(motor[index], (wm + tables.ins[start + x]) + own)
+            }
+        }
+        return SpellingTerms(aligned: aligned, inserted: inserted, before: before, omits: shared.omits, transposes: shared.transposes)
+    }
+
+    /// numpy's pairwise summation of a float64 array (`np.sum`): sequential below 8 values, eight
+    /// accumulators up to 128, halves (cut to a multiple of 8) above, so sums match the reference's bits.
+    static func pairwiseSum(_ values: [Double]) -> Double {
+        values.withUnsafeBufferPointer { 0.0 + pairwiseSum($0[...]) }
+    }
+
+    static func pairwiseSum(_ a: Slice<UnsafeBufferPointer<Double>>) -> Double {
+        let n = a.count, base = a.startIndex
+        if n < 8 {
+            var sum = 0.0
+            for value in a { sum += value }
+            return sum
+        }
+        if n <= 128 {
+            var r = (0 ..< 8).map { a[base + $0] }
+            var i = 8
+            while i < n - n % 8 {
+                for k in 0 ..< 8 { r[k] += a[base + i + k] }
+                i += 8
+            }
+            var sum = ((r[0] + r[1]) + (r[2] + r[3])) + ((r[4] + r[5]) + (r[6] + r[7]))
+            while i < n {
+                sum += a[base + i]
+                i += 1
+            }
+            return sum
+        }
+        var half = n / 2
+        half -= half % 8
+        return pairwiseSum(a[base ..< base + half]) + pairwiseSum(a[(base + half)...])
+    }
+}
+
+/// The channel's Viterbi over (typed letters consumed, edits used), one candidate letter (column) at a time.
+/// Candidates come in key order, so the columns of the prefix a candidate shares with the previous one are
+/// reused: a column depends only on the candidate's letters up to it (column 0 on its first letter). Every
+/// sum is formed in the reference's order, so scores match its bits whatever is reused. Plain pointers and
+/// comparisons: it runs for every candidate, and the keyboard may be built without optimization. With the
+/// spelling channel the same loops read its precomputed terms (`Autocorrector.SpellingTerms`) instead of the
+/// motor costs; without, they read only the motor costs.
+private final class Channel {
+    private let n: Int
+    private let edits: Int
+    /// Values per column: (n + 1) × edits, index t × edits + k.
+    private let stride: Int
+    private let columns: UnsafeMutablePointer<Double>
+    private let typed: UnsafeMutablePointer<Int>
+    private let table: UnsafeMutablePointer<Double>
+    private let inserted: UnsafeMutablePointer<Double>
+    private let match: Double, omit: Double, transpose: Double
+    /// The spelling channel's terms (nil: the motor channel): aligned and before (n × 26), omissions
+    /// (27 × 26) and transpositions (26 × 26); `inserted` then holds its insertions.
+    private let spelled: (aligned: UnsafeMutablePointer<Double>, before: UnsafeMutablePointer<Double>, omits: UnsafeMutablePointer<Double>,
+                          transposes: UnsafeMutablePointer<Double>)?
+    private var previous: [Int] = []
+
+    init(typed codes: [Int], edits: Int, longest: Int, table rows: [Double], inserted insertions: [Double],
+         spelled terms: Autocorrector.SpellingTerms?, constants: Autocorrector.Constants) {
+        n = codes.count
+        self.edits = edits
+        stride = (codes.count + 1) * edits
+        columns = .allocate(capacity: (longest + 1) * stride)
+        columns.initialize(repeating: -.infinity, count: (longest + 1) * stride)
+        typed = .allocate(capacity: max(codes.count, 1))
+        typed.initialize(from: codes, count: codes.count)
+        table = .allocate(capacity: max(rows.count, 1))
+        table.initialize(from: rows, count: rows.count)
+        let mixed = terms?.inserted ?? insertions
+        inserted = .allocate(capacity: max(mixed.count, 1))
+        inserted.initialize(from: mixed, count: mixed.count)
+        spelled = terms.map { terms in
+            func copy(_ values: [Double]) -> UnsafeMutablePointer<Double> {
+                let pointer = UnsafeMutablePointer<Double>.allocate(capacity: max(values.count, 1))
+                pointer.initialize(from: values, count: values.count)
+                return pointer
+            }
+            return (copy(terms.aligned), copy(terms.before), copy(terms.omits), copy(terms.transposes))
+        }
+        match = constants.match
+        omit = constants.omit
+        transpose = constants.transpose
+    }
+
+    deinit {
+        columns.deallocate()
+        typed.deallocate()
+        table.deallocate()
+        inserted.deallocate()
+        if let spelled {
+            spelled.aligned.deallocate()
+            spelled.before.deallocate()
+            spelled.omits.deallocate()
+            spelled.transposes.deallocate()
+        }
+    }
+
+    /// log P(taps | candidate key) within the edit limit; −∞ when no alignment fits.
+    func score(_ candidate: [Int]) -> Double {
+        let m = candidate.count, e = edits
+        guard m > 0 else { return -.infinity }
+        var shared = 0
+        while shared < m, shared < previous.count, candidate[shared] == previous[shared] { shared += 1 }
+        previous = candidate
+        if shared == 0 {
+            // Column 0: insertions before the first candidate letter, judged against it.
+            for index in 0 ..< stride { columns[index] = -.infinity }
+            columns[0] = 0
+            let before = spelled?.before ?? inserted
+            var i = 1
+            while i <= n, i < e {
+                columns[i * e + i] = columns[(i - 1) * e + i - 1] + before[(i - 1) * 26 + candidate[0]]
+                i += 1
+            }
+        }
+        var j = max(shared, 0) + 1
+        while j <= m {
+            column(j, candidate)
+            j += 1
+        }
+        let last = columns + m * stride + n * e
+        var best = -Double.infinity
+        for k in 0 ..< e where last[k] > best { best = last[k] }
+        return best
+    }
+
+    /// Column j (candidate letter j − 1) from columns j − 1 and j − 2.
+    private func column(_ j: Int, _ candidate: [Int]) {
+        let e = edits, c = candidate[j - 1]
+        let current = columns + j * stride, before = columns + (j - 1) * stride
+        for index in 0 ..< stride { current[index] = -.infinity }
+        // A typed letter at candidate letter c: a match, or a substitution (one edit).
+        let aligned = spelled?.aligned
+        var t = 1
+        while t <= n {
+            let add: Double
+            if let aligned { add = aligned[(t - 1) * 26 + c] } else { add = match + table[(t - 1) * 26 + c] }
+            if typed[t - 1] == c {
+                for k in 0 ..< e { current[t * e + k] = before[(t - 1) * e + k] + add }
+            } else {
+                var k = 1
+                while k < e {
+                    current[t * e + k] = before[(t - 1) * e + k - 1] + add
+                    k += 1
+                }
+            }
+            t += 1
+        }
+        guard e > 1 else { return }
+        // Candidate letter c omitted (after candidate letter j − 2, START for the first).
+        let omitted = spelled.map { $0.omits[(j >= 2 ? candidate[j - 2] : SpellingTables.start) * 26 + c] } ?? omit
+        t = 0
+        while t <= n {
+            var k = 1
+            while k < e {
+                let value = before[t * e + k - 1] + omitted
+                if value > current[t * e + k] { current[t * e + k] = value }
+                k += 1
+            }
+            t += 1
+        }
+        // Two different candidate letters typed in swapped order.
+        if j >= 2, n >= 2, candidate[j - 2] != c {
+            let cp = candidate[j - 2], before2 = columns + (j - 2) * stride
+            let transposed = spelled.map { $0.transposes[cp * 26 + c] } ?? transpose
+            t = 2
+            while t <= n {
+                if typed[t - 1] == cp, typed[t - 2] == c {
+                    let add = transposed + table[(t - 2) * 26 + c] + table[(t - 1) * 26 + cp]
+                    var k = 1
+                    while k < e {
+                        let value = before2[(t - 2) * e + k - 1] + add
+                        if value > current[t * e + k] { current[t * e + k] = value }
+                        k += 1
+                    }
+                }
+                t += 1
+            }
+        }
+        // Typed letters inserted after c.
+        t = 1
+        while t <= n {
+            let add = inserted[(t - 1) * 26 + c]
+            var k = 1
+            while k < e {
+                let value = current[(t - 1) * e + k - 1] + add
+                if value > current[t * e + k] { current[t * e + k] = value }
+                k += 1
+            }
+            t += 1
+        }
+    }
+}

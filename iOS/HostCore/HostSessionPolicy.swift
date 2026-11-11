@@ -1,0 +1,240 @@
+import Foundation
+
+/// How the host ends a request it stops: a terminal phase plus the content-free reason.
+struct DictationOutcome: Equatable, Sendable {
+    var phase: DictationStatus.Phase
+    var error: HostErrorCode?
+
+    static let cancelled = DictationOutcome(phase: .cancelled, error: nil)
+    static func cancelled(_ error: HostErrorCode) -> DictationOutcome { DictationOutcome(phase: .cancelled, error: error) }
+    static func failed(_ error: HostErrorCode) -> DictationOutcome { DictationOutcome(phase: .failed, error: error) }
+}
+
+/// Why a session ends.
+enum SessionEndReason: Equatable, Sendable {
+    case user
+    case idleExpired
+    case interrupted
+    case deviceLocked
+    /// The engine stopped and could not be restarted (or the app was in the background).
+    case engineFailed
+    /// Permission or audio-session activation failed while starting.
+    case startFailed(HostErrorCode)
+    /// Media services were reset: the audio session is invalid, and only a new foreground start can
+    /// capture again.
+    case mediaServicesReset
+}
+
+/// What wakes a reconciliation pass.
+enum ReconcileTrigger: Equatable, Sendable { case launch, intentSignal, poll, urlOpen, activation }
+
+/// Timing and decision rules of the host session. Pure, so every rule is tested on the Mac.
+enum HostSessionPolicy {
+    /// The controller's timer. Watchdog, idle expiry, polling and status cadence are evaluated on it.
+    static let tickInterval: TimeInterval = 0.1
+    /// Intent polling while a session is live or the app is in the foreground.
+    static let reconcileInterval: TimeInterval = 0.5
+    /// About 10 Hz while starting or recording, for the keyboard's level meter.
+    static let fastStatusInterval: TimeInterval = 0.1
+    /// How long a capture failure (a stopped engine, a configuration change, a media-services reset, or
+    /// starvation) stays pending before the session acts on it. An interruption stops the engine and
+    /// posts its notification at about the same time; the grace lets the interruption win, so a call is
+    /// reported as `.interrupted` rather than restarted.
+    static let captureStallGrace: TimeInterval = 0.5
+    /// Input buffers arrive about every 100 ms. With none for this long (idle), or no new samples for this
+    /// long (recording), capture is starved.
+    static let captureStarvationTimeout: TimeInterval = 2
+    /// Consecutive buffers that fail to convert before the capture thread reports it.
+    static let maxConsecutiveConversionFailures = 5
+    /// Engine recoveries in a row that produce no input before the session gives up.
+    static let maxRecoveriesWithoutInput = 2
+    /// After finish, how long to wait for the tail (frames captured before the finish but not yet
+    /// delivered: up to one tap buffer plus the I/O buffer) before transcribing what has arrived.
+    static let tailTimeout: TimeInterval = 1
+    /// How long after the lock notification a keyboard intent may still be written. iOS posts the
+    /// notification about 10 s before class A files become inaccessible; doubled for margin.
+    static let lockWriteWindow: TimeInterval = 20
+
+    static func statusInterval(for dictation: DictationStatus?) -> TimeInterval {
+        switch dictation?.phase {
+        case .starting?, .recording?: return fastStatusInterval
+        default: return DictationProtocol.heartbeatInterval
+        }
+    }
+
+    /// Whether a periodic action last done at `last` is due. Half a tick of slack keeps timer jitter from
+    /// stretching a 1 s heartbeat to 1.1 s; a backward clock jump makes it due at once.
+    static func isDue(last: Date?, interval: TimeInterval, now: Date) -> Bool {
+        guard let last else { return true }
+        let elapsed = now.timeIntervalSince(last)
+        return elapsed < 0 || elapsed >= interval - tickInterval / 2
+    }
+
+    /// Idle expiry counts from `idleSince`: the session start or the end of the last dictation. It is nil
+    /// while a dictation is starting, recording or transcribing, so expiry never interrupts one.
+    static func sessionExpiresAt(session: HostStatus.Session, idleSince: Date?, duration: TimeInterval) -> Date? {
+        guard session == .active, let idleSince else { return nil }
+        return idleSince.addingTimeInterval(duration)
+    }
+
+    /// Fails closed like every freshness check: a backward clock jump past the tolerance expires the
+    /// session instead of extending it.
+    static func isIdleExpired(idleSince: Date?, duration: TimeInterval, now: Date) -> Bool {
+        guard let idleSince else { return false }
+        return !DictationProtocol.isFresh(idleSince, ttl: duration, now: now)
+    }
+
+    /// The `isForeground` to reconcile with, or nil to skip the pass. `isForeground` is the application
+    /// state, not `.background`.
+    /// - A URL open is only a hint. Before the app actually arrives in the foreground it does nothing,
+    ///   so it can neither admit, prepare nor reject; the arrival re-reads the intent, and freshness is
+    ///   judged then.
+    /// - A process that has never been in the foreground (a prewarmed launch) skips while no session is
+    ///   starting or active: it could only reject, and would reject for good the request its own bounce is
+    ///   about to admit. A session the session control started in the background reconciles as usual.
+    static func reconcileForeground(trigger: ReconcileTrigger, isForeground: Bool, hasBeenForeground: Bool,
+                                    sessionLive: Bool) -> Bool? {
+        if isForeground { return true }
+        guard trigger != .urlOpen, hasBeenForeground || sessionLive else { return nil }
+        return false
+    }
+
+    /// How long a session control start that needs the app waits for the user to open it
+    /// (ARCHITECTURE.md, "Session control", Foreground).
+    static let controlForegroundWindow: TimeInterval = 30
+
+    /// The app arrived in front soon enough after the press to start its session. Fails closed on a backward
+    /// clock jump past the tolerance.
+    static func isControlStartFresh(requestedAt: Date, now: Date) -> Bool {
+        DictationProtocol.isFresh(requestedAt, ttl: controlForegroundWindow, now: now)
+    }
+
+    /// No input since `lastInputAt` for `captureStarvationTimeout`. A backward clock jump is not
+    /// starvation; the caller restarts its baseline.
+    static func isStarved(lastInputAt: Date, now: Date) -> Bool {
+        now.timeIntervalSince(lastInputAt) >= captureStarvationTimeout
+    }
+
+    /// The recording cap by elapsed time since admission, in addition to the sample-count cap. Fails
+    /// closed: a backward clock jump past the tolerance ends the recording.
+    static func hasExceededMaxDuration(startedAt: Date, now: Date) -> Bool {
+        !DictationProtocol.isFresh(startedAt, ttl: DictationProtocol.maxDictationDuration, now: now)
+    }
+
+    /// A keyboard with Full Access was visible recently: its presence is within `keyboardPresenceTimeout`.
+    static func isKeyboardConnected(presence: StoreRead<KeyboardPresence>, now: Date) -> Bool {
+        guard let presence = presence.value else { return false }
+        return DictationProtocol.isFresh(presence.seenAt, ttl: DictationProtocol.keyboardPresenceTimeout, now: now)
+    }
+
+    /// A record intent issued more than `lockWriteWindow` after the lock latch was set was written on an
+    /// unlocked iPhone: no keyboard runs on the lock screen, and the class A intent cannot be written once
+    /// the window has passed. The latch is then stale: an app suspended across the unlock can read protected
+    /// data as unavailable at its activation events and get the unlock notification only after them.
+    static func intentProvesUnlock(issuedAt: Date, lockedAt: Date?) -> Bool {
+        guard let lockedAt else { return false }
+        return issuedAt.timeIntervalSince(lockedAt) > lockWriteWindow
+    }
+
+    /// The session control runs only after iOS authenticated the user on this iPhone. Its press proves an unlock the
+    /// app missed only with protected data available past `lockWriteWindow` after the latch: inside that window a
+    /// locking iPhone still reads it available (ARCHITECTURE.md, "Session control", Toggle).
+    static func controlProvesUnlock(now: Date, lockedAt: Date?, isProtectedDataAvailable: Bool) -> Bool {
+        isProtectedDataAvailable && intentProvesUnlock(issuedAt: now, lockedAt: lockedAt)
+    }
+
+    /// Whether the bounce screen stays up. It outlives the swipe back only while its dictation is in
+    /// progress; once that ends with the app in the background, the keyboard shows the outcome and the
+    /// bounce closes, so a later return to LocalFlow shows Home rather than an old outcome.
+    static func keepsBounce(isForeground: Bool, isDictationInProgress: Bool) -> Bool {
+        isForeground || isDictationInProgress
+    }
+
+    /// Whether a request admitted in the foreground raises the bounce. A Start tapped in this app's own field (the
+    /// Dictionary editor) has the keyboard in this app, and a cover would close the editor's sheet, losing its draft.
+    /// The visible screen can't tell where Start was tapped: the editor stays on screen while the app sits in the
+    /// background, and a Start in another app opens LocalFlow on it too. Where the request came from tells.
+    /// `activeSince` is when the app last became active after the background (nil until then); nothing in LocalFlow can
+    /// be tapped before that, so a request issued earlier came from another app. The arrival may admit it before the
+    /// activation is noted (a resumed timer or the URL open can reconcile first); nil covers that. A request whose record
+    /// intent can't be read (`issuedAt` nil) raises the bounce.
+    static func showsBounce(isForeground: Bool, issuedAt: Date?, activeSince: Date?) -> Bool {
+        guard isForeground else { return false }
+        guard let activeSince, let issuedAt else { return true }
+        return issuedAt < activeSince
+    }
+
+    /// When `intent` asked to record `requestID`; nil for any other intent.
+    static func recordIssuedAt(_ intent: KeyboardIntent?, requestID: UUID) -> Date? {
+        guard let intent, intent.schema == DictationProtocol.schema, intent.action == .record,
+              intent.requestID == requestID else { return nil }
+        return intent.issuedAt
+    }
+
+    /// Admission, after asking the model to prepare (ARCHITECTURE.md, "Admission"): a missing model, or a
+    /// model still `failed` because a failed preparation is backing off, fails the request at once rather
+    /// than recording audio that cannot be transcribed. Nil: the request records.
+    static func admissionFailure(model: HostStatus.Model) -> HostErrorCode? {
+        switch model {
+        case .unavailable: return .modelUnavailable
+        case .failed: return .modelFailed
+        case .notPrepared, .preparing, .ready: return nil
+        }
+    }
+
+    /// The reconciler's `cancel(R)`. For a `finish` that reached a request still starting nothing was
+    /// captured, which is reported as failed `.notRecording`; a keyboard `cancel` is a plain cancel.
+    static func cancelOutcome(intentAction: KeyboardIntent.Action?) -> DictationOutcome {
+        intentAction == .finish ? .failed(.notRecording) : .cancelled
+    }
+
+    /// `HostWatchdog` reasons: a startup timeout is a failure; a dismissed keyboard is a cancellation.
+    static func watchdogOutcome(_ reason: HostErrorCode) -> DictationOutcome {
+        reason == .keyboardDismissed ? .cancelled(.keyboardDismissed) : .failed(reason)
+    }
+
+    /// What happens to an in-progress request when the session ends, or nil to let it continue.
+    /// Transcription needs no audio, so it survives everything but device lock, where class A
+    /// result files can no longer be written.
+    static func sessionEndOutcome(_ reason: SessionEndReason, phase: DictationStatus.Phase) -> DictationOutcome? {
+        switch phase {
+        case .starting, .recording:
+            switch reason {
+            case .user, .idleExpired: return .cancelled(.sessionInactive)
+            case .interrupted: return .failed(.interrupted)
+            case .deviceLocked: return .cancelled(.deviceLocked)
+            case .engineFailed, .mediaServicesReset: return .failed(.audioSessionFailed)
+            case .startFailed(let code): return .failed(code)
+            }
+        case .transcribing:
+            return reason == .deviceLocked ? .cancelled(.deviceLocked) : nil
+        case .completed, .failed, .cancelled:
+            return nil
+        }
+    }
+
+    /// The session-level `HostStatus.error` a session end leaves behind.
+    static func sessionError(after reason: SessionEndReason) -> HostErrorCode? {
+        switch reason {
+        case .user, .idleExpired: return nil
+        case .interrupted: return .interrupted
+        case .deviceLocked: return .deviceLocked
+        case .engineFailed, .mediaServicesReset: return .audioSessionFailed
+        case .startFailed(let code): return code
+        }
+    }
+
+    /// The published status. `captureReady` needs a running engine and an input buffer within
+    /// `captureFreshness`; the level is meaningful only while recording.
+    static func status(hostRunID: UUID, sessionID: UUID?, session: HostStatus.Session, captureRunning: Bool,
+                       lastBufferAt: Date?, idleSince: Date?, sessionDuration: TimeInterval, model: HostStatus.Model,
+                       dictation: DictationStatus?, level: Float, error: HostErrorCode?, now: Date) -> HostStatus {
+        let captureReady = session == .active && captureRunning
+            && lastBufferAt.map { DictationProtocol.isFresh($0, ttl: DictationProtocol.captureFreshness, now: now) } == true
+        return HostStatus(
+            hostRunID: hostRunID, sessionID: session == .inactive ? nil : sessionID, session: session,
+            captureReady: captureReady, heartbeatAt: now,
+            sessionExpiresAt: sessionExpiresAt(session: session, idleSince: idleSince, duration: sessionDuration),
+            model: model, dictation: dictation, level: dictation?.phase == .recording ? level : 0, error: error)
+    }
+}

@@ -1,0 +1,542 @@
+import UIKit
+
+/// The text proxy as `EditingCore` and `TrackpadController` see it.
+@MainActor
+private final class ProxyDocument: TextDocument, TrackpadHost {
+    weak var controller: UIInputViewController?
+
+    init(controller: UIInputViewController) {
+        self.controller = controller
+    }
+
+    private var proxy: UITextDocumentProxy? { controller?.textDocumentProxy }
+
+    nonisolated var documentID: UUID? { MainActor.assumeIsolated { proxy?.documentIdentifierIfAvailable } }
+    nonisolated var contextBefore: String? { MainActor.assumeIsolated { proxy?.documentContextBeforeInput } }
+    nonisolated var contextAfter: String? { MainActor.assumeIsolated { proxy?.documentContextAfterInput } }
+    /// Only whether text is selected; the selection's text is not kept.
+    nonisolated var hasSelection: Bool { MainActor.assumeIsolated { proxy?.selectedText?.isEmpty == false } }
+
+    nonisolated func insertText(_ text: String) {
+        MainActor.assumeIsolated { proxy?.insertText(text) }
+    }
+
+    nonisolated func deleteBackward() {
+        MainActor.assumeIsolated { proxy?.deleteBackward() }
+    }
+
+    nonisolated func adjust(by offset: Int) {
+        MainActor.assumeIsolated { proxy?.adjustTextPosition(byCharacterOffset: offset) }
+    }
+}
+
+/// The editing side of the keyboard in UIKit: the key area's events, the text proxy, the held delete
+/// key's timers, the display link and the timers of undo and the typing tail. The rules live in
+/// KeyboardCore (`KeyboardEditor`, `EditingCore`, `UndoTracker`, `TrackpadController`, the typing
+/// rules), where they are tested.
+///
+/// ARCHITECTURE.md, "Typing model", Immediate execution: a key edits through the proxy the moment it
+/// is typed, ending any trackpad gesture on the spot; it is refused only in another identified field.
+/// Context is read in memory only and never stored or logged; every copy is dropped on hiding and
+/// expires on its own clock otherwise.
+@MainActor
+final class KeyboardInput: KeyAreaViewDelegate {
+    private weak var controller: UIInputViewController?
+    private weak var keyArea: KeyAreaView?
+    private let document: ProxyDocument
+    private let editor: KeyboardEditor
+    private let driver: TrackpadDriver
+    private var deleteKey = HeldDeleteKey()
+    private var deleteTimer: Timer?
+    private var serviceTimer: Timer?
+    private var undoTimer: Timer?
+    private var undoExpiry: (timer: Timer, insertedAt: TimeInterval)?
+    private var tailExpiry: Timer?
+    /// Trackpad mode started (true) or ended (false), to dim the dictation bar and play a haptic.
+    var onTrackpadChange: ((Bool) -> Void)?
+    /// Whether Undo can be offered may have changed. Only state is read in response; never results.
+    var onUndoAvailabilityChanged: (() -> Void)?
+    /// The field's layout profile, read when a gesture starts.
+    var fieldLayout: () -> FieldLayout = { FieldLayoutParameters.standard.defaultLayout }
+    /// The user's trackpad multipliers, read when a gesture starts.
+    var trackpadMultipliers: () -> (sensitivity: Double, acceleration: Double) = { (1, 1) }
+    /// A trackpad gesture ended with this measured touch rate and step scale (numbers only), for
+    /// Diagnostics. Called at most once per gesture.
+    var onTouchRateMeasured: ((Double, Double) -> Void)?
+    /// The candidate strip opened, changed or closed (`swipeStrip`). Never called while it stays closed.
+    var onSwipeStripChanged: (() -> Void)?
+    /// The offer to never correct a reverted word appeared, changed or went (`neverCorrectOffer`).
+    var onNeverCorrectOfferChanged: (() -> Void)?
+    /// An own edit, or a frame while the proxy may only now show one: whether the field has text may have changed
+    /// (`fieldHasText`).
+    var onTextMayHaveChanged: (() -> Void)?
+    /// The swipe engine, once loaded (`loadSwipeEngine`); nil keeps swipe typing off.
+    private var swipeEngine: SwipeEngine? {
+        didSet { updateTouchModes() }
+    }
+    private let swipeEngineLoad = BundleModelLoader<SwipeEngine>()
+    /// The App Group settings, read at each commit key: autocorrect corrects only while they are readable;
+    /// nil without Full Access.
+    var sharedSettings: () -> LocalFlowSettings? = { nil }
+    /// Soft key edges once their model has loaded (`configureSoftKeyEdges`): the bundle's `tap` section and
+    /// the prior with its cache. Nil keeps letter taps as they are.
+    private var softKeys: SoftKeyEdgesManifest?
+    private var tapPrior: TapPrior?
+    /// The soft key edges load: at most one in flight, and only a load for the bundle still wanted is installed.
+    private let softKeysLoad = BundleModelLoader<LoadedSoftKeyEdges>()
+    /// Autocorrect once its model has loaded (`configureAutocorrect`): the default preset's parameters and the
+    /// corrector. Nil keeps words as typed.
+    private var autocorrect: (params: AutocorrectParams, corrector: WordCorrecting)?
+    /// The autocorrect load: at most one in flight, and only a load for the bundle still wanted is installed.
+    private let autocorrectLoad = BundleModelLoader<LoadedAutocorrect>()
+
+    init(controller: UIInputViewController, keyArea: KeyAreaView) {
+        self.controller = controller
+        self.keyArea = keyArea
+        document = ProxyDocument(controller: controller)
+        let trackpad = TrackpadController(host: document)
+        editor = KeyboardEditor(document: document, trackpad: trackpad, parking: Self.parking)
+        driver = TrackpadDriver(controller: controller, trackpad: trackpad)
+        editor.autocapitalization = { [weak self] in self?.autocapitalization ?? .sentences }
+        editor.onStateChanged = { [weak self] in self?.editorStateChanged() }
+        editor.onUndoChanged = { [weak self] in self?.undoChanged() }
+        editor.onTrackpadFinished = { [weak self] _ in self?.trackpadFinished() }
+        editor.onFieldChanged = { [weak self] field in self?.fieldChanged(to: field) }
+        editor.onSwipeStripChanged = { [weak self] in self?.onSwipeStripChanged?() }
+        editor.onNeverCorrectOfferChanged = { [weak self] in self?.onNeverCorrectOfferChanged?() }
+        editor.autocorrect = { [weak self] in self?.autocorrectSetup() }
+        keyArea.currentField = { [weak controller] in controller?.textDocumentProxy.documentIdentifierIfAvailable }
+    }
+
+    var trackpad: TrackpadController { editor.trackpad }
+
+    /// Whether the field has text: the proxy's word, or text before the caret that the keyboard typed and the proxy
+    /// does not show yet. Read for `enablesReturnKeyAutomatically`; nothing is kept.
+    var fieldHasText: Bool {
+        proxy?.hasText == true || !editor.tapPriorContext(now: now).isEmpty
+    }
+
+    private var proxy: UITextDocumentProxy? { controller?.textDocumentProxy }
+
+    private var now: TimeInterval { CACurrentMediaTime() }
+
+    /// A trackpad gesture is running: a dictated result stays unclaimed in the shared files.
+    var isBusy: Bool { editor.isBusy }
+
+    private var autocapitalization: AutocapitalizationMode {
+        switch proxy?.autocapitalizationType ?? .sentences {
+        case .none: return .none
+        case .words: return .words
+        case .allCharacters: return .allCharacters
+        default: return .sentences
+        }
+    }
+
+    // MARK: Lifecycle
+
+    /// Fields that ask for a number pad: the keyboard opens on its numbers layer there, and predicts no next words.
+    /// The word being typed when the keyboard hid, for the next controller in this process (ARCHITECTURE.md, "Word
+    /// autocorrect", Owned words). In memory only.
+    private static let parking = ParkedWordSlot()
+
+    private static let numericTypes: Set<UIKeyboardType> = [.numberPad, .decimalPad, .numbersAndPunctuation, .asciiCapableNumberPad]
+
+    private var isNumericField: Bool { Self.numericTypes.contains(proxy?.keyboardType ?? .default) }
+
+    /// The keyboard appeared: start fresh in whatever field it serves (a word it was typing there may be its own again,
+    /// ARCHITECTURE.md, "Word autocorrect", Owned words).
+    func reset() {
+        editor.reset(numeric: isNumericField)
+        stopUndoTimers()
+        updateTouchModes()
+    }
+
+    /// The keyboard is hiding: end every gesture and held key and, synchronously, drop every copy of
+    /// the field's context and identity (the trackpad snapshot and its layout, its unit, the undo text
+    /// and anchors, the typing tail), but the word being typed, kept in memory until the keyboard appears
+    /// again (ARCHITECTURE.md, "Word autocorrect", Owned words). A probe still out is rolled back first.
+    /// Every key typed has already been applied.
+    func stop() {
+        cancelHeldActions()
+        editor.hide(now: now)
+        stopUndoTimers()
+        tailExpiry?.invalidate()
+        tailExpiry = nil
+        serviceTimer?.invalidate()
+        serviceTimer = nil
+        tapPrior?.clear()
+        autocorrect?.corrector.forgetContext()
+    }
+
+    /// A `textDidChange` (`textChanged`) or `selectionDidChange` callback.
+    func hostChanged(textChanged: Bool) {
+        editor.hostChanged(textChanged: textChanged, now: now)
+        // The field's traits may have changed with it (secure text entry).
+        updateTouchModes()
+    }
+
+    /// Another field became current (a callback, or adopted for a key typed before it): held keys and a
+    /// held delete pressed before any identity bind to it; those bound to a different identified field
+    /// end without acting.
+    private func fieldChanged(to field: UUID?) {
+        if deleteKey.fieldChanged(to: field) { endDeleteRepeat() }
+        keyArea?.fieldChanged(to: field)
+        // The prior's cache holds the old field's text.
+        tapPrior?.clear()
+        updateTouchModes()
+    }
+
+    // MARK: Swipe typing
+
+    /// Loads the swipe bundle from the keyboard extension off the main thread, once. Until it has loaded,
+    /// and for good if it is missing or invalid, swipe typing stays off and long drags are taps.
+    func loadSwipeEngine() {
+        swipeEngineLoad.request(SwipeEngine.bundledDirectory, load: { try? SwipeEngine.load(from: $0) }) { [weak self] engine in
+            self?.swipeEngine = engine
+        }
+    }
+
+    /// Swipe typing and soft taps are on only with their models loaded and outside secure text entry. Letter
+    /// taps carry their touch-down point (soft taps) for soft key edges or autocorrect; without soft key edges
+    /// they type their nearest key.
+    private func updateTouchModes() {
+        let secure = proxy?.isSecureTextEntry == true
+        let swipe = swipeEngine != nil && !secure
+        if keyArea?.swipeEnabled != swipe { keyArea?.swipeEnabled = swipe }
+        let softTaps = (tapPrior != nil || autocorrect != nil) && !secure
+        if keyArea?.softTapsEnabled != softTaps { keyArea?.softTapsEnabled = softTaps }
+    }
+
+    // MARK: Soft key edges
+
+    /// The keyboard appeared with soft key edges on or off (ARCHITECTURE.md, "Soft key edges"): off drops the
+    /// model; on loads the bundle's default one off the main thread, unless it is already loaded or loading
+    /// (`ModelLoadSlot`). Until it has loaded, and for good if the bundle has no `tap` section or a file is
+    /// missing or invalid, letter taps type their nearest key.
+    func configureSoftKeyEdges(enabled: Bool) {
+        let directory = enabled ? SwipeEngine.bundledDirectory : nil
+        softKeysLoad.request(directory, load: { Self.loadSoftKeyEdges(from: $0) }) { [weak self] loaded in
+            guard let self else { return }
+            softKeys = loaded?.manifest
+            tapPrior = loaded.map { TapPrior(model: $0.model, surpriseWindow: $0.manifest.rule.surpriseWindow) }
+            updateTouchModes()
+        }
+    }
+
+    /// What a soft key edges load hands back to the main thread.
+    private struct LoadedSoftKeyEdges: Sendable {
+        var manifest: SoftKeyEdgesManifest
+        var model: TapModel
+    }
+
+    /// The swipe bundle's `tap` section and its default model; nil without a valid section or when the model
+    /// file is missing or invalid. Slow: off the main thread.
+    private nonisolated static func loadSoftKeyEdges(from bundle: SwipeBundle) -> LoadedSoftKeyEdges? {
+        guard let manifest = bundle.tap, let path = manifest.models[manifest.defaultModel],
+              let model = try? TapModel.load(from: bundle.directory.appendingPathComponent(path)) else { return nil }
+        return LoadedSoftKeyEdges(manifest: manifest, model: model)
+    }
+
+    /// The key a soft tap types: the nearest key, unless `TapDecoder` re-decides it from the prior. The
+    /// context is the text before the cursor as the editor knows it, own edits the proxy has not shown yet
+    /// included, plus the space owed after a swiped word (`KeyboardEditor.tapPriorContext`), under the bundle's
+    /// rule. The prior's cache is bound to the current field first, and a tap bound to another identified field
+    /// (which the editor refuses) is not predicted. On the main thread; nothing here is logged or kept beyond
+    /// the prior's in-memory cache.
+    private func softTapKey(_ action: KeyAction, x: Double, y: Double, field: UUID?, keyArea: KeyAreaView) -> KeyAction {
+        guard let softKeys, tapPrior != nil else { return action }
+        // Bound first, even for a tap that is not predicted (a secure field, a refused stale tap).
+        let current = proxy?.documentIdentifierIfAvailable
+        tapPrior?.bind(to: current)
+        guard proxy?.isSecureTextEntry != true else { return action }
+        if let field, let current, field != current { return action }
+        let context = editor.tapPriorContext(now: now)
+        guard let prediction = tapPrior?.prediction(context: context) else { return action }
+        let decoder = TapDecoder(touch: TapDecoder.TouchModel(softKeys.touch), rule: TapDecoder.Rule(softKeys.rule))
+        return decoder.resolve(action, x: x, y: y, keys: keyArea.letterKeys, logPrior: prediction.logProbs,
+                               surprise: prediction.surprise)
+    }
+
+    // MARK: Word autocorrect
+
+    /// The keyboard appeared with autocorrect on or off (ARCHITECTURE.md, "Word autocorrect"): off drops the
+    /// corrector; on loads the bundle's default model off the main thread, with its default preset, unless it is
+    /// already loaded or loading (`ModelLoadSlot`). Until it has loaded, and for good if the bundle has no valid
+    /// `autocorrect` section or a file is missing or invalid, words commit as typed.
+    func configureAutocorrect(enabled: Bool) {
+        let directory = enabled ? SwipeEngine.bundledDirectory : nil
+        autocorrectLoad.request(directory, load: { Self.loadAutocorrect(from: $0) }) { [weak self] loaded in
+            guard let self else { return }
+            autocorrect = loaded.map { (params: $0.params, corrector: $0.corrector) }
+            updateTouchModes()
+            editor.autocorrectChanged()
+        }
+    }
+
+    /// What a load hands back to the main thread. The corrector is immutable once built.
+    private struct LoadedAutocorrect: @unchecked Sendable {
+        var params: AutocorrectParams
+        var corrector: WordCorrecting
+    }
+
+    /// The swipe bundle's `autocorrect` section's default model, as a corrector, and its default preset; nil
+    /// without a valid section or when the model cannot be built. Slow: off the main thread.
+    private nonisolated static func loadAutocorrect(from bundle: SwipeBundle) -> LoadedAutocorrect? {
+        guard let manifest = bundle.autocorrect,
+              let corrector = AutocorrectLoader.load(manifest: manifest, bundleURL: bundle.directory, model: manifest.defaultModel)
+        else { return nil }
+        return LoadedAutocorrect(params: manifest.defaultParams, corrector: corrector)
+    }
+
+    /// The keyboard appeared: the store of words never to correct (ARCHITECTURE.md, "Word autocorrect", Never
+    /// correct), nil while autocorrect is off or without Full Access. Its words replace those in memory.
+    func configureNeverCorrect(store: NeverCorrectStore?) {
+        editor.useNeverCorrectStore(store)
+    }
+
+    /// The offer a revert made, nil when none.
+    var neverCorrectOffer: NeverCorrectOffer? { editor.neverCorrectOffer }
+
+    /// The user tapped the offer: its word is never corrected again.
+    func acceptNeverCorrect() {
+        editor.acceptNeverCorrect()
+    }
+
+    /// The corrector and its inputs at a commit key: only with the model loaded and the App Group's settings
+    /// readable (Full Access). The editor declines in a secure field.
+    private func autocorrectSetup() -> AutocorrectSetup? {
+        guard let autocorrect, sharedSettings() != nil, let keyArea else { return nil }
+        return AutocorrectSetup(corrector: autocorrect.corrector, keys: keyArea.letterKeys,
+                                params: autocorrect.params,
+                                secureTextEntry: proxy?.isSecureTextEntry == true,
+                                autocorrectionDisabled: proxy?.autocorrectionType == .no, field: keyArea.field,
+                                numeric: isNumericField)
+    }
+
+    /// The candidate strip after a swipe or an autocorrect commit, or while a word is typed; nil when closed.
+    var swipeStrip: SwipeStrip? { editor.swipeStrip }
+
+    /// A tap on the strip's candidate `index`.
+    func chooseSwipeCandidate(at index: Int) {
+        editor.chooseSwipeCandidate(at: index, now: now)
+    }
+
+    /// Ends every held key (characters, space, delete) without typing, and a pending delete without
+    /// deleting. On hiding.
+    private func cancelHeldActions() {
+        deleteKey.cancel()
+        endDeleteRepeat()
+        keyArea?.cancelAllTouches()
+    }
+
+    // MARK: Editor state
+
+    private func editorStateChanged() {
+        keyArea?.apply(layer: editor.typing.layer, shift: editor.typing.shift)
+        onTextMayHaveChanged?()
+        scheduleTailExpiry()
+        if editor.needsService { scheduleService() }
+    }
+
+    /// After an own edit, the editor follows the proxy for the shift every frame for a while.
+    private func scheduleService() {
+        guard serviceTimer == nil else { return }
+        serviceTimer = Timer.mainLoop(after: 1.0 / 60) { [weak self] _ in
+            guard let self else { return }
+            self.serviceTimer = nil
+            self.editor.service(now: self.now)
+            self.onTextMayHaveChanged?()
+            if self.editor.needsService { self.scheduleService() }
+        }
+    }
+
+    private func trackpadFinished() {
+        if let measured = trackpad.measuredTouchRate { onTouchRateMeasured?(measured.rate, measured.scale) }
+        onUndoAvailabilityChanged?()
+    }
+
+    // MARK: Dictation and undo
+
+    /// Inserts dictated text and makes it undoable, after the trackpad settles on the spot.
+    func insertDictation(_ text: String) {
+        editor.insertDictation(text, now: now)
+    }
+
+    var canUndoLastDictation: Bool { editor.canUndo(now: now) }
+
+    /// Removes the last dictation progressively: only what the context proves, then re-checks.
+    func undoLastDictation() {
+        guard undoTimer == nil else { return }
+        handle(editor.beginUndo(now: now))
+    }
+
+    private func handle(_ step: UndoTracker.Step) {
+        guard step == .wait else {
+            undoTimer?.invalidate()
+            undoTimer = nil
+            return
+        }
+        guard undoTimer == nil else { return }
+        undoTimer = Timer.mainLoop(after: 1.0 / 60, repeats: true) { [weak self] timer in
+            // A repeating timer outlives its owner unless told otherwise.
+            guard let self else { return timer.invalidate() }
+            self.handle(self.editor.continueUndo(now: self.now))
+        }
+    }
+
+    /// The undo was made, used or ended: its timers follow, and Undo's availability is published.
+    private func undoChanged() {
+        if let insertion = editor.core.undo.insertion {
+            if undoExpiry?.insertedAt != insertion.insertedAt { scheduleUndoExpiry(insertedAt: insertion.insertedAt) }
+        } else {
+            stopUndoTimers()
+        }
+        onUndoAvailabilityChanged?()
+    }
+
+    private func scheduleUndoExpiry(insertedAt: TimeInterval) {
+        undoExpiry?.timer.invalidate()
+        let timer = Timer.mainLoop(after: max(insertedAt + UndoTracker.window - now, 0)) { [weak self] _ in
+            guard let self else { return }
+            self.undoExpiry = nil
+            self.editor.core.expireUndo(now: self.now + 0.001)
+            self.onUndoAvailabilityChanged?()
+        }
+        undoExpiry = (timer, insertedAt)
+    }
+
+    private func stopUndoTimers() {
+        undoTimer?.invalidate()
+        undoTimer = nil
+        if editor.core.undo.insertion == nil {
+            undoExpiry?.timer.invalidate()
+            undoExpiry = nil
+        }
+    }
+
+    // MARK: The typing tail
+
+    /// The tail's own clock: set when a model is first held, never moved by more typing.
+    private func scheduleTailExpiry() {
+        guard let expiresAt = editor.tailExpiresAt else {
+            tailExpiry?.invalidate()
+            tailExpiry = nil
+            return
+        }
+        guard tailExpiry == nil else { return }
+        tailExpiry = Timer.mainLoop(after: max(expiresAt - now, 0)) { [weak self] _ in
+            guard let self else { return }
+            self.tailExpiry = nil
+            // A model held since then gets the rest of its own lifetime.
+            self.editor.expireTail(now: self.now)
+        }
+    }
+
+    // MARK: KeyAreaViewDelegate
+
+    func keyAreaTouchedDownKey(_ keyArea: KeyAreaView, timestamp: TimeInterval) {
+        editor.keyTouchedDown(now: now)
+    }
+
+    func keyArea(_ keyArea: KeyAreaView, typed action: KeyAction, field: UUID?, timestamp: TimeInterval) {
+        editor.press(action, field: field, at: timestamp, now: now)
+    }
+
+    /// A letter tap decided at touch-down, typed now with its touch-down point (recorded for autocorrect).
+    func keyArea(_ keyArea: KeyAreaView, typed action: KeyAction, x: Double, y: Double, field: UUID?, timestamp: TimeInterval) {
+        editor.press(action, field: field, at: timestamp, now: now, point: TapPoint(x: x, y: y))
+    }
+
+    /// A letter tap decided at touch-down, after earlier fingers have typed: its callout shows the key, which
+    /// types at release or rollover.
+    func keyArea(_ keyArea: KeyAreaView, decideTap action: KeyAction, x: Double, y: Double, field: UUID?) -> KeyAction? {
+        softTapKey(action, x: x, y: y, field: field, keyArea: keyArea)
+    }
+
+    /// A letter tap with no decision at touch-down, re-decided at the moment it types, then typed like a key.
+    func keyArea(_ keyArea: KeyAreaView, tapped action: KeyAction, x: Double, y: Double, field: UUID?, timestamp: TimeInterval) {
+        editor.press(softTapKey(action, x: x, y: y, field: field, keyArea: keyArea), field: field, at: timestamp, now: now,
+                     point: TapPoint(x: x, y: y))
+    }
+
+    func keyAreaBeganDelete(_ keyArea: KeyAreaView, timestamp: TimeInterval) {
+        endDeleteRepeat()
+        // Measured on device: the first deletion comes 0.12 s after touch-down (or at release, if
+        // sooner), and the repeats follow on the schedule from touch-down. The press is bound to this
+        // field; every deletion it makes carries its token.
+        let press = deleteKey.began(at: timestamp, documentID: proxy?.documentIdentifierIfAvailable)
+        schedule(press.token, at: press.firstAt, pressedAt: timestamp)
+    }
+
+    /// A release before the first deletion deletes once, unless the press began in another identified
+    /// field; a cancellation (the system's, the menu opening over the keys, hiding) deletes nothing.
+    func keyAreaEndedDelete(_ keyArea: KeyAreaView, cancelled: Bool) {
+        endDeleteRepeat()
+        guard let ended = deleteKey.ended(cancelled: cancelled, documentID: proxy?.documentIdentifierIfAvailable),
+              ended.deleteOnce else { return }
+        editor.heldDelete(.character, field: ended.field, now: now)
+    }
+
+    /// Schedules the press's next deletion `time` seconds after touch-down.
+    private func schedule(_ token: Int, at time: TimeInterval, pressedAt: TimeInterval) {
+        // Touch timestamps and CACurrentMediaTime share the same clock.
+        let delay = max(time - (now - pressedAt), 0)
+        deleteTimer = Timer.mainLoop(after: delay) { [weak self] _ in self?.fireDelete(token, pressedAt: pressedAt) }
+    }
+
+    /// A scheduled deletion: only while its press is current and the field is the one it began in.
+    private func fireDelete(_ token: Int, pressedAt: TimeInterval) {
+        guard let fired = deleteKey.fire(token: token, documentID: proxy?.documentIdentifierIfAvailable) else {
+            endDeleteRepeat()
+            return
+        }
+        editor.heldDelete(fired.unit, field: fired.field, now: now)
+        schedule(token, at: fired.nextAt, pressedAt: pressedAt)
+    }
+
+    private func endDeleteRepeat() {
+        deleteTimer?.invalidate()
+        deleteTimer = nil
+    }
+
+    /// A swipe was released: decoded on the spot, on the main thread, and its best word typed in the
+    /// field it touched down in. Samples and words are never logged or kept beyond the strip.
+    func keyArea(_ keyArea: KeyAreaView, swiped samples: [SwipeSample], field: UUID?, timestamp: TimeInterval) {
+        guard let swipeEngine, proxy?.isSecureTextEntry != true else { return }
+        editor.insertSwipe(swipeEngine.candidates(for: samples, keys: keyArea.letterKeys), field: field, now: now)
+    }
+
+    /// Points recorded for autocorrect belong to the old keys (ARCHITECTURE.md, "Word autocorrect").
+    func keyAreaChangedLetterGeometry(_ keyArea: KeyAreaView) {
+        editor.layoutChanged()
+    }
+
+    func keyAreaBeganTrackpad(_ keyArea: KeyAreaView) {
+        // The strip closes even if the gesture cannot start here.
+        editor.closeSwipeStrip()
+        // A delete still held stops repeating (what it already did stands).
+        deleteKey.cancel()
+        endDeleteRepeat()
+        let multipliers = trackpadMultipliers()
+        trackpad.parameters = TrackpadParameters.standard.tuned(sensitivity: multipliers.sensitivity,
+                                                                acceleration: multipliers.acceleration)
+        if let profile = driver.layout(keyboardWidth: keyArea.bounds.width, profile: fieldLayout()),
+           editor.beginTrackpad(layout: profile.layout, linePitch: profile.linePitch, layoutWidth: profile.width) {
+            driver.run()
+        }
+        onTrackpadChange?(true)
+    }
+
+    func keyArea(_ keyArea: KeyAreaView, movedTrackpadBy dx: Double, dy: Double, timestamp: TimeInterval) {
+        trackpad.move(dx: dx, dy: dy, timestamp: timestamp)
+    }
+
+    func keyAreaEndedTrackpad(_ keyArea: KeyAreaView, timestamp: TimeInterval, cancelled: Bool) {
+        if cancelled {
+            trackpad.cancel(at: timestamp)
+        } else {
+            trackpad.end(at: timestamp)
+        }
+        onTrackpadChange?(false)
+    }
+}

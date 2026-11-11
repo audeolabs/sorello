@@ -9,12 +9,13 @@ is the contract the code is written against, and it says where each kind of code
 make check        # rule checks, build, tests. Every commit passes this. Needs no model.
 make snapshots    # every pill state and screen as PNG files in build/snapshots
 make app          # build/Sorello Dev.app, which downloads its model; SORELLO_MODEL_DIR=<copy> puts it inside
+make -C iOS check # the iPhone app's own checks. CI does not run them (see "The iPhone app" below)
 ```
 
 The package builds only on macOS 26 or later with Xcode 27 (Swift 6.4). There is no Xcode project.
 
 GitHub Actions runs `make check` on every pull request and on every push to `main`. It also builds the nightly
-and release apps, signed and notarized (ARCHITECTURE.md, section 10). Their credentials are repository secrets:
+and release apps, signed and notarized (ARCHITECTURE.md, section 10). All of that is the Mac app's. Their credentials are repository secrets:
 they are never in the repository or in a log.
 
 ## How changes are made
@@ -25,8 +26,9 @@ they are never in the repository or in a log.
 - **Keep the boundaries.** Pure modules import only Foundation. `SorelloUI` draws values and reports actions; it
   never reaches into the session, the engine or storage. Adapters depend on `DictationCore`, not on each other.
   There are no shared singletons. `scripts/check-rules.sh` enforces what the compiler cannot.
-- **One state machine.** All dictation state changes in `reduce`. Do not add flags, generation counters or
-  staleness checks beside it; add an event.
+- **One state machine.** In the Mac app, all dictation state changes in `reduce`. Do not add flags, generation
+  counters or staleness checks beside it; add an event. The iPhone app has state machines of its own, which
+  `iOS/ARCHITECTURE.md` describes; this rule does not ask for them to be replaced.
 - **Look at it.** A change to anything visible is checked in the snapshot images, and anything the tests cannot
   show (shortcuts, the paste, the microphone, the pill on real hardware) is checked by running the app.
 - **Small commits.** Each commit builds, passes `make check` and says why it exists, so `git bisect` works.
@@ -35,6 +37,18 @@ they are never in the repository or in a log.
   users (README) or maintainers (this file, ARCHITECTURE.md, the dictionary design).
 - **Dependencies.** Sorello has one, Sparkle, which updates the app. SwiftPM fetches it on the first build. Add
   another only when it clearly earns its place, and say why in the pull request.
+
+## The iPhone app
+
+`iOS/` holds Sorello for iPhone, with its own contract ([iOS/ARCHITECTURE.md](iOS/ARCHITECTURE.md)) and its own
+build ([iOS/README.md](iOS/README.md)). ARCHITECTURE.md, section 13, says how it fits with the Mac app.
+
+- It links the package's `SpeechEngine`, `DictionaryKit` and `TextRules`. A change to one of them is a change to
+  both apps: run `make -C iOS check` on a Mac as well as `make check`.
+- Neither `make check` nor GitHub Actions builds or tests it. Run `make -C iOS check` before merging a change to
+  `iOS/`.
+- It keeps the bundle identifiers, App Group, URL scheme, universal link and stored names it was first published
+  with, so that an update replaces the app people already have and keeps their settings. Never rename one.
 
 ## Privacy rules
 
@@ -59,5 +73,5 @@ ThirdPartyNotices.md.
 
 ## What needs the owner
 
-Pushing to `main`, merging, tagging, publishing a release, adding a dependency, changing the model, and
-anything that sends data off the Mac.
+Pushing to `main`, merging, tagging, publishing a release, uploading an iPhone build to App Store Connect, adding
+a dependency, changing the model, and anything that sends data off the Mac.

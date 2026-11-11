@@ -1,0 +1,211 @@
+import Foundation
+
+enum LocalFlowSettingsTests {
+    static var tests: [TestCase] {
+        [
+            ("defaults", testDefaults),
+            ("storesValues", testStoresValues),
+            ("keyHapticsAreSeparateFromDictationHaptics", testKeyHapticsAreSeparateFromDictationHaptics),
+            ("sessionMinutesAcceptsOnlyOptions", testSessionMinutesAcceptsOnlyOptions),
+            ("cursorMultipliersDefaultToOne", testCursorMultipliersDefaultToOne),
+            ("cursorMultipliersAcceptOnlyTheRange", testCursorMultipliersAcceptOnlyTheRange),
+            ("cursorTouchRateIsRecordedAsNumbersOnly", testCursorTouchRateIsRecordedAsNumbersOnly),
+            ("fieldLayoutChoicesAreContentFreeAndBounded", testFieldLayoutChoicesAreContentFreeAndBounded),
+            ("typingSwitchesAreOnByDefaultAndStoreOff", testTypingSwitchesAreOnByDefaultAndStoreOff),
+            ("leftHandedIsOffByDefaultAndStoresOn", testLeftHandedIsOffByDefaultAndStoresOn),
+        ]
+    }
+
+    private static func testCursorMultipliersDefaultToOne() {
+        withSettings { settings, defaults in
+            TestSupport.expectEqual(settings.cursorSensitivity, 1)
+            TestSupport.expectEqual(settings.cursorAcceleration, 1)
+            settings.cursorSensitivity = 1.6
+            settings.cursorAcceleration = 0.5
+            let reread = LocalFlowSettings(defaults: defaults)
+            TestSupport.expectEqual(reread.cursorSensitivity, 1.6)
+            TestSupport.expectEqual(reread.cursorAcceleration, 0.5)
+            // Independent of the other settings.
+            TestSupport.expectEqual(reread.sessionMinutes, 5)
+            TestSupport.expect(reread.hapticsEnabled, "haptics untouched")
+            TestSupport.expect(reread.keyHapticsEnabled, "key haptics untouched")
+        }
+    }
+
+    private static func testFieldLayoutChoicesAreContentFreeAndBounded() {
+        withSettings { settings, defaults in
+            TestSupport.expectEqual(settings.fieldLayoutOverrides, [:])
+            let key = "0123456789abcdef"
+            settings.setFieldLayout("messages", forKey: key)
+            TestSupport.expectEqual(LocalFlowSettings(defaults: defaults).fieldLayoutOverrides, [key: "messages"])
+            // Only fingerprint keys and known layouts are stored.
+            settings.setFieldLayout("messages", forKey: "Some field text")
+            settings.setFieldLayout("sideways", forKey: "fedcba9876543210")
+            TestSupport.expectEqual(settings.fieldLayoutOverrides, [key: "messages"])
+            settings.setFieldLayout(nil, forKey: key)
+            TestSupport.expectEqual(settings.fieldLayoutOverrides, [:])
+            // Bounded, keeping the newest choice.
+            for index in 0 ..< LocalFlowSettings.fieldLayoutOverrideLimit + 5 {
+                settings.setFieldLayout("fullWidth", forKey: String(format: "%016x", index))
+            }
+            TestSupport.expectEqual(settings.fieldLayoutOverrides.count, LocalFlowSettings.fieldLayoutOverrideLimit)
+            TestSupport.expectEqual(settings.fieldLayoutOverrides[String(format: "%016x", LocalFlowSettings.fieldLayoutOverrideLimit + 4)],
+                                    "fullWidth")
+        }
+    }
+
+    private static func testCursorTouchRateIsRecordedAsNumbersOnly() {
+        withSettings { settings, defaults in
+            TestSupport.expectEqual(settings.cursorTouchRate, nil)
+            TestSupport.expectEqual(settings.cursorEventStepScale, nil)
+            settings.recordCursorTouchRate(120, eventStepScale: 2)
+            let reread = LocalFlowSettings(defaults: defaults)
+            TestSupport.expectEqual(reread.cursorTouchRate, 120)
+            TestSupport.expectEqual(reread.cursorEventStepScale, 2)
+            // Out-of-range or broken values are ignored, and a stray Bool reads as nothing.
+            settings.recordCursorTouchRate(.nan, eventStepScale: 1)
+            settings.recordCursorTouchRate(60, eventStepScale: 9)
+            TestSupport.expectEqual(settings.cursorTouchRate, 120)
+            defaults.set(true, forKey: "cursorTouchRate")
+            TestSupport.expectEqual(settings.cursorTouchRate, nil)
+        }
+    }
+
+    private static func testCursorMultipliersAcceptOnlyTheRange() {
+        withSettings { settings, defaults in
+            TestSupport.expectEqual(LocalFlowSettings.cursorMultiplierRange, 0.25...4)
+            settings.cursorSensitivity = 2
+            for rejected in [0, 0.1, 4.5, -1, Double.nan, .infinity] {
+                settings.cursorSensitivity = rejected
+                TestSupport.expectEqual(settings.cursorSensitivity, 2)
+            }
+            settings.cursorSensitivity = 0.25
+            TestSupport.expectEqual(settings.cursorSensitivity, 0.25)
+            settings.cursorSensitivity = 4
+            TestSupport.expectEqual(settings.cursorSensitivity, 4)
+            // Stored values written by something else read as the default when invalid.
+            let invalid: [Any] = [9.0, 0.0, "1.5", true]
+            for stored in invalid {
+                defaults.set(stored, forKey: "cursorAcceleration")
+                TestSupport.expectEqual(settings.cursorAcceleration, 1)
+            }
+            defaults.set(3, forKey: "cursorAcceleration")
+            TestSupport.expectEqual(settings.cursorAcceleration, 3)
+        }
+    }
+
+    /// A throwaway suite with an invented name, removed afterwards.
+    private static func withSettings(_ body: (LocalFlowSettings, UserDefaults) -> Void) {
+        let suite = "LocalFlowIOSTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        body(LocalFlowSettings(defaults: defaults), defaults)
+    }
+
+    private static func testDefaults() {
+        withSettings { settings, _ in
+            TestSupport.expectEqual(settings.sessionMinutes, 5)
+            TestSupport.expectEqual(settings.sessionDuration, 300)
+            TestSupport.expect(settings.spokenDelimitersEnabled, "spoken delimiters default")
+            TestSupport.expect(settings.spokenNumbersEnabled, "spoken numbers default")
+            TestSupport.expect(settings.pressEnterEnabled, "press enter default")
+            TestSupport.expect(settings.hapticsEnabled, "haptics default")
+            TestSupport.expect(settings.keyHapticsEnabled, "key haptics default")
+        }
+    }
+
+    private static func testStoresValues() {
+        withSettings { settings, defaults in
+            settings.sessionMinutes = 60
+            settings.spokenDelimitersEnabled = false
+            settings.spokenNumbersEnabled = false
+            settings.pressEnterEnabled = false
+            settings.hapticsEnabled = false
+            let reread = LocalFlowSettings(defaults: defaults)
+            TestSupport.expectEqual(reread.sessionMinutes, 60)
+            TestSupport.expectEqual(reread.sessionDuration, 3_600)
+            TestSupport.expect(!reread.spokenDelimitersEnabled, "spoken delimiters stored")
+            TestSupport.expect(!reread.spokenNumbersEnabled, "spoken numbers stored")
+            TestSupport.expect(!reread.pressEnterEnabled, "press enter stored")
+            TestSupport.expect(!reread.hapticsEnabled, "haptics stored")
+            settings.hapticsEnabled = true
+            TestSupport.expect(reread.hapticsEnabled, "haptics restored")
+        }
+    }
+
+    private static func testKeyHapticsAreSeparateFromDictationHaptics() {
+        withSettings { settings, defaults in
+            settings.keyHapticsEnabled = false
+            let reread = LocalFlowSettings(defaults: defaults)
+            TestSupport.expect(!reread.keyHapticsEnabled, "key haptics stored")
+            TestSupport.expect(reread.hapticsEnabled, "dictation haptics untouched")
+            settings.hapticsEnabled = false
+            settings.keyHapticsEnabled = true
+            TestSupport.expect(reread.keyHapticsEnabled, "key haptics restored")
+            TestSupport.expect(!reread.hapticsEnabled, "dictation haptics stored")
+            // A stored value that is not a Bool reads as the default.
+            defaults.set("off", forKey: "keyHapticsEnabled")
+            TestSupport.expect(settings.keyHapticsEnabled, "key haptics invalid value")
+        }
+    }
+
+    private static func testSessionMinutesAcceptsOnlyOptions() {
+        withSettings { settings, defaults in
+            TestSupport.expectEqual(LocalFlowSettings.sessionMinuteOptions, [5, 15, 60])
+            settings.sessionMinutes = 15
+            settings.sessionMinutes = 7
+            settings.sessionMinutes = 0
+            TestSupport.expectEqual(settings.sessionMinutes, 15)
+            let invalid: [Any] = [7, -5, 0, "15", 15.5, true]
+            for stored in invalid {
+                defaults.set(stored, forKey: "sessionMinutes")
+                TestSupport.expectEqual(settings.sessionMinutes, 5)
+            }
+        }
+    }
+
+    // MARK: Typing
+
+    /// Autocorrect and soft key edges are on by default, like the other switches, and turning one off is stored and
+    /// leaves the other alone.
+    private static func testTypingSwitchesAreOnByDefaultAndStoreOff() {
+        withSettings { settings, defaults in
+            TestSupport.expect(settings.autocorrectEnabled, "autocorrect off by default")
+            TestSupport.expect(settings.softKeyEdgesEnabled, "soft key edges off by default")
+            settings.autocorrectEnabled = false
+            var reread = LocalFlowSettings(defaults: defaults)
+            TestSupport.expect(!reread.autocorrectEnabled, "autocorrect off not stored")
+            TestSupport.expect(reread.softKeyEdgesEnabled, "soft key edges changed with autocorrect")
+            settings.softKeyEdgesEnabled = false
+            reread = LocalFlowSettings(defaults: defaults)
+            TestSupport.expect(!reread.softKeyEdgesEnabled, "soft key edges off not stored")
+            settings.autocorrectEnabled = true
+            TestSupport.expect(reread.autocorrectEnabled, "autocorrect on not stored")
+            TestSupport.expect(!reread.softKeyEdgesEnabled, "soft key edges changed with autocorrect")
+            // A stored value that is not a Bool reads as the default.
+            defaults.set("off", forKey: "autocorrectEnabled")
+            defaults.set("on", forKey: "softKeyEdgesEnabled")
+            TestSupport.expect(settings.autocorrectEnabled, "autocorrect invalid value")
+            TestSupport.expect(settings.softKeyEdgesEnabled, "soft key edges invalid value")
+        }
+    }
+
+    /// "Left-handed" mirrors the keyboard's dictation controls. Unlike every other switch it is off by default; it is
+    /// stored in the App Group beside the keyboard's other settings, where the keyboard reads it, and a stray non-Bool
+    /// value reads as off.
+    private static func testLeftHandedIsOffByDefaultAndStoresOn() {
+        withSettings { settings, defaults in
+            TestSupport.expect(!settings.leftHanded, "left-handed is on by default")
+            settings.leftHanded = true
+            TestSupport.expect(LocalFlowSettings(defaults: defaults).leftHanded, "left-handed not stored")
+            TestSupport.expectEqual(defaults.object(forKey: "leftHanded") as? Bool, true)
+            // Independent of the other switches.
+            TestSupport.expect(settings.softKeyEdgesEnabled && settings.autocorrectEnabled && settings.keyHapticsEnabled,
+                               "left-handed changed another setting")
+            settings.leftHanded = false
+            TestSupport.expect(!LocalFlowSettings(defaults: defaults).leftHanded, "left-handed not stored off")
+            defaults.set("yes", forKey: "leftHanded")
+            TestSupport.expect(!settings.leftHanded, "a string reads as on")
+        }
+    }
+}
