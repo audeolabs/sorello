@@ -93,12 +93,19 @@ jobs:
           releases=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq '.[] | "\(.id) \(.tag_name)"' \
             | awk -v tag="$TAG" '$2 == tag { print $1 }')
           tags=$(gh api "repos/$GH_REPO/git/matching-refs/tags/$TAG" --jq '.[].ref')
+          # Where the tag is afterwards is read from the answer to the move itself. Asked again a moment later,
+          # GitHub can still give the commit the tag was on before.
           if grep -Fxq "refs/tags/$TAG" <<< "$tags"; then
-            gh api --method PATCH "repos/$GH_REPO/git/refs/tags/$TAG" -f sha="$COMMIT" -F force=true > /dev/null
+            on=$(gh api --method PATCH "repos/$GH_REPO/git/refs/tags/$TAG" -f sha="$COMMIT" -F force=true \
+              --jq .object.sha)
           else
-            gh api --method POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$COMMIT" > /dev/null
+            on=$(gh api --method POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$COMMIT" \
+              --jq .object.sha)
           fi
-          [ "$(gh api "repos/$GH_REPO/git/ref/tags/$TAG" --jq .object.sha)" = "$COMMIT" ]
+          if [ "$on" != "$COMMIT" ]; then
+            echo "::error::The $TAG tag is on ${on:-nothing}, not on $COMMIT"
+            exit 1
+          fi
           if [ -z "$releases" ]; then
             gh release create "$TAG" "$own" appcast.xml "$DMG" --verify-tag --prerelease --title "Sorello Nightly" \
               --notes "$notes"
@@ -128,7 +135,10 @@ jobs:
           own_name="^${DMG%.dmg}-([0-9]+)-[0-9a-f]{12}\.dmg$"
           assets=$(list)
           kept=$(awk '{ print $2 }' <<< "$assets" | sed -nE "s/$own_name/\1/p" | sort -rnu | head -n "$KEEP")
-          grep -Fxq "$BUILD" <<< "$kept"
+          if ! grep -Fxq "$BUILD" <<< "$kept"; then
+            echo "::error::Build $BUILD is not among the builds whose images are kept, though its image was uploaded"
+            exit 1
+          fi
           while read -r id name _; do
             case "$name" in ""|"$DMG"|appcast.xml) continue ;; esac
             number=$(sed -nE "s/$own_name/\1/p" <<< "$name")

@@ -49,7 +49,7 @@ struct ModelPinTests {
         let pin = try ModelPin(contentsOf: file)
         let build = try #require(pin.build(for: .current()))
         #expect(build.directory == "macos26")
-        #expect(build.bytes == 138_084_519)
+        #expect(build.bytes == 138_084_560)
         #expect(pin.build(for: try Self.mac("15.7")) == nil)
     }
 

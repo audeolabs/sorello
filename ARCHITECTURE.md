@@ -11,10 +11,9 @@ each part does and where the boundaries are. When behaviour and this
 document disagree, one of them is wrong: fix the code, or change the
 contract here in the same pull request and say why.
 
-Version 0.0.1 is the first version. It replaces LocalFlow for macOS and
-shares no settings, identity or data with it. iOS is next: the modules
-marked *neutral* below import nothing from macOS so that an iPhone target
-can use them unchanged.
+Version 0.0.1 is the first version. iOS is next: the modules marked
+*neutral* below import nothing from macOS so that an iPhone target can use
+them unchanged.
 
 ## 1. What the app does
 
@@ -373,7 +372,8 @@ How the runtime uses them:
 
 ## 5. Speech engine
 
-Ported from LocalFlow's runtime, which was measured and tuned there:
+Ported from an earlier runtime by the same author, which was measured and
+tuned there:
 
 - The model is kea-b-0.1, a 1-bit derivative of NVIDIA Parakeet v2, as a
   Core ML encoder with one 15 second function, a vDSP feature front end
@@ -1169,7 +1169,7 @@ Review does.
 
 Sorello was written new. The session, shortcuts, capture, insertion, pill,
 windows, storage and build were written from this document. The speech
-runtime, dictionary, text rules and permission card were ported from code
-written for LocalFlow by the same author; the permission card keeps the MIT
-notices of the projects it adapts. The model's licence and attribution ship
+runtime, dictionary, text rules and permission card were ported from
+earlier code by the same author; the permission card keeps the MIT notices
+of the projects it adapts. The model's licence and attribution ship
 in the app's resources.

@@ -1,66 +1,30 @@
-# Sorello
+<p align="center"><img src="docs/images/icon.png" width="128" alt="Sorello"></p>
 
-Local dictation for macOS, by Audeo Labs. Hold a key, speak, release: the words appear at the cursor. Tap the
-key twice to dictate hands-free, and once more to finish. Speech recognition runs on your Mac. Sorello downloads
-its speech model once, during setup, and makes no other network connection.
+<h1 align="center">Sorello</h1>
 
-Sorello needs a Mac running macOS 26 or later. On a Mac with a Neural Engine, which is every Apple silicon Mac,
-recognition runs there. On an Intel Mac it runs on the processor, more slowly. It is in early development:
-version 0.0.1.
+- [Sorello](https://github.com/audeolabs/sorello/releases/latest/download/Sorello.dmg), the latest release. There is
+  none yet, so get the nightly for now.
+- [Sorello Nightly](https://github.com/audeolabs/sorello/releases/download/nightly/Sorello-Nightly.dmg), built each
+  night that the code has changed.
 
-## Build
+Sorello is an English dictation app for Mac that runs entirely on device. Hold a key, speak, and let go: your words
+are pasted where the cursor is. It is powered by the Kea family of English speech models by
+[Audeo Labs](https://huggingface.co/audeolabs). [Using Sorello](docs/USING.md) covers setup, shortcuts and settings,
+and [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) how to build it.
 
-Install Xcode 27.
+## Requirements
 
-```sh
-make check
-make app
-open "build/Sorello Dev.app"
-```
+- macOS 26 or later.
+- A Mac with Apple silicon (M series).
+- The microphone and Accessibility permissions.
 
-Model weights are kept outside Git. The app downloads the model that `Models/model.lock.json` pins when it is set
-up. To build an app that carries the model and never downloads it, point `SORELLO_MODEL_DIR` at a local copy:
-`make app SORELLO_MODEL_DIR=/path/to/model/bundle`. A development build runs on the Mac that
-built it; `CHANNEL=release` builds a universal app for Apple silicon and Intel, and `ARCHS="arm64 x86_64"` makes any
-build universal.
+## Privacy
 
-## Check a build
+Speech is recognised on your Mac, and nothing you say leaves it. Sorello connects to the network for two things only:
+the one-time download of the speech model (138 MB, from Hugging Face), and checking for and downloading updates
+(from GitHub). Neither sends anything about you. There are no analytics and no crash reporting.
 
-The packaged app proves itself without any permission. The self-test runs each recording through the app's own
-session, with the file in place of the microphone and nothing pasted, and prints what would have been inserted:
+## License
 
-```sh
-say -o hello.wav --data-format=LEI16@16000 "Hello from the self test"
-"build/Sorello Dev.app/Contents/MacOS/Sorello" --self-test hello.wav
-"build/Sorello Dev.app/Contents/MacOS/Sorello" --snapshots build/app-snapshots
-```
-
-The second command draws every window and every setup step as the app wires them, and lists the menu's rows.
-`--no-setup` opens the app without its setup window.
-
-The model's download is proved the same way, without touching the app's own copy of the model. The first command
-makes the packaged app download its model with its own pin into a temporary store, then dictate; the second fetches
-this Mac's build into a store you choose, as the app would, and transcribes with it. Both say what they fetched.
-
-```sh
-"build/Sorello Dev.app/Contents/MacOS/Sorello" --self-test --download hello.wav
-swift run sorello-transcribe --download --pin Models/model.lock.json --store /tmp/model-store hello.wav
-```
-
-Run the second again and nothing is fetched; stop it in the middle and run it again and it goes on from where it
-stopped. Its `--source` fetches from another address instead, such as a server on this Mac at `http://127.0.0.1`,
-to stage a failure.
-
-Sorello asks for the microphone, to hear you, and for Accessibility, to see its shortcut and to paste. An
-ad hoc development build may need both granted again after it is rebuilt.
-
-## Nightly builds
-
-Each night that `main` has changed, GitHub builds "Sorello Nightly" from it, signed with Audeo Labs' Developer ID
-and notarized by Apple, and publishes it as the [`nightly` prerelease](../../releases/tag/nightly), in place of
-the night before's. It keeps its own settings, model and permissions, so it can be installed beside Sorello. Quit
-one before opening the other: both answer the same shortcuts. Its build number, in About, rises with every commit
-to `main`.
-
-[ARCHITECTURE.md](ARCHITECTURE.md) describes how the app is put together, and [AGENTS.md](AGENTS.md) how to
-work on it. [ThirdPartyNotices.md](ThirdPartyNotices.md) lists the work by others that Sorello includes.
+Sorello's code is under the [MIT License](LICENSE). The speech model, kea-b-0.1, is under CC BY 4.0. Its notices,
+and the other work Sorello includes, are in [ThirdPartyNotices.md](ThirdPartyNotices.md).
