@@ -26,8 +26,9 @@ they are never in the repository or in a log.
 - **Keep the boundaries.** Pure modules import only Foundation. `SorelloUI` draws values and reports actions; it
   never reaches into the session, the engine or storage. Adapters depend on `DictationCore`, not on each other.
   There are no shared singletons. `scripts/check-rules.sh` enforces what the compiler cannot.
-- **One state machine.** All dictation state changes in `reduce`. Do not add flags, generation counters or
-  staleness checks beside it; add an event.
+- **One state machine.** In the Mac app, all dictation state changes in `reduce`. Do not add flags, generation
+  counters or staleness checks beside it; add an event. The iPhone app has state machines of its own, which
+  `iOS/ARCHITECTURE.md` describes; this rule does not ask for them to be replaced.
 - **Look at it.** A change to anything visible is checked in the snapshot images, and anything the tests cannot
   show (shortcuts, the paste, the microphone, the pill on real hardware) is checked by running the app.
 - **Small commits.** Each commit builds, passes `make check` and says why it exists, so `git bisect` works.

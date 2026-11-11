@@ -440,13 +440,17 @@ knows about where the model is and what it must be:
   of the model's repository on Hugging Face.
 - `builds`: each is a directory under `source` that holds one complete
   model. A build gives the SHA-256 of its `bundle.json`, its size in
-  bytes, and what it `requires`. The requirements today are `macos` and
-  `ios`: the lowest system version the build runs on, on a Mac and on an
-  iPhone. A build fits only a platform it names.
+  bytes, and what it `requires`: `macos`, `ios` or both, each the lowest
+  version of that system the build runs on. A build that names both runs
+  on both, and each system judges only its own: a Mac reads `macos`, an
+  iPhone reads `ios`. A build fits only a system it names, so one that
+  names neither fits nothing.
 
-Sorello uses the first build whose requirements this Mac meets. A build
-that requires something this version of Sorello does not know is passed
-over, so a later pin can list builds for other Macs (an older system, a
+Sorello uses the first build that fits the system it runs on. It judges a
+model the app carries by the same rule: a carried build is used only if
+the pin lists it and it fits. A build that requires something this
+version of Sorello does not know, or gives a version it cannot read, is
+passed over, so a later pin can list builds for other Macs (an older system, a
 Mac without a Neural Engine) and an app that has never heard of them
 takes none of them by mistake. One build is listed today, for macOS 26 or
 later and for iOS 26 or later; a Mac without a Neural Engine runs that
@@ -1237,9 +1241,11 @@ and ship it. This section holds what concerns both apps.
   one. Its build is given a local copy of the build the pin lists for
   iOS, and checks it against the pin and against its manifest, as
   `SORELLO_MODEL_DIR` is checked for the Mac. The engine loads it where
-  it lies in the app. There is no store on an iPhone: iOS prepares a
-  model for the Neural Engine again for every installed build of an app,
-  so a second copy would cost its size and save nothing.
+  it lies in the app. There is no store on an iPhone, and so no second
+  copy of the model. A stable copy was tried there and did not keep the
+  model warm: after an update, iOS prepared it for the Neural Engine
+  again all the same. So the first dictation after an update may wait
+  for that preparation, as it always has.
 - **No connection.** The iPhone app opens no network connection of any
   kind. The model's downloader is compiled for the Mac only (section 9),
   and the iPhone app's checks fail if one of its three executables names
@@ -1252,9 +1258,13 @@ and ship it. This section holds what concerns both apps.
   scheme, the universal link and the domain it is associated with, the
   signing team, and the name of everything the app or the keyboard has
   stored on an iPhone (the keys of its preferences, and the directories
-  and files in its containers). `iOS/ARCHITECTURE.md`, "Identifiers",
-  lists them. Each is written in one place, with a comment that says it
-  is kept and why. Everything else is Sorello: the name on the Home
+  and files in its containers). So do the names iOS itself keeps for
+  what a user has set up: the session control's kind, and the type name
+  of the App Intent behind it, which a control on the Action button, in
+  Control Center or on the Lock Screen is bound to.
+  `iOS/ARCHITECTURE.md`, "Identifiers", lists them all. Each is written
+  in one place, with a comment that says it is kept and why. Everything
+  else is Sorello: the name on the Home
   Screen, in the keyboard list and in every sentence the app shows, its
   icon (section 8), its code, and the files its build makes.
 - **Versions.** The iPhone app has its own version and build number, in
