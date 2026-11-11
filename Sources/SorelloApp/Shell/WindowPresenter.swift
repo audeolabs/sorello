@@ -14,13 +14,13 @@ struct WindowPresenter {
     /// Shows the main window, at `section` if given and otherwise at the section it last showed.
     mutating func showMain(_ model: MainWindowModel, section: MainSection?, title: String) {
         if let section { model.section = section }
-        let window = main ?? Self.window(.main, title: title, content: MainWindowView(model: model))
+        let window = main ?? Self.mainWindow(model, title: title)
         main = window
         Self.bringForward(window)
     }
 
     mutating func showSetup(_ model: SetupModel, title: String) {
-        let window = setup ?? Self.window(.setup, title: title, content: SetupView(model: model))
+        let window = setup ?? Self.setupWindow(model, title: title)
         setup = window
         Self.bringForward(window)
     }
@@ -31,23 +31,41 @@ struct WindowPresenter {
 
     /// Shows the full text of a notice, one window per notice.
     mutating func showNotice(title: String, files: [URL]) {
-        let window = notices[title] ?? {
-            let text = files.compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n\n")
-            let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 640, height: 560),
-                                  styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
-                                  backing: .buffered, defer: true)
-            window.title = title
-            window.titlebarAppearsTransparent = true
-            window.backgroundColor = NSColor(Palette.screen)
-            window.appearance = NSAppearance(named: .darkAqua)
-            window.isReleasedWhenClosed = false
-            window.contentMinSize = CGSize(width: 420, height: 320)
-            window.contentView = NSHostingView(rootView: NoticeText(title: title, text: text))
-            window.center()
-            return window
-        }()
+        let window = notices[title] ?? Self.noticeWindow(title: title, files: files)
         notices[title] = window
         Self.bringForward(window)
+    }
+
+    /// The main window as the app builds it, not yet on screen.
+    static func mainWindow(_ model: MainWindowModel, title: String) -> NSWindow {
+        window(.main, title: title, content: MainWindowView(model: model))
+    }
+
+    /// Setup's window as the app builds it, not yet on screen.
+    static func setupWindow(_ model: SetupModel, title: String) -> NSWindow {
+        window(.setup, title: title, content: SetupView(model: model))
+    }
+
+    /// The size a notice's window opens at.
+    static let noticeSize = CGSize(width: 640, height: 560)
+    /// The smallest a notice's window may be made.
+    static let noticeMinimumSize = CGSize(width: 420, height: 320)
+
+    /// A notice's window as the app builds it, not yet on screen: the text of `files`, one after another.
+    static func noticeWindow(title: String, files: [URL]) -> NSWindow {
+        let text = files.compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n\n")
+        let window = NSWindow(contentRect: CGRect(origin: .zero, size: noticeSize),
+                              styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+                              backing: .buffered, defer: true)
+        window.title = title
+        window.titlebarAppearsTransparent = true
+        window.backgroundColor = NSColor(Palette.screen)
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.isReleasedWhenClosed = false
+        window.contentMinSize = noticeMinimumSize
+        window.contentView = content(NoticeText(title: title, text: text), size: noticeSize)
+        window.center()
+        return window
     }
 
     private static func window(_ kind: WindowChrome.Kind, title: String, content: some View) -> NSWindow {
@@ -56,10 +74,26 @@ struct WindowPresenter {
         WindowChrome.apply(to: window, kind: kind)
         window.title = title
         window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: content.preferredColorScheme(.dark))
+        window.contentView = Self.content(content.preferredColorScheme(.dark), size: kind.defaultSize)
         window.setContentSize(kind.defaultSize)
         window.center()
         return window
+    }
+
+    /// A window's content, `size` points, drawn by SwiftUI without setting the window's size or limits. A hosting view
+    /// that is a window's content view sets the window's minimum and maximum from what it shows, and SwiftUI takes the
+    /// smallest size with every line of text wrapped as narrow as it will go, which is very tall: setup, which cannot
+    /// be made wider, grew taller than the screen and hid its buttons, and the main window could be made small enough
+    /// to clip what it shows. So the hosting view sits inside a plain view that fills the window, follows its size
+    /// and asks nothing of it.
+    private static func content(_ view: some View, size: CGSize) -> NSView {
+        let container = NSView(frame: CGRect(origin: .zero, size: size))
+        let host = NSHostingView(rootView: view)
+        host.sizingOptions = []
+        host.frame = container.bounds
+        host.autoresizingMask = [.width, .height]
+        container.addSubview(host)
+        return container
     }
 
     private static func bringForward(_ window: NSWindow) {
