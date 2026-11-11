@@ -1,17 +1,25 @@
 # Sorello for iPhone (prototype)
 
-A custom keyboard with a dictation button, backed by the bundled Parakeet model
+A custom keyboard with a dictation button, backed by Sorello's speech model
 running in the containing app. [ARCHITECTURE.md](ARCHITECTURE.md) is the
-contract between the components, stated as the code is now. Like the macOS
-app, it builds with `swiftc` and `make` only, with no Xcode project and no
-Swift Package Manager.
+contract between the components, stated as the code is now. It builds with
+`swiftc` and `make`, with no Xcode project, against Sorello's shared modules
+(`SpeechEngine`, `DictionaryKit` and `TextRules`), which SwiftPM builds from
+the package at the repository root as two static libraries
+([../ARCHITECTURE.md](../ARCHITECTURE.md), section 13).
 
 ## Requirements
 
-- A Mac with Xcode 26 or newer (iOS 26 SDK) and an iOS 26 simulator runtime.
-- `python3` (Xcode provides `/usr/bin/python3`), used to relabel the model.
-- A Parakeet model bundle (`PARAKEET_BUNDLE_DIR`) to transcribe. Weights stay
-  outside Git and are copied only into the local build.
+- A Mac with macOS 26 or later and Xcode 27 (Swift 6.4), as the package needs,
+  and an iOS 26 or later simulator runtime.
+- `python3` (Xcode provides `/usr/bin/python3`), used to check and copy the
+  model.
+- To transcribe, a copy of the speech model (`SORELLO_MODEL_DIR`): the build
+  [`../Models/model.lock.json`](../Models/model.lock.json) lists for iOS, the
+  directory holding its `bundle.json`. Weights stay outside Git and are copied
+  only into the local build.
+- The first build of a checkout fetches the package's one dependency, Sparkle,
+  which only the Mac app links.
 - Optionally, a swipe typing bundle (`SWIPE_BUNDLE_DIR`). Without it the
   keyboard has no swipe typing and long drags across the letters are taps.
 
@@ -21,14 +29,28 @@ Run from the repository root (or `make <target>` inside `iOS/`):
 
 ```bash
 make -C iOS                      # build/simulator/Sorello.app, no model
-make -C iOS PARAKEET_BUNDLE_DIR=/path/to/bundle   # with the model in Sorello.app/Parakeet/
+make -C iOS SORELLO_MODEL_DIR=/path/to/model     # with the model in Sorello.app/Model/
 make -C iOS SWIPE_BUNDLE_DIR=/path/to/swipe-bundle  # with swipe typing in SorelloKeyboard.appex/Swipe/
-make -C iOS check                # simulator type-check, host tests, plutil -lint
+make -C iOS check                # simulator type-check, host tests, lint, the executables' check
 ```
 
 The app contains `PlugIns/SorelloKeyboard.appex` and
-`PlugIns/SorelloActivity.appex` (the session's Live Activity). Repeat builds
-keep an unchanged copy of the 330 MB model instead of copying it again.
+`PlugIns/SorelloActivity.appex` (the session's Live Activity). The app links
+`SorelloSpeech` (`SpeechEngine`, `DictionaryKit`, `TextRules` and
+`DictationCore`), the keyboard `SorelloText` (`TextRules` alone) and the Live
+Activity neither. SwiftPM builds both libraries for each target triple in
+`build/package/<triple>/`, and again when the package's manifest or a source
+of those modules changes; the host tests link the Mac's build.
+
+With `SORELLO_MODEL_DIR`, the build takes the first build in the pin that an
+iPhone on `DEPLOYMENT_TARGET` meets, refuses a copy whose `bundle.json` is not
+that build's or in which a file does not match the manifest, and copies
+exactly the manifest's files into `Sorello.app/Model/`, each checked as it is
+written (`scripts/copy-model.py`), with the pin as `model.lock.json` and the
+model's notices in `ModelNotices/` (its licence, CC BY 4.0, asks for its
+attribution beside it). The app loads the model where it lies and never
+downloads one. Repeat builds keep an unchanged copy of the 138 MB model
+instead of copying it again.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -40,7 +62,7 @@ keep an unchanged copy of the 330 MB model instead of copying it again.
 | `UNIVERSAL_LINK` | empty | https URL the keyboard opens instead of the scheme (see [Universal link](#universal-link)) |
 | `DISPLAY_NAME` | `Sorello Dev` | home screen and keyboard list name |
 | `DEPLOYMENT_TARGET` | `26.0` | the encoder uses the `ios19` Core ML opset |
-| `PARAKEET_BUNDLE_DIR` | empty | model bundle to embed |
+| `SORELLO_MODEL_DIR` | empty | a copy of the model build the pin lists for iOS, to carry in the app |
 | `SWIPE_BUNDLE_DIR` | empty | swipe typing bundle to embed in the keyboard (see [Swipe typing bundle](#swipe-typing-bundle)) |
 | `BUILD_DIR` | `build/$(PLATFORM)` | output directory |
 | `SWIFT_FLAGS` | empty | extra compiler flags, e.g. `-D SORELLO_SELFTEST` |
@@ -49,8 +71,9 @@ keep an unchanged copy of the 330 MB model instead of copying it again.
 | `CODESIGN_IDENTITY`, `TEAM_ID`, `APP_PROFILE`, `KEYBOARD_PROFILE`, `ACTIVITY_PROFILE` | `-` on the simulator | device signing |
 
 Source lists (`APP_SWIFT_SOURCES`, `KEYBOARD_SWIFT_SOURCES`, `SHARED_SOURCES`, `KEYBOARDCORE_SOURCES`,
-`HOSTCORE_SOURCES`, `TEST_SOURCES`, `KEYBOARD_TEST_SOURCES`, `PARAKEET_SOURCES`, `DICTIONARY_SOURCES`) can be
-overridden, for example `make -C iOS check SHARED_SOURCES= HOSTCORE_SOURCES=`.
+`HOSTCORE_SOURCES`, `TEST_SOURCES`, `KEYBOARD_TEST_SOURCES`) can be overridden, for example
+`make -C iOS check SHARED_SOURCES= HOSTCORE_SOURCES=`. The shared modules are not among them: they always come from
+the package.
 
 ## Swipe typing bundle
 
@@ -96,7 +119,7 @@ Group entitlement is embedded in each executable's `__TEXT,__entitlements` and
 ### Smoke test
 
 ```bash
-make -C iOS smoke-sim PARAKEET_BUNDLE_DIR=/path/to/bundle
+make -C iOS smoke-sim SORELLO_MODEL_DIR=/path/to/model
 ```
 
 This builds the self-test variant (`-D SORELLO_SELFTEST`) into
@@ -138,7 +161,7 @@ keyboard and the Full Access row.
 ### End-to-end without a microphone
 
 ```bash
-make -C iOS e2e-sim PARAKEET_BUNDLE_DIR=/path/to/bundle [E2E_SKIP_ONBOARDING=1] [E2E_SCREEN=home] [E2E_START_SESSION=1] [E2E_HEADPHONES=bluetooth|none]
+make -C iOS e2e-sim SORELLO_MODEL_DIR=/path/to/model [E2E_SKIP_ONBOARDING=1] [E2E_SCREEN=home] [E2E_START_SESSION=1] [E2E_HEADPHONES=bluetooth|none]
 make -C iOS e2e-sim-probe [E2E_BACKGROUND=1 | E2E_FROM_BACKGROUND=1]
 make -C iOS e2e-sim-scenarios
 ```
@@ -176,8 +199,11 @@ On the 26.4 simulator, `simctl openurl` with a custom scheme leaves an
 bring the app forward with `simctl launch`. The next simulator reboot clears
 the alert.
 
-Simulator timings: the encoder runs on the CPU and prepares on every cold
-launch, taking about 72 s and 840 MB.
+Simulator timings: the simulator has no Neural Engine, so the encoder runs on
+the CPU. With kea-b-0.1 on an M5 Pro, the self-test prepared the model in
+about 4.5 s at its first launch and 1.4 s at the next, transcribed 2.4 s of
+speech in about 1.2 s, and peaked at about 120 MB. Simulator timings say
+nothing about devices.
 
 ## Device
 
@@ -217,7 +243,7 @@ space.
 P="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 SIGN=(PLATFORM=device CODESIGN_IDENTITY="Apple Development: Name (XXXXXXXXXX)" TEAM_ID=XXXXXXXXXX
       APP_PROFILE="$P/<app-uuid>.mobileprovision" KEYBOARD_PROFILE="$P/<keyboard-uuid>.mobileprovision"
-      ACTIVITY_PROFILE="$P/<activity-uuid>.mobileprovision" PARAKEET_BUNDLE_DIR=/path/to/bundle)
+      ACTIVITY_PROFILE="$P/<activity-uuid>.mobileprovision" SORELLO_MODEL_DIR=/path/to/model)
 make -C iOS all "${SIGN[@]}"                              # Terminal.app: builds and signs
 make -C iOS install-device "${SIGN[@]}" DEVICE=<name or id> # installs, does not launch
 make -C iOS smoke-device "${SIGN[@]}" DEVICE=<name or id> [SMOKE_DEVICE_INSTALL=0] [SMOKE_COMPUTE=cpuOnly]
@@ -236,7 +262,8 @@ make -C iOS smoke-device "${SIGN[@]}" DEVICE=<name or id> [SMOKE_DEVICE_INSTALL=
 - The synthetic recording is overwritten with an empty file when the run ends.
 - `make -C iOS PLATFORM=device binaries` compiles and links without signing.
 
-Measured on an iPhone 15 Pro running iOS 26.6.2, with 2.4 s of synthetic speech:
+Measured on an iPhone 15 Pro running iOS 26.6.2, with 2.4 s of synthetic speech, with the runtime and model the app
+used before it moved onto the shared `SpeechEngine` and kea-b-0.1, which have not been measured on a device yet:
 
 | Compute | Preparation | Transcription | Peak |
 | --- | --- | --- | --- |
@@ -282,7 +309,7 @@ Then, in Terminal.app (signing needs the unlocked keychain):
 P="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 STORE=(CHANNEL=appstore CODESIGN_IDENTITY="Apple Distribution: Name (XXXXXXXXXX)" TEAM_ID=XXXXXXXXXX
        APP_PROFILE="$P/<app-store-app-uuid>.mobileprovision" KEYBOARD_PROFILE="$P/<app-store-keyboard-uuid>.mobileprovision"
-       ACTIVITY_PROFILE="$P/<app-store-activity-uuid>.mobileprovision" PARAKEET_BUNDLE_DIR=/path/to/bundle BUILD_NUMBER=<n>)
+       ACTIVITY_PROFILE="$P/<app-store-activity-uuid>.mobileprovision" SORELLO_MODEL_DIR=/path/to/model BUILD_NUMBER=<n>)
 make -C iOS ipa appstore-check "${STORE[@]}"          # build/appstore/Sorello.ipa, checked locally
 make -C iOS appstore-validate "${STORE[@]}" ASC_KEY_ID=<key id> ASC_ISSUER_ID=<issuer id>   # Apple's checks
 make -C iOS appstore-upload "${STORE[@]}" ASC_KEY_ID=<key id> ASC_ISSUER_ID=<issuer id>     # to App Store Connect
@@ -298,7 +325,14 @@ make -C iOS appstore-upload "${STORE[@]}" ASC_KEY_ID=<key id> ASC_ISSUER_ID=<iss
   - the compiled, opaque 1024-pixel icon
   - the three privacy manifests, with only reasons Apple defines
   - the Xcode build metadata and export compliance
-  - the model, and that no self-test code is present
+  - the model: a build the pin lists for iOS, exactly the files its manifest
+    lists, each matching its SHA-256, with the pin and the model's notices
+    beside it
+  - that no self-test code is present
+  - that no executable names a networking API, and that the keyboard and the
+    Live Activity hold nothing of the shared modules they must not reach
+    (`scripts/check-binaries.sh`, which `make -C iOS check` also runs on the
+    simulator build)
   - the distribution signature, and unexpired App Store profiles that
     authorize the signing certificate
   - the entitlements: no `get-task-allow`, `beta-reports-active` for
@@ -421,7 +455,7 @@ Setup and session:
 - [x] Privacy policy: the home-screen link opens the public policy in the browser only after a tap; the link sends no dictation, recordings, or app metadata. Simulator verification passed on 2026-10-14 with build 9: the link opened the published policy in Safari, and its mobile layout was readable. The user also confirmed the privacy-policy link opens correctly on the physical iPhone in TestFlight 0.1.0 (9) on 2026-10-14.
 - [ ] Report a bug: the home-screen row opens the draft preview; Write email opens the configured email app with the correct recipient, subject, prompts, and version/device metadata; cancel sends nothing. With no email handler, the app shows the fallback and the address/draft remain readable and selectable. Check the layout on iPhone and iPad.
 - [x] Device-signed build installs; signatures and entitlements verified (2026-10-09).
-- [x] Model preparation and transcription on a device: Neural Engine cold and warm, and CPU only (self-test, 2026-10-09).
+- [ ] Model preparation and transcription on a device: Neural Engine cold and warm, and CPU only (self-test). Passed on 2026-10-09 with the runtime and model the app used before; not yet checked with the shared `SpeechEngine` and kea-b-0.1.
 - [x] Dictation from the keyboard in another app through the bounce, on a device (the user, informally, 2026-10-09).
 - [ ] Onboarding: microphone permission (the step's pill reads Continue and the system prompt asks; Not now skips; Open Settings once access is off), keyboard + Full Access steps, first model preparation with progress.
 - [ ] Dark theme: every screen and sheet (Onboarding, Home, Keyboard setup, Dictionary and its sheets, Diagnostics, Report a bug, the bounce) is dark with readable text on its pills and rows, even with the system in light mode; the Home Screen, Settings and Spotlight icons show Sorello's mark, a row of dots rising into a green one.
