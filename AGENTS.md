@@ -13,6 +13,10 @@ make app          # build/Sorello Dev.app, which downloads its model; SORELLO_MO
 
 The package builds only on macOS 26 or later with Xcode 27 (Swift 6.4). There is no Xcode project.
 
+GitHub Actions runs `make check` on every pull request and on every push to `main`. It also builds the nightly
+and release apps, signed and notarized (ARCHITECTURE.md, section 10). Their credentials are repository secrets:
+they are never in the repository or in a log.
+
 ## How changes are made
 
 - **Contract first.** Decide the behaviour and the interface, write it in ARCHITECTURE.md if it is new, write
