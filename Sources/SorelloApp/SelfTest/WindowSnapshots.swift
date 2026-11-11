@@ -19,7 +19,9 @@ import SwiftUI
 /// The stores are real and live in a temporary directory, filled with invented words, macros and Run Log entries,
 /// and one dictation is run through the session so the menu's Copy Last Dictation is available. The engine and the
 /// platform are stand-ins that report ready and granted, and the model's download is one that says the model is here
-/// and is as large as the app's own pin says, so the pictures show the app as it is when all is well.
+/// and is as large as the app's own pin says, so the pictures show the app as it is when all is well. A build with an
+/// update feed gets a stand-in updater that is idle, with its daily check on, so the menu and General show what that
+/// build shows; Sparkle is never started.
 @MainActor
 enum WindowSnapshots {
     static func run(into directory: URL) -> Never {
@@ -60,7 +62,8 @@ enum WindowSnapshots {
             platform: .quiet(capture: capture, inserter: RecordingInserter(), trusted: true,
                              microphones: microphones, clock: clock),
             speech: { _ in ReadySpeech(transcript: "Meet Okonkwo by the north gate at nine.") },
-            download: HeldDownload(info), pill: NoPill(), levels: LevelFeed())
+            download: HeldDownload(info), updater: Updates.updater(for: info) { _ in IdleUpdater() },
+            pill: NoPill(), levels: LevelFeed())
         let models = WindowModels(app: app)
         await fill(app, capture: capture, clock: clock)
         // Let the models follow what changed.
@@ -276,6 +279,17 @@ nonisolated private struct ReadySpeech: AppSpeech {
                          isLast: Bool) -> @Sendable () async -> DictionarySuggestion? { { nil } }
     func releaseCorrection(_ correctionID: UInt64) {}
     func discardCorrection() {}
+}
+
+/// An updater that checks nothing: idle, ready to be asked, with its daily check on, as a build with a feed starts.
+@MainActor
+@Observable
+private final class IdleUpdater: Updating {
+    let canCheck = true
+    let foundUnseen = false
+    var checksAutomatically = true
+    func start() {}
+    func checkForUpdates() {}
 }
 
 /// No pill: the snapshots draw windows only.

@@ -62,6 +62,9 @@ final class AppComposition {
     let speech: any AppSpeech
     /// The model's download, made beside the engine; nil in a copy that has no pin to download from.
     let download: (any ModelDownloading)?
+    /// The app's updater; nil in a build with no update feed, and in the self-tests and the snapshots.
+    let updater: (any Updating)?
+    private let defaults: UserDefaults
     let runtime: SessionRuntime
     let corrections: CorrectionCoordinator
     let pill: any PillPresenting
@@ -78,11 +81,14 @@ final class AppComposition {
     ///
     /// - `speech`: makes the engine over the dictionary store, whose snapshots it reads.
     /// - `download`: the model's download, which nothing starts but the user.
+    /// - `updater`: checks for, downloads and installs a newer version, in a build that has an update feed.
     /// - `pill`: where the pill is drawn; `levels` is the feed it draws the voice from.
     init(info: AppInfo, storage: AppStorage, platform: AppPlatform,
          speech makeSpeech: (DictionaryStore) -> any AppSpeech, download: (any ModelDownloading)? = nil,
-         pill: any PillPresenting, levels: LevelFeed) {
+         updater: (any Updating)? = nil, pill: any PillPresenting, levels: LevelFeed) {
         self.info = info
+        self.updater = updater
+        defaults = storage.defaults
         self.platform = platform
         paths = storage.paths
         do {
@@ -170,6 +176,10 @@ final class AppComposition {
         follow()
         watchSystem()
         watchDownload()
+        // The app follows only the feed in its Info.plist: one left in the preferences is removed before the updater
+        // could read it.
+        defaults.removeObject(forKey: Updates.storedFeedKey)
+        updater?.start()
     }
 
     /// Starts the model's download. Only the user's Download, in setup or on the General screen, calls this.

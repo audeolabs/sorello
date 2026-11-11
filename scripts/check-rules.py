@@ -211,6 +211,10 @@ HOST = re.compile(r"huggingface|(?<![\w-])hf\.co\b", re.IGNORECASE)
 LOG_CALLS = r"(?:print|debugPrint|dump|NSLog|os_log)\s*\("
 LOGGING = re.compile(
     r"(?<![\w.])" + LOG_CALLS + r"|\b(?:Swift|Foundation|os|OSLog)\s*\.\s*" + LOG_CALLS + r"|\b(?:Logger|OSLog)\s*\(")
+# Sparkle, the app's updater, is reached through the `Updating` protocol; one file imports it (ARCHITECTURE.md,
+# section 2), and no test does, so no test can start it.
+SPARKLE_FILE = "Sources/SorelloApp/Adapters/SparkleUpdater.swift"
+SPARKLE_RULE = "only %s imports Sparkle" % SPARKLE_FILE
 UNCHECKED = re.compile(r"@unchecked\s+Sendable")
 OLD_NAMES = re.compile(r"localflow|freeflow|wilderness", re.IGNORECASE)
 WEIGHTS = re.compile(r"\.(mlmodelc|mlpackage|f32bin|f16bin|safetensors|wav|caf|m4a|dmg)(/|$)")
@@ -238,6 +242,8 @@ def lint_swift(path, src):
         framework = imported.group(1)
         number = code.count("\n", 0, imported.start(1)) + 1
         text = raw[number - 1].strip()
+        if framework == "Sparkle" and path != SPARKLE_FILE:
+            found.add((SPARKLE_RULE, number, text))
         if framework == "Network":
             found.add(("only the model's download opens a connection, through URLSession", number, text))
         if module in PURE and framework in UI_AND_MODEL:
@@ -264,6 +270,11 @@ def lint_swift(path, src):
         if LOGGING.search(body) and not may_log:
             found.add(("log only through Diagnostics, which cannot carry content", number, text))
     return sorted(found, key=lambda violation: (violation[1], violation[0]))
+
+
+def lint_test(path, src):
+    """The violations in the test source at `path`: tests are read only for an import of Sparkle."""
+    return [violation for violation in lint_swift(path, src) if violation[0] == SPARKLE_RULE]
 
 
 def self_test():
@@ -369,6 +380,18 @@ def self_test():
         ("SpeechEngine", "import CoreML\nimport Accelerate", []),
         ("SpeechEngine", "import AppKit", ["neutral"]),
         ("MacPlatform", "import AppKit", []),
+        # Sparkle in its one file, and nowhere else, however the import is written.
+        ("SorelloApp", "import Sparkle", [], "Adapters/SparkleUpdater.swift"),
+        ("SorelloApp", "@preconcurrency import Sparkle", [], "Adapters/SparkleUpdater.swift"),
+        ("SorelloApp", "import Sparkle", ["only"]),
+        ("SorelloApp", "import Sparkle", ["only"], "SparkleUpdater.swift"),
+        ("SorelloApp", "@preconcurrency import Sparkle", ["only"], "Shell/AppShell.swift"),
+        ("SorelloApp", "import class Sparkle.SPUUpdater", ["only"]),
+        ("SorelloApp", "import Foundation; import Sparkle", ["only"]),
+        ("SorelloUI", "import\n  Sparkle", ["only"]),
+        ("SorelloApp", "// import Sparkle is for SparkleUpdater.swift alone", []),
+        ("SorelloApp", 'let s = "import Sparkle"', []),
+        ("SorelloApp", "import SparkleLike", []),
         ("SorelloApp", "final class A: @unchecked Sendable {}", ["@unchecked"]),
         ("SorelloApp", "// Safe: guarded by `lock`.\nfinal class A: @unchecked Sendable {}", []),
     ]
@@ -388,6 +411,13 @@ def self_test():
         if bool(HOST.search(line)) != expected:
             failures += 1
             print("check-rules self-test: the host rule on %r gave %s" % (line, not expected), file=sys.stderr)
+    # A test that imports Sparkle is reported, and a test is read for nothing else.
+    for src, expected in [('import Sparkle\nprint("x")', [SPARKLE_RULE]), ('import Testing\nprint("x")', []),
+                          ("@testable import SorelloApp\n// import Sparkle", [])]:
+        got = [rule for rule, _, _ in lint_test("Tests/SorelloAppTests/File.swift", src)]
+        if got != expected:
+            failures += 1
+            print("check-rules self-test: %r in a test gave %r" % (src, got), file=sys.stderr)
     # A violation is reported on the line it is on.
     numbered = lint_swift("Sources/DesignCore/File.swift", "import Foundation\n\nimport\n  AppKit\n")
     if [number for _, number, _ in numbered] != [4]:
@@ -405,17 +435,19 @@ def main():
     def report(rule, where):
         problems.setdefault(rule, []).append(where)
 
-    sources = os.path.join(ROOT, "Sources")
-    for directory, _, files in sorted(os.walk(sources)):
-        for name in sorted(files):
-            if not name.endswith(".swift"):
-                continue
-            path = os.path.join(directory, name)
-            relative = os.path.relpath(path, ROOT)
-            with open(path, encoding="utf-8") as handle:
-                src = handle.read()
-            for rule, number, text in lint_swift(relative.replace(os.sep, "/"), src):
-                report(rule, "%s:%d: %s" % (relative, number, text))
+    # Every rule reads the sources; the tests are read only for Sparkle, which no test may import.
+    for top in ("Sources", "Tests"):
+        for directory, _, files in sorted(os.walk(os.path.join(ROOT, top))):
+            for name in sorted(files):
+                if not name.endswith(".swift"):
+                    continue
+                path = os.path.join(directory, name)
+                relative = os.path.relpath(path, ROOT)
+                with open(path, encoding="utf-8") as handle:
+                    src = handle.read()
+                lint = lint_swift if top == "Sources" else lint_test
+                for rule, number, text in lint(relative.replace(os.sep, "/"), src):
+                    report(rule, "%s:%d: %s" % (relative, number, text))
 
     # The old names are gone, comments included, and the model's host is named in no source.
     for top in ("Sources", "Config", "scripts", "Makefile"):

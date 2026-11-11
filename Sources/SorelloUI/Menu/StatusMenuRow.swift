@@ -14,6 +14,7 @@ nonisolated public struct StatusMenuRow: Equatable, Sendable {
         case dictionary
         case runLog
         case settings
+        case updates
         case quit
         /// The separator after the given group: 1 after the state, 2 after the shortcuts, 3 after Copy Last Dictation.
         case separator(Int)
@@ -75,10 +76,10 @@ nonisolated public struct StatusMenuRow: Equatable, Sendable {
     }
 
     /// The menu's rows from the top: the state and its remedy, the shortcuts, Copy Last Dictation, then the ways into
-    /// the app and Quit, with separators between the four groups. No row carries a dictation's text; Copy can be used
-    /// when `hasLastDictation` is true.
+    /// the app, the update row when there is one, and Quit, with separators between the four groups. No row carries a
+    /// dictation's text; Copy can be used when `hasLastDictation` is true.
     public static func rows(appName: String, status: AppStatus, shortcuts: [ShortcutKind: KeyCombo],
-                            hasLastDictation: Bool) -> [StatusMenuRow] {
+                            hasLastDictation: Bool, updates: UpdateRowState? = nil) -> [StatusMenuRow] {
         let line = status.line
         var rows = [StatusMenuRow(id: .state, kind: .information, title: line.text, image: .indicator(line.indicator),
                                   accessibilityLabel: line.text)]
@@ -112,6 +113,22 @@ nonisolated public struct StatusMenuRow: Equatable, Sendable {
                                   image: .symbol("clock.arrow.circlepath")))
         rows.append(StatusMenuRow(id: .settings, kind: .command(.openSettings), title: String(localized: "Settings…"),
                                   keyEquivalent: ",", image: .symbol("gearshape")))
+        switch updates {
+        case nil:
+            break
+        case .checkForUpdates(let isEnabled):
+            rows.append(StatusMenuRow(
+                id: .updates, kind: .command(.checkForUpdates), title: String(localized: "Check for Updates…"),
+                image: .symbol("arrow.down.circle"), isEnabled: isEnabled,
+                help: String(localized: "Looks for a newer version of \(appName)",
+                             comment: "Menu: what Check for Updates does; the app's name")))
+        case .updateAvailable:
+            rows.append(StatusMenuRow(
+                id: .updates, kind: .command(.checkForUpdates), title: String(localized: "Update Available…"),
+                image: .symbol("arrow.down.circle.fill"),
+                help: String(localized: "Shows the newer version of \(appName) and offers to install it",
+                             comment: "Menu: what Update Available does; the app's name")))
+        }
         rows.append(StatusMenuRow(id: .quit, kind: .command(.quit), title: String(localized: "Quit \(appName)"),
                                   keyEquivalent: "q", image: .symbol("power")))
         return rows

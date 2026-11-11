@@ -220,12 +220,13 @@ import Testing
     }
 
     /// The snapshot tool writes the menu's states as text, in place of pictures of it, the model's download
-    /// included.
+    /// included, and then the menu of a build that can update itself, with each form of its update row.
     @Test func theSnapshotsListTheStatesAsText() {
         let texts = StatusMenuSnapshots.texts
         #expect(texts.map(\.name) == ["menu-ready", "menu-preparing", "menu-microphone-needed",
                                       "menu-accessibility-needed", "menu-model-failed", "menu-paused",
-                                      "menu-model-not-downloaded", "menu-model-downloading", "menu-model-no-build"])
+                                      "menu-model-not-downloaded", "menu-model-downloading", "menu-model-no-build",
+                                      "menu-updates", "menu-updates-checking", "menu-update-available"])
         #expect(texts.allSatisfy { !$0.text.isEmpty })
         #expect(!SnapshotCatalog.all.contains { $0.name.hasPrefix("menu") })
     }

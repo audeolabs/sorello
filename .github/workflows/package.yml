@@ -20,12 +20,15 @@ on:
       build:
         description: The app's build number
         value: ${{ jobs.package.outputs.build }}
-      zip:
-        description: The name of the zip, which is also the artifact's name
-        value: ${{ jobs.package.outputs.zip }}
+      dmg:
+        description: The name of the disk image, which is also the artifact's name
+        value: ${{ jobs.package.outputs.dmg }}
       sha256:
-        description: The zip's SHA-256
+        description: The disk image's SHA-256
         value: ${{ jobs.package.outputs.sha256 }}
+      feed_sha256:
+        description: The SHA-256 of appcast.xml, the update feed that lists the disk image
+        value: ${{ jobs.package.outputs.feed_sha256 }}
     secrets:
       DEVELOPER_ID_P12:
         required: true
@@ -36,6 +39,8 @@ on:
       NOTARY_KEY_ID:
         required: true
       NOTARY_ISSUER_ID:
+        required: true
+      UPDATE_SIGNING_KEY:
         required: true
 permissions:
   contents: read
@@ -78,8 +83,9 @@ jobs:
     outputs:
       version: ${{ steps.build.outputs.version }}
       build: ${{ steps.build.outputs.build }}
-      zip: ${{ steps.build.outputs.zip }}
+      dmg: ${{ steps.build.outputs.dmg }}
       sha256: ${{ steps.notarize.outputs.sha256 }}
+      feed_sha256: ${{ steps.feed.outputs.sha256 }}
     env:
       CHANNEL: ${{ inputs.channel }}
     steps:
@@ -121,10 +127,10 @@ jobs:
           CODESIGN_IDENTITY="Developer ID Application" BUILD_NUMBER=$build ./scripts/build-app.sh \
             | tee "$RUNNER_TEMP/build.log"
           app=$(tail -1 "$RUNNER_TEMP/build.log")
-          zip=$(basename "$app" .app | tr ' ' '-').zip
+          dmg=$(basename "$app" .app | tr ' ' '-').dmg
           {
             echo "app=$app"
-            echo "zip=$zip"
+            echo "dmg=$dmg"
             echo "version=$VERSION"
             echo "build=$build"
           } >> "$GITHUB_OUTPUT"
@@ -136,30 +142,70 @@ jobs:
           NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
           NOTARY_KEY_FILE: ${{ runner.temp }}/notary.p8
           APP: ${{ steps.build.outputs.app }}
-          ZIP: ${{ steps.build.outputs.zip }}
+          DMG: ${{ steps.build.outputs.dmg }}
         run: |
           [ -n "$NOTARY_KEY_P8" ] || { echo "::error::The NOTARY_KEY_P8 secret is not set"; exit 1; }
           printf '%s' "$NOTARY_KEY_P8" | base64 --decode > "$NOTARY_KEY_FILE"
-          ./scripts/notarize-app.sh "$APP" "build/$ZIP"
+          ./scripts/notarize-app.sh "$APP" "build/$DMG"
           rm "$NOTARY_KEY_FILE"
-          echo "sha256=$(shasum -a 256 "build/$ZIP" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
-      # The app is proved as it will arrive: out of the zip, signed and notarized. It draws its windows, then
+          echo "sha256=$(shasum -a 256 "build/$DMG" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      # The feed lists this build at the address its release will serve it from, signed with the update key. Only
+      # this step holds that key. A feed is written only for an app that follows this repository's releases. A
+      # nightly's address names its build and the image's own hash: the next nightly takes the plain name, and an
+      # app that was offered this image must still be given these bytes, even if the same commit is built again.
+      - name: Write the update feed
+        id: feed
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          UPDATE_KEY_FILE: ${{ runner.temp }}/update.key
+          APP: ${{ steps.build.outputs.app }}
+          DMG: ${{ steps.build.outputs.dmg }}
+          VERSION: ${{ steps.build.outputs.version }}
+          BUILD: ${{ steps.build.outputs.build }}
+          SHA256: ${{ steps.notarize.outputs.sha256 }}
+          RELEASES: ${{ github.server_url }}/${{ github.repository }}/releases
+        run: |
+          [ -n "$UPDATE_SIGNING_KEY" ] || { echo "::error::The UPDATE_SIGNING_KEY secret is not set"; exit 1; }
+          case "$CHANNEL" in
+            nightly) address="$RELEASES/download/nightly/${DMG%.dmg}-$BUILD-${SHA256:0:12}.dmg" ;;
+            release) address="$RELEASES/download/v$VERSION/$DMG" ;;
+            *) echo "::error::No release is made for the $CHANNEL channel"; exit 1 ;;
+          esac
+          feed=$(/usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$APP/Contents/Info.plist")
+          case "$feed" in
+            "$RELEASES"/*) ;;
+            *) echo "::error::The app follows $feed, which is not a release of this repository"; exit 1 ;;
+          esac
+          trap 'rm -f "$UPDATE_KEY_FILE"' EXIT
+          printf '%s' "$UPDATE_SIGNING_KEY" > "$UPDATE_KEY_FILE"
+          ./scripts/write-appcast.sh "$APP" "build/$DMG" "$address" build/appcast.xml
+          echo "sha256=$(shasum -a 256 build/appcast.xml | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      # The app is proved as it will arrive: out of the disk image, signed and notarized. It draws its windows, then
       # downloads its model and dictates a recording made here.
-      - name: Prove the app in the zip
+      - name: Prove the app in the disk image
         env:
           APP: ${{ steps.build.outputs.app }}
-          ZIP: ${{ steps.build.outputs.zip }}
+          DMG: ${{ steps.build.outputs.dmg }}
         run: |
-          ditto -x -k "build/$ZIP" "$RUNNER_TEMP/unzipped"
-          sorello="$RUNNER_TEMP/unzipped/$(basename "$APP")/Contents/MacOS/Sorello"
+          name=$(basename "$APP")
+          hdiutil attach "build/$DMG" -nobrowse -readonly -mountpoint "$RUNNER_TEMP/image" > /dev/null
+          [ "$(readlink "$RUNNER_TEMP/image/Applications")" = /Applications ]
+          mkdir "$RUNNER_TEMP/installed"
+          ditto "$RUNNER_TEMP/image/$name" "$RUNNER_TEMP/installed/$name"
+          hdiutil detach "$RUNNER_TEMP/image" > /dev/null
+          xcrun stapler validate "$RUNNER_TEMP/installed/$name" > /dev/null
+          codesign --verify --deep --strict "$RUNNER_TEMP/installed/$name"
+          sorello="$RUNNER_TEMP/installed/$name/Contents/MacOS/Sorello"
           "$sorello" --snapshots "$RUNNER_TEMP/snapshots" > /dev/null
           say -o "$RUNNER_TEMP/hello.wav" --data-format=LEI16@16000 "Hello from the self test"
           "$sorello" --self-test --download "$RUNNER_TEMP/hello.wav" | tee "$RUNNER_TEMP/self-test.log"
           grep -qi "insert: hello from the self.test" "$RUNNER_TEMP/self-test.log"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ${{ steps.build.outputs.zip }}
-          path: build/${{ steps.build.outputs.zip }}
+          name: ${{ steps.build.outputs.dmg }}
+          path: |
+            build/${{ steps.build.outputs.dmg }}
+            build/appcast.xml
           if-no-files-found: error
           retention-days: 7
       - name: Delete the keychain

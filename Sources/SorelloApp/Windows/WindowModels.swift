@@ -36,7 +36,7 @@ final class WindowModels {
             runLog: RunLogModel(items: []),
             about: AboutModel(appName: app.info.name, version: app.info.version, build: app.info.build,
                               copyright: app.info.copyright, modelNotice: Self.modelNotice(app.info),
-                              thirdPartyNotices: Self.thirdPartyNotices))
+                              thirdPartyNotices: Self.thirdPartyNotices, checksForUpdates: app.updater != nil))
         setup = SetupModel(appName: app.info.name, microphone: status.microphone, accessibility: status.accessibility,
                            model: status.model, modelSize: app.download?.size ?? 0,
                            holdToTalk: ShortcutRecorderState(keys: .function))
@@ -82,6 +82,7 @@ final class WindowModels {
             menu.status = status
             menu.shortcuts = KeyCombo.all(app.settings.shortcutBindings, formatter: formatter)
             menu.hasLastDictation = app.runtime.state.lastText != nil
+            menu.updates = Updates.row(app.updater)
         }
         menu.actions = StatusMenuActions(
             copyLastDictation: { if let text = app.runtime.state.lastText { app.platform.system.copy(text) } },
@@ -91,6 +92,7 @@ final class WindowModels {
             openDictionary: { app.navigation.openMain(.dictionary) },
             openRunLog: { app.navigation.openMain(.runLog) },
             openSettings: { app.navigation.openMain(nil) },
+            checkForUpdates: { app.updater?.checkForUpdates() },
             quit: { app.navigation.quit() })
     }
 
@@ -104,6 +106,8 @@ final class WindowModels {
                 app.navigation.showNotice(app.info.modelName ?? String(localized: "Speech model"), app.info.modelNotices)
             case "urbanist":
                 app.navigation.showNotice("Urbanist", app.info.fontLicence.map { [$0] } ?? [])
+            case "sparkle":
+                app.navigation.showNotice("Sparkle", app.info.thirdPartyNotices.map { [$0] } ?? [])
             default:
                 app.navigation.showNotice(String(localized: "Permission card"),
                                           app.info.thirdPartyNotices.map { [$0] } ?? [])
@@ -125,6 +129,9 @@ final class WindowModels {
                                    comment: "About: the display font's notice")),
          NoticeItem(id: "permission-card", title: String(localized: "Permission card"),
                     detail: String(localized: "Adapted from Scrawl and AskForPermission, MIT License.",
-                                   comment: "About: the permission card's notice"))]
+                                   comment: "About: the permission card's notice")),
+         NoticeItem(id: "sparkle", title: "Sparkle",
+                    detail: String(localized: "Andy Matuschak and the Sparkle Project, MIT License.",
+                                   comment: "About: the updater's notice"))]
     }
 }

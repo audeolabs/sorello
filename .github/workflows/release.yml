@@ -50,7 +50,8 @@ jobs:
       channel: release
       commit: ${{ github.sha }}
     secrets: inherit
-  # Publishing the draft is the owner's: it creates the tag.
+  # Publishing the draft is the owner's: it creates the tag, and it is what offers the update, since installed
+  # releases follow the feed of the latest published release.
   draft:
     needs: package
     runs-on: ubuntu-latest
@@ -60,17 +61,19 @@ jobs:
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: ${{ needs.package.outputs.zip }}
+          name: ${{ needs.package.outputs.dmg }}
       - name: Draft the release
         env:
           GH_TOKEN: ${{ github.token }}
           COMMIT: ${{ github.sha }}
           VERSION: ${{ needs.package.outputs.version }}
           BUILD: ${{ needs.package.outputs.build }}
-          ZIP: ${{ needs.package.outputs.zip }}
+          DMG: ${{ needs.package.outputs.dmg }}
           SHA256: ${{ needs.package.outputs.sha256 }}
+          FEED_SHA256: ${{ needs.package.outputs.feed_sha256 }}
         run: |
-          echo "$SHA256  $ZIP" | shasum -a 256 --check
+          echo "$SHA256  $DMG" | shasum -a 256 --check
+          echo "$FEED_SHA256  appcast.xml" | shasum -a 256 --check
           # Asked again: the build took minutes, and a release made on a tag that exists would keep that tag's commit.
           releases=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq '.[] | "\(.id) \(.tag_name)"' \
             | awk -v tag="v$VERSION" '$2 == tag { print $1 }')
@@ -81,5 +84,6 @@ jobs:
           fi
           notes="Version $VERSION ($BUILD), built from $COMMIT. Signed with the Developer ID and notarized by Apple.
 
-          SHA-256 of $ZIP: $SHA256"
-          gh release create "v$VERSION" "$ZIP" --target "$COMMIT" --draft --title "Sorello $VERSION" --notes "$notes"
+          SHA-256 of $DMG: $SHA256"
+          gh release create "v$VERSION" "$DMG" appcast.xml --target "$COMMIT" --draft --title "Sorello $VERSION" \
+            --notes "$notes"

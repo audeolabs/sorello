@@ -62,13 +62,17 @@ public final class GeneralModel {
     public var defaultMicrophoneName: String?
     /// Each switch's value.
     public var toggles: [GeneralToggle: Bool]
+    /// Whether the app can update itself, and so shows the switch for its daily check. A build with no update feed
+    /// cannot, and has no such switch.
+    public var offersUpdates: Bool
     /// What the screen asks of the app layer.
     public var actions: GeneralActions
 
     /// The General screen's values. `hardware` is the Neural Engine until the app layer says otherwise.
     public init(modelName: String, status: AppStatus, hardware: ModelHardware = .neuralEngine,
                 microphones: [MicrophoneOption], selectedMicrophoneID: String?,
-                defaultMicrophoneName: String?, toggles: [GeneralToggle: Bool], actions: GeneralActions = GeneralActions()) {
+                defaultMicrophoneName: String?, toggles: [GeneralToggle: Bool], offersUpdates: Bool = false,
+                actions: GeneralActions = GeneralActions()) {
         self.modelName = modelName
         self.status = status
         self.hardware = hardware
@@ -76,6 +80,7 @@ public final class GeneralModel {
         self.selectedMicrophoneID = selectedMicrophoneID
         self.defaultMicrophoneName = defaultMicrophoneName
         self.toggles = toggles
+        self.offersUpdates = offersUpdates
         self.actions = actions
     }
 
@@ -131,6 +136,7 @@ public struct GeneralScreen: View {
                     toggleRow(.launchAtLogin)
                     toggleRow(.restoreClipboard)
                     toggleRow(.keepRunLog)
+                    if model.offersUpdates { toggleRow(.checkForUpdates) }
                 }
             }
         }
