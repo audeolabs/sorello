@@ -820,6 +820,21 @@ and no further. Setup cannot be resized: it is one size at every step and
 in every state, so its buttons are always where they were. A notice's
 window opens at one size and can be made no smaller than its own minimum.
 
+Sorello lives in the menu bar. With none of its windows open it has no
+Dock icon and is not in the app switcher. While setup, the main window or
+a notice's window is open, it is an ordinary app: its icon is in the Dock,
+it is in the app switcher, and its menus (its own, Edit and Window) are in
+the menu bar while it is in front. So a window of Sorello's comes back the
+way any app's does: from the Dock, with Command-Tab, and after the system
+has shown a prompt of its own. A minimised window is still open. When the
+last window closes, Sorello leaves the Dock and the app behind it comes
+forward. Clicking the Dock icon, or opening Sorello again, brings forward
+the windows that are open, and opens the main window only when none is.
+The pill, the Accessibility card and the system's own panels are not
+windows in this sense: they never put Sorello in the Dock, and a dictation
+never brings Sorello forward. When a window asks for the microphone, that
+window is in front again once the system's prompt has been answered.
+
 Every screen has VoiceOver labels on its controls, because most controls
 are icons. User-facing strings go through `String(localized:)`, so a string
 catalog can be added without touching a call site. The app's name and
@@ -929,7 +944,8 @@ Review does.
   menu's rows as text. It also builds setup and the main window as the
   app shows them, without putting them on screen, takes them through
   every step and section, and fails, naming the window, if one does not
-  keep its chrome's size and minimum.
+  keep its chrome's size and minimum. It writes the rows of the app's own
+  menus as text too, since they show only while a window is open.
   `Sorello --no-setup` opens the app without its setup window, so a
   packaged build can be launched and quit without touching a permission.
 - The Intel half of a universal build is compiled and linked on every
@@ -948,7 +964,11 @@ Review does.
   showing something in the camera island; and no network activity during
   any of it once the model is on the Mac. The download itself on a real
   connection: start it, go on through setup while it runs, quit in the
-  middle and continue, cancel, and try it with the network off.
+  middle and continue, cancel, and try it with the network off. The Dock
+  icon: there while setup or the main window is open and gone when the
+  last closes; another app brought forward and Sorello's window brought
+  back from the Dock and with Command-Tab; the microphone's prompt
+  answered from setup, with setup in front afterwards.
 
 ## 12. Provenance
 
