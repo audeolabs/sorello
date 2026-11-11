@@ -138,6 +138,12 @@ The workflows read six repository secrets. Their values are never in the reposit
 - `NOTARY_ISSUER_ID`: the identifier of the key's issuer.
 - `UPDATE_SIGNING_KEY`: the private half of the key updates are signed with, its 32-byte seed in base64.
 
+## The iPhone app
+
+Sorello for iPhone, with its keyboard and its Live Activity, is in `iOS/` and has its own build:
+[iOS/README.md](../iOS/README.md). `make check` and GitHub Actions do not build or test it. `make -C iOS check`
+does, on a Mac.
+
 ## More
 
 - [ARCHITECTURE.md](../ARCHITECTURE.md): how the app is put together, and why.

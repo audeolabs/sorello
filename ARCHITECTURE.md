@@ -11,9 +11,10 @@ each part does and where the boundaries are. When behaviour and this
 document disagree, one of them is wrong: fix the code, or change the
 contract here in the same pull request and say why.
 
-Version 0.0.1 is the first version. iOS is next: the modules marked
-*neutral* below import nothing from macOS so that an iPhone target can use
-them unchanged.
+Version 0.0.1 is the first version. The iPhone app is in `iOS/`, under a
+contract of its own, `iOS/ARCHITECTURE.md`. It uses the modules marked
+*neutral* below, which import nothing from macOS. Section 13 says what the
+two apps share and what keeps them apart.
 
 ## 1. What the app does
 
@@ -83,6 +84,12 @@ Rules the compiler enforces through the package graph:
   each other.
 - There is no shared mutable singleton. `SorelloApp` creates each object
   once and passes it to what needs it.
+
+The package also builds for iOS 26, for the iPhone app (section 13), and
+has two products that only that app links, both static libraries:
+`SorelloSpeech`, which is `SpeechEngine` and `TextRules` with the modules
+they depend on, and `SorelloText`, which is `TextRules` alone. The Mac app
+uses neither.
 
 Sorello has one dependency outside this package: Sparkle, at one exact
 version, which checks for, downloads and installs updates (section 6,
@@ -424,27 +431,30 @@ tuned there:
 
 ### Getting the model
 
-The app does not carry the model. `Models/model.lock.json`, the pin, ships
-in the app as `Contents/Resources/model.lock.json`, and it is all Sorello
+The Mac app does not carry the model. (The iPhone app does, and never
+downloads one: section 13.) `Models/model.lock.json`, the pin, ships in
+the app as `Contents/Resources/model.lock.json`, and it is all Sorello
 knows about where the model is and what it must be:
 
 - `source`: the address the model's files are under, at one fixed revision
   of the model's repository on Hugging Face.
 - `builds`: each is a directory under `source` that holds one complete
   model. A build gives the SHA-256 of its `bundle.json`, its size in
-  bytes, and what it `requires` of the Mac. The only requirement today is
-  `macos`, the lowest system version it runs on.
+  bytes, and what it `requires`. The requirements today are `macos` and
+  `ios`: the lowest system version the build runs on, on a Mac and on an
+  iPhone. A build fits only a platform it names.
 
 Sorello uses the first build whose requirements this Mac meets. A build
 that requires something this version of Sorello does not know is passed
 over, so a later pin can list builds for other Macs (an older system, a
 Mac without a Neural Engine) and an app that has never heard of them
 takes none of them by mistake. One build is listed today, for macOS 26 or
-later; a Mac without a Neural Engine runs that same build on its
-processor until it has a build of its own. Builds for other Macs wait on
-other branches of the model's repository until they have been tested, and
-join the list then: nothing else in Sorello changes when one does. When
-no build fits this Mac, Sorello says so and offers no download.
+later and for iOS 26 or later; a Mac without a Neural Engine runs that
+same build on its processor until it has a build of its own. Builds for
+other Macs wait on other branches of the model's repository until they
+have been tested, and join the list then: nothing else in Sorello changes
+when one does. When no build fits this Mac, Sorello says so and offers no
+download.
 
 Where the engine looks, in order: the store; then the app itself, when it
 was built with `SORELLO_MODEL_DIR` and so carries a build the pin lists
@@ -831,6 +841,14 @@ as every build does, and a development build has the plain icon.
 build carries it as its icon. At 32 pixels and under the stars would be
 only specks of brown, so there the nightly's icon is the plain one.
 
+The iPhone app's icon is the same picture drawn to the edges, because iOS
+cuts an icon's corners itself: the field fills the whole square, with no
+transparent pixel, and the mark lies across its middle as it does on the
+Mac's. The App Store build has the plain one. A development build, which
+can be on one iPhone beside it, has the stars, in the same places
+relative to the mark. `iOS/Resources` holds both as 1024 pixel PNG files,
+which `SorelloSnapshots` writes.
+
 ### Windows
 
 - **Menu**: the menu-bar item opens an ordinary menu. The system draws
@@ -937,8 +955,10 @@ A reviewer checks every change against these.
    and, for an update, the app's name and version. Nothing downloaded is
    used before it is verified: the model against the pin's SHA-256, an
    update against the signing key in the app. `URLSession` is named in
-   one source file, `Sources/SpeechEngine/ModelDownloader.swift`. An
-   update's connections are Sparkle's, which one source file imports,
+   one source file, `Sources/SpeechEngine/ModelDownloader.swift`, which
+   is compiled for the Mac only: the iPhone app opens no connection and
+   holds no networking code (section 13). An update's connections are
+   Sparkle's, which one source file imports,
    `Sources/SorelloApp/Adapters/SparkleUpdater.swift`. No other source
    opens a connection, and no source names a host: the model's address
    is in `Models/model.lock.json` and the feeds' are in
@@ -1043,7 +1063,9 @@ Review does.
   so a feed is never published that installed apps would refuse.
 - GitHub Actions runs the workflows in `.github/workflows` on GitHub's
   runners, on macOS with Xcode 27 for everything that builds. They use
-  only GitHub's own actions, each pinned to a commit.
+  only GitHub's own actions, each pinned to a commit. They build, test
+  and publish the Mac app only: nothing in them builds, tests, signs or
+  uploads the iPhone app (section 13).
 - **Check** runs `make check` on every pull request and on every push to
   `main`. A push to `main` is checked to the end, whatever is pushed
   after it.
@@ -1180,3 +1202,67 @@ runtime, dictionary, text rules and permission card were ported from
 earlier code by the same author; the permission card keeps the MIT notices
 of the projects it adapts. The model's licence and attribution ship
 in the app's resources.
+
+The iPhone app in `iOS/` was brought whole from the earlier repository by
+the same author, who wrote all of it, and was then renamed and moved onto
+the shared modules. The licences of the data its keyboard's typing models
+were made from are in `iOS/Resources/Swipe`, and its display typeface's
+licence is beside the font.
+
+## 13. The iPhone app
+
+`iOS/` holds Sorello for iPhone: a keyboard with a dictation button, the
+app that contains it and does the transcribing, and the Live Activity
+that shows a session. `iOS/ARCHITECTURE.md` is its contract, as this
+document is the Mac app's, and `iOS/README.md` says how to build, check
+and ship it. This section holds what concerns both apps.
+
+- **Shared modules.** The iPhone app uses `SpeechEngine`, `DictionaryKit`
+  and `TextRules` as the Mac app does, and has no copy of what they hold.
+  It links them as the static libraries of section 2. The app links
+  `SorelloSpeech`. The keyboard, which iOS allows little memory and which
+  never transcribes, links `SorelloText`, so it cannot reach the model or
+  the dictionary. The Live Activity links neither. A change to one of
+  these modules is a change to both apps.
+- **Its own build.** The iPhone app's own code is not part of the
+  package, because SwiftPM builds neither an app bundle nor an app
+  extension. `iOS/Makefile` has SwiftPM build the libraries for iOS,
+  compiles the app, the keyboard and the Live Activity against them with
+  `swiftc`, and assembles and signs the three bundles. That code is in
+  Swift 5 mode, and its tests are an executable of their own that runs on
+  the Mac, as both were written. Bringing them under the package's rules
+  (Swift 6, Swift Testing, the lint) is work for another time; until
+  then `iOS/ARCHITECTURE.md` states the rules that code keeps.
+- **The model.** The iPhone app carries the model and never downloads
+  one. Its build is given a local copy of the build the pin lists for
+  iOS, and checks it against the pin and against its manifest, as
+  `SORELLO_MODEL_DIR` is checked for the Mac. The engine loads it where
+  it lies in the app. There is no store on an iPhone: iOS prepares a
+  model for the Neural Engine again for every installed build of an app,
+  so a second copy would cost its size and save nothing.
+- **No connection.** The iPhone app opens no network connection of any
+  kind. The model's downloader is compiled for the Mac only (section 9),
+  and the iPhone app's checks fail if one of its three executables names
+  a networking API.
+- **Names that stay.** The iPhone app was first handed out under another
+  name, and people have that app on their iPhones through TestFlight. An
+  update must take that app's place and keep what its user has set up.
+  So these keep the names they had, in every build: the bundle
+  identifiers of the app and its two extensions, the App Group, the URL
+  scheme, the universal link and the domain it is associated with, the
+  signing team, and the name of everything the app or the keyboard has
+  stored on an iPhone (the keys of its preferences, and the directories
+  and files in its containers). `iOS/ARCHITECTURE.md`, "Identifiers",
+  lists them. Each is written in one place, with a comment that says it
+  is kept and why. Everything else is Sorello: the name on the Home
+  Screen, in the keyboard list and in every sentence the app shows, its
+  icon (section 8), its code, and the files its build makes.
+- **Versions.** The iPhone app has its own version and build number, in
+  its `Info.plist` templates and its build. `Config/identity.conf` is the
+  Mac app's alone.
+- **Checks.** `make check` and GitHub Actions cover the Mac app only
+  (section 10). The iPhone app's checks are `make -C iOS check`, run on a
+  Mac before a change to `iOS/`, or to a module the iPhone app links, is
+  merged. Signed builds, and uploads to App Store Connect, are made by
+  hand on a Mac that has the certificates, as `iOS/README.md` describes.
+  An upload is the owner's decision.
