@@ -46,7 +46,8 @@ struct ModelPinTests {
                 == "https://models.example.com/resolve/0123abcd/macos26/Encoder.mlmodelc/weights/weight.bin")
     }
 
-    /// The repository's own pin reads, and gives this Mac (macOS 26 or later, as the package requires) its build.
+    /// The repository's own pin reads, and gives this Mac (macOS 26 or later, as the package requires) its build, and
+    /// an iPhone on iOS 26 or later the same one.
     @Test func theRepositorysPinGivesThisMacItsBuild() throws {
         let file = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Models/model.lock.json")
@@ -55,6 +56,8 @@ struct ModelPinTests {
         #expect(build.directory == "macos26")
         #expect(build.bytes == 138_084_560)
         #expect(pin.build(for: try Self.mac("15.7")) == nil)
+        #expect(pin.build(for: try Self.iPhone("26.0")) == build)
+        #expect(pin.build(for: try Self.iPhone("18.6")) == nil)
     }
 
     /// The tests run on a Mac, which describes itself as one.

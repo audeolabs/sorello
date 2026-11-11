@@ -6,18 +6,21 @@ not in Git. Their licence and attribution are in `Resources/ModelNotices`.
 
 ## The pin
 
-`model.lock.json` says which model Sorello uses and where the app downloads it from. It ships inside the app.
+`model.lock.json` says which model Sorello uses and where the Mac app downloads it from. It ships inside the Mac app
+and the iPhone app.
 
 - `source` is the address the model's files are under: one fixed revision of
   https://huggingface.co/audeolabs/kea-b-0.1-coreml.
-- `builds` lists the builds of the model, one per kind of Mac. Each names its `directory` under `source`, the
-  `manifest_sha256` of its `bundle.json`, its size in `bytes`, and what it `requires` of the Mac. `bundle.json`
-  lists every file of the build with its own SHA-256, so the pin fixes every byte.
+- `builds` lists the builds of the model. Each names its `directory` under `source`, the `manifest_sha256` of its
+  `bundle.json`, its size in `bytes`, and what it `requires`: the lowest `macos`, the lowest `ios`, or both. A Mac
+  reads only `macos` and an iPhone only `ios`, and a build fits only a system it names. `bundle.json` lists every
+  file of the build with its own SHA-256, so the pin fixes every byte.
 - `export_sha256` records which training export the builds were converted from.
 
-The app takes the first build whose requirements the Mac meets (ARCHITECTURE.md, section 5). Today there is one,
-for macOS 26 or later. Builds for other Macs are kept on other branches of the model's repository until they have
-been tested; listing one here is what ships it.
+The app takes the first build whose requirements the Mac or the iPhone meets (ARCHITECTURE.md, section 5). Today
+there is one, for macOS 26 or later and for iOS 26 or later; the iPhone app carries it and never downloads it. Builds
+for other Macs are kept on other branches of the model's repository until they have been tested; listing one here is
+what ships it.
 
 The pin is checked at every step. A download is refused unless its `bundle.json` has the pinned SHA-256 and every
 file matches it. `scripts/build-app.sh`, given a local copy, refuses one the pin does not list, and copies into the
