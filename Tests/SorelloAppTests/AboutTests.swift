@@ -42,7 +42,8 @@ import Testing
     /// credits it in every build and opens the notices file that carries its licence.
     @Test func aboutCreditsSparkleAndOpensItsLicence() throws {
         let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
-        let harness = Harness(directory: directory.url, defaults: suite.defaults)
+        let notices = directory.url.appendingPathComponent("Example.app/Contents/Resources/ThirdPartyNotices.md")
+        let harness = Harness(directory: directory.url, defaults: suite.defaults, thirdPartyNotices: notices)
         let notice = try #require(harness.windows.main.about.thirdPartyNotices.first { $0.id == "sparkle" })
         #expect(notice.title == "Sparkle")
         #expect(notice.detail.contains("MIT License"))
@@ -51,6 +52,7 @@ import Testing
         harness.app.navigation.showNotice = { shown.notices.append(($0, $1)) }
         harness.windows.main.about.showNotice(notice.id)
         #expect(shown.notices.map(\.title) == ["Sparkle"])
+        #expect(shown.notices.first?.files == [notices], "the notices file the app carries, which holds the licence")
         // The notices file the build copies into every app carries Sparkle's licence and the notices it requires.
         let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent()
