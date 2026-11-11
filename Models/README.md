@@ -22,8 +22,9 @@ been tested; listing one here is what ships it.
 The pin is checked at every step. A download is refused unless its `bundle.json` has the pinned SHA-256 and every
 file matches it. `scripts/build-app.sh`, given a local copy, refuses one the pin does not list, and copies into the
 app only the files its manifest lists, each after checking its hash. And each time the speech engine loads the
-model it checks every file against the manifest again, so a damaged copy fails as "model corrupt" rather than
-transcribing with the wrong weights.
+model it checks every file against the manifest again, so it never transcribes with the wrong weights. A damaged
+copy in the store is removed and the model is downloaded again; a damaged copy inside an app that carries the
+model fails as "model corrupt", and reinstalling the app repairs it.
 
 ## A local copy
 
