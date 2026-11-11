@@ -111,7 +111,7 @@ final class ParakeetTranscriber: ObservableObject {
         lastPreparation = measurement
         if report.succeeded { preferences.lastPreparationSeconds = report.seconds }
         sync()
-        #if LOCALFLOW_SELFTEST
+        #if SORELLO_SELFTEST
         SelfTest.report(measurement)
         #endif
     }
@@ -129,7 +129,7 @@ final class ParakeetTranscriber: ObservableObject {
         }
         measurements.insert(measurement, at: 0)
         if measurements.count > Self.maxMeasurements { measurements.removeLast(measurements.count - Self.maxMeasurements) }
-        #if LOCALFLOW_SELFTEST
+        #if SORELLO_SELFTEST
         SelfTest.report(measurement)
         #endif
     }

@@ -1,25 +1,25 @@
-#if LOCALFLOW_SELFTEST
+#if SORELLO_SELFTEST
 import CoreML
 import Darwin
 import Foundation
 
 /// Self-test builds only. Options come from the launch environment (`SIMCTL_CHILD_…`):
-/// - `LOCALFLOW_SELFTEST_AUDIO=<path>`: transcribes an invented synthetic recording with the bundled
+/// - `SORELLO_SELFTEST_AUDIO=<path>`: transcribes an invented synthetic recording with the bundled
 ///   model and prints one content-free line, never the transcript, the audio path or error messages,
-///   then exits. `LOCALFLOW_SELFTEST_EXPECTED` and `LOCALFLOW_SELFTEST_COMPUTE=cpuOnly` refine it.
-/// - `LOCALFLOW_SYNTHETIC_MIC=<path>`: replaces the microphone with that recording (`SyntheticCapture`).
-/// - `LOCALFLOW_SYNTHETIC_HEADPHONES=bluetooth|none`: the route the synthetic microphone reports, with or
+///   then exits. `SORELLO_SELFTEST_EXPECTED` and `SORELLO_SELFTEST_COMPUTE=cpuOnly` refine it.
+/// - `SORELLO_SYNTHETIC_MIC=<path>`: replaces the microphone with that recording (`SyntheticCapture`).
+/// - `SORELLO_SYNTHETIC_HEADPHONES=bluetooth|none`: the route the synthetic microphone reports, with or
 ///   without Bluetooth headphones (`SyntheticCapture.Headphones`). Unset, it reports none.
-/// - `LOCALFLOW_SELFTEST_SKIP_ONBOARDING=1`: lands on Home.
-/// - `LOCALFLOW_SELFTEST_SCREEN=<screen>`: opens one screen, for screenshots without taps.
-/// - `LOCALFLOW_SELFTEST_START_SESSION=1`: starts a session once the app is active.
+/// - `SORELLO_SELFTEST_SKIP_ONBOARDING=1`: lands on Home.
+/// - `SORELLO_SELFTEST_SCREEN=<screen>`: opens one screen, for screenshots without taps.
+/// - `SORELLO_SELFTEST_START_SESSION=1`: starts a session once the app is active.
 ///
 /// Relative paths resolve inside the app's data container.
 enum SelfTest {
     private static let defaultPhrase = "The blue lantern is beside the green notebook."
     private static let environment = ProcessInfo.processInfo.environment
 
-    /// Screens `LOCALFLOW_SELFTEST_SCREEN` can open.
+    /// Screens `SORELLO_SELFTEST_SCREEN` can open.
     enum Screen: String {
         case onboarding, onboardingMicrophone = "onboarding-microphone", onboardingKeyboard = "onboarding-keyboard",
              onboardingModel = "onboarding-model", home, keyboardSetup = "keyboard-setup", dictionary, diagnostics
@@ -27,9 +27,9 @@ enum SelfTest {
 
     static var launchOptions: LaunchOptions {
         var options = LaunchOptions()
-        options.skipOnboarding = environment["LOCALFLOW_SELFTEST_SKIP_ONBOARDING"] == "1"
-        options.startSession = environment["LOCALFLOW_SELFTEST_START_SESSION"] == "1"
-        switch environment["LOCALFLOW_SELFTEST_SCREEN"].flatMap(Screen.init(rawValue:)) {
+        options.skipOnboarding = environment["SORELLO_SELFTEST_SKIP_ONBOARDING"] == "1"
+        options.startSession = environment["SORELLO_SELFTEST_START_SESSION"] == "1"
+        switch environment["SORELLO_SELFTEST_SCREEN"].flatMap(Screen.init(rawValue:)) {
         case .onboarding?: options.onboardingStep = .welcome
         case .onboardingMicrophone?: options.onboardingStep = .microphone
         case .onboardingKeyboard?: options.onboardingStep = .keyboard
@@ -43,25 +43,25 @@ enum SelfTest {
         return options
     }
 
-    /// The synthetic microphone `LOCALFLOW_SYNTHETIC_MIC` asks for. A requested recording that cannot be
+    /// The synthetic microphone `SORELLO_SYNTHETIC_MIC` asks for. A requested recording that cannot be
     /// used fails closed (`.unusable`): the session then fails, and the real microphone is never built.
     /// Prints one content-free line either way.
     @MainActor
     static func syntheticInput(buffer: DictationSampleBuffer, deliver: @escaping @Sendable (CaptureEvent) -> Void,
                                useBuiltInMicrophone: @escaping @MainActor () -> Bool) -> SyntheticInputRequest {
-        guard let path = environment["LOCALFLOW_SYNTHETIC_MIC"] else { return .notRequested }
+        guard let path = environment["SORELLO_SYNTHETIC_MIC"] else { return .notRequested }
         var samples: [Float] = []
         do {
             guard !path.isEmpty else { throw SelfTestFailure.syntheticInputUnusable }
             try ParakeetAudioReader.read(fileURL: resolve(path), check: {}) { samples.append(contentsOf: $0) }
             guard !samples.isEmpty else { throw SelfTestFailure.syntheticInputUnusable }
         } catch {
-            print("LocalFlow self-test: synthetic_mic=unusable")
+            print("Sorello self-test: synthetic_mic=unusable")
             fflush(stdout)
             return .unusable
         }
-        let headphones = environment["LOCALFLOW_SYNTHETIC_HEADPHONES"].flatMap(SyntheticCapture.Headphones.init(rawValue:))
-        print(String(format: "LocalFlow self-test: synthetic_mic=loaded audio_s=%.2f headphones=%@",
+        let headphones = environment["SORELLO_SYNTHETIC_HEADPHONES"].flatMap(SyntheticCapture.Headphones.init(rawValue:))
+        print(String(format: "Sorello self-test: synthetic_mic=loaded audio_s=%.2f headphones=%@",
                      Double(samples.count) / DictationSampleBuffer.sampleRate, headphones?.rawValue ?? "unreported"))
         fflush(stdout)
         return .ready(SyntheticCapture(samples: samples, buffer: buffer, deliver: deliver,
@@ -70,7 +70,7 @@ enum SelfTest {
 
     /// One content-free line per dictation, so end-to-end runs record latency and memory.
     static func report(_ measurement: DictationMeasurement) {
-        print(String(format: "LocalFlow self-test: dictation outcome=%@ audio_s=%.2f wait_ms=%.0f transcription_ms=%.0f compute=%@ background=%@ hint=%@ footprint_mb=%.0f peak_footprint_mb=%.0f",
+        print(String(format: "Sorello self-test: dictation outcome=%@ audio_s=%.2f wait_ms=%.0f transcription_ms=%.0f compute=%@ background=%@ hint=%@ footprint_mb=%.0f peak_footprint_mb=%.0f",
                      measurement.outcome.rawValue, measurement.audioSeconds, measurement.waitMilliseconds,
                      measurement.transcriptionMilliseconds, measurement.computeUnits.replacingOccurrences(of: " ", with: "_"),
                      String(measurement.inBackground), measurement.hint?.rawValue ?? "none",
@@ -79,7 +79,7 @@ enum SelfTest {
     }
 
     static func report(_ configuration: CaptureConfiguration) {
-        print(String(format: "LocalFlow self-test: capture source=%@ requested_io_s=%.3f actual_io_s=%.3f requested_rate=%.0f actual_rate=%.0f input_rate=%.0f input_channels=%d tap_frames=%d input_port=%@",
+        print(String(format: "Sorello self-test: capture source=%@ requested_io_s=%.3f actual_io_s=%.3f requested_rate=%.0f actual_rate=%.0f input_rate=%.0f input_channels=%d tap_frames=%d input_port=%@",
                      configuration.source, configuration.requestedIOBufferDuration ?? -1, configuration.actualIOBufferDuration,
                      configuration.requestedSampleRate ?? -1, configuration.actualSampleRate, configuration.inputSampleRate,
                      configuration.inputChannels, configuration.tapBufferFrames, configuration.inputPort?.rawValue ?? "none"))
@@ -87,7 +87,7 @@ enum SelfTest {
     }
 
     static func report(_ preparation: PreparationMeasurement) {
-        print(String(format: "LocalFlow self-test: preparation result=%@ seconds=%.1f compute=%@ background=%@ footprint_mb=%.0f peak_footprint_mb=%.0f",
+        print(String(format: "Sorello self-test: preparation result=%@ seconds=%.1f compute=%@ background=%@ footprint_mb=%.0f peak_footprint_mb=%.0f",
                      preparation.succeeded ? "ready" : "failed", preparation.seconds,
                      preparation.computeUnits.replacingOccurrences(of: " ", with: "_"), String(preparation.inBackground),
                      preparation.footprint?.currentMB ?? -1, preparation.footprint?.peakMB ?? -1))
@@ -95,10 +95,10 @@ enum SelfTest {
     }
 
     static func startIfRequested() {
-        guard let path = environment["LOCALFLOW_SELFTEST_AUDIO"], !path.isEmpty else { return }
+        guard let path = environment["SORELLO_SELFTEST_AUDIO"], !path.isEmpty else { return }
         let audio = resolve(path)
-        let expected = environment["LOCALFLOW_SELFTEST_EXPECTED"] ?? defaultPhrase
-        let cpuOnly = environment["LOCALFLOW_SELFTEST_COMPUTE"] == "cpuOnly"
+        let expected = environment["SORELLO_SELFTEST_EXPECTED"] ?? defaultPhrase
+        let cpuOnly = environment["SORELLO_SELFTEST_COMPUTE"] == "cpuOnly"
         Task.detached(priority: .userInitiated) {
             let passed = await run(audio: audio, expected: expected, computeUnits: cpuOnly ? .cpuOnly : .cpuAndNeuralEngine)
             exit(passed ? 0 : 1)
@@ -137,7 +137,7 @@ enum SelfTest {
             failure = describe(error)
         }
         let passed = matched && appGroup == "usable"
-        print(String(format: "LocalFlow self-test: result=%@ stage=%@ transcript_match=%@ app_group=%@ compute=%@ preparation_s=%.3f transcription_s=%.3f audio_s=%.2f peak_footprint_mb=%.0f available_devices=%@ error=%@",
+        print(String(format: "Sorello self-test: result=%@ stage=%@ transcript_match=%@ app_group=%@ compute=%@ preparation_s=%.3f transcription_s=%.3f audio_s=%.2f peak_footprint_mb=%.0f available_devices=%@ error=%@",
                      passed ? "pass" : "fail", stage, String(matched), appGroup,
                      computeUnits == .cpuOnly ? "cpuOnly" : "cpuAndNeuralEngine", preparation, transcription, seconds,
                      ProcessMemory.footprint()?.peakMB ?? -1, availableDevices(), failure))

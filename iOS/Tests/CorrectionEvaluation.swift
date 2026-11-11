@@ -5,7 +5,7 @@ import Foundation
 /// word meant, or left as typed with the word meant offered beside it (a correction to it counts too). Every case runs the
 /// whole commit (`WordAutocorrect.review`: fixed corrections, the corrector, vowel rivals, apostrophe twins) with taps at
 /// the key centres.
-/// Measured on the shipped word model, which the host tests do not have: the test runs only when `LF_AUTOCORRECT_BUNDLE`
+/// Measured on the shipped word model, which the host tests do not have: the test runs only when `SORELLO_AUTOCORRECT_BUNDLE`
 /// names a swipe bundle directory and guards the counts measured on bundle b34. Every phrase is invented.
 enum CorrectionEvaluation {
     static var tests: [TestCase] {
@@ -110,7 +110,7 @@ enum CorrectionEvaluation {
         for item in cases {
             TestSupport.expect(!item.typed.isEmpty && item.typed == item.typed.lowercased(), "\(item.typed)")
         }
-        guard let path = ProcessInfo.processInfo.environment["LF_AUTOCORRECT_BUNDLE"] else { return }
+        guard let path = ProcessInfo.processInfo.environment["SORELLO_AUTOCORRECT_BUNDLE"] else { return }
         let directory = URL(fileURLWithPath: path)
         guard let data = try? Data(contentsOf: directory.appendingPathComponent("bundle.json")),
               let manifest = try? AutocorrectManifest.decode(from: data),
@@ -121,7 +121,7 @@ enum CorrectionEvaluation {
         let keys = KeyboardLayout.keys(for: .letters, metrics: KeyboardMetrics(width: 402, height: KeyboardMetrics.regularHeight),
                                        showsGlobe: false)
         let measured = measure(corrector, params: manifest.defaultParams, keys: keys,
-                               report: ProcessInfo.processInfo.environment["LF_EVALUATION_REPORT"] != nil)
+                               report: ProcessInfo.processInfo.environment["SORELLO_EVALUATION_REPORT"] != nil)
         print("correction evaluation: expected \(measured.expected)/\(cases.count), wrong \(measured.wrong)")
         TestSupport.expect(measured.expected >= expectedAtLeast, "expected \(measured.expected) < \(expectedAtLeast)")
         TestSupport.expect(measured.wrong <= wrongAtMost, "wrong \(measured.wrong) > \(wrongAtMost)")

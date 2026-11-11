@@ -3,8 +3,8 @@ import Foundation
 /// The completion ranking on ordinary short phrases (ARCHITECTURE.md, "Word autocorrect", Suggestions while typing,
 /// Evaluation): 90 invented messages about shopping, plans, work and family, each cut after the first letters of a
 /// word, with the word meant. Measured on the shipped word model, which the host tests do not have: the test runs
-/// only when `LF_AUTOCORRECT_BUNDLE` names a swipe bundle directory
-/// (`LF_AUTOCORRECT_BUNDLE=<bundle> make -C iOS test`) and guards the counts measured on bundle b34. Every phrase is
+/// only when `SORELLO_AUTOCORRECT_BUNDLE` names a swipe bundle directory
+/// (`SORELLO_AUTOCORRECT_BUNDLE=<bundle> make -C iOS test`) and guards the counts measured on bundle b34. Every phrase is
 /// invented.
 enum CompletionEvaluation {
     static var tests: [TestCase] {
@@ -128,7 +128,7 @@ enum CompletionEvaluation {
         for item in cases {
             TestSupport.expect(item.meant.hasPrefix(item.prefix) && item.meant != item.prefix, "\(item)")
         }
-        guard let path = ProcessInfo.processInfo.environment["LF_AUTOCORRECT_BUNDLE"] else { return }
+        guard let path = ProcessInfo.processInfo.environment["SORELLO_AUTOCORRECT_BUNDLE"] else { return }
         let directory = URL(fileURLWithPath: path)
         guard let data = try? Data(contentsOf: directory.appendingPathComponent("bundle.json")),
               let manifest = try? AutocorrectManifest.decode(from: data),

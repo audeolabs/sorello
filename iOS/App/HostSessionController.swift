@@ -61,7 +61,7 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
         let buffer = DictationSampleBuffer()
         let relay = CaptureRelay()
         let deliver: @Sendable (CaptureEvent) -> Void = { relay.deliver($0) }
-        #if LOCALFLOW_SELFTEST
+        #if SORELLO_SELFTEST
         let synthetic = SelfTest.syntheticInput(buffer: buffer, deliver: deliver,
                                                 useBuiltInMicrophone: { [preferences] in preferences.useBuiltInMicrophone })
         #else
@@ -85,7 +85,7 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
             }
             microphone.router.setDesired(preferences.useBuiltInMicrophone)
         }
-        #if LOCALFLOW_SELFTEST
+        #if SORELLO_SELFTEST
         if let syntheticCapture = capture as? SyntheticCapture {
             syntheticCapture.onConfigured = { [weak self] in self?.configured($0) }
             syntheticCapture.onCaptureRouteChanged = { [weak self] in self?.captureRouteChanged($0) }
@@ -233,7 +233,7 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
 
     private func configured(_ configuration: CaptureConfiguration) {
         captureConfiguration = configuration
-        #if LOCALFLOW_SELFTEST
+        #if SORELLO_SELFTEST
         SelfTest.report(configuration)
         #endif
     }

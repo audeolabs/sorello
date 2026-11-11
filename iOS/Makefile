@@ -18,7 +18,7 @@ BUILD_DIR ?= build/appstore
 ifneq ($(PLATFORM),device)
 $(error CHANNEL=appstore needs PLATFORM=device)
 endif
-ifneq ($(findstring LOCALFLOW_SELFTEST,$(SWIFT_FLAGS)),)
+ifneq ($(findstring SORELLO_SELFTEST,$(SWIFT_FLAGS)),)
 $(error CHANNEL=appstore never builds the self-test variant)
 endif
 else ifneq ($(CHANNEL),dev)
@@ -537,7 +537,7 @@ typecheck:
 	echo "Type-checking the app"; \
 	xcrun --sdk iphonesimulator swiftc $$flags -module-name Sorello $(APP_SOURCES); \
 	echo "Type-checking the app (self-test variant)"; \
-	xcrun --sdk iphonesimulator swiftc $$flags -D LOCALFLOW_SELFTEST -module-name Sorello $(APP_SOURCES); \
+	xcrun --sdk iphonesimulator swiftc $$flags -D SORELLO_SELFTEST -module-name Sorello $(APP_SOURCES); \
 	echo "Type-checking the keyboard"; \
 	xcrun --sdk iphonesimulator swiftc $$flags $(KEYBOARD_SWIFT_FLAGS) $(KEYBOARD_SOURCES); \
 	echo "Type-checking the Live Activity"; \
@@ -559,7 +559,7 @@ lint:
 	plutil -lint Config/*.plist Config/*.entitlements Config/*.xcprivacy
 	@for script in scripts/*.sh; do sh -n "$$script" || exit 1; done
 
-SIM_DEVICE ?= LocalFlow-Smoke
+SIM_DEVICE ?= Sorello-Smoke
 SIM_DEVICE_TYPE ?= iPhone 17 Pro
 SIM_RUNTIME ?=
 # Shell fragment: sets udid for SIM_DEVICE, creating the device on first use
@@ -596,24 +596,24 @@ SMOKE_LOG = $(SMOKE_BUILD_DIR)/obj/selftest.log
 # prints only a pass/fail line with timings, never the transcript.
 smoke-sim:
 	@[ -n "$(strip $(PARAKEET_BUNDLE_DIR))" ] || { echo "smoke-sim needs PARAKEET_BUNDLE_DIR (the Parakeet model bundle)." >&2; exit 1; }
-	@$(MAKE) --no-print-directory all PLATFORM=simulator BUILD_DIR="$(SMOKE_BUILD_DIR)" SWIFT_FLAGS="$(SWIFT_FLAGS) -D LOCALFLOW_SELFTEST"
+	@$(MAKE) --no-print-directory all PLATFORM=simulator BUILD_DIR="$(SMOKE_BUILD_DIR)" SWIFT_FLAGS="$(SWIFT_FLAGS) -D SORELLO_SELFTEST"
 	@set -e; $(SIM_RESOLVE); $(SIM_BOOT); \
 	trap '[ "$$booted_here" = 1 ] && xcrun simctl shutdown "$$udid"' EXIT; \
 	xcrun simctl install "$$udid" "$(SMOKE_BUILD_DIR)/Sorello.app"; \
 	say -o "$(SMOKE_BUILD_DIR)/obj/selftest.wav" --data-format=LEI16@16000 "$(SMOKE_PHRASE)"; \
 	container=$$(xcrun simctl get_app_container "$$udid" "$(BUNDLE_ID)" data); \
 	mkdir -p "$$container/tmp"; \
-	mv "$(SMOKE_BUILD_DIR)/obj/selftest.wav" "$$container/tmp/localflow-selftest.wav"; \
+	mv "$(SMOKE_BUILD_DIR)/obj/selftest.wav" "$$container/tmp/sorello-selftest.wav"; \
 	( trap 'kill $$sleeper 2>/dev/null; exit 0' TERM; sleep $(SMOKE_TIMEOUT) & sleeper=$$!; wait $$sleeper; \
 		xcrun simctl terminate "$$udid" "$(BUNDLE_ID)" ) >/dev/null 2>&1 & watchdog=$$!; \
 	echo "Running the self-test on $(SIM_DEVICE) (compute: $(SMOKE_COMPUTE))"; \
-	SIMCTL_CHILD_LOCALFLOW_SELFTEST_AUDIO=tmp/localflow-selftest.wav \
-	SIMCTL_CHILD_LOCALFLOW_SELFTEST_EXPECTED="$(SMOKE_PHRASE)" \
-	SIMCTL_CHILD_LOCALFLOW_SELFTEST_COMPUTE="$(SMOKE_COMPUTE)" \
+	SIMCTL_CHILD_SORELLO_SELFTEST_AUDIO=tmp/sorello-selftest.wav \
+	SIMCTL_CHILD_SORELLO_SELFTEST_EXPECTED="$(SMOKE_PHRASE)" \
+	SIMCTL_CHILD_SORELLO_SELFTEST_COMPUTE="$(SMOKE_COMPUTE)" \
 		xcrun simctl launch --console-pty --terminate-running-process "$$udid" "$(BUNDLE_ID)" > "$(SMOKE_LOG)" 2>&1 || true; \
 	kill $$watchdog 2>/dev/null || true; \
-	rm -f "$$container/tmp/localflow-selftest.wav"; \
-	result=$$(grep -a '^LocalFlow self-test:' "$(SMOKE_LOG)" | tail -n 1 | tr -d '\r'); \
+	rm -f "$$container/tmp/sorello-selftest.wav"; \
+	result=$$(grep -a '^Sorello self-test:' "$(SMOKE_LOG)" | tail -n 1 | tr -d '\r'); \
 	case "$$result" in \
 		*"result=pass"*) echo "$$result"; rm -f "$(SMOKE_LOG)" ;; \
 		"") echo "No self-test result; see $(SMOKE_LOG)" >&2; exit 1 ;; \
@@ -651,24 +651,24 @@ smoke-device:
 	@[ -n "$(DEVICE)" ] || { echo "smoke-device needs DEVICE, a name or identifier from 'xcrun devicectl list devices'." >&2; exit 1; }
 ifneq ($(SMOKE_DEVICE_INSTALL),0)
 	@[ -n "$(strip $(PARAKEET_BUNDLE_DIR))" ] || { echo "smoke-device needs PARAKEET_BUNDLE_DIR (the Parakeet model bundle)." >&2; exit 1; }
-	@$(MAKE) --no-print-directory all PLATFORM=device BUILD_DIR="$(SMOKE_DEVICE_BUILD_DIR)" SWIFT_FLAGS="$(SWIFT_FLAGS) -D LOCALFLOW_SELFTEST"
+	@$(MAKE) --no-print-directory all PLATFORM=device BUILD_DIR="$(SMOKE_DEVICE_BUILD_DIR)" SWIFT_FLAGS="$(SWIFT_FLAGS) -D SORELLO_SELFTEST"
 endif
 	@set -e; $(DEVICE_UNLOCKED); obj="$(SMOKE_DEVICE_BUILD_DIR)/obj"; mkdir -p "$$obj"; \
 	if [ "$(SMOKE_DEVICE_INSTALL)" != 0 ]; then \
 		xcrun devicectl device install app --quiet --device "$(DEVICE)" "$(SMOKE_DEVICE_BUILD_DIR)/Sorello.app"; \
 	fi; \
 	copy_audio() { xcrun devicectl device copy to --quiet --device "$(DEVICE)" --domain-type appDataContainer \
-		--domain-identifier "$(BUNDLE_ID)" --source "$$1" --destination tmp/localflow-selftest.wav; }; \
+		--domain-identifier "$(BUNDLE_ID)" --source "$$1" --destination tmp/sorello-selftest.wav; }; \
 	say -o "$$obj/selftest.wav" --data-format=LEI16@16000 "$(SMOKE_PHRASE)"; : > "$$obj/empty.wav"; \
 	trap 'copy_audio "$$obj/empty.wav" >/dev/null 2>&1 || true; rm -f "$$obj/selftest.wav" "$$obj/empty.wav"' EXIT; \
 	copy_audio "$$obj/selftest.wav"; \
 	echo "Running the self-test on $(DEVICE) (compute: $(SMOKE_COMPUTE))"; \
-	DEVICECTL_CHILD_LOCALFLOW_SELFTEST_AUDIO=tmp/localflow-selftest.wav \
-	DEVICECTL_CHILD_LOCALFLOW_SELFTEST_EXPECTED="$(SMOKE_PHRASE)" \
-	DEVICECTL_CHILD_LOCALFLOW_SELFTEST_COMPUTE="$(SMOKE_COMPUTE)" \
+	DEVICECTL_CHILD_SORELLO_SELFTEST_AUDIO=tmp/sorello-selftest.wav \
+	DEVICECTL_CHILD_SORELLO_SELFTEST_EXPECTED="$(SMOKE_PHRASE)" \
+	DEVICECTL_CHILD_SORELLO_SELFTEST_COMPUTE="$(SMOKE_COMPUTE)" \
 		xcrun devicectl device process launch --device "$(DEVICE)" --console --terminate-existing \
 		--timeout $(SMOKE_TIMEOUT) "$(BUNDLE_ID)" > "$(SMOKE_DEVICE_LOG)" 2>&1 || true; \
-	result=$$(LC_ALL=C sed -n -E 's/.*(LocalFlow self-test: result=)/\1/p' "$(SMOKE_DEVICE_LOG)" | tail -n 1 | tr -d '\r'); \
+	result=$$(LC_ALL=C sed -n -E 's/.*(Sorello self-test: result=)/\1/p' "$(SMOKE_DEVICE_LOG)" | tail -n 1 | tr -d '\r'); \
 	case "$$result" in \
 		*"result=pass"*) echo "$$result"; rm -f "$(SMOKE_DEVICE_LOG)" ;; \
 		"") echo "No self-test result; see $(SMOKE_DEVICE_LOG)" >&2; exit 1 ;; \
@@ -678,9 +678,9 @@ endif
 .PHONY: e2e-sim e2e-sim-probe e2e-sim-scenarios
 
 E2E_BUILD_DIR ?= build/e2e-simulator
-E2E_SIM_DEVICE ?= LocalFlow-E2E
+E2E_SIM_DEVICE ?= Sorello-E2E
 E2E_PHRASE ?= $(SMOKE_PHRASE)
-E2E_AUDIO = tmp/localflow-synthetic-mic.wav
+E2E_AUDIO = tmp/sorello-synthetic-mic.wav
 E2E_LOG = $(E2E_BUILD_DIR)/obj/e2e-app.log
 # Launch options of the self-test build (see App/SelfTest.swift).
 E2E_SKIP_ONBOARDING ?=
@@ -709,7 +709,7 @@ E2E_KEEP_PRESENCE = $(strip $(E2E_BACKGROUND)$(E2E_FROM_BACKGROUND))
 e2e-sim: SIM_DEVICE = $(E2E_SIM_DEVICE)
 e2e-sim:
 	@[ -n "$(strip $(PARAKEET_BUNDLE_DIR))" ] || { echo "e2e-sim needs PARAKEET_BUNDLE_DIR (the Parakeet model bundle)." >&2; exit 1; }
-	@$(MAKE) --no-print-directory all PLATFORM=simulator BUILD_DIR="$(E2E_BUILD_DIR)" SWIFT_FLAGS="$(SWIFT_FLAGS) -D LOCALFLOW_SELFTEST"
+	@$(MAKE) --no-print-directory all PLATFORM=simulator BUILD_DIR="$(E2E_BUILD_DIR)" SWIFT_FLAGS="$(SWIFT_FLAGS) -D SORELLO_SELFTEST"
 	@set -e; $(SIM_RESOLVE); $(SIM_BOOT); \
 	xcrun simctl terminate "$$udid" "$(BUNDLE_ID)" >/dev/null 2>&1 || true; \
 	xcrun simctl install "$$udid" "$(E2E_BUILD_DIR)/Sorello.app"; \
@@ -720,11 +720,11 @@ e2e-sim:
 	mv "$(E2E_BUILD_DIR)/obj/synthetic-mic.wav" "$$container/$(E2E_AUDIO)"; \
 	rm -f "$(E2E_LOG)"; \
 	log="$(E2E_LOG)"; case "$$log" in /*) ;; *) log="$(CURDIR)/$$log" ;; esac; \
-	SIMCTL_CHILD_LOCALFLOW_SYNTHETIC_MIC="$(E2E_AUDIO)" \
-	SIMCTL_CHILD_LOCALFLOW_SYNTHETIC_HEADPHONES="$(E2E_HEADPHONES)" \
-	SIMCTL_CHILD_LOCALFLOW_SELFTEST_SKIP_ONBOARDING="$(E2E_SKIP_ONBOARDING)" \
-	SIMCTL_CHILD_LOCALFLOW_SELFTEST_SCREEN="$(E2E_SCREEN)" \
-	SIMCTL_CHILD_LOCALFLOW_SELFTEST_START_SESSION="$(E2E_START_SESSION)" \
+	SIMCTL_CHILD_SORELLO_SYNTHETIC_MIC="$(E2E_AUDIO)" \
+	SIMCTL_CHILD_SORELLO_SYNTHETIC_HEADPHONES="$(E2E_HEADPHONES)" \
+	SIMCTL_CHILD_SORELLO_SELFTEST_SKIP_ONBOARDING="$(E2E_SKIP_ONBOARDING)" \
+	SIMCTL_CHILD_SORELLO_SELFTEST_SCREEN="$(E2E_SCREEN)" \
+	SIMCTL_CHILD_SORELLO_SELFTEST_START_SESSION="$(E2E_START_SESSION)" \
 		xcrun simctl launch --terminate-running-process --stdout="$$log" \
 		"$$udid" "$(BUNDLE_ID)" >/dev/null; \
 	echo "LocalFlow (self-test build, synthetic microphone) is running on $(E2E_SIM_DEVICE) $$udid."; \
@@ -752,8 +752,8 @@ E2E_SHELL = udid=$$(xcrun simctl list devices | grep -F "    $(E2E_SIM_DEVICE) (
 		mv "$$dir/.e2e-presence.tmp" "$$dir/presence.json"; }; \
 	field() { plutil -extract "$$1" raw -o - "$$dir/status.json" 2>/dev/null || true; }; \
 	status_of() { if [ "$$(field dictation.requestID)" = "$$1" ]; then echo "$$(field dictation.phase)/$$(field dictation.error)"; else echo none; fi; }; \
-	launch_app() { SIMCTL_CHILD_LOCALFLOW_SYNTHETIC_MIC="$(E2E_AUDIO)" SIMCTL_CHILD_LOCALFLOW_SYNTHETIC_HEADPHONES="$(E2E_HEADPHONES)" \
-		SIMCTL_CHILD_LOCALFLOW_SELFTEST_SKIP_ONBOARDING="$(E2E_SKIP_ONBOARDING)" \
+	launch_app() { SIMCTL_CHILD_SORELLO_SYNTHETIC_MIC="$(E2E_AUDIO)" SIMCTL_CHILD_SORELLO_SYNTHETIC_HEADPHONES="$(E2E_HEADPHONES)" \
+		SIMCTL_CHILD_SORELLO_SELFTEST_SKIP_ONBOARDING="$(E2E_SKIP_ONBOARDING)" \
 		xcrun simctl launch "$$@" "$$udid" "$(BUNDLE_ID)" >/dev/null; }
 
 # Scripted round trip against an e2e-sim install: a record intent, the app brought

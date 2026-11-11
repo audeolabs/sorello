@@ -7,7 +7,7 @@ struct SorelloApp: App {
     @StateObject private var host = HostSessionController.shared
 
     init() {
-        #if LOCALFLOW_SELFTEST
+        #if SORELLO_SELFTEST
         SelfTest.startIfRequested()
         #endif
         // Before iOS can run the session control's intent in a process it launched for it.
@@ -40,7 +40,7 @@ struct LaunchOptions {
     var startSession = false
 
     static let current: LaunchOptions = {
-        #if LOCALFLOW_SELFTEST
+        #if SORELLO_SELFTEST
         return SelfTest.launchOptions
         #else
         return LaunchOptions()

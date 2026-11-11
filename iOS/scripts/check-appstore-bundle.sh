@@ -280,7 +280,7 @@ done
 [ -f "$app/Parakeet/bundle.json" ] || fail "app: the Parakeet model is missing (build with PARAKEET_BUNDLE_DIR)"
 for binary in "$app/Sorello" "$appex/SorelloKeyboard" "$activity/SorelloActivity"; do
     [ -f "$binary" ] || { fail "missing $binary"; continue; }
-    if grep -aq LOCALFLOW_SELFTEST "$binary"; then fail "$(basename "$binary") is a self-test build"; fi
+    if grep -aq SORELLO_SELFTEST "$binary"; then fail "$(basename "$binary") is a self-test build"; fi
 done
 junk=$(find "$app" \( -name .DS_Store -o -name '*.xcent' -o -name '*.der' -o -name '__MACOSX' \) -print | head -5)
 [ -z "$junk" ] || fail "app contains build leftovers: $junk"
