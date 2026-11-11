@@ -2,6 +2,7 @@
 """Puts the speech model into the iPhone app, as the Mac app's build does (ARCHITECTURE.md, "Build and targets").
 
 Usage: copy-model.py PIN MODEL_DIR NOTICES_DIR APP DEPLOYMENT_TARGET
+       copy-model.py --pinned PIN DEPLOYMENT_TARGET
 
 MODEL_DIR must hold the build the pin lists for this app: the first build in PIN whose requirements an iPhone on
 DEPLOYMENT_TARGET meets, judged as the app judges them (../../ARCHITECTURE.md, section 5): a build that requires
@@ -9,7 +10,10 @@ anything but `macos` and `ios`, or gives a version that cannot be read, is passe
 only when it names `ios`. Its bundle.json must have that build's SHA-256, and every file the manifest lists must match
 its own. Exactly those files and bundle.json are copied into APP/Model, each checked as it is written, with the pin as
 APP/model.lock.json and the model's notices in APP/ModelNotices. On any failure nothing is left in APP and the reason
-is printed. Reads only those paths and writes only into APP; no network.
+is printed, whatever failed. Reads only those paths and writes only into APP; no network.
+
+With --pinned it only prints the SHA-256 of that build's bundle.json, for check-appstore-bundle.sh, and fails when the
+pin lists no build for DEPLOYMENT_TARGET.
 """
 import hashlib
 import json
@@ -22,7 +26,20 @@ KNOWN = {"macos", "ios"}
 VERSION = re.compile(r"[0-9]{1,6}(\.[0-9]{1,6}){0,2}")
 
 
+# What a failure removes from the app, once main knows the app; nothing before.
+PLACED = []
+
+
+def undo():
+    for path in PLACED:
+        if os.path.isdir(path):
+            shutil.rmtree(path)
+        elif os.path.exists(path):
+            os.remove(path)
+
+
 def fail(message):
+    undo()
     sys.exit("SORELLO_MODEL_DIR: " + message)
 
 
@@ -73,10 +90,8 @@ def copy_checked(source, target, expected):
     return digest.hexdigest() == expected
 
 
-def main():
-    if len(sys.argv) != 6:
-        sys.exit(__doc__.split("\n\n")[1])
-    pin_path, source, notices, app, deployment = sys.argv[1:]
+def pinned_build(pin_path, deployment):
+    """The build the pin lists for an iPhone on `deployment`, and its manifest's SHA-256; fails without one."""
     target = version(deployment)
     if target is None:
         fail("the deployment target %r is not a version" % deployment)
@@ -91,45 +106,46 @@ def main():
     pinned = build.get("manifest_sha256")
     if not isinstance(pinned, str) or not re.fullmatch(r"[0-9a-f]{64}", pinned):
         fail("the pin's build for iOS has no SHA-256")
+    return build, pinned
+
+
+def main():
+    if len(sys.argv) == 4 and sys.argv[1] == "--pinned":
+        print(pinned_build(sys.argv[2], sys.argv[3])[1])
+        return
+    if len(sys.argv) != 6:
+        sys.exit(__doc__.split("\n\n")[1])
+    pin_path, source, notices, app, deployment = sys.argv[1:]
+    model = os.path.join(app, "Model")
+    PLACED.extend([model, os.path.join(app, "model.lock.json"), os.path.join(app, "ModelNotices")])
+    build, pinned = pinned_build(pin_path, deployment)
 
     manifest_path = os.path.join(source, "bundle.json")
     if not os.path.isfile(manifest_path):
         fail("there is no bundle.json")
     if sha256(manifest_path) != pinned:
         fail("this is not the build the pin lists for iOS %s (its bundle.json has another SHA-256)" % deployment)
-    with open(manifest_path, "rb") as handle:
-        files = json.load(handle).get("files")
+    try:
+        with open(manifest_path, "rb") as handle:
+            files = json.load(handle).get("files")
+    except (OSError, ValueError, AttributeError):
+        files = None
     if not isinstance(files, dict) or not files:
         fail("bundle.json lists no files")
-
-    model = os.path.join(app, "Model")
-    placed = [model, os.path.join(app, "model.lock.json"), os.path.join(app, "ModelNotices")]
-
-    def undo():
-        for path in placed:
-            if os.path.isdir(path):
-                shutil.rmtree(path)
-            elif os.path.exists(path):
-                os.remove(path)
 
     undo()
     try:
         for name, expected in sorted(files.items()):
             if not is_relative(name) or name == "bundle.json":
-                undo()
                 fail("bundle.json lists a path outside the model")
             if not isinstance(expected, str) or not re.fullmatch(r"[0-9a-f]{64}", expected):
-                undo()
                 fail("bundle.json has no SHA-256 for %s" % name)
             path = os.path.join(source, name)
             if not os.path.isfile(path):
-                undo()
                 fail("%s is missing" % name)
             if not copy_checked(path, os.path.join(model, name), expected):
-                undo()
                 fail("%s does not match its SHA-256 in bundle.json" % name)
         if not copy_checked(manifest_path, os.path.join(model, "bundle.json"), pinned):
-            undo()
             fail("bundle.json changed while it was copied")
         shutil.copyfile(pin_path, os.path.join(app, "model.lock.json"))
         os.makedirs(os.path.join(app, "ModelNotices"))
@@ -137,7 +153,6 @@ def main():
             if not name.startswith("."):
                 shutil.copyfile(os.path.join(notices, name), os.path.join(app, "ModelNotices", name))
     except OSError as error:
-        undo()
         fail("copying failed (%s)" % error.strerror)
     print("Copied the model (%d files verified against the pin's build %s)" % (len(files) + 1, build.get("directory")))
 

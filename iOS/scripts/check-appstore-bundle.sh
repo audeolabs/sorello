@@ -284,22 +284,23 @@ for target in app keyboard activity; do
 done
 
 # Contents: the model, no self-test code, nothing a build machine left behind.
-# The model is a build the pin lists for iOS: its bundle.json has that build's
-# SHA-256, and Model/ holds exactly the files it lists, each matching its own,
-# with the pin and the model's notices beside it.
+# The model is the build the pin lists for the app's oldest iOS: its
+# bundle.json has that build's SHA-256, and Model/ holds exactly the files it
+# lists, each matching its own, with the pin and the model's notices beside it.
 model="$app/Model"
 if [ ! -f "$model/bundle.json" ]; then
     fail "app: the model is missing (build with SORELLO_MODEL_DIR)"
 else
     cmp -s "$pin" "$app/model.lock.json" || fail "app: model.lock.json is missing or is not $pin"
     diff -r "$model_notices" "$app/ModelNotices" > /dev/null 2>&1 || fail "app: ModelNotices is missing or differs from $model_notices"
+    # The build the app takes on its oldest iPhone, chosen as the build chose it (copy-model.py).
     digest=$(shasum -a 256 "$model/bundle.json" | awk '{ print $1 }')
-    pinned= index=0
-    while build_digest=$(value "$pin" "builds.$index.manifest_sha256") && [ -n "$build_digest" ]; do
-        if [ "$build_digest" = "$digest" ] && [ -n "$(value "$pin" "builds.$index.requires.ios")" ]; then pinned=yes; fi
-        index=$((index + 1))
-    done
-    [ -n "$pinned" ] || fail "app: the model is not a build $pin lists for iOS"
+    minimum=$(value "$app/Info.plist" MinimumOSVersion)
+    if ! pinned=$(${PYTHON:-python3} "$(dirname "$0")/copy-model.py" --pinned "$pin" "$minimum" 2>/dev/null); then
+        fail "app: $pin lists no build of the model for iOS $minimum"
+    elif [ "$pinned" != "$digest" ]; then
+        fail "app: the model is not the build $pin lists for iOS $minimum"
+    fi
     tab=$(printf '\t')
     plutil -extract files xml1 -o - "$model/bundle.json" 2>/dev/null |
         sed -n -E 's,^[[:space:]]*<(key|string)>(.*)</(key|string)>[[:space:]]*$,\2,p' | paste - - > "$work/model-files"

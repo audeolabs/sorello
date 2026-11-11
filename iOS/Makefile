@@ -301,7 +301,8 @@ model-selection:
 	@mkdir -p "$(OBJ_DIR)"
 	@printf '%s\n' "$(SORELLO_MODEL_DIR)" > "$(MODEL_STAMP).tmp"
 ifneq ($(strip $(SORELLO_MODEL_DIR)),)
-	@test -f "$(SORELLO_MODEL_DIR)/bundle.json" || { rm -f "$(MODEL_STAMP).tmp"; echo "SORELLO_MODEL_DIR has no bundle.json." >&2; exit 1; }
+	@test -f "$(SORELLO_MODEL_DIR)/bundle.json" || { rm -rf "$(MODEL_STAMP).tmp" "$(MODEL_INSTALL_KEY)" "$(APP_BUNDLE)/Model" \
+		"$(APP_BUNDLE)/model.lock.json" "$(APP_BUNDLE)/ModelNotices"; echo "SORELLO_MODEL_DIR has no bundle.json." >&2; exit 1; }
 	@shasum -a 256 "$(SORELLO_MODEL_DIR)/bundle.json" >> "$(MODEL_STAMP).tmp"
 endif
 	@if cmp -s "$(MODEL_STAMP).tmp" "$(MODEL_STAMP)"; then rm -f "$(MODEL_STAMP).tmp"; else mv "$(MODEL_STAMP).tmp" "$(MODEL_STAMP)"; fi
@@ -406,9 +407,21 @@ ifeq ($(PLATFORM),simulator)
 	@derq query -f xml -i "$@" -o "$@.der" --raw
 endif
 
+# The SDK a triple builds against.
+package_sdk = case "$(1)" in *-simulator) sdk=iphonesimulator ;; *-macosx*) sdk=macosx ;; *) sdk=iphoneos ;; esac
+# What a triple's libraries are built from besides the sources' contents: the toolchain, the SDK and the list of
+# sources, so a different Xcode or SDK, or a source added or deleted, builds them again. Rewritten only when it changes.
+$(PACKAGE_BUILD_DIR)/%.inputs: FORCE
+	@set -e; $(call package_sdk,$*); mkdir -p "$(@D)"; \
+	printf '%s\n' "$(TOOLCHAIN_DIR)|$(XCODE_BUILD)|$$(xcrun --sdk $$sdk --show-sdk-path)|$$(xcrun --sdk $$sdk --show-sdk-build-version)|$(PACKAGE_SOURCES)" > "$@.$$$$"; \
+	if cmp -s "$@.$$$$" "$@"; then rm -f "$@.$$$$"; else mv "$@.$$$$" "$@"; fi
+
+# Both are kept between runs; neither is an intermediate file make may delete.
+.PRECIOUS: $(PACKAGE_BUILD_DIR)/%.inputs $(PACKAGE_BUILD_DIR)/%.bin-path
+
 # $*: the target triple; the SDK follows from it. Both libraries, then where SwiftPM put them.
-$(PACKAGE_BUILD_DIR)/%.bin-path: $(PACKAGE_SOURCES) Makefile
-	@set -e; case "$*" in *-simulator) sdk=iphonesimulator ;; *-macosx*) sdk=macosx ;; *) sdk=iphoneos ;; esac; \
+$(PACKAGE_BUILD_DIR)/%.bin-path: $(PACKAGE_BUILD_DIR)/%.inputs $(PACKAGE_SOURCES) Makefile
+	@set -e; $(call package_sdk,$*); \
 	sdk_path=$$(xcrun --sdk $$sdk --show-sdk-path); scratch="$(abspath $(PACKAGE_BUILD_DIR))/$*"; \
 	package() { swift build --package-path .. -c release --triple "$*" --sdk "$$sdk_path" --scratch-path "$$scratch" "$$@"; }; \
 	echo "Building SorelloSpeech and SorelloText for $*"; \

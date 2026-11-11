@@ -325,9 +325,9 @@ make -C iOS appstore-upload "${STORE[@]}" ASC_KEY_ID=<key id> ASC_ISSUER_ID=<iss
   - the compiled, opaque 1024-pixel icon
   - the three privacy manifests, with only reasons Apple defines
   - the Xcode build metadata and export compliance
-  - the model: a build the pin lists for iOS, exactly the files its manifest
-    lists, each matching its SHA-256, with the pin and the model's notices
-    beside it
+  - the model: the build the pin lists for the app's `MinimumOSVersion`,
+    chosen as the build chooses it, exactly the files its manifest lists, each
+    matching its SHA-256, with the pin and the model's notices beside it
   - that no self-test code is present
   - that no executable names a networking API, and that the keyboard and the
     Live Activity hold nothing of the shared modules they must not reach
