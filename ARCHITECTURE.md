@@ -437,11 +437,14 @@ join the list then: nothing else in Sorello changes when one does. When
 no build fits this Mac, Sorello says so and offers no download.
 
 Where the engine looks, in order: the store; then the app itself, when it
-was built with `SORELLO_MODEL_DIR` and so carries a build the pin lists,
-which is copied to the store once, under the store's file lock; otherwise
-the model is absent. Then the engine reports `failed(.modelMissing)`, and
-it looks again each time it is asked to prepare. Once the pinned model is
-complete in the store, everything else there is removed.
+was built with `SORELLO_MODEL_DIR` and so carries a build the pin lists
+that this Mac meets, which is copied to the store once, under the store's
+file lock; otherwise the model is absent. Then the engine reports
+`failed(.modelMissing)`, and it looks again each time it is asked to
+prepare. Once the pinned model is complete in the store, everything else
+there is removed. A stored copy whose files do not match its manifest is
+removed when the engine loads it; without a copy in the app, the model is
+then absent again, and the download is offered again.
 
 The download:
 
@@ -455,7 +458,8 @@ The download:
   fails its check is deleted and the download fails. Sorello never writes
   more bytes than the pin says the build has.
 - **Where it goes.** Into a directory of its own inside the store, which
-  outlives the app quitting. When every file is there and checked, that
+  outlives the app quitting. One process at a time downloads into it;
+  another waits for it, and then usually finds the model there. When every file is there and checked, that
   directory becomes the stored model in one rename, under the store's
   lock, as a copy from the app does, and the engine is asked to prepare.
   Nothing is loaded from a download that has not finished, and the engine
