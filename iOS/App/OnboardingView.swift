@@ -100,7 +100,7 @@ struct OnboardingView: View {
                 .padding(.top, compact ? 4 : 64)
             VStack(spacing: 8) {
                 Text("Sorello")
-                    .font(.display(.largeTitle))
+                    .displayType(.largeTitle)
                     .accessibilityAddTraits(.isHeader)
                 StepLine("Dictate into any app.")
             }
@@ -269,7 +269,7 @@ private struct StepTitle: View {
     var body: some View {
         VStack(spacing: 10) {
             Text(title)
-                .font(.display(.title))
+                .displayType(.title)
                 .multilineTextAlignment(.center)
                 .accessibilityAddTraits(.isHeader)
             StepLine(line)

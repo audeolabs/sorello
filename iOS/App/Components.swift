@@ -79,12 +79,17 @@ private struct IslandSurface<S: InsettableShape>: ViewModifier {
 
 // MARK: Display face
 
-/// Urbanist Medium (SIL OFL 1.1; the repository's `Resources/Fonts`), the display face, as it is the Mac app's: large
-/// titles and hero headlines only. Everything else stays in the system font. The app carries this one weight, so it is
-/// never bolded. Without the font (a build that failed to bundle it) the display text falls back to the system font.
+/// Urbanist Medium (SIL OFL 1.1; the repository's `Resources/Fonts`), the display face, set as the Mac app sets it:
+/// tracked in by 0.015 em (ARCHITECTURE.md, section 13, "Look"). Large titles and hero headlines only; everything else
+/// stays in the system font. The app carries this one weight, so it is never bolded. Without the font (a build that
+/// failed to bundle it) the display text falls back to the system font. SwiftUI sets display text only through
+/// `View.displayType(_:)`, which sets the face and its tracking together.
 enum DisplayFace {
     static let name = "Urbanist-Medium"
     static let isAvailable = UIFont(name: name, size: 17) != nil
+
+    /// How far apart display text's letters are moved, as a fraction of its size: in by 0.015 em.
+    static let trackingPerEm: CGFloat = -0.015
 
     /// The size at the default text size; Dynamic Type scales it with `style`.
     static func size(_ style: Font.TextStyle) -> CGFloat {
@@ -96,22 +101,42 @@ enum DisplayFace {
         }
     }
 
-    /// The navigation bar's large titles (Home's "Sorello", Dictionary's) in the display face; inline titles stay in
-    /// the system font. Called at launch and again when the text size changes.
+    /// The navigation bar's large titles (Home's "Sorello", Dictionary's) in the display face, with its tracking at
+    /// the scaled size; inline titles stay in the system font. Called at launch and again when the text size changes.
     @MainActor
     static func styleLargeTitles() {
         guard let font = UIFont(name: name, size: size(.largeTitle)) else { return }
+        let scaled = UIFontMetrics(forTextStyle: .largeTitle).scaledFont(for: font)
         UINavigationBar.appearance().largeTitleTextAttributes = [
-            .font: UIFontMetrics(forTextStyle: .largeTitle).scaledFont(for: font),
+            .font: scaled,
+            .kern: trackingPerEm * scaled.pointSize,
             .foregroundColor: UIColor.white,
         ]
     }
 }
 
-extension Font {
-    /// The display face at `style`'s size, scaled with Dynamic Type.
-    static func display(_ style: Font.TextStyle) -> Font {
-        DisplayFace.isAvailable ? .custom(DisplayFace.name, size: DisplayFace.size(style), relativeTo: style) : .system(style)
+extension View {
+    /// Sets this text as display text in `style`: the display face at `style`'s size and its tracking at that size,
+    /// both scaled with Dynamic Type, so display text is never drawn without its tracking.
+    func displayType(_ style: Font.TextStyle) -> some View {
+        modifier(DisplayType(style: style))
+    }
+}
+
+/// The display face and its tracking at one text style. The tracking scales with Dynamic Type as the face does, so it
+/// stays 0.015 em at every text size.
+private struct DisplayType: ViewModifier {
+    private let font: Font
+    @ScaledMetric private var tracking: CGFloat
+
+    init(style: Font.TextStyle) {
+        let size = DisplayFace.size(style)
+        font = DisplayFace.isAvailable ? .custom(DisplayFace.name, size: size, relativeTo: style) : .system(style)
+        _tracking = ScaledMetric(wrappedValue: DisplayFace.trackingPerEm * size, relativeTo: style)
+    }
+
+    func body(content: Content) -> some View {
+        content.font(font).tracking(tracking)
     }
 }
 
