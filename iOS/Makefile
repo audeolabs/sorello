@@ -130,8 +130,8 @@ SESSION_CONTROL_INTENT_SOURCES ?= Activity/SessionControlIntent.swift
 ACTIVITY_KEYBOARDCORE_SOURCES ?= KeyboardCore/RidgeMark.swift KeyboardCore/KeyboardLayout.swift KeyboardCore/DotWave.swift
 # The app draws the same mark and wave (the session card, onboarding and the start-session screen).
 APP_KEYBOARDCORE_SOURCES ?= $(ACTIVITY_KEYBOARDCORE_SOURCES)
-# The display face, Geist Serif (SIL OFL 1.1), with its license beside it in the app (`UIAppFonts`).
-APP_FONTS ?= Resources/Fonts/GeistSerif-Regular.ttf Resources/Fonts/GeistSerif-OFL.txt
+# The display face, Urbanist Medium (SIL OFL 1.1), the repository's one copy, with its license beside it (`UIAppFonts`).
+APP_FONTS ?= ../Resources/Fonts/Urbanist-Medium.ttf ../Resources/Fonts/Urbanist-OFL.txt
 SHARED_SOURCES ?= $(call swift_sources,Shared)
 HOSTCORE_SOURCES ?= $(call swift_sources,HostCore)
 KEYBOARDCORE_SOURCES ?= $(call swift_sources,KeyboardCore)

@@ -105,7 +105,7 @@ struct BounceView: View {
     private var word: some View {
         ZStack {
             Text(phase.word)
-                .font(.display(.largeTitle))
+                .displayType(.largeTitle)
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)

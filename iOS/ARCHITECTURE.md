@@ -928,15 +928,18 @@ transcripts or other user data.
     ink; row glyphs are plain; a switch that is on is aurora green; the brand
     colours mark state only, on small dots and glyphs (aurora ready, coral
     recording, glacier waiting, ember warning). The ridge mark (`RidgeMark`)
-    and the recording wave (`DotWave`) are compiled into the app. Geist Serif
-    Regular (`Resources/Fonts`, SIL OFL 1.1, its license beside it in the
-    app) is the display face, for Home's and Dictionary's large titles, the
-    onboarding headlines and the bounce screen's phase word, scaled with
-    Dynamic Type; everything else is the system font, and without the font
-    the display text falls back to it. Descriptions give way to glyphs:
-    toggles have titles only. Decorative glyphs stop growing at the largest
-    text sizes, and give the words their width where a word would break;
-    pills wrap to a second line rather than truncate. What
+    and the recording wave (`DotWave`) are compiled into the app. The
+    display face is the Mac app's: Urbanist Medium, tracked in by 0.015 em
+    (the repository's one copy, in `Resources/Fonts` at its root, SIL OFL
+    1.1, its license beside it in the app), for Home's and Dictionary's
+    large titles, the onboarding headlines and the bounce screen's phase
+    word, at SF's own sizes for their text styles and scaled with Dynamic
+    Type. SwiftUI sets it only through `displayType(_:)`, which sets the
+    face and its tracking together. Everything else is the system font,
+    and without the font the display text falls back to it. Descriptions
+    give way to glyphs: toggles have titles only. Decorative glyphs stop
+    growing at the largest text sizes, and give the words their width where
+    a word would break; pills wrap to a second line rather than truncate. What
     each screen shows for a state is in `HostCore/AppScreens.swift` (pure,
     tested).
   - Onboarding: the privacy promise as three glyphs, microphone permission
