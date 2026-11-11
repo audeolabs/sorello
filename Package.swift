@@ -17,6 +17,11 @@ let package = Package(
         .executable(name: "SorelloSnapshots", targets: ["SorelloSnapshots"]),
         .executable(name: "sorello-transcribe", targets: ["SorelloTranscribe"]),
     ],
+    // Sorello's one dependency: Sparkle updates the app (ARCHITECTURE.md, section 6, "Updates"). One exact version, so
+    // what is signed and shipped is what was reviewed.
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1"),
+    ],
     targets: [
         // Neutral modules: nothing here imports a macOS-only framework.
         .target(name: "DictationCore", swiftSettings: strict),
@@ -32,7 +37,7 @@ let package = Package(
         .target(
             name: "SorelloApp",
             dependencies: ["DictationCore", "TextRules", "DictionaryKit", "DesignCore", "SpeechEngine", "Persistence",
-                           "SorelloUI", "MacPlatform"],
+                           "SorelloUI", "MacPlatform", .product(name: "Sparkle", package: "Sparkle")],
             swiftSettings: mainActor
         ),
         .executableTarget(name: "Sorello", dependencies: ["SorelloApp"], swiftSettings: mainActor),

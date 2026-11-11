@@ -28,13 +28,37 @@ import Testing
         let notice = try #require(notices.first { $0.title == "Urbanist" })
         #expect(notice.detail.contains("The Urbanist Project Authors"))
         #expect(notice.detail.contains("SIL Open Font License 1.1"))
-        #expect(notices.map(\.id) == [notice.id, "permission-card"], "a notice for a font the app does not ship")
+        #expect(notices.map(\.id) == [notice.id, "permission-card", "sparkle"],
+                "a notice for work the app does not ship, or none for work it does")
 
         let shown = ShownNotices()
         harness.app.navigation.showNotice = { shown.notices.append(($0, $1)) }
         harness.windows.main.about.showNotice(notice.id)
         #expect(shown.notices.map(\.title) == ["Urbanist"])
         #expect(shown.notices.first?.files == [licence])
+    }
+
+    /// Sparkle ships in every build's Frameworks directory, whether or not the build has an update feed, so About
+    /// credits it in every build and opens the notices file that carries its licence.
+    @Test func aboutCreditsSparkleAndOpensItsLicence() throws {
+        let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
+        let harness = Harness(directory: directory.url, defaults: suite.defaults)
+        let notice = try #require(harness.windows.main.about.thirdPartyNotices.first { $0.id == "sparkle" })
+        #expect(notice.title == "Sparkle")
+        #expect(notice.detail.contains("MIT License"))
+
+        let shown = ShownNotices()
+        harness.app.navigation.showNotice = { shown.notices.append(($0, $1)) }
+        harness.windows.main.about.showNotice(notice.id)
+        #expect(shown.notices.map(\.title) == ["Sparkle"])
+        // The notices file the build copies into every app carries Sparkle's licence and the notices it requires.
+        let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let shipped = try String(contentsOf: repository.appendingPathComponent("ThirdPartyNotices.md"), encoding: .utf8)
+        for part in ["## Sparkle", "Copyright (c) 2006-2013 Andy Matuschak.", "Colin Percival", "Yuta Mori",
+                     "Orson Peters", "Mark Hamlin"] {
+            #expect(shipped.contains(part), "\(part)")
+        }
     }
 }
 

@@ -104,6 +104,8 @@ final class WindowModels {
                 app.navigation.showNotice(app.info.modelName ?? String(localized: "Speech model"), app.info.modelNotices)
             case "urbanist":
                 app.navigation.showNotice("Urbanist", app.info.fontLicence.map { [$0] } ?? [])
+            case "sparkle":
+                app.navigation.showNotice("Sparkle", app.info.thirdPartyNotices.map { [$0] } ?? [])
             default:
                 app.navigation.showNotice(String(localized: "Permission card"),
                                           app.info.thirdPartyNotices.map { [$0] } ?? [])
@@ -125,6 +127,9 @@ final class WindowModels {
                                    comment: "About: the display font's notice")),
          NoticeItem(id: "permission-card", title: String(localized: "Permission card"),
                     detail: String(localized: "Adapted from Scrawl and AskForPermission, MIT License.",
-                                   comment: "About: the permission card's notice"))]
+                                   comment: "About: the permission card's notice")),
+         NoticeItem(id: "sparkle", title: "Sparkle",
+                    detail: String(localized: "Andy Matuschak and the Sparkle Project, MIT License.",
+                                   comment: "About: the updater's notice"))]
     }
 }
