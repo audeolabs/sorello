@@ -280,7 +280,7 @@ info_plist_base = cp "$(1)" "$(2)" && \
 	$(if $(strip $(BUILD_NUMBER)),plutil -replace CFBundleVersion -string "$(BUILD_NUMBER)" "$(2)" &&) \
 	plutil -replace MinimumOSVersion -string "$(DEPLOYMENT_TARGET)" "$(2)"
 
-.PHONY: all binaries check typecheck test lint install-sim run-sim smoke-sim clean configuration model-selection swipe-selection signing-requirements FORCE
+.PHONY: all binaries check typecheck test lint check-binaries install-sim run-sim smoke-sim clean configuration model-selection swipe-selection signing-requirements FORCE
 
 all: signing-requirements $(APP_SIGNATURE)
 
@@ -413,7 +413,7 @@ $(PACKAGE_BUILD_DIR)/%.bin-path: $(PACKAGE_SOURCES) Makefile
 	package() { swift build --package-path .. -c release --triple "$*" --sdk "$$sdk_path" --scratch-path "$$scratch" "$$@"; }; \
 	echo "Building SorelloSpeech and SorelloText for $*"; \
 	package --product SorelloSpeech; package --product SorelloText; \
-	mkdir -p "$(@D)"; package --product SorelloSpeech --show-bin-path > "$@.tmp"; mv "$@.tmp" "$@"
+	mkdir -p "$(@D)"; package --product SorelloSpeech --show-bin-path > "$@.$$$$"; mv "$@.$$$$" "$@"
 
 $(APP_BINARY): $(APP_SOURCES) $(PACKAGE) $(CONFIG_STAMP) $(LINKED_APP_ENTITLEMENTS) $(APPINTENTS_PROTOCOLS) Makefile
 	@mkdir -p "$(@D)"
@@ -548,7 +548,8 @@ ipa: all
 appstore-check: $(filter ipa,$(MAKECMDGOALS))
 	@sh scripts/check-appstore-bundle.sh --app "$(APP_BUNDLE)" --ipa "$(IPA)" --bundle-id "$(BUNDLE_ID)" \
 		--app-group "$(APP_GROUP)" --url-scheme "$(URL_SCHEME)" --universal-link "$(UNIVERSAL_LINK)" \
-		--display-name "$(DISPLAY_NAME)" --team-id "$(TEAM_ID)"
+		--display-name "$(DISPLAY_NAME)" --team-id "$(TEAM_ID)" --pin ../Models/model.lock.json \
+		--model-notices ../Resources/ModelNotices
 
 # Apple's own checks, then the upload, with an App Store Connect API key
 # (ASC_KEY_ID, ASC_ISSUER_ID; the .p8 in ~/.appstoreconnect/private_keys). Both
@@ -558,7 +559,7 @@ appstore-validate appstore-upload: appstore-check
 	xcrun altool $(if $(filter appstore-upload,$@),--upload-package,--validate-app) "$(IPA)" -t ios \
 		--api-key "$(ASC_KEY_ID)" --api-issuer "$(ASC_ISSUER_ID)"
 
-check: typecheck test lint
+check: typecheck test lint check-binaries
 
 # Always against the simulator SDK, independent of PLATFORM. The self-test
 # variant is checked too, so it cannot rot outside its builds.
@@ -591,6 +592,14 @@ endif
 lint:
 	plutil -lint Config/*.plist Config/*.entitlements Config/*.xcprivacy
 	@for script in scripts/*.sh; do sh -n "$$script" || exit 1; done
+
+# The three executables, built for the simulator, name no networking API, and the keyboard and the Live Activity hold
+# nothing of the shared modules they must not reach (scripts/check-binaries.sh).
+CHECK_BUILD_DIR = build/simulator
+check-binaries:
+	@$(MAKE) --no-print-directory binaries PLATFORM=simulator CHANNEL=dev BUILD_DIR="$(CHECK_BUILD_DIR)"
+	@sh scripts/check-binaries.sh "$(CHECK_BUILD_DIR)/obj/Sorello" "$(CHECK_BUILD_DIR)/obj/SorelloKeyboard" \
+		"$(CHECK_BUILD_DIR)/obj/SorelloActivity"
 
 SIM_DEVICE ?= Sorello-Smoke
 SIM_DEVICE_TYPE ?= iPhone 17 Pro
