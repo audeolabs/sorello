@@ -1049,13 +1049,18 @@ Review does.
   fails any of this is not handed on.
 - **Nightly** runs every night, and when it is started by hand. If `main`
   has not moved since the last nightly, it does nothing. Otherwise it
-  packages "Sorello Nightly" from `main` and publishes it as the
-  prerelease `nightly`, in place of the last one: two files,
-  `Sorello-Nightly.dmg` and `appcast.xml`, the feed installed nightlies
-  follow. The `nightly` tag is moved to the commit it was
-  built from before the release is made on it, so a nightly is never
-  published on a tag that is on another commit. If publishing fails part
-  way there is no nightly until the next run, which builds again.
+  packages "Sorello Nightly" from `main` and publishes it in the
+  prerelease `nightly`, in place of the last one: `Sorello-Nightly.dmg`,
+  the same image under a name of its own build, such as
+  `Sorello-Nightly-240.dmg`, and `appcast.xml`, the feed installed
+  nightlies follow. The feed gives the address that names the build, and
+  the images of the last seven builds stay, so an app that was offered
+  one night's build is still given that build after the next is
+  published. The `nightly` tag is moved to the commit the nightly was
+  built from before anything is published, so a nightly is never
+  published on a tag that is on another commit. The release's notes,
+  which say what it was built from, are written last: if publishing
+  fails part way, the next run builds and publishes again.
 - **Release** is started by hand, from `main`. It packages "Sorello" and
   leaves `Sorello.dmg` and `appcast.xml` in a draft release named for the
   version, such as `v0.0.1`. Publishing the draft, which creates the tag,

@@ -150,7 +150,9 @@ jobs:
           rm "$NOTARY_KEY_FILE"
           echo "sha256=$(shasum -a 256 "build/$DMG" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
       # The feed lists this build at the address its release will serve it from, signed with the update key. Only
-      # this step holds that key. A feed is written only for an app that follows this repository's releases.
+      # this step holds that key. A feed is written only for an app that follows this repository's releases. A
+      # nightly's address names its build: the next nightly takes the plain name, and an app that was offered this
+      # build must still be given this build.
       - name: Write the update feed
         id: feed
         env:
@@ -159,12 +161,13 @@ jobs:
           APP: ${{ steps.build.outputs.app }}
           DMG: ${{ steps.build.outputs.dmg }}
           VERSION: ${{ steps.build.outputs.version }}
+          BUILD: ${{ steps.build.outputs.build }}
           RELEASES: ${{ github.server_url }}/${{ github.repository }}/releases
         run: |
           [ -n "$UPDATE_SIGNING_KEY" ] || { echo "::error::The UPDATE_SIGNING_KEY secret is not set"; exit 1; }
           case "$CHANNEL" in
-            nightly) tag=nightly ;;
-            release) tag="v$VERSION" ;;
+            nightly) address="$RELEASES/download/nightly/${DMG%.dmg}-$BUILD.dmg" ;;
+            release) address="$RELEASES/download/v$VERSION/$DMG" ;;
             *) echo "::error::No release is made for the $CHANNEL channel"; exit 1 ;;
           esac
           feed=$(/usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$APP/Contents/Info.plist")
@@ -174,7 +177,7 @@ jobs:
           esac
           trap 'rm -f "$UPDATE_KEY_FILE"' EXIT
           printf '%s' "$UPDATE_SIGNING_KEY" > "$UPDATE_KEY_FILE"
-          ./scripts/write-appcast.sh "$APP" "build/$DMG" "$RELEASES/download/$tag/$DMG" build/appcast.xml
+          ./scripts/write-appcast.sh "$APP" "build/$DMG" "$address" build/appcast.xml
           echo "sha256=$(shasum -a 256 build/appcast.xml | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
       # The app is proved as it will arrive: out of the disk image, signed and notarized. It draws its windows, then
       # downloads its model and dictates a recording made here.

@@ -52,10 +52,13 @@ jobs:
       channel: nightly
       commit: ${{ needs.moved.outputs.commit }}
     secrets: inherit
-  # There is one nightly: the last one makes way for this one, its disk image and the feed that lists it. The tag is moved to the commit this one was built
-  # from before the release is made on it, so a nightly is never published on a tag that is on another commit. If a
-  # step here fails there is no nightly until the next run, which builds again. Whether the last nightly and the
-  # tag are there is read from lists: an answer that could not be had stops the job, and never passes for "no".
+  # There is one nightly release, and each night's build takes its place in it: the image under its plain name, the
+  # same image under a name of its own build, and the feed, which gives that second address. The images of the last
+  # few builds stay, so an app that was offered yesterday's build can still fetch yesterday's build. The tag is
+  # moved to the commit this one was built from before anything is published, so a nightly is never published on a
+  # tag that is on another commit. The notes, which say what the nightly was built from, are written last: if a
+  # step here fails, the next run builds and publishes again. Whether the release and the tag are there is read
+  # from lists: an answer that could not be had stops the job, and never passes for "no".
   publish:
     needs: [moved, package]
     runs-on: ubuntu-latest
@@ -75,15 +78,18 @@ jobs:
           DMG: ${{ needs.package.outputs.dmg }}
           SHA256: ${{ needs.package.outputs.sha256 }}
           FEED_SHA256: ${{ needs.package.outputs.feed_sha256 }}
+          # How many builds' own images stay, this one included.
+          KEEP: 7
         run: |
           echo "$SHA256  $DMG" | shasum -a 256 --check
           echo "$FEED_SHA256  appcast.xml" | shasum -a 256 --check
+          own="${DMG%.dmg}-$BUILD.dmg"
+          cp "$DMG" "$own"
           notes="Version $VERSION ($BUILD), built from $COMMIT. Signed with the Developer ID and notarized by Apple.
 
           SHA-256 of $DMG: $SHA256"
-          last=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq '.[] | "\(.id) \(.tag_name)"' \
+          releases=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq '.[] | "\(.id) \(.tag_name)"' \
             | awk -v tag="$TAG" '$2 == tag { print $1 }')
-          for id in $last; do gh api --method DELETE "repos/$GH_REPO/releases/$id"; done
           tags=$(gh api "repos/$GH_REPO/git/matching-refs/tags/$TAG" --jq '.[].ref')
           if grep -Fxq "refs/tags/$TAG" <<< "$tags"; then
             gh api --method PATCH "repos/$GH_REPO/git/refs/tags/$TAG" -f sha="$COMMIT" -F force=true > /dev/null
@@ -91,5 +97,27 @@ jobs:
             gh api --method POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$COMMIT" > /dev/null
           fi
           [ "$(gh api "repos/$GH_REPO/git/ref/tags/$TAG" --jq .object.sha)" = "$COMMIT" ]
-          gh release create "$TAG" "$DMG" appcast.xml --verify-tag --prerelease --title "Sorello Nightly" \
-            --notes "$notes"
+          if [ -z "$releases" ]; then
+            gh release create "$TAG" "$own" appcast.xml "$DMG" --verify-tag --prerelease --title "Sorello Nightly" \
+              --notes "$notes"
+            exit 0
+          fi
+          # The build's own image goes up before the feed that names it.
+          release=$(head -n 1 <<< "$releases")
+          for id in $(tail -n +2 <<< "$releases"); do gh api --method DELETE "repos/$GH_REPO/releases/$id"; done
+          gh release upload "$TAG" "$own" --clobber
+          gh release upload "$TAG" appcast.xml "$DMG" --clobber
+          # What goes: the own images of builds older than the last $KEEP, and anything an earlier nightly left
+          # that is not one of this nightly's files.
+          assets=$(gh api --paginate "repos/$GH_REPO/releases/$release/assets?per_page=100" \
+            --jq '.[] | "\(.id) \(.name)"')
+          kept=$(awk '{ print $2 }' <<< "$assets" | sed -nE "s/^${DMG%.dmg}-([0-9]+)\.dmg$/\1/p" | sort -rn \
+            | head -n "$KEEP")
+          grep -Fxq "$BUILD" <<< "$kept"
+          while read -r id name; do
+            case "$name" in "$DMG"|appcast.xml) continue ;; esac
+            number=$(sed -nE "s/^${DMG%.dmg}-([0-9]+)\.dmg$/\1/p" <<< "$name")
+            if [ -n "$number" ] && grep -Fxq "$number" <<< "$kept"; then continue; fi
+            gh api --method DELETE "repos/$GH_REPO/releases/assets/$id"
+          done <<< "$assets"
+          gh release edit "$TAG" --prerelease --title "Sorello Nightly" --notes "$notes"
