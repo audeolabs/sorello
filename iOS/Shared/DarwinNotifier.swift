@@ -34,7 +34,7 @@ struct DarwinNotifier: Sendable {
         self.appGroupIdentifier = appGroupIdentifier
     }
 
-    init(configuration: LocalFlowConfiguration) {
+    init(configuration: SorelloConfiguration) {
         self.init(appGroupIdentifier: configuration.appGroupIdentifier)
     }
 

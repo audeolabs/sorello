@@ -111,7 +111,7 @@ final class ParakeetTranscriber: ObservableObject {
         lastPreparation = measurement
         if report.succeeded { preferences.lastPreparationSeconds = report.seconds }
         sync()
-        #if LOCALFLOW_SELFTEST
+        #if SORELLO_SELFTEST
         SelfTest.report(measurement)
         #endif
     }
@@ -129,7 +129,7 @@ final class ParakeetTranscriber: ObservableObject {
         }
         measurements.insert(measurement, at: 0)
         if measurements.count > Self.maxMeasurements { measurements.removeLast(measurements.count - Self.maxMeasurements) }
-        #if LOCALFLOW_SELFTEST
+        #if SORELLO_SELFTEST
         SelfTest.report(measurement)
         #endif
     }
@@ -228,7 +228,7 @@ extension ComputeFailureHint {
     var message: String {
         switch self {
         case .backgroundNeuralEngineNeedsEntitlement:
-            return "Transcription failed in the background. From iOS 27 the Neural Engine needs an entitlement this build does not have yet, so dictate with LocalFlow in the foreground for now."
+            return "Transcription failed in the background. From iOS 27 the Neural Engine needs an entitlement this build does not have yet, so dictate with Sorello in the foreground for now."
         }
     }
 }

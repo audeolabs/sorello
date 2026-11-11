@@ -77,7 +77,7 @@ final class KeyboardInput: KeyAreaViewDelegate {
     private let swipeEngineLoad = BundleModelLoader<SwipeEngine>()
     /// The App Group settings, read at each commit key: autocorrect corrects only while they are readable;
     /// nil without Full Access.
-    var sharedSettings: () -> LocalFlowSettings? = { nil }
+    var sharedSettings: () -> SorelloSettings? = { nil }
     /// Soft key edges once their model has loaded (`configureSoftKeyEdges`): the bundle's `tap` section and
     /// the prior with its cache. Nil keeps letter taps as they are.
     private var softKeys: SoftKeyEdgesManifest?

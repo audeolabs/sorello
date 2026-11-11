@@ -8,8 +8,8 @@ enum NotificationObserversTests {
         ]
     }
 
-    private static let name = Notification.Name("LocalFlowTests.syntheticNotification")
-    private static let otherName = Notification.Name("LocalFlowTests.otherSyntheticNotification")
+    private static let name = Notification.Name("SorelloTests.syntheticNotification")
+    private static let otherName = Notification.Name("SorelloTests.otherSyntheticNotification")
 
     private static func testRemoveAllStopsDelivery() {
         let center = NotificationCenter()

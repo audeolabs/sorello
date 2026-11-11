@@ -29,7 +29,7 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
     /// When the app last became active after the background, nil until then (`HostSessionPolicy.showsBounce`).
     private var activeSince: Date?
 
-    let configuration: LocalFlowConfiguration?
+    let configuration: SorelloConfiguration?
     let preferences = AppPreferences()
     let settings: SharedSettingsModel
     let transcriber: ParakeetTranscriber
@@ -47,11 +47,11 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
     private var hapticRequestID: UUID?
 
     private init() {
-        configuration = LocalFlowConfiguration.main
+        configuration = SorelloConfiguration.main
         transcriber = ParakeetTranscriber(preferences: preferences)
         dictionary = DictionaryModel(transcriber: transcriber)
         let store = configuration.flatMap(SharedDictationStore.init(configuration:))
-        let sharedSettings = configuration.flatMap(LocalFlowSettings.init(configuration:))
+        let sharedSettings = configuration.flatMap(SorelloSettings.init(configuration:))
         self.store = store
         settings = SharedSettingsModel(settings: sharedSettings)
         guard let configuration, let store, let sharedSettings else {
@@ -61,7 +61,7 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
         let buffer = DictationSampleBuffer()
         let relay = CaptureRelay()
         let deliver: @Sendable (CaptureEvent) -> Void = { relay.deliver($0) }
-        #if LOCALFLOW_SELFTEST
+        #if SORELLO_SELFTEST
         let synthetic = SelfTest.syntheticInput(buffer: buffer, deliver: deliver,
                                                 useBuiltInMicrophone: { [preferences] in preferences.useBuiltInMicrophone })
         #else
@@ -85,7 +85,7 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
             }
             microphone.router.setDesired(preferences.useBuiltInMicrophone)
         }
-        #if LOCALFLOW_SELFTEST
+        #if SORELLO_SELFTEST
         if let syntheticCapture = capture as? SyntheticCapture {
             syntheticCapture.onConfigured = { [weak self] in self?.configured($0) }
             syntheticCapture.onCaptureRouteChanged = { [weak self] in self?.captureRouteChanged($0) }
@@ -213,7 +213,7 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
             isProtectedDataAvailable: { UIApplication.shared.isProtectedDataAvailable },
             beginBackgroundTask: { onExpiration in
                 let task = BackgroundTask()
-                task.identifier = UIApplication.shared.beginBackgroundTask(withName: "LocalFlow transcription") {
+                task.identifier = UIApplication.shared.beginBackgroundTask(withName: "Sorello transcription") {
                     MainActor.assumeIsolated { onExpiration() }
                 }
                 return { task.end() }
@@ -233,7 +233,7 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
 
     private func configured(_ configuration: CaptureConfiguration) {
         captureConfiguration = configuration
-        #if LOCALFLOW_SELFTEST
+        #if SORELLO_SELFTEST
         SelfTest.report(configuration)
         #endif
     }

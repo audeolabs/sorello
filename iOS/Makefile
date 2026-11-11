@@ -1,4 +1,4 @@
-# LocalFlow for iPhone, built with swiftc and make only (no Xcode project or
+# Sorello for iPhone, built with swiftc and make only (no Xcode project or
 # SwiftPM). Run `make -C iOS <target>` from the repository root, or `make` in
 # this directory. README.md documents usage; ARCHITECTURE.md is the contract.
 .DEFAULT_GOAL := all
@@ -9,16 +9,18 @@
 CHANNEL ?= dev
 ifeq ($(CHANNEL),appstore)
 PLATFORM ?= device
+# Kept from the app's first name, as are the dev values below: an update must replace the app people already have
+# (ARCHITECTURE.md, "Identifiers").
 BUNDLE_ID ?= com.ajbarryiii.localflow.ios
 URL_SCHEME ?= localflow
 UNIVERSAL_LINK ?= https://wildernesslabs.ai/localflow/dictate
-DISPLAY_NAME ?= LocalFlow
+DISPLAY_NAME ?= Sorello
 ICON_SOURCE ?= Resources/AppIcon-Source.png
 BUILD_DIR ?= build/appstore
 ifneq ($(PLATFORM),device)
 $(error CHANNEL=appstore needs PLATFORM=device)
 endif
-ifneq ($(findstring LOCALFLOW_SELFTEST,$(SWIFT_FLAGS)),)
+ifneq ($(findstring SORELLO_SELFTEST,$(SWIFT_FLAGS)),)
 $(error CHANNEL=appstore never builds the self-test variant)
 endif
 else ifneq ($(CHANNEL),dev)
@@ -34,6 +36,7 @@ endif
 endif
 
 PLATFORM ?= simulator
+# Kept from the app's first name, as the App Store values above.
 BUNDLE_ID ?= com.ajbarryiii.localflow.ios.dev
 KEYBOARD_BUNDLE_ID = $(BUNDLE_ID).keyboard
 ACTIVITY_BUNDLE_ID = $(BUNDLE_ID).activity
@@ -44,7 +47,7 @@ URL_SCHEME ?= localflow-dev
 # entitlement for its host, which its profile must grant. Empty (dev, simulator, self-test and e2e
 # builds) keeps the scheme; https://wildernesslabs.ai/localflow-dev/dictate is the dev device opt-in.
 UNIVERSAL_LINK ?=
-DISPLAY_NAME ?= LocalFlow Dev
+DISPLAY_NAME ?= Sorello Dev
 DEPLOYMENT_TARGET ?= 26.0
 PARAKEET_BUNDLE_DIR ?=
 # Optional swipe typing bundle (SwipeEncoder.mlmodelc, lexicon.bin, bundle.json);
@@ -155,21 +158,21 @@ KEYBOARD_SOURCES = $(KEYBOARD_SWIFT_SOURCES) $(SHARED_SOURCES) $(INSERTION_CONTE
 ACTIVITY_SOURCES = $(ACTIVITY_SWIFT_SOURCES) $(ACTIVITYCORE_SOURCES) $(ACTIVITY_KEYBOARDCORE_SOURCES)
 
 OBJ_DIR = $(BUILD_DIR)/obj
-APP_BUNDLE = $(BUILD_DIR)/LocalFlow.app
-APPEX_BUNDLE = $(APP_BUNDLE)/PlugIns/LocalFlowKeyboard.appex
-ACTIVITY_APPEX_BUNDLE = $(APP_BUNDLE)/PlugIns/LocalFlowActivity.appex
-APP_BINARY = $(OBJ_DIR)/LocalFlow
-KEYBOARD_BINARY = $(OBJ_DIR)/LocalFlowKeyboard
-ACTIVITY_BINARY = $(OBJ_DIR)/LocalFlowActivity
-APP_ENTITLEMENTS = $(OBJ_DIR)/LocalFlow.xcent
-KEYBOARD_ENTITLEMENTS = $(OBJ_DIR)/LocalFlowKeyboard.xcent
-ACTIVITY_ENTITLEMENTS = $(OBJ_DIR)/LocalFlowActivity.xcent
+APP_BUNDLE = $(BUILD_DIR)/Sorello.app
+APPEX_BUNDLE = $(APP_BUNDLE)/PlugIns/SorelloKeyboard.appex
+ACTIVITY_APPEX_BUNDLE = $(APP_BUNDLE)/PlugIns/SorelloActivity.appex
+APP_BINARY = $(OBJ_DIR)/Sorello
+KEYBOARD_BINARY = $(OBJ_DIR)/SorelloKeyboard
+ACTIVITY_BINARY = $(OBJ_DIR)/SorelloActivity
+APP_ENTITLEMENTS = $(OBJ_DIR)/Sorello.xcent
+KEYBOARD_ENTITLEMENTS = $(OBJ_DIR)/SorelloKeyboard.xcent
+ACTIVITY_ENTITLEMENTS = $(OBJ_DIR)/SorelloActivity.xcent
 # Swift const values of the intent's source, from each binary's compile, for its Metadata.appintents.
-APP_CONST_VALUES = $(OBJ_DIR)/appintents/LocalFlow.swiftconstvalues
-ACTIVITY_CONST_VALUES = $(OBJ_DIR)/appintents/LocalFlowActivity.swiftconstvalues
+APP_CONST_VALUES = $(OBJ_DIR)/appintents/Sorello.swiftconstvalues
+ACTIVITY_CONST_VALUES = $(OBJ_DIR)/appintents/SorelloActivity.swiftconstvalues
 APP_SIGNATURE = $(APP_BUNDLE)/_CodeSignature/CodeResources
 ICON_CATALOG = $(OBJ_DIR)/Assets.xcassets
-IPA = $(BUILD_DIR)/LocalFlow.ipa
+IPA = $(BUILD_DIR)/Sorello.ipa
 CONFIG_STAMP = $(OBJ_DIR)/configuration
 PARAKEET_STAMP = $(OBJ_DIR)/parakeet-selection
 SWIPE_STAMP = $(OBJ_DIR)/swipe-selection
@@ -187,11 +190,11 @@ ACCELERATE_FLAGS = -Xcc -DACCELERATE_NEW_LAPACK
 SWIFT_JOBS ?= $(shell sysctl -n hw.activecpu)
 SWIFT_PARALLEL_FLAGS = -j$(SWIFT_JOBS)
 SWIFT_COMMON_FLAGS = -swift-version 5 -parse-as-library -target $(TARGET) -sdk "$(SDK_PATH)" $(ACCELERATE_FLAGS) $(SWIFT_PARALLEL_FLAGS) $(SWIFT_FLAGS)
-KEYBOARD_SWIFT_FLAGS = -module-name LocalFlowKeyboard -application-extension
+KEYBOARD_SWIFT_FLAGS = -module-name SorelloKeyboard -application-extension
 KEYBOARD_LINK_FLAGS = -Xlinker -e -Xlinker _NSExtensionMain
 # A WidgetKit extension. As Xcode links every app extension, the entry point is _NSExtensionMain, which starts the
 # @main widget bundle; with the bundle's own main as the entry, the process exits as soon as WidgetKit launches it.
-ACTIVITY_SWIFT_FLAGS = -module-name LocalFlowActivity -application-extension
+ACTIVITY_SWIFT_FLAGS = -module-name SorelloActivity -application-extension
 ACTIVITY_LINK_FLAGS = $(KEYBOARD_LINK_FLAGS)
 
 # App Intents metadata, as Xcode makes it (ARCHITECTURE.md, "Build and targets"). The compile emits the intent
@@ -238,11 +241,11 @@ SIGNED_ACTIVITY_ENTITLEMENTS = --entitlements "$(ACTIVITY_ENTITLEMENTS)"
 endif
 
 # $(1): template, $(2): output, $(3): bundle identifier. The activity extension's (info_plist_base) has no
-# LocalFlow keys: it reads neither the App Group nor the scheme.
+# Sorello keys: it reads neither the App Group nor the scheme.
 info_plist = $(call info_plist_base,$(1),$(2),$(3)) && \
-	plutil -replace LocalFlowAppGroupIdentifier -string "$(APP_GROUP)" "$(2)" && \
-	$(if $(strip $(UNIVERSAL_LINK)),plutil -replace LocalFlowUniversalLink -string "$(UNIVERSAL_LINK)" "$(2)" &&) \
-	plutil -replace LocalFlowURLScheme -string "$(URL_SCHEME)" "$(2)"
+	plutil -replace SorelloAppGroupIdentifier -string "$(APP_GROUP)" "$(2)" && \
+	$(if $(strip $(UNIVERSAL_LINK)),plutil -replace SorelloUniversalLink -string "$(UNIVERSAL_LINK)" "$(2)" &&) \
+	plutil -replace SorelloURLScheme -string "$(URL_SCHEME)" "$(2)"
 info_plist_base = cp "$(1)" "$(2)" && \
 	plutil -replace CFBundleIdentifier -string "$(3)" "$(2)" && \
 	plutil -replace CFBundleDisplayName -string "$(DISPLAY_NAME)" "$(2)" && \
@@ -387,7 +390,7 @@ endif
 $(APP_BINARY): $(APP_SOURCES) $(CONFIG_STAMP) $(LINKED_APP_ENTITLEMENTS) $(APPINTENTS_PROTOCOLS) Makefile
 	@mkdir -p "$(@D)"
 	@$(call write_const_values_map,$(APP_CONST_VALUES))
-	$(SWIFTC) $(SWIFT_COMMON_FLAGS) $(SWIFT_OPTIMIZATION) -module-name LocalFlow $(call const_values_flags,$(APP_CONST_VALUES)) \
+	$(SWIFTC) $(SWIFT_COMMON_FLAGS) $(SWIFT_OPTIMIZATION) -module-name Sorello $(call const_values_flags,$(APP_CONST_VALUES)) \
 		$(call embedded_entitlements,$(APP_ENTITLEMENTS)) -o "$@" $(APP_SOURCES)
 
 $(KEYBOARD_BINARY): $(KEYBOARD_SOURCES) $(CONFIG_STAMP) $(LINKED_KEYBOARD_ENTITLEMENTS) Makefile
@@ -403,28 +406,28 @@ $(ACTIVITY_BINARY): $(ACTIVITY_SOURCES) $(CONFIG_STAMP) $(LINKED_ACTIVITY_ENTITL
 		$(call embedded_entitlements,$(ACTIVITY_ENTITLEMENTS)) -o "$@" $(ACTIVITY_SOURCES)
 
 $(APP_SIGNATURE): $(APP_BINARY) $(KEYBOARD_BINARY) $(ACTIVITY_BINARY) $(APP_ENTITLEMENTS) $(KEYBOARD_ENTITLEMENTS) \
-		$(ACTIVITY_ENTITLEMENTS) Makefile Config/LocalFlow-Info.plist Config/LocalFlowKeyboard-Info.plist \
-		Config/LocalFlowActivity-Info.plist $(ICON_SOURCE) $(PARAKEET_STAMP) Config/LocalFlow-PrivacyInfo.xcprivacy \
-		Config/LocalFlowKeyboard-PrivacyInfo.xcprivacy Config/LocalFlowActivity-PrivacyInfo.xcprivacy \
+		$(ACTIVITY_ENTITLEMENTS) Makefile Config/Sorello-Info.plist Config/SorelloKeyboard-Info.plist \
+		Config/SorelloActivity-Info.plist $(ICON_SOURCE) $(PARAKEET_STAMP) Config/Sorello-PrivacyInfo.xcprivacy \
+		Config/SorelloKeyboard-PrivacyInfo.xcprivacy Config/SorelloActivity-PrivacyInfo.xcprivacy \
 		$(wildcard ../Resources/Parakeet/*) ../scripts/label-localflow-model.py \
 		$(SWIPE_STAMP) $(wildcard ../Resources/Swipe/*) $(APP_FONTS)
 	@rm -rf "$(APPEX_BUNDLE)" "$(ACTIVITY_APPEX_BUNDLE)" "$(APP_BUNDLE)/_CodeSignature" "$(APP_BUNDLE)/embedded.mobileprovision" "$(APP_BUNDLE)/Fonts"
 	@mkdir -p "$(APPEX_BUNDLE)" "$(ACTIVITY_APPEX_BUNDLE)"
-	@cp "$(APP_BINARY)" "$(APP_BUNDLE)/LocalFlow"
-	@cp "$(KEYBOARD_BINARY)" "$(APPEX_BUNDLE)/LocalFlowKeyboard"
-	@cp "$(ACTIVITY_BINARY)" "$(ACTIVITY_APPEX_BUNDLE)/LocalFlowActivity"
-	@$(call appintents_metadata,LocalFlow,$(BUNDLE_ID),$(APP_BUNDLE),$(APP_BINARY),$(APP_CONST_VALUES))
-	@$(call appintents_metadata,LocalFlowActivity,$(ACTIVITY_BUNDLE_ID),$(ACTIVITY_APPEX_BUNDLE),$(ACTIVITY_BINARY),$(ACTIVITY_CONST_VALUES))
-	@$(call info_plist,Config/LocalFlow-Info.plist,$(APP_BUNDLE)/Info.plist,$(BUNDLE_ID))
+	@cp "$(APP_BINARY)" "$(APP_BUNDLE)/Sorello"
+	@cp "$(KEYBOARD_BINARY)" "$(APPEX_BUNDLE)/SorelloKeyboard"
+	@cp "$(ACTIVITY_BINARY)" "$(ACTIVITY_APPEX_BUNDLE)/SorelloActivity"
+	@$(call appintents_metadata,Sorello,$(BUNDLE_ID),$(APP_BUNDLE),$(APP_BINARY),$(APP_CONST_VALUES))
+	@$(call appintents_metadata,SorelloActivity,$(ACTIVITY_BUNDLE_ID),$(ACTIVITY_APPEX_BUNDLE),$(ACTIVITY_BINARY),$(ACTIVITY_CONST_VALUES))
+	@$(call info_plist,Config/Sorello-Info.plist,$(APP_BUNDLE)/Info.plist,$(BUNDLE_ID))
 	@plutil -replace CFBundleURLTypes.0.CFBundleURLName -string "$(BUNDLE_ID)" "$(APP_BUNDLE)/Info.plist"
 	@plutil -replace CFBundleURLTypes.0.CFBundleURLSchemes -json '["$(URL_SCHEME)"]' "$(APP_BUNDLE)/Info.plist"
-	@$(call info_plist,Config/LocalFlowKeyboard-Info.plist,$(APPEX_BUNDLE)/Info.plist,$(KEYBOARD_BUNDLE_ID))
-	@$(call info_plist_base,Config/LocalFlowActivity-Info.plist,$(ACTIVITY_APPEX_BUNDLE)/Info.plist,$(ACTIVITY_BUNDLE_ID))
+	@$(call info_plist,Config/SorelloKeyboard-Info.plist,$(APPEX_BUNDLE)/Info.plist,$(KEYBOARD_BUNDLE_ID))
+	@$(call info_plist_base,Config/SorelloActivity-Info.plist,$(ACTIVITY_APPEX_BUNDLE)/Info.plist,$(ACTIVITY_BUNDLE_ID))
 	@! grep -l '\$$(' "$(APP_BUNDLE)/Info.plist" "$(APPEX_BUNDLE)/Info.plist" "$(ACTIVITY_APPEX_BUNDLE)/Info.plist" || { echo "Unexpanded Info.plist placeholder" >&2; exit 1; }
 	@printf 'APPL????' > "$(APP_BUNDLE)/PkgInfo"
-	@cp Config/LocalFlow-PrivacyInfo.xcprivacy "$(APP_BUNDLE)/PrivacyInfo.xcprivacy"
-	@cp Config/LocalFlowKeyboard-PrivacyInfo.xcprivacy "$(APPEX_BUNDLE)/PrivacyInfo.xcprivacy"
-	@cp Config/LocalFlowActivity-PrivacyInfo.xcprivacy "$(ACTIVITY_APPEX_BUNDLE)/PrivacyInfo.xcprivacy"
+	@cp Config/Sorello-PrivacyInfo.xcprivacy "$(APP_BUNDLE)/PrivacyInfo.xcprivacy"
+	@cp Config/SorelloKeyboard-PrivacyInfo.xcprivacy "$(APPEX_BUNDLE)/PrivacyInfo.xcprivacy"
+	@cp Config/SorelloActivity-PrivacyInfo.xcprivacy "$(ACTIVITY_APPEX_BUNDLE)/PrivacyInfo.xcprivacy"
 	@mkdir -p "$(APP_BUNDLE)/Fonts" && cp $(APP_FONTS) "$(APP_BUNDLE)/Fonts/"
 	@# The icon source is a full-bleed square (Resources/ICON.md); iOS applies its
 	@# own mask. The App Store rejects an icon with an alpha channel, so it is
@@ -504,7 +507,7 @@ endif
 # The upload package: exactly the signed app under Payload/.
 ipa: all
 	@rm -rf "$(OBJ_DIR)/ipa" "$(IPA)" && mkdir -p "$(OBJ_DIR)/ipa/Payload"
-	@ditto "$(APP_BUNDLE)" "$(OBJ_DIR)/ipa/Payload/LocalFlow.app"
+	@ditto "$(APP_BUNDLE)" "$(OBJ_DIR)/ipa/Payload/Sorello.app"
 	@# Made absolute in the shell, where a path with spaces stays one word.
 	@ipa=$(call shell_quote,$(IPA)); case "$$ipa" in /*) ;; *) ipa="$$PWD/$$ipa" ;; esac; \
 	mkdir -p "$$(dirname "$$ipa")" && cd "$(OBJ_DIR)/ipa" && zip -qry -X "$$ipa" Payload
@@ -535,9 +538,9 @@ typecheck:
 	@set -e; sdk=$$(xcrun --sdk iphonesimulator --show-sdk-path); \
 	flags="-typecheck -warnings-as-errors -swift-version 5 -parse-as-library -target arm64-apple-ios$(DEPLOYMENT_TARGET)-simulator -sdk $$sdk $(ACCELERATE_FLAGS) $(SWIFT_PARALLEL_FLAGS) $(SWIFT_FLAGS)"; \
 	echo "Type-checking the app"; \
-	xcrun --sdk iphonesimulator swiftc $$flags -module-name LocalFlow $(APP_SOURCES); \
+	xcrun --sdk iphonesimulator swiftc $$flags -module-name Sorello $(APP_SOURCES); \
 	echo "Type-checking the app (self-test variant)"; \
-	xcrun --sdk iphonesimulator swiftc $$flags -D LOCALFLOW_SELFTEST -module-name LocalFlow $(APP_SOURCES); \
+	xcrun --sdk iphonesimulator swiftc $$flags -D SORELLO_SELFTEST -module-name Sorello $(APP_SOURCES); \
 	echo "Type-checking the keyboard"; \
 	xcrun --sdk iphonesimulator swiftc $$flags $(KEYBOARD_SWIFT_FLAGS) $(KEYBOARD_SOURCES); \
 	echo "Type-checking the Live Activity"; \
@@ -550,16 +553,16 @@ ifeq ($(strip $(TEST_SOURCES)),)
 else
 	@mkdir -p "$(HOST_BUILD_DIR)"
 	xcrun --sdk macosx swiftc -swift-version 5 -parse-as-library -warnings-as-errors $(SWIFT_PARALLEL_FLAGS) \
-		-sdk "$$(xcrun --sdk macosx --show-sdk-path)" -target $(HOST_TARGET) -module-name LocalFlowiOSTests \
-		-o "$(HOST_BUILD_DIR)/LocalFlowiOSTests" $(SHARED_SOURCES) $(INSERTION_CONTEXT_SOURCES) $(HOSTCORE_SOURCES) $(ACTIVITYCORE_SOURCES) $(DICTIONARY_TEST_SOURCES) $(KEYBOARDCORE_SOURCES) $(KEYBOARD_TEST_SOURCES) $(TEST_SOURCES)
-	@"$(HOST_BUILD_DIR)/LocalFlowiOSTests"
+		-sdk "$$(xcrun --sdk macosx --show-sdk-path)" -target $(HOST_TARGET) -module-name SorelloiOSTests \
+		-o "$(HOST_BUILD_DIR)/SorelloiOSTests" $(SHARED_SOURCES) $(INSERTION_CONTEXT_SOURCES) $(HOSTCORE_SOURCES) $(ACTIVITYCORE_SOURCES) $(DICTIONARY_TEST_SOURCES) $(KEYBOARDCORE_SOURCES) $(KEYBOARD_TEST_SOURCES) $(TEST_SOURCES)
+	@"$(HOST_BUILD_DIR)/SorelloiOSTests"
 endif
 
 lint:
 	plutil -lint Config/*.plist Config/*.entitlements Config/*.xcprivacy
 	@for script in scripts/*.sh; do sh -n "$$script" || exit 1; done
 
-SIM_DEVICE ?= LocalFlow-Smoke
+SIM_DEVICE ?= Sorello-Smoke
 SIM_DEVICE_TYPE ?= iPhone 17 Pro
 SIM_RUNTIME ?=
 # Shell fragment: sets udid for SIM_DEVICE, creating the device on first use
@@ -596,24 +599,24 @@ SMOKE_LOG = $(SMOKE_BUILD_DIR)/obj/selftest.log
 # prints only a pass/fail line with timings, never the transcript.
 smoke-sim:
 	@[ -n "$(strip $(PARAKEET_BUNDLE_DIR))" ] || { echo "smoke-sim needs PARAKEET_BUNDLE_DIR (the Parakeet model bundle)." >&2; exit 1; }
-	@$(MAKE) --no-print-directory all PLATFORM=simulator BUILD_DIR="$(SMOKE_BUILD_DIR)" SWIFT_FLAGS="$(SWIFT_FLAGS) -D LOCALFLOW_SELFTEST"
+	@$(MAKE) --no-print-directory all PLATFORM=simulator BUILD_DIR="$(SMOKE_BUILD_DIR)" SWIFT_FLAGS="$(SWIFT_FLAGS) -D SORELLO_SELFTEST"
 	@set -e; $(SIM_RESOLVE); $(SIM_BOOT); \
 	trap '[ "$$booted_here" = 1 ] && xcrun simctl shutdown "$$udid"' EXIT; \
-	xcrun simctl install "$$udid" "$(SMOKE_BUILD_DIR)/LocalFlow.app"; \
+	xcrun simctl install "$$udid" "$(SMOKE_BUILD_DIR)/Sorello.app"; \
 	say -o "$(SMOKE_BUILD_DIR)/obj/selftest.wav" --data-format=LEI16@16000 "$(SMOKE_PHRASE)"; \
 	container=$$(xcrun simctl get_app_container "$$udid" "$(BUNDLE_ID)" data); \
 	mkdir -p "$$container/tmp"; \
-	mv "$(SMOKE_BUILD_DIR)/obj/selftest.wav" "$$container/tmp/localflow-selftest.wav"; \
+	mv "$(SMOKE_BUILD_DIR)/obj/selftest.wav" "$$container/tmp/sorello-selftest.wav"; \
 	( trap 'kill $$sleeper 2>/dev/null; exit 0' TERM; sleep $(SMOKE_TIMEOUT) & sleeper=$$!; wait $$sleeper; \
 		xcrun simctl terminate "$$udid" "$(BUNDLE_ID)" ) >/dev/null 2>&1 & watchdog=$$!; \
 	echo "Running the self-test on $(SIM_DEVICE) (compute: $(SMOKE_COMPUTE))"; \
-	SIMCTL_CHILD_LOCALFLOW_SELFTEST_AUDIO=tmp/localflow-selftest.wav \
-	SIMCTL_CHILD_LOCALFLOW_SELFTEST_EXPECTED="$(SMOKE_PHRASE)" \
-	SIMCTL_CHILD_LOCALFLOW_SELFTEST_COMPUTE="$(SMOKE_COMPUTE)" \
+	SIMCTL_CHILD_SORELLO_SELFTEST_AUDIO=tmp/sorello-selftest.wav \
+	SIMCTL_CHILD_SORELLO_SELFTEST_EXPECTED="$(SMOKE_PHRASE)" \
+	SIMCTL_CHILD_SORELLO_SELFTEST_COMPUTE="$(SMOKE_COMPUTE)" \
 		xcrun simctl launch --console-pty --terminate-running-process "$$udid" "$(BUNDLE_ID)" > "$(SMOKE_LOG)" 2>&1 || true; \
 	kill $$watchdog 2>/dev/null || true; \
-	rm -f "$$container/tmp/localflow-selftest.wav"; \
-	result=$$(grep -a '^LocalFlow self-test:' "$(SMOKE_LOG)" | tail -n 1 | tr -d '\r'); \
+	rm -f "$$container/tmp/sorello-selftest.wav"; \
+	result=$$(grep -a '^Sorello self-test:' "$(SMOKE_LOG)" | tail -n 1 | tr -d '\r'); \
 	case "$$result" in \
 		*"result=pass"*) echo "$$result"; rm -f "$(SMOKE_LOG)" ;; \
 		"") echo "No self-test result; see $(SMOKE_LOG)" >&2; exit 1 ;; \
@@ -651,24 +654,24 @@ smoke-device:
 	@[ -n "$(DEVICE)" ] || { echo "smoke-device needs DEVICE, a name or identifier from 'xcrun devicectl list devices'." >&2; exit 1; }
 ifneq ($(SMOKE_DEVICE_INSTALL),0)
 	@[ -n "$(strip $(PARAKEET_BUNDLE_DIR))" ] || { echo "smoke-device needs PARAKEET_BUNDLE_DIR (the Parakeet model bundle)." >&2; exit 1; }
-	@$(MAKE) --no-print-directory all PLATFORM=device BUILD_DIR="$(SMOKE_DEVICE_BUILD_DIR)" SWIFT_FLAGS="$(SWIFT_FLAGS) -D LOCALFLOW_SELFTEST"
+	@$(MAKE) --no-print-directory all PLATFORM=device BUILD_DIR="$(SMOKE_DEVICE_BUILD_DIR)" SWIFT_FLAGS="$(SWIFT_FLAGS) -D SORELLO_SELFTEST"
 endif
 	@set -e; $(DEVICE_UNLOCKED); obj="$(SMOKE_DEVICE_BUILD_DIR)/obj"; mkdir -p "$$obj"; \
 	if [ "$(SMOKE_DEVICE_INSTALL)" != 0 ]; then \
-		xcrun devicectl device install app --quiet --device "$(DEVICE)" "$(SMOKE_DEVICE_BUILD_DIR)/LocalFlow.app"; \
+		xcrun devicectl device install app --quiet --device "$(DEVICE)" "$(SMOKE_DEVICE_BUILD_DIR)/Sorello.app"; \
 	fi; \
 	copy_audio() { xcrun devicectl device copy to --quiet --device "$(DEVICE)" --domain-type appDataContainer \
-		--domain-identifier "$(BUNDLE_ID)" --source "$$1" --destination tmp/localflow-selftest.wav; }; \
+		--domain-identifier "$(BUNDLE_ID)" --source "$$1" --destination tmp/sorello-selftest.wav; }; \
 	say -o "$$obj/selftest.wav" --data-format=LEI16@16000 "$(SMOKE_PHRASE)"; : > "$$obj/empty.wav"; \
 	trap 'copy_audio "$$obj/empty.wav" >/dev/null 2>&1 || true; rm -f "$$obj/selftest.wav" "$$obj/empty.wav"' EXIT; \
 	copy_audio "$$obj/selftest.wav"; \
 	echo "Running the self-test on $(DEVICE) (compute: $(SMOKE_COMPUTE))"; \
-	DEVICECTL_CHILD_LOCALFLOW_SELFTEST_AUDIO=tmp/localflow-selftest.wav \
-	DEVICECTL_CHILD_LOCALFLOW_SELFTEST_EXPECTED="$(SMOKE_PHRASE)" \
-	DEVICECTL_CHILD_LOCALFLOW_SELFTEST_COMPUTE="$(SMOKE_COMPUTE)" \
+	DEVICECTL_CHILD_SORELLO_SELFTEST_AUDIO=tmp/sorello-selftest.wav \
+	DEVICECTL_CHILD_SORELLO_SELFTEST_EXPECTED="$(SMOKE_PHRASE)" \
+	DEVICECTL_CHILD_SORELLO_SELFTEST_COMPUTE="$(SMOKE_COMPUTE)" \
 		xcrun devicectl device process launch --device "$(DEVICE)" --console --terminate-existing \
 		--timeout $(SMOKE_TIMEOUT) "$(BUNDLE_ID)" > "$(SMOKE_DEVICE_LOG)" 2>&1 || true; \
-	result=$$(LC_ALL=C sed -n -E 's/.*(LocalFlow self-test: result=)/\1/p' "$(SMOKE_DEVICE_LOG)" | tail -n 1 | tr -d '\r'); \
+	result=$$(LC_ALL=C sed -n -E 's/.*(Sorello self-test: result=)/\1/p' "$(SMOKE_DEVICE_LOG)" | tail -n 1 | tr -d '\r'); \
 	case "$$result" in \
 		*"result=pass"*) echo "$$result"; rm -f "$(SMOKE_DEVICE_LOG)" ;; \
 		"") echo "No self-test result; see $(SMOKE_DEVICE_LOG)" >&2; exit 1 ;; \
@@ -678,9 +681,11 @@ endif
 .PHONY: e2e-sim e2e-sim-probe e2e-sim-scenarios
 
 E2E_BUILD_DIR ?= build/e2e-simulator
-E2E_SIM_DEVICE ?= LocalFlow-E2E
+E2E_SIM_DEVICE ?= Sorello-E2E
 E2E_PHRASE ?= $(SMOKE_PHRASE)
-E2E_AUDIO = tmp/localflow-synthetic-mic.wav
+E2E_AUDIO = tmp/sorello-synthetic-mic.wav
+# The App Group's dictation directory (SharedDictationStore), whose name is kept from the app's first name.
+E2E_SHARED_DIR = Library/Caches/LocalFlowDictation
 E2E_LOG = $(E2E_BUILD_DIR)/obj/e2e-app.log
 # Launch options of the self-test build (see App/SelfTest.swift).
 E2E_SKIP_ONBOARDING ?=
@@ -691,7 +696,7 @@ E2E_HEADPHONES ?=
 # e2e-sim-probe: seconds between recording and finish, the completion timeout,
 # whether to send the app to the background while it records, and whether to
 # also open <scheme>://dictate (the simulator asks "Open in …?", which needs a tap).
-# E2E_FROM_BACKGROUND=1 needs a running session: LocalFlow goes to the background
+# E2E_FROM_BACKGROUND=1 needs a running session: Sorello goes to the background
 # first and the request is admitted there, as for every dictation after the first.
 E2E_SPEAK_SECONDS ?= 4
 E2E_TIMEOUT ?= 600
@@ -709,10 +714,10 @@ E2E_KEEP_PRESENCE = $(strip $(E2E_BACKGROUND)$(E2E_FROM_BACKGROUND))
 e2e-sim: SIM_DEVICE = $(E2E_SIM_DEVICE)
 e2e-sim:
 	@[ -n "$(strip $(PARAKEET_BUNDLE_DIR))" ] || { echo "e2e-sim needs PARAKEET_BUNDLE_DIR (the Parakeet model bundle)." >&2; exit 1; }
-	@$(MAKE) --no-print-directory all PLATFORM=simulator BUILD_DIR="$(E2E_BUILD_DIR)" SWIFT_FLAGS="$(SWIFT_FLAGS) -D LOCALFLOW_SELFTEST"
+	@$(MAKE) --no-print-directory all PLATFORM=simulator BUILD_DIR="$(E2E_BUILD_DIR)" SWIFT_FLAGS="$(SWIFT_FLAGS) -D SORELLO_SELFTEST"
 	@set -e; $(SIM_RESOLVE); $(SIM_BOOT); \
 	xcrun simctl terminate "$$udid" "$(BUNDLE_ID)" >/dev/null 2>&1 || true; \
-	xcrun simctl install "$$udid" "$(E2E_BUILD_DIR)/LocalFlow.app"; \
+	xcrun simctl install "$$udid" "$(E2E_BUILD_DIR)/Sorello.app"; \
 	container=$$(xcrun simctl get_app_container "$$udid" "$(BUNDLE_ID)" data); \
 	group=$$(xcrun simctl get_app_container "$$udid" "$(BUNDLE_ID)" "$(APP_GROUP)"); \
 	mkdir -p "$$container/tmp"; \
@@ -720,19 +725,19 @@ e2e-sim:
 	mv "$(E2E_BUILD_DIR)/obj/synthetic-mic.wav" "$$container/$(E2E_AUDIO)"; \
 	rm -f "$(E2E_LOG)"; \
 	log="$(E2E_LOG)"; case "$$log" in /*) ;; *) log="$(CURDIR)/$$log" ;; esac; \
-	SIMCTL_CHILD_LOCALFLOW_SYNTHETIC_MIC="$(E2E_AUDIO)" \
-	SIMCTL_CHILD_LOCALFLOW_SYNTHETIC_HEADPHONES="$(E2E_HEADPHONES)" \
-	SIMCTL_CHILD_LOCALFLOW_SELFTEST_SKIP_ONBOARDING="$(E2E_SKIP_ONBOARDING)" \
-	SIMCTL_CHILD_LOCALFLOW_SELFTEST_SCREEN="$(E2E_SCREEN)" \
-	SIMCTL_CHILD_LOCALFLOW_SELFTEST_START_SESSION="$(E2E_START_SESSION)" \
+	SIMCTL_CHILD_SORELLO_SYNTHETIC_MIC="$(E2E_AUDIO)" \
+	SIMCTL_CHILD_SORELLO_SYNTHETIC_HEADPHONES="$(E2E_HEADPHONES)" \
+	SIMCTL_CHILD_SORELLO_SELFTEST_SKIP_ONBOARDING="$(E2E_SKIP_ONBOARDING)" \
+	SIMCTL_CHILD_SORELLO_SELFTEST_SCREEN="$(E2E_SCREEN)" \
+	SIMCTL_CHILD_SORELLO_SELFTEST_START_SESSION="$(E2E_START_SESSION)" \
 		xcrun simctl launch --terminate-running-process --stdout="$$log" \
 		"$$udid" "$(BUNDLE_ID)" >/dev/null; \
-	echo "LocalFlow (self-test build, synthetic microphone) is running on $(E2E_SIM_DEVICE) $$udid."; \
+	echo "Sorello (self-test build, synthetic microphone) is running on $(E2E_SIM_DEVICE) $$udid."; \
 	echo "  Window:        open -a Simulator --args -CurrentDeviceUDID $$udid"; \
 	echo "  Keyboard:      Settings > General > Keyboard > Keyboards > Add New Keyboard > $(DISPLAY_NAME), then Allow Full Access"; \
 	echo "  Every dictation hears the invented phrase \"$(E2E_PHRASE)\", then silence."; \
 	echo "  Headless test: make -C iOS e2e-sim-probe [E2E_BACKGROUND=1 or E2E_FROM_BACKGROUND=1]"; \
-	echo "  Shared files:  $$group/Library/Caches/LocalFlowDictation"; \
+	echo "  Shared files:  $$group/$(E2E_SHARED_DIR)"; \
 	echo "  App output:    $(E2E_LOG) (content-free self-test lines only)"; \
 	echo "  Shut down:     xcrun simctl shutdown $$udid"
 
@@ -744,7 +749,7 @@ e2e-sim:
 E2E_SHELL = udid=$$(xcrun simctl list devices | grep -F "    $(E2E_SIM_DEVICE) (" | grep -F "(Booted)" | head -n 1 | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/'); \
 	[ -n "$$udid" ] || { echo "$(E2E_SIM_DEVICE) is not booted; run make e2e-sim first." >&2; exit 1; }; \
 	group=$$(xcrun simctl get_app_container "$$udid" "$(BUNDLE_ID)" "$(APP_GROUP)"); \
-	dir="$$group/Library/Caches/LocalFlowDictation"; mkdir -p "$$dir"; \
+	dir="$$group/$(E2E_SHARED_DIR)"; mkdir -p "$$dir"; \
 	request=$$(uuidgen); instance=$$(uuidgen); \
 	intent() { printf '{"action":"%s","issuedAt":%s,"keyboardInstanceID":"%s","requestID":"%s","schema":1}' \
 		"$$1" "$$(date +%s)" "$$instance" "$${2:-$$request}" > "$$dir/.e2e-intent.tmp"; mv "$$dir/.e2e-intent.tmp" "$$dir/intent.json"; }; \
@@ -752,8 +757,8 @@ E2E_SHELL = udid=$$(xcrun simctl list devices | grep -F "    $(E2E_SIM_DEVICE) (
 		mv "$$dir/.e2e-presence.tmp" "$$dir/presence.json"; }; \
 	field() { plutil -extract "$$1" raw -o - "$$dir/status.json" 2>/dev/null || true; }; \
 	status_of() { if [ "$$(field dictation.requestID)" = "$$1" ]; then echo "$$(field dictation.phase)/$$(field dictation.error)"; else echo none; fi; }; \
-	launch_app() { SIMCTL_CHILD_LOCALFLOW_SYNTHETIC_MIC="$(E2E_AUDIO)" SIMCTL_CHILD_LOCALFLOW_SYNTHETIC_HEADPHONES="$(E2E_HEADPHONES)" \
-		SIMCTL_CHILD_LOCALFLOW_SELFTEST_SKIP_ONBOARDING="$(E2E_SKIP_ONBOARDING)" \
+	launch_app() { SIMCTL_CHILD_SORELLO_SYNTHETIC_MIC="$(E2E_AUDIO)" SIMCTL_CHILD_SORELLO_SYNTHETIC_HEADPHONES="$(E2E_HEADPHONES)" \
+		SIMCTL_CHILD_SORELLO_SELFTEST_SKIP_ONBOARDING="$(E2E_SKIP_ONBOARDING)" \
 		xcrun simctl launch "$$@" "$$udid" "$(BUNDLE_ID)" >/dev/null; }
 
 # Scripted round trip against an e2e-sim install: a record intent, the app brought
@@ -771,10 +776,10 @@ e2e-sim-probe:
 	if [ -n "$(E2E_FROM_BACKGROUND)" ]; then \
 		[ "$$(field session)" = active ] || { echo "E2E_FROM_BACKGROUND needs an active session." >&2; exit 1; }; \
 		presence; xcrun simctl launch "$$udid" com.apple.Preferences >/dev/null; sleep 1; presence; \
-		echo "Request $$request: record intent with LocalFlow in the background"; \
+		echo "Request $$request: record intent with Sorello in the background"; \
 		intent record; \
 	else \
-		echo "Request $$request: record intent, then LocalFlow to the foreground"; \
+		echo "Request $$request: record intent, then Sorello to the foreground"; \
 		intent record; \
 		launch_app; \
 		if [ -n "$(E2E_OPEN_URL)" ]; then xcrun simctl openurl "$$udid" "$(URL_SCHEME)://dictate"; fi; \
@@ -783,7 +788,7 @@ e2e-sim-probe:
 	[ "$$(phase)" = recording ] || { echo "Not recording: $$(field dictation.error)" >&2; exit 1; }; \
 	if [ -n "$(E2E_BACKGROUND)" ]; then \
 		presence; xcrun simctl launch "$$udid" com.apple.Preferences >/dev/null; \
-		echo "  $$(date +%T) LocalFlow sent to the background; writing keyboard presence"; \
+		echo "  $$(date +%T) Sorello sent to the background; writing keyboard presence"; \
 	fi; \
 	end=$$(( $$(date +%s) + $(E2E_SPEAK_SECONDS) )); \
 	while [ "$$(date +%s)" -lt "$$end" ]; do if [ -n "$(E2E_KEEP_PRESENCE)" ]; then presence; fi; sleep 0.5; done; \
@@ -806,7 +811,7 @@ e2e-sim-probe:
 # - cancel: a cancel intent ends a recording.
 # - kill-relaunch: the app is killed while recording; relaunched while the record
 #   intent is still fresh, it reports the request interrupted and never restarts it.
-# - url-hint: with LocalFlow in the background and no session, a record intent and
+# - url-hint: with Sorello in the background and no session, a record intent and
 #   <scheme>://dictate admit nothing (the simulator holds the URL behind its "Open
 #   in …?" alert; the in-app background hint path is covered by host tests). Only
 #   arriving in the foreground admits, judging freshness then: a fresh intent

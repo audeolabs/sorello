@@ -12,7 +12,7 @@ enum HostURLRoute: Equatable, Sendable {
               components.percentEncodedUser == nil, components.percentEncodedPassword == nil,
               components.port == nil, components.percentEncodedFragment == nil else { return nil }
         if components.scheme?.lowercased() == scheme.lowercased(),
-           components.percentEncodedHost?.lowercased() == LocalFlowConfiguration.dictateHost,
+           components.percentEncodedHost?.lowercased() == SorelloConfiguration.dictateHost,
            components.percentEncodedPath.isEmpty {
             self = .dictate
         } else if let universalLink,

@@ -7,13 +7,13 @@
     <key>CFBundleDisplayName</key>
     <string>$(DISPLAY_NAME)</string>
     <key>CFBundleExecutable</key>
-    <string>LocalFlowKeyboard</string>
+    <string>SorelloKeyboard</string>
     <key>CFBundleIdentifier</key>
     <string>$(BUNDLE_ID).keyboard</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>LocalFlowKeyboard</string>
+    <string>SorelloKeyboard</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>CFBundleShortVersionString</key>
@@ -30,9 +30,9 @@
     <string>$(SDK_VERSION)</string>
     <key>DTSDKName</key>
     <string>$(SDK)$(SDK_VERSION)</string>
-    <key>LocalFlowAppGroupIdentifier</key>
+    <key>SorelloAppGroupIdentifier</key>
     <string>$(APP_GROUP)</string>
-    <key>LocalFlowURLScheme</key>
+    <key>SorelloURLScheme</key>
     <string>$(URL_SCHEME)</string>
     <key>MinimumOSVersion</key>
     <string>$(DEPLOYMENT_TARGET)</string>
@@ -52,7 +52,7 @@
         <key>NSExtensionPointIdentifier</key>
         <string>com.apple.keyboard-service</string>
         <key>NSExtensionPrincipalClass</key>
-        <string>LocalFlowKeyboard.KeyboardViewController</string>
+        <string>SorelloKeyboard.KeyboardViewController</string>
     </dict>
     <key>UIDeviceFamily</key>
     <array>

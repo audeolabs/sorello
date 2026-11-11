@@ -1,11 +1,11 @@
 import Foundation
 
 @main
-struct LocalFlowIOSTests {
+struct SorelloIOSTests {
     static func main() {
         let suites: [(String, [TestCase])] = [
             ("BugReportEmail", BugReportEmailTests.tests),
-            ("LocalFlowConfiguration", LocalFlowConfigurationTests.tests),
+            ("SorelloConfiguration", SorelloConfigurationTests.tests),
             ("DictationProtocol", DictationProtocolTests.tests),
             ("SharedDictationStore", SharedDictationStoreTests.tests),
             ("AtomicRecordFiles", AtomicRecordFilesTests.tests),
@@ -17,7 +17,7 @@ struct LocalFlowIOSTests {
             ("KeyboardResultInbox", KeyboardResultInboxTests.tests),
             ("KeyboardMessages", KeyboardMessagesTests.tests),
             ("TextInsertionFormatter", TextInsertionFormatterTests.tests),
-            ("LocalFlowSettings", LocalFlowSettingsTests.tests),
+            ("SorelloSettings", SorelloSettingsTests.tests),
             ("DarwinNotifier", DarwinNotifierTests.tests),
             ("MainLoopTimer", MainLoopTimerTests.tests),
             ("DictationSampleBuffer", DictationSampleBufferTests.tests),
@@ -86,6 +86,6 @@ struct LocalFlowIOSTests {
                 count += 1
             }
         }
-        print("LocalFlowIOSTests passed (\(count) tests)")
+        print("SorelloIOSTests passed (\(count) tests)")
     }
 }

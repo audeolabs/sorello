@@ -51,7 +51,7 @@ struct DiagnosticsView: View {
             } header: {
                 Text("Recent dictations")
             } footer: {
-                Text("Timings and memory only, never audio or text. Kept in memory and gone when LocalFlow quits.")
+                Text("Timings and memory only, never audio or text. Kept in memory and gone when Sorello quits.")
             }
             .listRowBackground(Theme.cardBackground)
         }
@@ -87,7 +87,7 @@ struct DiagnosticsView: View {
 /// The keyboard's trackpad-mode multipliers (App Group settings, read when a gesture starts), for
 /// tuning on a device side by side with Apple's keyboard.
 private struct CursorTuningSection: View {
-    let settings: LocalFlowSettings?
+    let settings: SorelloSettings?
     @State private var sensitivity = 1.0
     @State private var acceleration = 1.0
     @State private var touchRate: Double?
@@ -137,7 +137,7 @@ private struct CursorTuningSection: View {
 /// The words the user asked autocorrect never to correct, in the App Group (ARCHITECTURE.md, "Word
 /// autocorrect", Never correct): only their count is read here, never the words, and the button clears them.
 private struct NeverCorrectSection: View {
-    private static let store = LocalFlowConfiguration.main.flatMap(NeverCorrectStore.init(configuration:))
+    private static let store = SorelloConfiguration.main.flatMap(NeverCorrectStore.init(configuration:))
     @State private var count = 0
     /// The keyboard may store a word while the app is in the background: the count is read again on return.
     @Environment(\.scenePhase) private var scenePhase

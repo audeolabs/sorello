@@ -249,7 +249,7 @@ enum KeyboardLookTests {
         TestSupport.expectEqual(trail.map(\.fraction), [0, 0.5, 1])
     }
 
-    /// "Open LocalFlow" is the brand's accent, and still reads at 4.5:1 on the card.
+    /// "Open Sorello" is the brand's accent, and still reads at 4.5:1 on the card.
     private static func testMenuLinkIsTheBrandAccent() {
         variants { palette, name in
             let dark = name.hasPrefix("dark"), high = name.hasSuffix("high")
@@ -325,11 +325,11 @@ enum KeyboardLookTests {
     }
 
     /// The middle keeps words only where they earn their space: what the user must act on (Full Access, the microphone,
-    /// a broken install or versions, "Open LocalFlow to start a session" after the launcher failed), an error that says
+    /// a broken install or versions, "Open Sorello to start a session" after the launcher failed), an error that says
     /// why a dictation was lost, a model that cannot load, and a notice. Everything the island's own motion says, or
     /// Start's dot, goes: the cold start's "Model loading" while recording, "Transcribing…" and "Preparing model…" in
     /// the wait, "Preparing model…" idle, the session line and "Session on", "Model loads when you dictate", and "Start
-    /// opens LocalFlow". Nothing shows beside a chip but a notice.
+    /// opens Sorello". Nothing shows beside a chip but a notice.
     private static func testBarStatusKeepsWordsWhereTheyEarnTheirSpace() {
         let recording = KeyboardMode.recording(level: 0.5, startedAt: Date())
         func status(_ mode: KeyboardMode, title: String = "", hint: String? = nil, notice: String? = nil, chips: Bool = false) -> BarStatus {
@@ -337,17 +337,17 @@ enum KeyboardLookTests {
         }
         // Words.
         TestSupport.expectEqual(status(.needsFullAccess, title: "Allow Full Access to dictate"), .text("Allow Full Access to dictate", attention: true))
-        TestSupport.expectEqual(status(.configurationError, title: "LocalFlow is not installed correctly"),
-                                .text("LocalFlow is not installed correctly", attention: true))
-        TestSupport.expectEqual(status(.incompatible, title: "Update LocalFlow"), .text("Update LocalFlow", attention: true))
-        TestSupport.expectEqual(status(.error(.microphonePermissionDenied), title: "Allow microphone access in LocalFlow"),
-                                .text("Allow microphone access in LocalFlow", attention: true))
+        TestSupport.expectEqual(status(.configurationError, title: "Sorello is not installed correctly"),
+                                .text("Sorello is not installed correctly", attention: true))
+        TestSupport.expectEqual(status(.incompatible, title: "Update Sorello"), .text("Update Sorello", attention: true))
+        TestSupport.expectEqual(status(.error(.microphonePermissionDenied), title: "Allow microphone access in Sorello"),
+                                .text("Allow microphone access in Sorello", attention: true))
         TestSupport.expectEqual(status(.error(.modelFailed), title: "The speech model failed to load"),
                                 .text("The speech model failed to load", attention: true))
         TestSupport.expectEqual(status(.ready, title: "Ready to dictate", hint: "Model failed to load"), .text("Model failed to load", attention: true))
-        TestSupport.expectEqual(status(.hostUnavailable, title: KeyboardMessages.openLocalFlow), .text(KeyboardMessages.openLocalFlow, attention: false))
-        TestSupport.expectEqual(status(.starting, title: KeyboardMessages.openLocalFlow), .text(KeyboardMessages.openLocalFlow, attention: false))
-        TestSupport.expectEqual(status(recording, title: "Listening", notice: "Couldn't reach LocalFlow"), .notice("Couldn't reach LocalFlow"))
+        TestSupport.expectEqual(status(.hostUnavailable, title: KeyboardMessages.openSorello), .text(KeyboardMessages.openSorello, attention: false))
+        TestSupport.expectEqual(status(.starting, title: KeyboardMessages.openSorello), .text(KeyboardMessages.openSorello, attention: false))
+        TestSupport.expectEqual(status(recording, title: "Listening", notice: "Couldn't reach Sorello"), .notice("Couldn't reach Sorello"))
         TestSupport.expectEqual(status(.ready, title: "", notice: "No speech detected", chips: true), .notice("No speech detected"))
         // Nothing: the island's motion or Start's dot says it.
         TestSupport.expectEqual(status(recording, title: "Listening"), .none)
@@ -357,7 +357,7 @@ enum KeyboardLookTests {
         TestSupport.expectEqual(status(.waitingForModel, title: KeyboardMessages.preparingModel), .none)
         TestSupport.expectEqual(status(.preparingModel, title: KeyboardMessages.preparingModel), .none)
         TestSupport.expectEqual(status(.ready, title: "Ready to dictate"), .none)
-        TestSupport.expectEqual(status(.hostUnavailable, title: "Start opens LocalFlow"), .none)
+        TestSupport.expectEqual(status(.hostUnavailable, title: "Start opens Sorello"), .none)
         TestSupport.expectEqual(status(.ready, title: "Ready to dictate", hint: "Model failed to load", chips: true), .none)
         TestSupport.expectEqual(status(.error(.modelFailed), title: "The speech model failed to load", chips: true), .none)
     }

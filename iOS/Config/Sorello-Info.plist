@@ -7,13 +7,13 @@
     <key>CFBundleDisplayName</key>
     <string>$(DISPLAY_NAME)</string>
     <key>CFBundleExecutable</key>
-    <string>LocalFlow</string>
+    <string>Sorello</string>
     <key>CFBundleIdentifier</key>
     <string>$(BUNDLE_ID)</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>LocalFlow</string>
+    <string>Sorello</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -45,14 +45,14 @@
     <false/>
     <key>LSRequiresIPhoneOS</key>
     <true/>
-    <key>LocalFlowAppGroupIdentifier</key>
+    <key>SorelloAppGroupIdentifier</key>
     <string>$(APP_GROUP)</string>
-    <key>LocalFlowURLScheme</key>
+    <key>SorelloURLScheme</key>
     <string>$(URL_SCHEME)</string>
     <key>MinimumOSVersion</key>
     <string>$(DEPLOYMENT_TARGET)</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>LocalFlow uses the microphone to transcribe your dictation on this iPhone. Audio is never saved or sent anywhere.</string>
+    <string>Sorello uses the microphone to transcribe your dictation on this iPhone. Audio is never saved or sent anywhere.</string>
     <key>NSSupportsLiveActivities</key>
     <true/>
     <key>UIApplicationSceneManifest</key>

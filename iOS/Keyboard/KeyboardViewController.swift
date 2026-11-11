@@ -7,7 +7,7 @@ final class KeyboardInputView: UIInputView, UIInputViewAudioFeedback {
     var enableInputClicksWhenVisible: Bool { true }
 }
 
-/// The extension's principal class (`LocalFlowKeyboard.KeyboardViewController`): the SwiftUI top row
+/// The extension's principal class (`SorelloKeyboard.KeyboardViewController`): the SwiftUI top row
 /// above the UIKit key area, the menu panel, the text proxy, and field changes.
 final class KeyboardViewController: UIInputViewController, KeyboardTextTarget {
     private lazy var client = KeyboardDictationClient()
@@ -166,7 +166,7 @@ final class KeyboardViewController: UIInputViewController, KeyboardTextTarget {
         if chrome.leftHanded != leftHanded { chrome.leftHanded = leftHanded }
         // The words never to correct, from the App Group (read, like `fieldSettings`, only with Full Access).
         input.configureNeverCorrect(store: settings?.autocorrectEnabled == true
-                                    ? LocalFlowConfiguration.main.flatMap(NeverCorrectStore.init(configuration:)) : nil)
+                                    ? SorelloConfiguration.main.flatMap(NeverCorrectStore.init(configuration:)) : nil)
         client.start()
     }
 
@@ -242,18 +242,18 @@ final class KeyboardViewController: UIInputViewController, KeyboardTextTarget {
     private var layoutChoices: [String: FieldLayout] = [:]
 
     /// Remembered choices, the soft-key-edge and autocorrect switches and the trackpad multipliers live in the
-    /// App Group. iOS lets a keyboard without Full Access read it but not write it; LocalFlow reads it only with Full
+    /// App Group. iOS lets a keyboard without Full Access read it but not write it; Sorello reads it only with Full
     /// Access, so these typing features stay off without it. One handle is kept, renewed each time the keyboard
     /// appears; its values are read from the suite at each use.
-    private var fieldSettings: LocalFlowSettings? {
+    private var fieldSettings: SorelloSettings? {
         guard hasFullAccess else { return nil }
-        if appGroupSettings == nil, let configuration = LocalFlowConfiguration.main {
-            appGroupSettings = LocalFlowSettings(configuration: configuration)
+        if appGroupSettings == nil, let configuration = SorelloConfiguration.main {
+            appGroupSettings = SorelloSettings(configuration: configuration)
         }
         return appGroupSettings
     }
 
-    private var appGroupSettings: LocalFlowSettings?
+    private var appGroupSettings: SorelloSettings?
 
     /// The remembered choices, read once per appearance: the field is read at every cursor move and keystroke.
     private var storedLayouts = FieldLayoutOverrideCache()

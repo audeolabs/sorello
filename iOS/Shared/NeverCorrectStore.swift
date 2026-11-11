@@ -85,7 +85,7 @@ struct NeverCorrectStore: Sendable {
     var beforeWrite: (@Sendable () -> Void)?
 
     /// Nil when the App Group container is unavailable (a missing entitlement or group).
-    init?(configuration: LocalFlowConfiguration) {
+    init?(configuration: SorelloConfiguration) {
         guard let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: configuration.appGroupIdentifier) else { return nil }
         self.init(directory: Self.directory(inContainer: container))
@@ -97,6 +97,7 @@ struct NeverCorrectStore: Sendable {
 
     /// `Library/Application Support` (never purged by the system, unlike `Caches`), excluded from backup.
     static func directory(inContainer container: URL) -> URL {
+        // Kept from the app's first name: people's never-correct words are here (ARCHITECTURE.md, "Identifiers").
         container.appendingPathComponent("Library/Application Support/LocalFlowAutocorrect", isDirectory: true)
     }
 

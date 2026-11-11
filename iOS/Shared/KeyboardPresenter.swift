@@ -10,7 +10,7 @@ enum KeyboardAccess: Equatable, Sendable {
 enum KeyboardMode: Equatable, Sendable {
     case needsFullAccess
     case configurationError
-    case incompatible              // the app and keyboard are different versions: "Update LocalFlow"
+    case incompatible              // the app and keyboard are different versions: "Update Sorello"
     case starting
     case recording(level: Float, startedAt: Date)
     case transcribing
@@ -73,8 +73,8 @@ enum KeyboardPresenter {
     }
 
     /// The mode the keyboard shows for `mode`: Start without a session stays Start (it does not grow into the dimmed
-    /// recording form, with the stop square and Cancel, while iOS asks to open LocalFlow, nor stay so when the user
-    /// declines). While the request this keyboard instance bounced to LocalFlow, `bouncedRequestID`, is the pending
+    /// recording form, with the stop square and Cancel, while iOS asks to open Sorello, nor stay so when the user
+    /// declines). While the request this keyboard instance bounced to Sorello, `bouncedRequestID`, is the pending
     /// intent and the host has not picked it up, the keyboard shows `hostUnavailable`, so a decline leaves Start as it
     /// was and a second tap bounces again. Every other mode shows as it is, a request another instance bounced
     /// included.

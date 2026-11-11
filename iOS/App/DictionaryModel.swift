@@ -117,7 +117,7 @@ final class StrengthProbeModel: ObservableObject {
                 guard !Task.isCancelled else { return }
                 phase = .finished(result)
             } catch {
-                if !Task.isCancelled { fail("LocalFlow couldn’t check this recording. Try again.") }
+                if !Task.isCancelled { fail("Sorello couldn’t check this recording. Try again.") }
             }
         }
     }
@@ -134,7 +134,7 @@ final class StrengthProbeModel: ObservableObject {
     func leftForeground() {
         guard phase == .starting || phase == .recording else { return }
         cancelWork()
-        phase = .failed("Recording stopped because LocalFlow left the screen.")
+        phase = .failed("Recording stopped because Sorello left the screen.")
     }
 
     /// The sheet closed: everything is released, and a paused session starts again if the app is in front.
@@ -166,7 +166,7 @@ final class StrengthProbeModel: ObservableObject {
         // this task) before it ran: never end the session or start the microphone after that.
         guard !Task.isCancelled, phase == .starting else { return }
         guard UIApplication.shared.applicationState == .active else {
-            return fail("Recording stopped because LocalFlow left the screen.")
+            return fail("Recording stopped because Sorello left the screen.")
         }
         // The session owns the microphone; this recording needs its own capture.
         if host.session != .inactive {

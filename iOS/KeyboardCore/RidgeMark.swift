@@ -1,7 +1,7 @@
 import Foundation
 
-/// LocalFlow's ridge mark (ARCHITECTURE.md, "Keyboard look"), as the app icon draws it (Resources/AppIcon.svg, the
-/// Wilderness Labs site's 32-unit favicon): a W-shaped ridge line, round-capped and round-joined, over a dot. The
+/// The ridge mark (ARCHITECTURE.md, "Keyboard look"), as the app icon draws it (Resources/AppIcon.svg, the earlier
+/// maker's 32-unit favicon): a W-shaped ridge line, round-capped and round-joined, over a dot. The
 /// keyboard draws it as a vector on Start and in the menu. Pure.
 enum RidgeMark {
     struct Point: Equatable, Sendable {

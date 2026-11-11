@@ -7,13 +7,13 @@
     <key>CFBundleDisplayName</key>
     <string>$(DISPLAY_NAME)</string>
     <key>CFBundleExecutable</key>
-    <string>LocalFlowActivity</string>
+    <string>SorelloActivity</string>
     <key>CFBundleIdentifier</key>
     <string>$(BUNDLE_ID).activity</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>LocalFlowActivity</string>
+    <string>SorelloActivity</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>CFBundleShortVersionString</key>

@@ -54,7 +54,7 @@ enum HostURLRouteTests {
     }
 
     private static func testRoundTripsConfigurationURL() {
-        let configuration = LocalFlowConfiguration(appGroupIdentifier: "group.example.synthetic", urlScheme: scheme)
+        let configuration = SorelloConfiguration(appGroupIdentifier: "group.example.synthetic", urlScheme: scheme)
         TestSupport.expectEqual(HostURLRoute(url: configuration.dictateURL!, scheme: configuration.urlScheme), .dictate)
     }
 
@@ -104,7 +104,7 @@ enum HostURLRouteTests {
     }
 
     private static func testRoundTripsUniversalLink() {
-        let configuration = LocalFlowConfiguration(appGroupIdentifier: "group.example.synthetic", urlScheme: scheme,
+        let configuration = SorelloConfiguration(appGroupIdentifier: "group.example.synthetic", urlScheme: scheme,
                                                    universalLink: link)
         TestSupport.expectEqual(
             HostURLRoute(url: configuration.dictateURL!, scheme: configuration.urlScheme,

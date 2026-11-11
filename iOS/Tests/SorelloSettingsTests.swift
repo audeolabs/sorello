@@ -1,6 +1,6 @@
 import Foundation
 
-enum LocalFlowSettingsTests {
+enum SorelloSettingsTests {
     static var tests: [TestCase] {
         [
             ("defaults", testDefaults),
@@ -22,7 +22,7 @@ enum LocalFlowSettingsTests {
             TestSupport.expectEqual(settings.cursorAcceleration, 1)
             settings.cursorSensitivity = 1.6
             settings.cursorAcceleration = 0.5
-            let reread = LocalFlowSettings(defaults: defaults)
+            let reread = SorelloSettings(defaults: defaults)
             TestSupport.expectEqual(reread.cursorSensitivity, 1.6)
             TestSupport.expectEqual(reread.cursorAcceleration, 0.5)
             // Independent of the other settings.
@@ -37,7 +37,7 @@ enum LocalFlowSettingsTests {
             TestSupport.expectEqual(settings.fieldLayoutOverrides, [:])
             let key = "0123456789abcdef"
             settings.setFieldLayout("messages", forKey: key)
-            TestSupport.expectEqual(LocalFlowSettings(defaults: defaults).fieldLayoutOverrides, [key: "messages"])
+            TestSupport.expectEqual(SorelloSettings(defaults: defaults).fieldLayoutOverrides, [key: "messages"])
             // Only fingerprint keys and known layouts are stored.
             settings.setFieldLayout("messages", forKey: "Some field text")
             settings.setFieldLayout("sideways", forKey: "fedcba9876543210")
@@ -45,11 +45,11 @@ enum LocalFlowSettingsTests {
             settings.setFieldLayout(nil, forKey: key)
             TestSupport.expectEqual(settings.fieldLayoutOverrides, [:])
             // Bounded, keeping the newest choice.
-            for index in 0 ..< LocalFlowSettings.fieldLayoutOverrideLimit + 5 {
+            for index in 0 ..< SorelloSettings.fieldLayoutOverrideLimit + 5 {
                 settings.setFieldLayout("fullWidth", forKey: String(format: "%016x", index))
             }
-            TestSupport.expectEqual(settings.fieldLayoutOverrides.count, LocalFlowSettings.fieldLayoutOverrideLimit)
-            TestSupport.expectEqual(settings.fieldLayoutOverrides[String(format: "%016x", LocalFlowSettings.fieldLayoutOverrideLimit + 4)],
+            TestSupport.expectEqual(settings.fieldLayoutOverrides.count, SorelloSettings.fieldLayoutOverrideLimit)
+            TestSupport.expectEqual(settings.fieldLayoutOverrides[String(format: "%016x", SorelloSettings.fieldLayoutOverrideLimit + 4)],
                                     "fullWidth")
         }
     }
@@ -59,7 +59,7 @@ enum LocalFlowSettingsTests {
             TestSupport.expectEqual(settings.cursorTouchRate, nil)
             TestSupport.expectEqual(settings.cursorEventStepScale, nil)
             settings.recordCursorTouchRate(120, eventStepScale: 2)
-            let reread = LocalFlowSettings(defaults: defaults)
+            let reread = SorelloSettings(defaults: defaults)
             TestSupport.expectEqual(reread.cursorTouchRate, 120)
             TestSupport.expectEqual(reread.cursorEventStepScale, 2)
             // Out-of-range or broken values are ignored, and a stray Bool reads as nothing.
@@ -73,7 +73,7 @@ enum LocalFlowSettingsTests {
 
     private static func testCursorMultipliersAcceptOnlyTheRange() {
         withSettings { settings, defaults in
-            TestSupport.expectEqual(LocalFlowSettings.cursorMultiplierRange, 0.25...4)
+            TestSupport.expectEqual(SorelloSettings.cursorMultiplierRange, 0.25...4)
             settings.cursorSensitivity = 2
             for rejected in [0, 0.1, 4.5, -1, Double.nan, .infinity] {
                 settings.cursorSensitivity = rejected
@@ -95,11 +95,11 @@ enum LocalFlowSettingsTests {
     }
 
     /// A throwaway suite with an invented name, removed afterwards.
-    private static func withSettings(_ body: (LocalFlowSettings, UserDefaults) -> Void) {
-        let suite = "LocalFlowIOSTests.\(UUID().uuidString)"
+    private static func withSettings(_ body: (SorelloSettings, UserDefaults) -> Void) {
+        let suite = "SorelloIOSTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        body(LocalFlowSettings(defaults: defaults), defaults)
+        body(SorelloSettings(defaults: defaults), defaults)
     }
 
     private static func testDefaults() {
@@ -121,7 +121,7 @@ enum LocalFlowSettingsTests {
             settings.spokenNumbersEnabled = false
             settings.pressEnterEnabled = false
             settings.hapticsEnabled = false
-            let reread = LocalFlowSettings(defaults: defaults)
+            let reread = SorelloSettings(defaults: defaults)
             TestSupport.expectEqual(reread.sessionMinutes, 60)
             TestSupport.expectEqual(reread.sessionDuration, 3_600)
             TestSupport.expect(!reread.spokenDelimitersEnabled, "spoken delimiters stored")
@@ -136,7 +136,7 @@ enum LocalFlowSettingsTests {
     private static func testKeyHapticsAreSeparateFromDictationHaptics() {
         withSettings { settings, defaults in
             settings.keyHapticsEnabled = false
-            let reread = LocalFlowSettings(defaults: defaults)
+            let reread = SorelloSettings(defaults: defaults)
             TestSupport.expect(!reread.keyHapticsEnabled, "key haptics stored")
             TestSupport.expect(reread.hapticsEnabled, "dictation haptics untouched")
             settings.hapticsEnabled = false
@@ -151,7 +151,7 @@ enum LocalFlowSettingsTests {
 
     private static func testSessionMinutesAcceptsOnlyOptions() {
         withSettings { settings, defaults in
-            TestSupport.expectEqual(LocalFlowSettings.sessionMinuteOptions, [5, 15, 60])
+            TestSupport.expectEqual(SorelloSettings.sessionMinuteOptions, [5, 15, 60])
             settings.sessionMinutes = 15
             settings.sessionMinutes = 7
             settings.sessionMinutes = 0
@@ -173,11 +173,11 @@ enum LocalFlowSettingsTests {
             TestSupport.expect(settings.autocorrectEnabled, "autocorrect off by default")
             TestSupport.expect(settings.softKeyEdgesEnabled, "soft key edges off by default")
             settings.autocorrectEnabled = false
-            var reread = LocalFlowSettings(defaults: defaults)
+            var reread = SorelloSettings(defaults: defaults)
             TestSupport.expect(!reread.autocorrectEnabled, "autocorrect off not stored")
             TestSupport.expect(reread.softKeyEdgesEnabled, "soft key edges changed with autocorrect")
             settings.softKeyEdgesEnabled = false
-            reread = LocalFlowSettings(defaults: defaults)
+            reread = SorelloSettings(defaults: defaults)
             TestSupport.expect(!reread.softKeyEdgesEnabled, "soft key edges off not stored")
             settings.autocorrectEnabled = true
             TestSupport.expect(reread.autocorrectEnabled, "autocorrect on not stored")
@@ -197,13 +197,13 @@ enum LocalFlowSettingsTests {
         withSettings { settings, defaults in
             TestSupport.expect(!settings.leftHanded, "left-handed is on by default")
             settings.leftHanded = true
-            TestSupport.expect(LocalFlowSettings(defaults: defaults).leftHanded, "left-handed not stored")
+            TestSupport.expect(SorelloSettings(defaults: defaults).leftHanded, "left-handed not stored")
             TestSupport.expectEqual(defaults.object(forKey: "leftHanded") as? Bool, true)
             // Independent of the other switches.
             TestSupport.expect(settings.softKeyEdgesEnabled && settings.autocorrectEnabled && settings.keyHapticsEnabled,
                                "left-handed changed another setting")
             settings.leftHanded = false
-            TestSupport.expect(!LocalFlowSettings(defaults: defaults).leftHanded, "left-handed not stored off")
+            TestSupport.expect(!SorelloSettings(defaults: defaults).leftHanded, "left-handed not stored off")
             defaults.set("yes", forKey: "leftHanded")
             TestSupport.expect(!settings.leftHanded, "a string reads as on")
         }

@@ -5,7 +5,7 @@ import UIKit
 /// responder chain to the application object and calls `open(_:options:completionHandler:)`
 /// through the Objective-C runtime, because that method and `UIApplication.shared` are
 /// unavailable to extensions at compile time. The legacy `openURL:` is deliberately not used:
-/// iOS 18 and later ignore it. The supported fallback is the user opening LocalFlow themselves.
+/// iOS 18 and later ignore it. The supported fallback is the user opening Sorello themselves.
 ///
 /// An https URL (the universal link of App Store builds) is opened universal-links-only, so iOS
 /// opens it only in the app verified for its domain, never in Safari or another app; otherwise the

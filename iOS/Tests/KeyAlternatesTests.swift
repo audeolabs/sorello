@@ -91,7 +91,7 @@ enum KeyAlternatesTests {
     }
 
     /// A row of domains has cells wide enough for ".com", and starts over its key (the key's own option first, centred
-    /// over it) on the phones LocalFlow runs on, not moved off it to stay on screen.
+    /// over it) on the phones Sorello runs on, not moved off it to stay on screen.
     private static func testDomainRowsStartOverTheirKey() {
         for width in [375.0, 402, 440] {
             let metrics = KeyboardMetrics(width: width, height: KeyboardMetrics.regularHeight)

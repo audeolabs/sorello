@@ -23,6 +23,7 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
         var emoji: [String]
     }
 
+    /// Kept from the app's first name: people's recents are saved under it (ARCHITECTURE.md, "Identifiers").
     private static let recentsKey = "lf.emojiRecents"
     /// The catalog, split once.
     private static let catalog: [Section] = EmojiCatalog.categories.map { Section(name: $0.name, symbol: $0.symbol, emoji: $0.emoji) }
@@ -48,11 +49,11 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
         grid.delegate = self
         grid.delaysContentTouches = false
         grid.register(EmojiCell.self, forCellWithReuseIdentifier: EmojiCell.reuseID)
-        grid.accessibilityIdentifier = "lf.emoji.grid"
+        grid.accessibilityIdentifier = "sorello.emoji.grid"
         addSubview(grid)
         jumpBar.axis = .horizontal
         jumpBar.distribution = .fillEqually
-        jumpBar.accessibilityIdentifier = "lf.emoji.jumpBar"
+        jumpBar.accessibilityIdentifier = "sorello.emoji.jumpBar"
         addSubview(jumpBar)
     }
 
@@ -107,7 +108,7 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
             let button = UIButton(type: .system)
             button.tag = index
             button.accessibilityLabel = section.name
-            button.accessibilityIdentifier = "lf.emoji.category.\(index)"
+            button.accessibilityIdentifier = "sorello.emoji.category.\(index)"
             button.addAction(UIAction { [weak self] _ in self?.jump(to: index) }, for: .touchUpInside)
             jumpBar.addArrangedSubview(button)
         }

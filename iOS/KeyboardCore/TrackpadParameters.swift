@@ -23,7 +23,7 @@ struct TrackpadParameters: Equatable, Sendable {
     /// Straight-line movement from touch-down tolerated at the hold timer (≤ 16 pt activates on
     /// device, ≥ 18 pt does not).
     var holdSlop: Double = 16
-    /// LocalFlow's own drag-along-space activation; off (Apple has none, and it would conflict with
+    /// Sorello's own drag-along-space activation; off (Apple has none, and it would conflict with
     /// the hold slop).
     var dragActivationDistance: Double = .infinity
 
@@ -38,7 +38,7 @@ struct TrackpadParameters: Equatable, Sendable {
     /// Set from the measured touch rate (`TouchRateEstimator`); 1 at 60 Hz.
     var eventStepScale = 1.0
 
-    /// The user's multipliers (`LocalFlowSettings`): sensitivity scales the finger movement, and
+    /// The user's multipliers (`SorelloSettings`): sensitivity scales the finger movement, and
     /// acceleration scales how far the gain rises above 1.
     var sensitivity = 1.0
     var acceleration = 1.0
@@ -71,7 +71,7 @@ struct TrackpadParameters: Equatable, Sendable {
 
     static let standard = TrackpadParameters()
 
-    static var multiplierRange: ClosedRange<Double> { LocalFlowSettings.cursorMultiplierRange }
+    static var multiplierRange: ClosedRange<Double> { SorelloSettings.cursorMultiplierRange }
 
     /// Applies the user's multipliers, clamped to the accepted range.
     func tuned(sensitivity: Double, acceleration: Double) -> TrackpadParameters {

@@ -261,7 +261,7 @@ enum AutocorrectSettingsTests {
 
     /// An invented bundle directory: the lexicon, optionally spelling tables, and the manifest's section.
     private static func withBundle(spelling: Data?, _ body: (URL) -> Void) {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("LocalFlowIOSTests-\(UUID().uuidString)")
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("SorelloIOSTests-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
         let files = directory.appendingPathComponent("autocorrect")
         try! FileManager.default.createDirectory(at: files, withIntermediateDirectories: true)

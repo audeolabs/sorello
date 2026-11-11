@@ -145,7 +145,7 @@ enum HostSessionPolicy {
 
     /// Whether the bounce screen stays up. It outlives the swipe back only while its dictation is in
     /// progress; once that ends with the app in the background, the keyboard shows the outcome and the
-    /// bounce closes, so a later return to LocalFlow shows Home rather than an old outcome.
+    /// bounce closes, so a later return to Sorello shows Home rather than an old outcome.
     static func keepsBounce(isForeground: Bool, isDictationInProgress: Bool) -> Bool {
         isForeground || isDictationInProgress
     }
@@ -153,8 +153,8 @@ enum HostSessionPolicy {
     /// Whether a request admitted in the foreground raises the bounce. A Start tapped in this app's own field (the
     /// Dictionary editor) has the keyboard in this app, and a cover would close the editor's sheet, losing its draft.
     /// The visible screen can't tell where Start was tapped: the editor stays on screen while the app sits in the
-    /// background, and a Start in another app opens LocalFlow on it too. Where the request came from tells.
-    /// `activeSince` is when the app last became active after the background (nil until then); nothing in LocalFlow can
+    /// background, and a Start in another app opens Sorello on it too. Where the request came from tells.
+    /// `activeSince` is when the app last became active after the background (nil until then); nothing in Sorello can
     /// be tapped before that, so a request issued earlier came from another app. The arrival may admit it before the
     /// activation is noted (a resumed timer or the URL open can reconcile first); nil covers that. A request whose record
     /// intent can't be read (`issuedAt` nil) raises the bounce.

@@ -1,15 +1,15 @@
-#if LOCALFLOW_SELFTEST
+#if SORELLO_SELFTEST
 import AVFoundation
 import Foundation
 
-/// Self-test builds only (`LOCALFLOW_SYNTHETIC_MIC`). Replaces the microphone with an invented 16 kHz
+/// Self-test builds only (`SORELLO_SYNTHETIC_MIC`). Replaces the microphone with an invented 16 kHz
 /// recording fed at real-time pace through the same `CapturePipeline` and `DictationSampleBuffer` path:
 /// each dictation hears the file from its start, then silence. To keep the app running in the
 /// simulator's background it plays silence through a `.playback` session; the microphone is never
 /// touched, so the Mac shows no permission prompt. It cannot prove device background behavior.
 @MainActor
 final class SyntheticCapture: HostCapture {
-    /// The headphones the reported route stands in for (`LOCALFLOW_SYNTHETIC_HEADPHONES`).
+    /// The headphones the reported route stands in for (`SORELLO_SYNTHETIC_HEADPHONES`).
     enum Headphones: String {
         /// Bluetooth headphones with a microphone: the input follows "Use iPhone microphone", as iOS
         /// routes AirPods (A2DP with the iPhone microphone on, hands-free with it off).
@@ -137,7 +137,7 @@ final class SyntheticCapture: HostCapture {
     }
 
     nonisolated private static func event(_ text: String) {
-        print("LocalFlow self-test: synthetic_mic event=\(text)")
+        print("Sorello self-test: synthetic_mic event=\(text)")
         fflush(stdout)
     }
 
@@ -197,7 +197,7 @@ private final class SyntheticSource: SampleConverter {
 /// Drives the pipeline every 100 ms on its own serial queue, as an input tap would.
 private final class SyntheticFeeder: @unchecked Sendable {
     private let pipeline: CapturePipeline<SyntheticSource>
-    private let queue = DispatchQueue(label: "localflow.synthetic-mic", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "sorello.synthetic-mic", qos: .userInitiated)
     private var timer: DispatchSourceTimer?   // confined to `queue`
 
     init(pipeline: CapturePipeline<SyntheticSource>) {

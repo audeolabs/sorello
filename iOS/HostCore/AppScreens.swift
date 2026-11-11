@@ -14,7 +14,7 @@ enum AppAccent: Equatable, Sendable {
 enum SessionCardState: Equatable, Sendable {
     /// No session: the mark and the Start pill.
     case off
-    /// No session, and the microphone is off for LocalFlow: Open Settings is the only action.
+    /// No session, and the microphone is off for Sorello: Open Settings is the only action.
     case microphoneOff
     case starting
     /// A session is waiting for the keyboard: the time left.
@@ -160,7 +160,7 @@ enum BouncePhase: Equatable, Sendable {
     }
 }
 
-/// How the start-session screen shows the way back to the app that opened LocalFlow (an app cannot send the user
+/// How the start-session screen shows the way back to the app that opened Sorello (an app cannot send the user
 /// back; they swipe or tap the status bar's link).
 enum SwipeBackCue: Equatable, Sendable {
     /// The status bar's "◀ App" link: an iPhone with a Home button has no swipe along the bottom edge.

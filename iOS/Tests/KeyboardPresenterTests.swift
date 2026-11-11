@@ -327,7 +327,7 @@ enum KeyboardPresenterTests {
     }
 
     /// With no session, Start must not grow into the dimmed recording form (the stop square and Cancel) while iOS asks
-    /// to open LocalFlow, nor stay so when the user declines. While the request this keyboard bounced to LocalFlow has
+    /// to open Sorello, nor stay so when the user declines. While the request this keyboard bounced to Sorello has
     /// not reached the host, the keyboard shows Start as it was, so a decline leaves Start at once and a second tap
     /// bounces again. Once the host picks the request up (the user accepted), it shows as usual; a request another
     /// keyboard instance bounced (adopted after the swipe back) is unaffected.

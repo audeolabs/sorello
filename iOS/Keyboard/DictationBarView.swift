@@ -7,7 +7,7 @@ final class KeyboardChrome: ObservableObject {
     @Published var isMenuOpen = false
     /// The layout profile the trackpad uses in this field, for the menu's text-width choice.
     @Published var layout = FieldLayoutParameters.standard.defaultLayout
-    /// Left-handed (`LocalFlowSettings.leftHanded`): the dictation controls mirrored to the bar's left. Read when the
+    /// Left-handed (`SorelloSettings.leftHanded`): the dictation controls mirrored to the bar's left. Read when the
     /// keyboard appears.
     @Published var leftHanded = false
 }
@@ -41,7 +41,7 @@ final class NeverCorrectPromptModel: ObservableObject {
 @MainActor
 final class BarControlFrames {
     // An immutable name, read from SwiftUI's Sendable geometry closure.
-    nonisolated static let space = "lf.bar"
+    nonisolated static let space = "sorello.bar"
     private var regions = BarControlRegions()
 
     /// The controls' frames now, with those a control left while it may still be animating there.
@@ -180,8 +180,8 @@ struct DictationBarView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(PressableStyle())
-                .accessibilityLabel(chrome.isMenuOpen ? "Close menu" : "LocalFlow menu")
-                .accessibilityIdentifier("lf.menu")
+                .accessibilityLabel(chrome.isMenuOpen ? "Close menu" : "Sorello menu")
+                .accessibilityIdentifier("sorello.menu")
                 .barControl("menu", in: controls)
                 .position(x: CGFloat(layout.menu.x) + height / 2, y: centreY)
 
@@ -201,7 +201,7 @@ struct DictationBarView: View {
                             KeyboardMetrics.candidateTapArea(strip: $0, barHeight: barHeight)
                         }
                     } else {
-                        // While a dictation runs this is plain text: a notice, or "Open LocalFlow to start a session".
+                        // While a dictation runs this is plain text: a notice, or "Open Sorello to start a session".
                         Middle(client: client, state: state, height: height - 8, controls: controls, layout: layout,
                                undoArriving: undoInFlight, onAction: onAction)
                     }
@@ -233,7 +233,7 @@ struct DictationBarView: View {
                     }
                     .buttonStyle(PressReportingStyle(pressed: $cancelPressed))
                     .accessibilityLabel("Cancel dictation")
-                    .accessibilityIdentifier("lf.cancel")
+                    .accessibilityIdentifier("sorello.cancel")
                     .barControl("cancel", in: controls) {
                         KeyboardMetrics.cancelTapArea(circle: $0, barHeight: barHeight, compact: compact)
                     }
@@ -263,7 +263,7 @@ struct DictationBarView: View {
         .onChange(of: form) { old, new in
             if old == .expanded, new == .processing { controls.captureEnded() }
         }
-        // From the bar's first appearance, which may come mid-dictation (back from LocalFlow).
+        // From the bar's first appearance, which may come mid-dictation (back from Sorello).
         .onChange(of: form, initial: true) { _, form in shown.observe(form: form, request: state.dictationRequestID) }
         .onChange(of: state.dictationRequestID, initial: true) { _, request in shown.observe(form: form, request: request) }
         // The island grows and shrinks with a short spring, and its contents hand over with it; with Reduce Motion
@@ -319,7 +319,7 @@ private struct Middle: View {
     }
 
     private var undoShown: Bool { state.canUndo && !state.mode.isInProgress }
-    /// Not while a dictation is in progress: the middle is dictation's then (a notice, "Open LocalFlow to start a
+    /// Not while a dictation is in progress: the middle is dictation's then (a notice, "Open Sorello to start a
     /// session").
     private var insertLastShown: Bool { state.canInsertLast && !state.mode.isInProgress }
 
@@ -342,7 +342,7 @@ private struct Middle: View {
                         client.undoLastDictation()
                     }
                     .accessibilityLabel("Undo last dictation")
-                    .accessibilityIdentifier("lf.undo")
+                    .accessibilityIdentifier("sorello.undo")
                     .barControl("undo", in: controls)
                     .opacity(undoArriving ? 0 : 1)
                     .transition(arrival)
@@ -352,7 +352,7 @@ private struct Middle: View {
                         client.insertLastDictation()
                     }
                     .accessibilityLabel("Insert last dictation")
-                    .accessibilityIdentifier("lf.insertLast")
+                    .accessibilityIdentifier("sorello.insertLast")
                     .barControl("insertLast", in: controls)
                     .transition(arrival)
                 case .status:
@@ -371,7 +371,7 @@ private struct Middle: View {
                 .foregroundStyle(.primary)
                 .lineLimit(lines)
                 .minimumScaleFactor(0.8)
-                .accessibilityIdentifier("lf.notice")
+                .accessibilityIdentifier("sorello.notice")
         case .text(let line, let attention):
             HStack(spacing: 5) {
                 if attention {
@@ -389,7 +389,7 @@ private struct Middle: View {
                             .foregroundStyle(attention ? AnyShapeStyle(.primary) : statusInk)
                             .lineLimit(2)
                             .minimumScaleFactor(0.8)
-                            .accessibilityIdentifier("lf.status")
+                            .accessibilityIdentifier("sorello.status")
                     }
                 } else {
                     Text(line)
@@ -397,7 +397,7 @@ private struct Middle: View {
                         .foregroundStyle(attention ? AnyShapeStyle(.primary) : statusInk)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
-                        .accessibilityIdentifier("lf.status")
+                        .accessibilityIdentifier("sorello.status")
                 }
             }
             // A line that goes (an error's as Undo arrives) gets out of the way at once, first.
@@ -416,7 +416,7 @@ private struct Middle: View {
             .foregroundStyle(ink)
             .lineLimit(1)
             .fixedSize()
-            .accessibilityIdentifier("lf.status")
+            .accessibilityIdentifier("sorello.status")
     }
 
     /// The status line's ink: the palette's where the system's secondary text is too faint (the light keyboard).
@@ -478,7 +478,7 @@ private struct CandidateStrip: View {
                 .accessibilityLabel(quoted ? "Keep \(word)" : word)
                 .accessibilityHint(strip.live != nil && emphasized ? "Space puts this in" : "")
                 .accessibilityAddTraits(emphasized ? .isSelected : [])
-                .accessibilityIdentifier("lf.swipe.candidate.\(index)")
+                .accessibilityIdentifier("sorello.swipe.candidate.\(index)")
             }
         }
         .frame(maxWidth: .infinity)
@@ -541,7 +541,7 @@ private struct NeverCorrectChip: View {
         .buttonStyle(PressableStyle())
         .accessibilityLabel("Never correct \(word)")
         .accessibilityHint("Autocorrect leaves this word alone from now on")
-        .accessibilityIdentifier("lf.neverCorrect")
+        .accessibilityIdentifier("sorello.neverCorrect")
     }
 }
 
@@ -674,7 +674,7 @@ private struct DictationIsland: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var contrast
     /// Counts taps on Start without a session: each pops its dot once, the light acknowledgement while iOS asks to open
-    /// LocalFlow.
+    /// Sorello.
     @State private var bounces = 0
 
     var body: some View {
@@ -706,7 +706,7 @@ private struct DictationIsland: View {
         .accessibilityLabel(KeyboardMessages.capsuleAccessibilityLabel(for: state.mode))
         .accessibilityValue(accessibilityValue)
         .accessibilityHint(accessibilityHint)
-        .accessibilityIdentifier("lf.mic")
+        .accessibilityIdentifier("sorello.mic")
     }
 
     /// What it holds hands over as it changes form: what leaves goes first, quickly, and what arrives in the grown
@@ -807,7 +807,7 @@ private struct DictationIsland: View {
 
     private var accessibilityHint: String {
         switch state.mode {
-        case .hostUnavailable: return "Opens LocalFlow to start a session"
+        case .hostUnavailable: return "Opens Sorello to start a session"
         case .starting, .recording: return "Stops listening and inserts what you said"
         default: return ""
         }
@@ -919,7 +919,7 @@ private struct CancelTapShape: Shape {
     }
 }
 
-/// The menu: session status, "Open LocalFlow", the trackpad tip with the field's text width, and details of anything
+/// The menu: session status, "Open Sorello", the trackpad tip with the field's text width, and details of anything
 /// that keeps dictation from working (the actions first at the accessibility sizes). A tap outside the card closes it. The
 /// card lies over the keys with none peeking out (`MenuCover`): over the three rows above the bottom row, or all four
 /// when its content needs more, and scrolls inside its rounded corners when even that is too little (landscape, the
@@ -935,7 +935,7 @@ struct MenuPanelView: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private let keyboardName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "LocalFlow"
+    private let keyboardName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Sorello"
 
     private static let cardShape = RoundedRectangle(cornerRadius: CGFloat(MenuCover.cornerRadius), style: .continuous)
     /// The content's parts above and below the divider, whose heights (without the space that spreads them) pick the card's
@@ -1022,7 +1022,7 @@ struct MenuPanelView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(color(palette.primary))
                         .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("lf.menu.session")
+                        .accessibilityIdentifier("sorello.menu.session")
                 case .details:
                     if let details {
                         Text(details)
@@ -1033,13 +1033,13 @@ struct MenuPanelView: View {
                 case .open:
                     Button {
                         onClose()
-                        client.openLocalFlow()
+                        client.openSorello()
                     } label: {
-                        Label("Open LocalFlow", systemImage: "arrow.up.forward.app")
+                        Label("Open Sorello", systemImage: "arrow.up.forward.app")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(color(palette.link))
                     }
-                    .accessibilityIdentifier("lf.menu.open")
+                    .accessibilityIdentifier("sorello.menu.open")
                 case .divider:
                     Divider()
                 case .tip:
@@ -1073,7 +1073,7 @@ struct MenuPanelView: View {
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(color(palette.track)))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Text width for moving the cursor")
-        .accessibilityIdentifier("lf.layoutToggle")
+        .accessibilityIdentifier("sorello.layoutToggle")
     }
 
     private func segment(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {

@@ -38,7 +38,7 @@ struct HomeView: View {
 
                 Section {
                     Picker("Session length", selection: $settings.sessionMinutes) {
-                        ForEach(LocalFlowSettings.sessionMinuteOptions, id: \.self) { Text("\($0) min").tag($0) }
+                        ForEach(SorelloSettings.sessionMinuteOptions, id: \.self) { Text("\($0) min").tag($0) }
                     }
                     .accessibilityHint("A session ends after this long without dictation")
                     .accessibilityIdentifier("settings.sessionLength")
@@ -86,6 +86,7 @@ struct HomeView: View {
                         RowLabel(title: "Report a bug", symbol: "envelope")
                     }
                     .accessibilityIdentifier("home.reportBug")
+                    // Kept: the privacy page is published at this address, outside this repository, until it moves.
                     Link(destination: URL(string: "https://ajbarryiii.github.io/LocalFlow/privacy.html")!) {
                         HStack {
                             RowLabel(title: "Privacy policy", symbol: "hand.raised")
@@ -101,21 +102,22 @@ struct HomeView: View {
                     .accessibilityIdentifier("home.privacyPolicy")
                 } footer: {
                     // No lock here: on Home the lock means "needs Full Access".
-                    Text("LocalFlow \(AppIdentity.version)")
+                    Text("Sorello \(AppIdentity.version)")
                         .frame(maxWidth: .infinity)
                         .padding(.top, 8)
-                        .accessibilityLabel("LocalFlow \(AppIdentity.version). Nothing you say leaves this iPhone.")
+                        .accessibilityLabel("Sorello \(AppIdentity.version). Nothing you say leaves this iPhone.")
                 }
                 .listRowBackground(Theme.cardBackground)
             }
             .listStyle(.insetGrouped)
             .themedListBackground()
-            .navigationTitle("LocalFlow")
+            .navigationTitle("Sorello")
             .navigationDestination(for: HomeRoute.self) { route in
                 switch route {
                 case .keyboardSetup: KeyboardSetupScreen()
                 case .dictionary: DictionaryView(dictionary: host.dictionary)
                 case .diagnostics: DiagnosticsView(transcriber: transcriber)
+                // Kept: bug reports are still read at this address, outside this repository, until it moves.
                 case .reportBug: ReportBugView(recipient: "localflow@wildernesslabs.ai")
                 }
             }

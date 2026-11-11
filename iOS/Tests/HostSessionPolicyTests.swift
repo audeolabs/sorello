@@ -158,7 +158,7 @@ enum HostSessionPolicyTests {
                            "issued after the window")
     }
 
-    /// The bounce outlives a swipe back only while its dictation runs, so returning to LocalFlow later never
+    /// The bounce outlives a swipe back only while its dictation runs, so returning to Sorello later never
     /// shows an old outcome.
     private static func testBounceClosesInTheBackgroundOnceIdle() {
         TestSupport.expect(HostSessionPolicy.keepsBounce(isForeground: true, isDictationInProgress: false), "in front")
@@ -169,7 +169,7 @@ enum HostSessionPolicyTests {
     }
 
     /// A Start tapped in this app's own field (the Dictionary editor) keeps its field, but a Start tapped in another app
-    /// opens LocalFlow on the start-session screen, even with the editor left on screen. A request issued before the app
+    /// opens Sorello on the start-session screen, even with the editor left on screen. A request issued before the app
     /// was active came from another app; one whose issue time is unknown raises the screen.
     private static func testBounceShowsOnlyForAStartMadeInAnotherApp() {
         func shows(foreground: Bool = true, issuedAt: Date?, activeSince: Date?) -> Bool {
