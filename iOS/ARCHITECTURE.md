@@ -3190,7 +3190,8 @@ app reads only the count. The models are fixed.
   - Every build compiles the app icon into `Assets.car` with `actool`,
     records Xcode's build metadata (`DTXcode`, `DTSDKBuild` and the rest) in
     every Info.plist, copies each target's privacy manifest, and copies the
-    display face and its license into the app's `Fonts/` (`UIAppFonts`).
+    display face and its license, the repository's one copy in
+    `../Resources/Fonts`, into the app's `Fonts/` (`UIAppFonts`).
 - `SORELLO_MODEL_DIR` is a local copy of the model's build that
   `../Models/model.lock.json` lists for iOS, as it is for the Mac app.
   `scripts/copy-model.py` takes the first build in the pin that an iPhone on
