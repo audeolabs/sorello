@@ -26,8 +26,9 @@ final class PillContent {
     let arrived: CFTimeInterval
     /// When it has finished fading out, once it is leaving.
     private(set) var leftAt: CFTimeInterval?
-    /// Fades in and out.
+    /// Fades in and out, frame by frame on the motion clock.
     let layer = CALayer()
+    private var fade = Fade(1)
     /// Dims while its control is held.
     private let inner = CALayer()
     private let dots = DotLayers()
@@ -39,7 +40,8 @@ final class PillContent {
     private let text = CALayer()
     private var actions: [(id: String, capsule: CALayer, title: CALayer)] = []
     private var images: [ObjectIdentifier: PillImage] = [:]
-    private var shownTime: String?
+    /// The time drawn, and the room it was drawn in.
+    private var shownTime: (text: String, room: CGFloat)?
     /// The scale and contrast the cached images were drawn for.
     private var drawnFor: (scale: CGFloat, contrast: Bool)?
 
@@ -58,26 +60,41 @@ final class PillContent {
 
     // MARK: - Fading
 
+    /// Fades in from nothing at `now`, after `delay`.
     func arrive(at now: CFTimeInterval, delay: Double, duration: Double) {
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = 0
-        fade.toValue = 1
-        fade.duration = duration
-        fade.beginTime = layer.convertTime(now, from: nil) + delay
-        fade.fillMode = .backwards
-        layer.add(fade, forKey: "arrive")
+        fade = Fade(0)
+        fade.move(to: 1, at: now, delay: delay, duration: duration)
+        showFade(at: now)
     }
 
+    /// Fades out from where it is at `now`, or, not `animated`, goes at once.
     func leave(at now: CFTimeInterval, animated: Bool, duration: Double) {
         leftAt = now + (animated ? duration : 0)
         if animated {
-            let fade = CABasicAnimation(keyPath: "opacity")
-            fade.fromValue = layer.presentation()?.opacity ?? layer.opacity
-            fade.toValue = 0
-            fade.duration = duration
-            layer.add(fade, forKey: "arrive")
+            fade.move(to: 0, at: now, duration: duration)
+        } else {
+            fade.snap(to: 0)
         }
-        layer.opacity = 0
+        showFade(at: now)
+    }
+
+    /// Sets the opacity the fade has at `now`.
+    func showFade(at now: CFTimeInterval) {
+        let opacity = Float(fade.value(at: now))
+        if layer.opacity != opacity { layer.opacity = opacity }
+    }
+
+    /// Whether it is fading in or out at `now`.
+    func isFading(at now: CFTimeInterval) -> Bool { !fade.isSettled(at: now) }
+
+    /// The layers that draw its lines and symbols, those showing now.
+    var lines: [CALayer] {
+        ([time, tag, words, symbol, text] + actions.map(\.title)).filter { !$0.isHidden && $0.contents != nil }
+    }
+
+    /// Every layer that draws something now: its lines and symbols, the actions' capsules, the dots and the aurora dot.
+    var marks: [CALayer] {
+        lines + actions.map(\.capsule) + dots.showing + (mark.isHidden ? [] : [mark])
     }
 
     func dim(_ alpha: Float, action: String?) {
@@ -106,13 +123,16 @@ final class PillContent {
         switch scene.display {
         case .listening(let listening):
             let shown = PillScene.elapsedText(view.elapsed(since: listening.started))
-            if shown != shownTime {
-                shownTime = shown
-                set(time, PillImage.text(shown, font: PillType.time, color: NSColor(Palette.ink), maxWidth: 200,
-                                         scale: scale))
+            // Its box, less the tag's room: on a screen too narrow for the time it is truncated there.
+            let tagRoom = listening.promptStyle ? PillType.tagRoom : 0
+            let room = max((scene.layout.trailing?.width ?? 0) - tagRoom, 0)
+            if shownTime.map({ $0.text != shown || $0.room != room }) ?? true {
+                shownTime = (shown, room)
+                set(time, room > 0 ? PillImage.text(shown, font: PillType.time, color: NSColor(Palette.ink),
+                                                    maxWidth: room, scale: scale) : nil)
             }
             if listening.promptStyle, images[ObjectIdentifier(tag)] == nil {
-                set(tag, PillImage.symbol("tag.fill", pointSize: PillType.tagSize, weight: .semibold, color: secondary,
+                set(tag, PillImage.symbol(PillType.tagSymbol, pointSize: PillType.tagSize, weight: .semibold, color: secondary,
                                           scale: scale))
             }
         case .waiting(.preparingModel):
@@ -160,17 +180,22 @@ final class PillContent {
         }
     }
 
-    /// Places the content for `scene` in the view's coordinates, which move when the panel does.
+    /// Places the content for `scene` in the screen's points (`plane`), over the part of the screen the view covers.
     func place(_ scene: PillScene, view: PillView) {
-        layer.frame = view.bounds
-        inner.frame = view.bounds
-        dots.parent.frame = view.bounds
+        let area = view.contentArea, centre = CGPoint(x: area.midX, y: area.midY)
+        if layer.bounds != area || layer.position != centre {
+            for part in [layer, inner, dots.parent] {
+                // Its frame and its bounds are one rectangle, so what it holds is in the same points as the plane.
+                part.bounds = area
+                part.position = centre
+            }
+        }
         let layout = scene.layout
         switch scene.display {
         case .listening:
             guard let box = layout.trailing else { break }
             let timeImage = images[ObjectIdentifier(time)]
-            // The time sits at the wing's outer end, as the wave starts at the other.
+            // The time sits at the end of its box, as the wave starts at the start of its own.
             let timeX = box.maxX - (timeImage?.size.width ?? 0)
             placeText(time, x: timeX, middle: box.midY, font: PillType.time, view: view)
             if let tagImage = images[ObjectIdentifier(tag)] {
@@ -188,7 +213,7 @@ final class PillContent {
             placeText(text, x: textBox.minX, middle: symbolBox.midY, font: PillType.notice, view: view)
             for (entry, rect) in zip(actions, inner.actions) {
                 let box = rect.offsetBy(dx: card.minX, dy: card.minY)
-                entry.capsule.frame = view.local(box)
+                entry.capsule.frame = Self.plane(box)
                 let titleWidth = images[ObjectIdentifier(entry.title)]?.size.width ?? 0
                 placeText(entry.title, x: snap(box.midX - titleWidth / 2, view.scale), middle: box.midY,
                           font: PillType.action, view: view)
@@ -198,13 +223,13 @@ final class PillContent {
         }
     }
 
-    /// The wave and its aurora dot in the leading wing, for the voice in `trace` at `now`.
+    /// The wave and its aurora dot in its box, for the voice in `trace` at `now`.
     func drawWave(_ scene: PillScene, trace: DotWave.Trace, level: Double, now: Double, view: PillView) {
         guard let box = scene.layout.leading else { return }
         let wave = PillDots.wave(in: box, trace: trace, now: now, level: level, still: view.reduceMotion)
-        dots.show(wave.dots.map { local($0, view) }, color: NSColor(Palette.ink).cgColor)
+        dots.show(wave.dots.map(Self.plane), color: NSColor(Palette.ink).cgColor)
         if let dot = wave.mark {
-            let at = local(dot, view)
+            let at = Self.plane(dot)
             mark.isHidden = false
             mark.bounds = CGRect(x: 0, y: 0, width: 2 * at.radius, height: 2 * at.radius)
             mark.cornerRadius = at.radius
@@ -216,11 +241,9 @@ final class PillContent {
 
     /// The wait's row with its spot at `sweep`; with Reduce Motion, still, its middle lit.
     func drawShimmer(_ scene: PillScene, sweep: Double, view: PillView) {
-        guard let leading = scene.layout.leading else { return }
-        let trailing = scene.display == .waiting(.transcribing) && scene.layout.housing != nil
-            ? scene.layout.trailing : nil
-        let row = PillDots.shimmer(leading: leading, trailing: trailing, sweep: sweep, still: view.reduceMotion)
-        dots.show(row.map { local($0, view) }, color: NSColor(Palette.shimmer).cgColor)
+        guard let box = scene.layout.leading else { return }
+        let row = PillDots.shimmer(in: box, sweep: sweep, still: view.reduceMotion)
+        dots.show(row.map(Self.plane), color: NSColor(Palette.shimmer).cgColor)
     }
 
     // MARK: - Helpers
@@ -231,9 +254,16 @@ final class PillContent {
         layer.isHidden = image == nil
     }
 
-    private func local(_ dot: DotWave.Dot, _ view: PillView) -> DotWave.Dot {
-        let point = view.local(CGPoint(x: dot.x, y: dot.y))
-        return DotWave.Dot(x: Double(point.x), y: Double(point.y), radius: dot.radius, brightness: dot.brightness)
+    /// A screen rectangle (top left, y down) in the coordinates content is placed in: the screen's points, y up. They
+    /// do not depend on the panel, so a layer placed once stays where it is on the screen however the panel grows or
+    /// moves.
+    static func plane(_ rect: CGRect) -> CGRect {
+        CGRect(x: rect.minX, y: -rect.maxY, width: rect.width, height: rect.height)
+    }
+
+    /// A dot at a screen point, placed in the same coordinates.
+    static func plane(_ dot: DotWave.Dot) -> DotWave.Dot {
+        DotWave.Dot(x: dot.x, y: -dot.y, radius: dot.radius, brightness: dot.brightness)
     }
 
     /// A line of text with its left edge at `x`, optically centred on the screen line `middle`: the middle of its
@@ -241,7 +271,7 @@ final class PillContent {
     private func placeText(_ layer: CALayer, x: CGFloat, middle: CGFloat, font: NSFont, view: PillView) {
         guard let image = images[ObjectIdentifier(layer)] else { return }
         let baseline = snap(middle + font.capHeight / 2, view.scale)
-        layer.frame = view.local(CGRect(x: snap(x, view.scale), y: baseline - image.ascent, width: image.size.width,
+        layer.frame = Self.plane(CGRect(x: snap(x, view.scale), y: baseline - image.ascent, width: image.size.width,
                                         height: image.size.height))
     }
 
@@ -249,7 +279,7 @@ final class PillContent {
     private func placeCentred(_ layer: CALayer, x: CGFloat?, middle: CGFloat, view: PillView, within: CGRect? = nil) {
         guard let image = images[ObjectIdentifier(layer)] else { return }
         let left = x ?? (within.map { $0.midX - image.size.width / 2 } ?? 0)
-        layer.frame = view.local(CGRect(x: snap(left, view.scale), y: snap(middle - image.size.height / 2, view.scale),
+        layer.frame = Self.plane(CGRect(x: snap(left, view.scale), y: snap(middle - image.size.height / 2, view.scale),
                                         width: image.size.width, height: image.size.height))
     }
 

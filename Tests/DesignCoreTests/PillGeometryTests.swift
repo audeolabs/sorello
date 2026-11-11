@@ -3,12 +3,13 @@ import DesignCore
 import Foundation
 import Testing
 
-/// ARCHITECTURE.md, section 8, "The pill": the pill's shape for each housing, checked against real Macs and held to
-/// the invariants every form must keep.
+/// ARCHITECTURE.md, section 8, "The pill": one pill on every screen, hung below the top band and centred on the camera
+/// housing where there is one, checked against real Macs and held to the invariants every form must keep.
 @Suite struct PillGeometryTests {
-    /// The 2026 MacBook Pro: a 59 pt island in a 40 pt band.
+    /// The 2026 MacBook Pro, as its screen reports itself: a camera housing 59 pt wide in a 40 pt band, under a menu
+    /// bar 45 pt tall. The menu bar is the taller, so the pill hangs from it.
     static let island = ScreenTopology(frame: CGRect(x: 0, y: 0, width: 1736, height: 1133), safeAreaTop: 40,
-                                       leftAreaWidth: 838.5, rightAreaWidth: 1736 - 897.5, menuBarHeight: 40,
+                                       leftAreaWidth: 838.5, rightAreaWidth: 1736 - 897.5, menuBarHeight: 45,
                                        scale: 2)
     /// A 14-inch 2021 MacBook Pro at its default scale: a notch about 185 pt wide in a 32 pt band.
     static let notch = ScreenTopology(frame: CGRect(x: 0, y: 0, width: 1512, height: 982), safeAreaTop: 32,
@@ -21,6 +22,13 @@ import Testing
     /// An island on a 1x screen, with its edges between pixels, so the geometry has to snap them.
     static let islandAt1x = ScreenTopology(frame: CGRect(x: 0, y: 0, width: 1200, height: 800), safeAreaTop: 33,
                                            leftAreaWidth: 570.3, rightAreaWidth: 570.6, menuBarHeight: 33, scale: 1)
+    /// A notch whose band is taller than the menu bar, and a menu bar taller than the notch's band (a larger menu bar
+    /// text size): the pill hangs below whichever is taller.
+    static let tallBand = ScreenTopology(frame: CGRect(x: 0, y: 0, width: 1512, height: 982), safeAreaTop: 38,
+                                         leftAreaWidth: 663.5, rightAreaWidth: 663.5, menuBarHeight: 24, scale: 2)
+    static let tallMenuBar = ScreenTopology(frame: CGRect(x: 0, y: 0, width: 1512, height: 982), safeAreaTop: 32,
+                                            leftAreaWidth: 663.5, rightAreaWidth: 663.5, menuBarHeight: 37.5,
+                                            scale: 2)
     /// Narrow screens: the pill must shrink to stay on them.
     static let narrowIsland = ScreenTopology(frame: CGRect(x: 0, y: 0, width: 280, height: 500), safeAreaTop: 40,
                                              leftAreaWidth: 110.5, rightAreaWidth: 110.5, menuBarHeight: 40, scale: 2)
@@ -29,12 +37,13 @@ import Testing
     static let narrowExternal = ScreenTopology(frame: CGRect(x: 0, y: 0, width: 200, height: 400), safeAreaTop: 0,
                                                housing: nil, menuBarHeight: 24, scale: 1)
 
-    static let screens = [island, notch, external, externalAt1x, islandAt1x, narrowIsland, narrowNotch, narrowExternal]
+    static let screens = [island, notch, external, externalAt1x, islandAt1x, tallBand, tallMenuBar, narrowIsland,
+                          narrowNotch, narrowExternal]
     static let forms: [PillForm] = [
-        .rest, .listening(trailing: 34.5, cancel: false), .listening(trailing: 52, cancel: true),
-        .listening(trailing: 300, cancel: true), .waiting(trailing: nil), .waiting(trailing: 104.3),
-        .notice(CGSize(width: 260.7, height: 58.2)), .notice(CGSize(width: 4000, height: 20)),
-        .notice(CGSize(width: 10, height: 10)),
+        .rest, .listening(trailing: 30, cancel: false), .listening(trailing: 34.5, cancel: false),
+        .listening(trailing: 52, cancel: true), .listening(trailing: 300, cancel: true), .waiting(trailing: nil),
+        .waiting(trailing: 104.3), .notice(CGSize(width: 260.7, height: 58.2)),
+        .notice(CGSize(width: 4000, height: 20)), .notice(CGSize(width: 10, height: 10)),
     ]
 
     static func onPixels(_ rect: CGRect, _ scale: Double) -> Bool {
@@ -49,140 +58,176 @@ import Testing
             && inner.minY >= outer.minY - 1e-9 && inner.maxY <= outer.maxY + 1e-9
     }
 
-    @Test func housingKindsFollowTheAuxiliaryAreas() {
-        #expect(Self.island.kind == .island)
+    /// The foot of the top band on the screen's pixel grid: no form reaches above it.
+    static func foot(_ screen: ScreenTopology) -> Double {
+        (screen.topBand * screen.scale - 1e-6).rounded(.up) / screen.scale
+    }
+
+    @Test func theHousingFollowsTheAuxiliaryAreas() {
         #expect(Self.island.housing == HousingSpan(minX: 838.5, maxX: 897.5))
-        #expect(Self.notch.kind == .notch)
+        #expect(Self.island.middle == 868)
         #expect(Self.notch.housing?.width == 185)
-        #expect(Self.external.kind == .none)
+        #expect(Self.notch.middle == 756)
+        #expect(Self.external.housing == nil)
+        #expect(Self.external.middle == 1280)
         let frame = CGRect(x: 0, y: 0, width: 1512, height: 982)
-        // A housing counts only if both areas exist and leave a gap between them.
+        // A housing counts only if both areas exist and leave a gap between them; without one the middle is the
+        // screen's.
         for (left, right) in [(nil, 600.0), (600.0, nil), (756.0, 756.0), (800.0, 800.0)] as [(Double?, Double?)] {
             let screen = ScreenTopology(frame: frame, safeAreaTop: 32, leftAreaWidth: left, rightAreaWidth: right,
                                         menuBarHeight: 24, scale: 2)
-            #expect(screen.kind == .none)
+            #expect(screen.housing == nil)
+            #expect(screen.middle == 756)
         }
-        // No band, no housing; and the boundary between island and notch is 110 pt.
-        #expect(ScreenTopology(frame: frame, safeAreaTop: 0, leftAreaWidth: 700, rightAreaWidth: 700, menuBarHeight: 24,
-                               scale: 2).kind == .none)
-        #expect(ScreenTopology(frame: frame, safeAreaTop: 32, leftAreaWidth: 701.5, rightAreaWidth: 701,
-                               menuBarHeight: 32, scale: 2).kind == .island)
-        #expect(ScreenTopology(frame: frame, safeAreaTop: 32, leftAreaWidth: 701, rightAreaWidth: 701,
-                               menuBarHeight: 32, scale: 2).kind == .notch)
+        // An island and a notch of any width are the same kind of thing: a span with a middle.
+        let lopsided = ScreenTopology(frame: frame, safeAreaTop: 32, leftAreaWidth: 700, rightAreaWidth: 712,
+                                      menuBarHeight: 32, scale: 2)
+        #expect(lopsided.housing == HousingSpan(minX: 700, maxX: 800))
+        #expect(lopsided.middle == 750)
     }
 
-    /// On the 2026 MacBook Pro the island pill is a 32 pt black capsule centred on the housing, in the middle of its
-    /// band; listening it grows sideways out of it, wave on the left and time on the right.
-    @Test func theIslandMatchesTheHardware() throws {
-        let rest = PillGeometry.layout(.rest, on: Self.island)
-        #expect(rest.kind == .island)
-        #expect(rest.body.frame == CGRect(x: 838.5, y: 4, width: 59, height: 32))
-        #expect(rest.body.topRadius == 16 && rest.body.bottomRadius == 16)
+    /// The top band is the menu bar, or the housing's band where that is taller.
+    @Test func theTopBandIsTheTallerOfTheMenuBarAndTheHousingsBand() {
+        #expect(Self.island.topBand == 45)
+        #expect(Self.external.topBand == 24)
+        #expect(Self.tallBand.topBand == 38)
+        #expect(Self.tallMenuBar.topBand == 37.5)
+        let odd = ScreenTopology(frame: CGRect(x: 0, y: 0, width: 800, height: 600), safeAreaTop: .nan, housing: nil,
+                                 menuBarHeight: -3, scale: 2)
+        #expect(odd.topBand == 0)
+    }
+
+    /// On the 2026 MacBook Pro the listening pill is a 156 pt capsule 8 pt below the menu bar, centred on the camera:
+    /// the wave, then the time. It used to be a black shape about 274 pt wide that grew sideways out of the housing.
+    @Test func onTheIslandMacThePillHangsBelowTheCamera() {
         let listening = PillGeometry.layout(.listening(trailing: 30, cancel: false), on: Self.island)
-        #expect(listening.body.frame.height == 32 && listening.body.frame.minY == 4)
-        #expect(listening.body.frame.midX == 868)
-        let leading = try #require(listening.leading), trailing = try #require(listening.trailing)
-        #expect(Double(leading.width) == PillGeometry.waveWidth)
-        #expect(Double(leading.maxX) == 838.5 - PillGeometry.housingGap)
-        #expect(Double(trailing.minX) == 897.5 + PillGeometry.housingGap)
+        #expect(listening.body == PillBody(frame: CGRect(x: 790, y: 53, width: 156, height: 36), topRadius: 18,
+                                           bottomRadius: 18))
+        #expect(listening.leading == CGRect(x: 802, y: 53, width: 88, height: 36))
+        #expect(listening.trailing == CGRect(x: 904, y: 53, width: 30, height: 36))
+        #expect(listening.card == nil && listening.cancel == nil)
+        // In toggle mode the bud hangs off the trailing end and the body stays where it was.
+        let toggle = PillGeometry.layout(.listening(trailing: 30, cancel: true), on: Self.island)
+        #expect(toggle.body == listening.body)
+        #expect(toggle.cancel == CGRect(x: 958, y: 57, width: 28, height: 28))
     }
 
-    /// On a notched MacBook Pro the pill is one black shape flush with the top of the screen, as tall as the band,
-    /// with rounded lower corners, so the notch appears to widen.
-    @Test func theNotchWidens() {
-        let rest = PillGeometry.layout(.rest, on: Self.notch)
-        #expect(rest.body.frame == CGRect(x: 663.5, y: 0, width: 185, height: 32))
-        #expect(rest.body.topRadius == 0 && rest.body.bottomRadius > 0)
-        let listening = PillGeometry.layout(.listening(trailing: 30, cancel: true), on: Self.notch)
-        #expect(listening.body.frame.minY == 0 && listening.body.frame.height == 32)
-        #expect(listening.body.topRadius == 0)
-        #expect(Double(listening.body.frame.width) > 185 + 2 * PillGeometry.waveWidth)
+    /// The drop starts from a small capsule touching the foot of the band, centred under the camera.
+    @Test func theRestIsASmallCapsuleUnderTheCamera() {
+        let rest = PillGeometry.layout(.rest, on: Self.island)
+        let width = PillGeometry.restWidth, height = PillGeometry.restHeight
+        #expect(rest.body == PillBody(frame: CGRect(x: 868 - width / 2, y: 45, width: width, height: height),
+                                      topRadius: height / 2, bottomRadius: height / 2))
+        #expect(rest.leading == nil && rest.trailing == nil && rest.card == nil && rest.cancel == nil)
+        #expect(height < PillGeometry.height)
     }
 
-    /// Without a housing the pill is the iPhone island itself: a 36 pt capsule 8 pt under the menu bar, centred.
-    @Test func withoutAHousingThePillFloats() throws {
-        for screen in [Self.external, Self.externalAt1x] {
-            let listening = PillGeometry.layout(.listening(trailing: 30, cancel: false), on: screen)
-            #expect(listening.kind == .none && listening.housing == nil)
-            #expect(listening.body.frame.height == 36)
-            #expect(Double(listening.body.frame.minY) == screen.menuBarHeight + 8)
-            #expect(abs(Double(listening.body.frame.midX) - screen.width / 2) <= 1)
-            #expect(listening.body.topRadius == 18 && listening.body.bottomRadius == 18)
-            let leading = try #require(listening.leading), trailing = try #require(listening.trailing)
-            #expect(leading.maxX < trailing.minX)
-            let waiting = PillGeometry.layout(.waiting(trailing: nil), on: screen)
-            #expect(waiting.trailing == nil && waiting.leading != nil)
+    /// The same content gives the same pill on the island Mac, the notch Mac and the external display: the same size,
+    /// the same corners and the same regions inside it, each placed by its screen's band and middle.
+    @Test func anIslandANotchAndNoHousingGetTheSamePill() {
+        for form in Self.forms {
+            let layouts = [Self.island, Self.notch, Self.external].map { PillGeometry.layout(form, on: $0) }
+            for (screen, layout) in zip([Self.island, Self.notch, Self.external], layouts) {
+                let body = layout.body.frame
+                #expect(abs(Double(body.midX) - screen.middle) <= 0.25, "\(form) is off the middle of \(screen)")
+                let gap = form == .rest ? 0 : PillGeometry.gap
+                #expect(Double(body.minY) == screen.topBand + gap, "\(form) does not hang from the band")
+            }
+            func shape(_ layout: PillLayout) -> [CGRect?] {
+                let origin = layout.body.frame.origin
+                return [layout.body.frame, layout.leading, layout.trailing, layout.card, layout.cancel].map {
+                    $0?.offsetBy(dx: -origin.x, dy: -origin.y)
+                }
+            }
+            let first = layouts[0]
+            for layout in layouts.dropFirst() {
+                #expect(shape(layout) == shape(first), "\(form) differs between screens")
+                #expect(layout.body.topRadius == first.body.topRadius)
+                #expect(layout.body.bottomRadius == first.body.bottomRadius)
+            }
         }
     }
 
-    /// Every form on every screen: the body contains the housing; the wings are symmetric about it; nothing is laid
-    /// out under it; content lies inside the body; everything stays on screen; every edge is on a whole pixel.
+    /// Every form on every screen: the body never reaches into the top band, and every form but the rest hangs exactly
+    /// 8 pt below it; the body is centred on the middle unless a side of the screen holds it back; content lies inside
+    /// the body; everything stays on screen with the margin; every edge is on a whole pixel; the wave and wait forms
+    /// are capsules, the bud a circle beside the body; and the rest lies inside every form's span.
     @Test(arguments: Self.screens)
     func everyFormKeepsTheInvariants(screen: ScreenTopology) throws {
+        let foot = Self.foot(screen)
+        let rest = PillGeometry.layout(.rest, on: screen).body.frame
+        let margin = PillGeometry.screenMargin
         for form in Self.forms {
             let layout = PillGeometry.layout(form, on: screen)
             let body = layout.body.frame
             let regions = [layout.leading, layout.trailing, layout.card, layout.cancel].compactMap { $0 }
-            if let housing = layout.housing {
-                #expect(Self.contains(body, housing), "\(form): the body leaves the housing out")
-                for region in regions {
-                    #expect(!region.intersects(housing), "\(form): content under the housing")
-                }
-                if let leading = layout.leading, let trailing = layout.trailing {
-                    #expect(abs((housing.minX - leading.maxX) - (trailing.minX - housing.maxX)) < 1e-9)
-                    #expect(abs(leading.width - trailing.width) < 1e-9, "\(form): lopsided wings")
-                    #expect(abs((leading.minX - body.minX) - (body.maxX - trailing.maxX)) < 1e-9)
-                }
+            #expect(Double(body.minY) >= foot - 1e-9, "\(form) reaches into the band on \(screen)")
+            if case .rest = form {
+                #expect(Double(body.minY) == foot)
+            } else {
+                #expect(Double(body.minY) == foot + PillGeometry.gap, "\(form) is not 8 pt below the band")
+            }
+            let right = Double(layout.cancel?.maxX ?? body.maxX)
+            if Double(body.minX) > margin + 1e-9, right < screen.width - margin - 1e-9 {
+                #expect(abs(Double(body.midX) - screen.middle) <= 0.5 / screen.scale + 1e-9,
+                        "\(form) is off the middle of \(screen)")
             }
             for region in [layout.leading, layout.trailing, layout.card].compactMap({ $0 }) {
                 #expect(Self.contains(body, region), "\(form): content outside the body")
             }
+            #expect(Double(body.minX) >= margin - 1e-9 && right <= screen.width - margin + 1e-9,
+                    "\(form): off screen on \(screen)")
             for rect in [body] + regions {
-                #expect(rect.minX >= 0 && Double(rect.maxX) <= screen.width, "\(form): off screen on \(screen)")
-                #expect(rect.minY >= 0)
+                #expect(rect.minY >= 0 && Double(rect.maxY) <= screen.height)
                 #expect(Self.onPixels(rect, screen.scale), "\(form): \(rect) is between pixels at \(screen.scale)x")
             }
-            if let housing = layout.housing, case .rest = form {
-                #expect(body == housing, "the rest frame is not the housing's footprint")
+            switch form {
+            case .notice:
+                #expect(layout.body.topRadius == PillGeometry.cardRadius)
+                #expect(layout.body.bottomRadius == PillGeometry.cardRadius)
+            case .rest, .listening, .waiting:
+                #expect(layout.body.topRadius == Double(body.height) / 2, "\(form) is not a capsule")
+                #expect(layout.body.bottomRadius == Double(body.height) / 2, "\(form) is not a capsule")
             }
             if let cancel = layout.cancel {
                 #expect(cancel.width == cancel.height)
                 #expect(Double(cancel.minX - body.maxX) == PillGeometry.budGap)
-                #expect(abs(cancel.midY - body.midY) <= 0.5)
+                #expect(abs(cancel.midY - body.midY) <= 0.5 / screen.scale + 1e-9)
             }
-            if case .notice = form, layout.kind != .none, let card = layout.card {
-                #expect(Double(card.minY) >= screen.safeAreaTop, "a notice is laid out in the band")
-            }
+            #expect(rest.minX >= body.minX - 1e-9 && rest.maxX <= body.maxX + 1e-9,
+                    "the rest pokes out of \(form) on \(screen)")
         }
     }
 
-    /// The listening forms on the same screen keep the body in one place, whatever the time's width or the bud, so the
-    /// pill does not jitter as the seconds tick; only content wider than the wave widens it.
-    @Test func listeningKeepsItsSize() {
-        let a = PillGeometry.layout(.listening(trailing: 28, cancel: false), on: Self.island)
-        let b = PillGeometry.layout(.listening(trailing: 41, cancel: true), on: Self.island)
-        #expect(a.body == b.body)
-        let wide = PillGeometry.layout(.waiting(trailing: 130), on: Self.island)
-        #expect(wide.body.frame.width > a.body.frame.width)
+    /// The listening body depends only on what it holds: the bud never moves it, the same time's width never changes
+    /// it, and a wider time (one that gained a digit) widens it about the same middle.
+    @Test func listeningHoldsStillUntilTheTimeWidens() {
+        for screen in [Self.island, Self.notch, Self.external] {
+            let hold = PillGeometry.layout(.listening(trailing: 28, cancel: false), on: screen)
+            let toggle = PillGeometry.layout(.listening(trailing: 28, cancel: true), on: screen)
+            #expect(hold.body == toggle.body && hold.leading == toggle.leading && hold.trailing == toggle.trailing)
+            let wider = PillGeometry.layout(.listening(trailing: 36, cancel: false), on: screen)
+            #expect(wider.body.frame.width == hold.body.frame.width + 8)
+            #expect(abs(wider.body.frame.midX - hold.body.frame.midX) <= 0.25)
+            #expect(wider.leading?.width == hold.leading?.width, "the wave gave way on a wide screen")
+        }
     }
 
-    /// The two hidden nudges move and resize only the island pill, within ±8 pt.
-    @Test func theNudgesMoveTheIslandOnly() {
-        let nudged = PillAdjustments(islandHeight: 4, islandOffset: -2)
-        let rest = PillGeometry.layout(.rest, on: Self.island, adjustments: nudged)
-        #expect(rest.body.frame == CGRect(x: 838.5, y: 0, width: 59, height: 36))
-        let far = PillGeometry.layout(.rest, on: Self.island, adjustments: PillAdjustments(islandHeight: 100,
-                                                                                            islandOffset: .nan))
-        #expect(far.body.frame.height == 40)
-        #expect(far.body.frame.minY == 0)
-        for screen in [Self.notch, Self.external] {
-            #expect(PillGeometry.layout(.listening(trailing: 30, cancel: false), on: screen, adjustments: nudged)
-                == PillGeometry.layout(.listening(trailing: 30, cancel: false), on: screen))
-        }
+    /// On a screen too narrow for the content the wave or the wait's row gives way first, down to room for a few
+    /// dots, and only then is the text truncated.
+    @Test func aNarrowScreenNarrowsTheRowBeforeTheText() throws {
+        let waiting = PillGeometry.layout(.waiting(trailing: 104.3), on: Self.narrowExternal)
+        let row = try #require(waiting.leading), words = try #require(waiting.trailing)
+        #expect(Double(row.width) < PillGeometry.shortShimmerWidth && Double(row.width) >= PillGeometry.leastLeading)
+        #expect(words.width == 105, "the words were cut while the row could still give way")
+        let long = PillGeometry.layout(.listening(trailing: 300, cancel: true), on: Self.narrowExternal)
+        #expect(Double(try #require(long.leading).width) == PillGeometry.leastLeading)
+        let time = try #require(long.trailing)
+        #expect(time.width > 0 && time.width < 300)
     }
 
     /// A suggestion's four actions, wrapping for a long app name, on every screen: every action lies in the card,
-    /// below the band, clear of the housing, inside the screen's margins, on whole pixels.
+    /// below the band, inside the screen's margins, on whole pixels.
     @Test(arguments: Self.screens)
     func fourActionsFitTheCardOnEveryScreen(screen: ScreenTopology) throws {
         for titles in [[126.0, 121, 77, 111], [262, 121, 77, 111]] {
@@ -200,7 +245,7 @@ import Testing
                 let frame = action.offsetBy(dx: card.minX, dy: card.minY)
                 #expect(Self.contains(card, frame))
                 #expect(Self.contains(layout.body.frame, frame))
-                if let housing = layout.housing { #expect(!frame.intersects(housing)) }
+                #expect(Double(frame.minY) >= Self.foot(screen) + PillGeometry.gap)
                 #expect(Double(frame.minX) >= PillGeometry.screenMargin - 1e-9)
                 #expect(Double(frame.maxX) <= screen.width - PillGeometry.screenMargin + 1e-9)
                 #expect(Self.onPixels(frame, screen.scale), "\(frame) is between pixels")

@@ -25,8 +25,6 @@ import Testing
         #expect(!settings.launchAtLogin)
         #expect(settings.microphoneID == nil)
         #expect(!settings.setupCompleted)
-        #expect(settings.islandHeightNudge == 0)
-        #expect(settings.islandOffsetNudge == 0)
     }
 
     @Test func everySettingSurvivesARelaunch() throws {
@@ -48,8 +46,6 @@ import Testing
         settings.launchAtLogin = true
         settings.microphoneID = "synthetic-microphone"
         settings.setupCompleted = true
-        settings.islandHeightNudge = 1.5
-        settings.islandOffsetNudge = -2
 
         let reopened = SettingsStore(defaults: suite.defaults)
         #expect(reopened.holdToTalkShortcut == .modifiers([.rightOption]))
@@ -66,8 +62,6 @@ import Testing
         #expect(reopened.launchAtLogin)
         #expect(reopened.microphoneID == "synthetic-microphone")
         #expect(reopened.setupCompleted)
-        #expect(reopened.islandHeightNudge == 1.5)
-        #expect(reopened.islandOffsetNudge == -2)
     }
 
     @Test func aRemovedShortcutStaysRemoved() throws {
@@ -91,12 +85,10 @@ import Testing
         settings.tapToToggleShortcut = .key(code: 49, modifiers: [.control])
         settings.spokenDelimiters = true
         settings.promptTag = "[voice]"
-        settings.islandOffsetNudge = 3
         // Values an older or hand-edited store might hold.
         suite.defaults.set(Data("not json".utf8), forKey: "holdToTalkShortcut")
         suite.defaults.set("yes", forKey: "spokenNumbers")
         suite.defaults.set(7, forKey: "restoreClipboard")
-        suite.defaults.set("tall", forKey: "islandHeightNudge")
         suite.defaults.set(42, forKey: "microphoneID")
         suite.defaults.set(Data(#"{"key":{"code":"x"}}"#.utf8), forKey: "pasteAgainShortcut")
 
@@ -104,13 +96,11 @@ import Testing
         #expect(reopened.holdToTalkShortcut == .function)
         #expect(reopened.spokenNumbers)
         #expect(reopened.restoreClipboard)
-        #expect(reopened.islandHeightNudge == 0)
         #expect(reopened.microphoneID == nil)
         #expect(reopened.pasteAgainShortcut == nil)
         #expect(reopened.tapToToggleShortcut == .key(code: 49, modifiers: [.control]))
         #expect(reopened.spokenDelimiters)
         #expect(reopened.promptTag == "[voice]")
-        #expect(reopened.islandOffsetNudge == 3)
     }
 
     /// Saved settings are found by these names, so renaming one would silently reset it for every user.
@@ -131,13 +121,11 @@ import Testing
         settings.launchAtLogin = true
         settings.microphoneID = "synthetic-microphone"
         settings.setupCompleted = true
-        settings.islandHeightNudge = 1
-        settings.islandOffsetNudge = 1
         let stored = Set(suite.defaults.persistentDomain(forName: suite.suiteName)?.keys.map { $0 } ?? [])
         #expect(stored == [
             "holdToTalkShortcut", "tapToToggleShortcut", "pasteAgainShortcut", "restoreClipboard", "spokenNumbers",
             "spokenDelimiters", "pressEnterCommand", "promptMode", "promptTag", "correctionSuggestions", "keepRunLog",
-            "launchAtLogin", "microphoneID", "setupCompleted", "islandHeightNudge", "islandOffsetNudge",
+            "launchAtLogin", "microphoneID", "setupCompleted",
         ])
     }
 

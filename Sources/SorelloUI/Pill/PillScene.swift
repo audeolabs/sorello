@@ -10,6 +10,7 @@ enum PillType {
     static let action = NSFont.systemFont(ofSize: 12, weight: .semibold)
     static let symbolSize: CGFloat = 14
     static let tagSize: CGFloat = 10
+    static let tagSymbol = "tag.fill"
     /// The gap between the prompt tag and the time.
     static let tagGap: CGFloat = 5
     /// A capsule action: its height and the padding either side of its title.
@@ -18,6 +19,15 @@ enum PillType {
 
     static func width(of text: String, font: NSFont) -> CGFloat {
         ceil((text as NSString).size(withAttributes: [.font: font]).width)
+    }
+
+    /// The room the prompt tag takes before the time: the symbol as drawn, which is wider than its point size, and the
+    /// gap.
+    static var tagRoom: CGFloat {
+        let configuration = NSImage.SymbolConfiguration(pointSize: tagSize, weight: .semibold)
+        let symbol = NSImage(systemSymbolName: tagSymbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(configuration)
+        return ceil(symbol?.size.width ?? tagSize) + tagGap
     }
 
     /// The height of one line of `font`, from its descender to its ascender.
@@ -43,17 +53,19 @@ struct PillControl: Equatable {
 /// layout, and the controls. Computed in one place so what is drawn and what takes clicks always agree.
 struct PillScene: Equatable {
     var display: PillDisplay
+    var screen: ScreenTopology
     var layout: PillLayout
     var notice: NoticeLayout?
     var controls: [PillControl]
 
-    /// The form to draw; hidden draws the housing's own footprint.
-    static func form(for display: PillDisplay, on screen: ScreenTopology) -> PillForm {
+    /// The form to draw, `elapsed` seconds into a dictation that is listening; hidden draws the rest the pill goes back
+    /// up to.
+    static func form(for display: PillDisplay, on screen: ScreenTopology, elapsed: TimeInterval) -> PillForm {
         switch display {
         case .hidden:
             return .rest
         case .listening(let listening):
-            return .listening(trailing: Double(timeContentWidth(prompt: listening.promptStyle)),
+            return .listening(trailing: Double(timeContentWidth(elapsed: elapsed, prompt: listening.promptStyle)),
                               cancel: listening.trigger == .toggle)
         case .waiting(.transcribing):
             return .waiting(trailing: nil)
@@ -64,9 +76,12 @@ struct PillScene: Equatable {
         }
     }
 
-    init(display: PillDisplay, screen: ScreenTopology, adjustments: PillAdjustments) {
+    /// `display` on `screen`; `elapsed` is how long a listening display has been listening, which decides how many
+    /// digits its time has.
+    init(display: PillDisplay, screen: ScreenTopology, elapsed: TimeInterval = 0) {
         self.display = display
-        layout = PillGeometry.layout(Self.form(for: display, on: screen), on: screen, adjustments: adjustments)
+        self.screen = screen
+        layout = PillGeometry.layout(Self.form(for: display, on: screen, elapsed: elapsed), on: screen)
         notice = nil
         controls = []
         switch display {
@@ -94,10 +109,22 @@ struct PillScene: Equatable {
 
     static var preparingText: String { String(localized: "Preparing model") }
 
-    /// The trailing wing's content while listening: the widest time it will show, and the tag before it.
-    static func timeContentWidth(prompt: Bool) -> CGFloat {
-        let time = PillType.width(of: "00:00", font: PillType.time)
-        return prompt ? time + PillType.tagSize + PillType.tagGap + 2 : time
+    /// What follows the wave `elapsed` seconds into listening: the widest time with as many digits as the one shown
+    /// then (the time's digits are all one width, so that is the time with every digit a 0), and the tag before it. It
+    /// changes only when the time gains a digit, so the pill holds still as the seconds tick.
+    static func timeContentWidth(elapsed: TimeInterval, prompt: Bool) -> CGFloat {
+        let widest = String(elapsedText(elapsed).map { $0.isNumber ? "0" : $0 })
+        let time = PillType.width(of: widest, font: PillType.time)
+        return prompt ? time + PillType.tagRoom : time
+    }
+
+    /// The next moment, in seconds since listening began, at which the time shown gains a digit: ten minutes in, then
+    /// a hundred.
+    static func timeGainsADigit(after elapsed: TimeInterval) -> TimeInterval {
+        let minutes = elapsed.isFinite && elapsed > 0 ? Int(min(elapsed / 60, 1e9)) : 0
+        var next = 10
+        while next <= minutes { next *= 10 }
+        return Double(next) * 60
     }
 
     static func noticeLayout(_ notice: PillDisplay.Notice, on screen: ScreenTopology) -> NoticeLayout {

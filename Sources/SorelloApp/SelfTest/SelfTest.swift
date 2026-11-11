@@ -154,7 +154,7 @@ private final class SelfTestRun {
         Console.line("  heard:  \(completion.processed?.heard ?? "")")
         Console.line("  insert: \(insertion.text)")
         Console.line("  press Return: \(insertion.pressEnter ? "yes" : "no")")
-        // Let the pill go back into its housing before the next dictation.
+        // Let the pill go back up before the next dictation.
         _ = await wait(2, until: { self.pill.current == .hidden })
         return true
     }
@@ -186,13 +186,16 @@ private final class SelfTestRun {
     }
 }
 
-/// The real pill, and a note of each state it was shown and where, to report that it was on the screen.
+/// The real pill, and a note of each state it was shown and where, to report that it was on the screen and in its
+/// place under the housing.
 @MainActor
 private final class RecordingPill: PillPresenting {
     private let overlay: PillOverlayController
     let levels: LevelFeed
     private var states: [String] = []
     private var frames: Set<String> = []
+    /// Where the listening pill's body was, in the screen's points.
+    private var listening: CGRect?
     private(set) var current: PillDisplay = .hidden
 
     init(_ overlay: PillOverlayController, levels: LevelFeed) {
@@ -212,10 +215,6 @@ private final class RecordingPill: PillPresenting {
         get { overlay.onNoticeAction }
         set { overlay.onNoticeAction = newValue }
     }
-    var adjustments: PillAdjustments {
-        get { overlay.adjustments }
-        set { overlay.adjustments = newValue }
-    }
 
     func show(_ display: PillDisplay) {
         current = display
@@ -228,13 +227,17 @@ private final class RecordingPill: PillPresenting {
         case .notice: "notice"
         }
         if states.last != name { states.append(name) }
+        if case .listening = display { listening = overlay.layout?.body.frame }
         if let frame = overlay.drawingFrame {
             frames.insert("\(Int(frame.width))x\(Int(frame.height)) at (\(Int(frame.minX)), \(Int(frame.minY)))")
         }
     }
 
     var summary: String {
-        let housing = overlay.layout.map { String(describing: $0.kind) } ?? "unknown"
-        return states.joined(separator: " → ") + "; housing \(housing); drawn in \(frames.sorted().joined(separator: ", "))"
+        let housing = overlay.topology.map { $0.housing.map { "x \($0.minX) to \($0.maxX)" } ?? "none" } ?? "unknown"
+        let body = listening.map { String(format: "%gx%g at (%g, %g)", $0.width, $0.height, $0.minX, $0.minY) }
+            ?? "unknown"
+        return states.joined(separator: " → ") + "; housing \(housing); listening body \(body); drawn in "
+            + frames.sorted().joined(separator: ", ")
     }
 }

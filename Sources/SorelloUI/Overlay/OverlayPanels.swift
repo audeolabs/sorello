@@ -28,7 +28,7 @@ final class OverlayPanel: NSPanel {
 }
 
 /// The pill's controls, each in a small panel of its own exactly its size, so the gaps between them (the space between
-/// the pill and its cancel bud lies in the menu bar) never swallow a click meant for what is underneath. A panel is
+/// the pill and its cancel bud, the corners of a card) never swallow a click meant for what is underneath. A panel is
 /// on the screen only while its control is.
 final class ControlPanels {
     /// A control was held down (its kind) or let go (nil): the pill dims it.

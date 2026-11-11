@@ -11,7 +11,7 @@ import Testing
     static let screens = PillSnapshots.Housing.allCases.map(\.topology)
 
     static func scene(_ display: PillDisplay, on screen: ScreenTopology = island) -> PillScene {
-        PillScene(display: display, screen: screen, adjustments: PillAdjustments())
+        PillScene(display: display, screen: screen)
     }
 
     /// In toggle mode the pill itself is Stop and the cancel bud is Cancel, named for VoiceOver; holding to talk, the
@@ -48,23 +48,64 @@ import Testing
         }
     }
 
-    /// The time ticking, or a longer recording, never changes the pill's size: the trailing wing is measured for the
-    /// widest time it shows.
-    @Test func theTimeNeverResizesThePill() {
-        let early = Self.scene(.listening(.init(trigger: .hold, started: 0)))
-        let late = Self.scene(.listening(.init(trigger: .hold, started: -5_000)))
-        #expect(early.layout == late.layout)
+    /// The pill holds still as the seconds tick and widens only when the time gains a digit, at ten minutes, about
+    /// the same middle: what follows the wave is measured for the widest time with as many digits as the one shown,
+    /// so it always holds the time and leaves no empty digit beside it.
+    @Test func thePillWidensOnlyWhenTheTimeGainsADigit() throws {
+        func layout(_ elapsed: Double, prompt: Bool = false) -> PillLayout {
+            PillScene(display: .listening(.init(trigger: .hold, promptStyle: prompt, started: 1_000)),
+                      screen: Self.island, elapsed: elapsed).layout
+        }
+        for prompt in [false, true] {
+            let early = layout(0, prompt: prompt), late = layout(600, prompt: prompt)
+            #expect((0 ..< 600).allSatisfy { layout(Double($0) + 0.5, prompt: prompt) == early }, "it moved early on")
+            #expect((600 ..< 900).allSatisfy { layout(Double($0) + 0.5, prompt: prompt) == late }, "it moved later on")
+            #expect(late.body.frame.width > early.body.frame.width)
+            #expect(abs(late.body.frame.midX - early.body.frame.midX) <= 0.25)
+        }
+        for second in 0 ..< 900 {
+            let text = PillScene.elapsedText(Double(second))
+            let box = try #require(layout(Double(second)).trailing)
+            #expect(PillType.width(of: text, font: PillType.time) <= box.width, "\(text) does not fit")
+        }
+        #expect(try #require(layout(12).trailing).width == PillType.width(of: "0:00", font: PillType.time))
+        #expect(PillScene.timeGainsADigit(after: 0) == 600)
+        #expect(PillScene.timeGainsADigit(after: 599.9) == 600)
+        #expect(PillScene.timeGainsADigit(after: 600) == 6_000)
+        #expect(PillScene.timeGainsADigit(after: -5) == 600 && PillScene.timeGainsADigit(after: .nan) == 600)
         #expect(PillScene.elapsedText(0) == "0:00")
         #expect(PillScene.elapsedText(7.9) == "0:07")
         #expect(PillScene.elapsedText(61) == "1:01")
         #expect(PillScene.elapsedText(14 * 60 + 59.99) == "14:59")
         #expect(PillScene.elapsedText(-3) == "0:00")
         #expect(PillScene.elapsedText(.nan) == "0:00")
-        let time = PillType.width(of: "14:59", font: PillType.time)
-        #expect(PillScene.timeContentWidth(prompt: false) >= time)
     }
 
-    /// The words of the wait fit their wing on every screen, and a hidden pill sits in its housing.
+    /// What the pill draws stays in its regions: the time, and the prompt tag before it, lie in their box on every
+    /// screen, early on and past ten minutes, and on a screen too narrow for them the time is truncated there rather
+    /// than drawn over the wave.
+    @Test func theTimeIsDrawnInItsBox() throws {
+        let narrow = ScreenTopology(frame: CGRect(x: 0, y: 0, width: 180, height: 400), safeAreaTop: 0, housing: nil,
+                                    menuBarHeight: 24, scale: 1)
+        for screen in Self.screens + [narrow] {
+            for elapsed in [12.0, 600] {
+                for display in [PillDisplay.listening(.init(trigger: .toggle, started: 0)),
+                                .listening(.init(trigger: .hold, promptStyle: true, started: 0))] {
+                    let view = PillView(levels: nil, clock: { elapsed }, fixedMotionTime: 0)
+                    view.frame = CGRect(x: 0, y: 0, width: screen.width, height: screen.height)
+                    let scene = PillScene(display: display, screen: screen, elapsed: elapsed)
+                    view.update(scene, appearance: PillAppearance(), animated: false)
+                    let box = try #require(scene.layout.trailing).insetBy(dx: -1e-6, dy: -1e-6)
+                    #expect(!view.drawnContent.isEmpty)
+                    for frame in view.drawnContent {
+                        #expect(box.contains(frame), "\(frame) is drawn outside \(box) on \(screen)")
+                    }
+                }
+            }
+        }
+    }
+
+    /// The words of the wait fit their box on every screen, and a hidden pill is at its rest under the band.
     @Test func theWaitsWordsFitAndHiddenRests() throws {
         for screen in Self.screens {
             let preparing = Self.scene(.waiting(.preparingModel), on: screen)
@@ -106,8 +147,8 @@ import Testing
         #expect(activated == [.stop(dictation: 0), .cancel(dictation: 0)])
 
         let pill = PillView(levels: LevelFeed(), clock: { 0 })
-        pill.update(display: .listening(.init(trigger: .hold, started: 0)), screen: Self.island,
-                    adjustments: PillAdjustments(), appearance: PillAppearance(), animated: false)
+        pill.update(Self.scene(.listening(.init(trigger: .hold, started: 0))), appearance: PillAppearance(),
+                    animated: false)
         #expect(pill.accessibilityChildren()?.isEmpty == true)
         #expect(!pill.isAccessibilityElement())
         #expect(pill.hitTest(NSPoint(x: 10, y: 10)) == nil)
@@ -158,8 +199,6 @@ import Testing
         #expect(activated == [first.kind], "a press survived its dictation or its panel leaving")
     }
 
-    /// The overlay chooses a screen when a dictation starts, even if the pill never left the last one, and keeps it
-    /// for that dictation's wait and notices.
     /// Shows `display` and returns the step (a mutating call cannot sit inside `#expect`).
     @discardableResult
     static func show(_ life: inout OverlayLifecycle, _ display: PillDisplay) -> OverlayLifecycle.Step? {
@@ -168,11 +207,14 @@ import Testing
 
     static func rest(_ life: inout OverlayLifecycle) -> Bool { life.rested() }
 
+    /// The overlay chooses a screen when a dictation starts, even if the pill never left the last one, and keeps it
+    /// for that dictation's wait and notices. A pill that was not up drops in, and its controls wait for it
+    /// (`PillMotionTests.eachControlWaitsUntilItIsDrawn`); a change while it is up offers them at once.
     @Test func eachDictationChoosesItsScreen() {
         var life = OverlayLifecycle()
         let first = PillDisplay.listening(.init(trigger: .hold, started: 10))
         let second = PillDisplay.listening(.init(trigger: .hold, started: 20))
-        #expect(Self.show(&life, first) == .init(chooseScreen: true, present: true))
+        #expect(Self.show(&life, first) == .init(chooseScreen: true, present: true, drops: true))
         #expect(Self.show(&life, .waiting(.transcribing)) == .init(chooseScreen: false, present: true))
         #expect(Self.show(&life, Self.notice) == .init(chooseScreen: false, present: true))
         #expect(Self.show(&life, second) == .init(chooseScreen: true, present: true))
@@ -180,11 +222,11 @@ import Testing
             == .init(chooseScreen: false, present: true))
         // A notice shown from nothing (a microphone that is denied) chooses a screen too.
         var idle = OverlayLifecycle()
-        #expect(Self.show(&idle, Self.notice) == .init(chooseScreen: true, present: true))
+        #expect(Self.show(&idle, Self.notice) == .init(chooseScreen: true, present: true, drops: true))
     }
 
     /// Hidden, the panels stay up only until the pill has come to rest, and nothing brings them back until something
-    /// is shown: not a change of screens, accessibility settings or nudges, nor a rest reported late.
+    /// is shown: not a change of screens or accessibility settings, nor a rest reported late.
     @Test func hiddenPanelsStayOffUntilSomethingIsShown() {
         var life = OverlayLifecycle()
         #expect(Self.show(&life, .hidden) == nil)
@@ -192,15 +234,16 @@ import Testing
         _ = Self.show(&life, .waiting(.transcribing))
         #expect(life.appliesChanges && !Self.rest(&life), "a pill that is up came to rest")
         #expect(Self.show(&life, .hidden) == .init(chooseScreen: false, present: false))
-        #expect(life.appliesChanges, "a pill shrinking away stops following the screen")
+        #expect(life.appliesChanges, "a pill going back up stops following the screen")
         #expect(Self.rest(&life))
         #expect(!life.appliesChanges && life.phase == .off)
         #expect(!Self.rest(&life))
         #expect(Self.show(&life, .hidden) == nil)
-        // Called back while shrinking away, it stays on its screen and does not come to rest.
+        // Called back while going back up, it stays on its screen and does not come to rest.
         _ = Self.show(&life, .waiting(.transcribing))
         _ = Self.show(&life, .hidden)
-        #expect(Self.show(&life, .waiting(.preparingModel)) == .init(chooseScreen: false, present: true))
+        #expect(Self.show(&life, .waiting(.preparingModel))
+            == .init(chooseScreen: false, present: true, drops: true))
         #expect(!Self.rest(&life))
     }
 
@@ -218,8 +261,8 @@ import Testing
 
     static let notice = PillDisplay.notice(.init(id: 5, symbol: "info.circle", tone: .information, text: "Invented"))
 
-    /// The snapshot tool draws every state for every housing, a contact sheet and a 1x preview per housing, and the
-    /// mark's pictures, each under its own name.
+    /// The snapshot tool draws every state under a camera island, under a notch and with neither, a contact sheet, a
+    /// 1x preview and the drop frame by frame for each, and the mark's pictures, each under its own name.
     @Test func everyStateHasASnapshot() {
         let names = PillSnapshots.scenes.map(\.name)
         #expect(Set(names).count == names.count)
@@ -227,7 +270,7 @@ import Testing
             for state in ["listening-silent", "listening-speaking", "listening-toggle", "listening-prompt", "waiting",
                           "waiting-preparing", "notice-error", "notice-suggestion", "notice-suggestion-app",
                           "notice-suggestion-long-app", "contrast-listening",
-                          "reduce-motion-waiting", "contact-sheet", "toggle-at-1x"] {
+                          "reduce-motion-waiting", "contact-sheet", "toggle-at-1x", "drop"] {
                 #expect(names.contains("pill-\(housing)-\(state)"))
             }
         }

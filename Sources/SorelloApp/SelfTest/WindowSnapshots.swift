@@ -237,6 +237,5 @@ private final class NoPill: PillPresenting {
     var onStop: () -> Void = {}
     var onCancel: () -> Void = {}
     var onNoticeAction: (UInt64, String) -> Void = { _, _ in }
-    var adjustments = PillAdjustments()
     func show(_ display: PillDisplay) {}
 }

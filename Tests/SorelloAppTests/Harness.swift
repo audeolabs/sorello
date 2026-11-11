@@ -1,4 +1,3 @@
-import DesignCore
 import DictationCore
 import DictionaryKit
 import Foundation
@@ -193,7 +192,6 @@ final class FakePill: PillPresenting {
     var onStop: () -> Void = {}
     var onCancel: () -> Void = {}
     var onNoticeAction: (UInt64, String) -> Void = { _, _ in }
-    var adjustments = PillAdjustments()
     private(set) var shown: [PillDisplay] = []
 
     func show(_ display: PillDisplay) {

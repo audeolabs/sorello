@@ -14,20 +14,79 @@ import Testing
         #expect(Motion.crossFade == 0.15)
     }
 
-    /// Leaving, the content fades first and the floating body after it; with Reduce Motion everything cross-fades at
-    /// once in 0.15 s. The pill counts as at rest only once every one of those fades has ended.
-    @Test func thePillRestsOnlyAfterItsFades() {
+    /// Leaving, the content fades first and the body after it; with Reduce Motion everything cross-fades at once in
+    /// 0.15 s.
+    @Test func theBodyFadesAfterTheContentLeaves() {
         let leaving = Motion.bodyFade(showing: false, reduceMotion: false)
-        #expect(leaving.delay == Motion.handover)
+        #expect(leaving.delay == Motion.handover && leaving.duration == Motion.appear)
         #expect(Motion.bodyFade(showing: true, reduceMotion: false).delay == 0)
-        for reduce in [false, true] {
-            let body = Motion.bodyFade(showing: false, reduceMotion: reduce)
-            #expect(Motion.hideFades(reduceMotion: reduce) >= body.delay + body.duration)
-            #expect(Motion.hideFades(reduceMotion: reduce) >= (reduce ? Motion.crossFade : Motion.handover))
-        }
         for showing in [false, true] {
             let still = Motion.bodyFade(showing: showing, reduceMotion: true)
             #expect(still.delay == 0 && still.duration == Motion.crossFade)
+        }
+    }
+
+    /// A fade is a straight line from where it is to its target, after its delay, and its value at a moment depends
+    /// only on the moment. Turned round midway it carries on from where it is; turned round before it began, it never
+    /// moved.
+    @Test func fadesAreAPureFunctionOfTheMoment() {
+        var fade = Fade(0)
+        #expect(fade.value(at: 5) == 0 && fade.isSettled(at: 5))
+        fade.move(to: 1, at: 10, delay: 0.1, duration: 0.2)
+        #expect(fade.target == 1)
+        #expect(fade.value(at: 10.05) == 0 && !fade.isSettled(at: 10.05))
+        #expect(MotionTests.near(fade.value(at: 10.2), 0.5))
+        #expect(fade.value(at: 10.3) == 1 && fade.isSettled(at: 10.3) && fade.value(at: 99) == 1)
+        fade.move(to: 0, at: 10.25, duration: 0.3)
+        #expect(MotionTests.near(fade.value(at: 10.25), 0.75))
+        #expect(MotionTests.near(fade.value(at: 10.4), 0.375))
+        #expect(fade.value(at: 10.6) == 0 && fade.isSettled(at: 10.6))
+        var early = Fade(1)
+        early.move(to: 0, at: 0, delay: 0.06, duration: 0.15)
+        early.move(to: 1, at: 0.03, duration: 0.15)
+        #expect(early.value(at: 0.03) == 1 && early.value(at: 0.1) == 1, "a fade-out that had not begun dimmed it")
+        var odd = Fade(.nan)
+        #expect(odd.value(at: 0) == 0)
+        odd.move(to: 7, at: 0, duration: -1)
+        #expect(odd.value(at: 0) == 1, "a fade beyond fully opaque, or with no duration")
+        odd.snap(to: 0.4)
+        #expect(odd.value(at: -3) == 0.4 && odd.isSettled(at: -3))
+    }
+
+    /// The body drops from the rest, touching the foot of the band, to its place, growing only outward from it, and
+    /// goes back up the same way. On no frame does any of it reach into the band: not as the spring overshoots on the
+    /// way back up, nor when it is sent back midway or called back while it goes.
+    @Test(arguments: PillGeometryTests.screens)
+    func theBodyNeverEntersTheBand(screen: ScreenTopology) {
+        let rest = PillGeometry.layout(.rest, on: screen).body
+        let foot = Double(rest.frame.minY)
+        let forms: [PillForm] = [.listening(trailing: 30, cancel: false), .listening(trailing: 52, cancel: true),
+                                 .waiting(trailing: nil), .notice(CGSize(width: 300, height: 90))]
+        for form in forms {
+            let target = PillGeometry.layout(form, on: screen).body
+            var drop = MovingBody(rest, ceiling: foot)
+            drop.move(to: target, at: 0)
+            #expect(drop.body(at: 0) == rest)
+            var outward = true
+            for step in 0 ... 600 {
+                let frame = drop.body(at: Double(step) / 600).frame
+                outward = outward && frame.minX <= rest.frame.minX + 1e-9 && frame.maxX >= rest.frame.maxX - 1e-9
+                    && frame.minY >= rest.frame.minY - 1e-9 && frame.maxY >= rest.frame.maxY - 1e-9
+            }
+            #expect(outward, "\(form) does not grow out of the rest on \(screen)")
+            let settled = drop.body(at: 1).frame
+            #expect(drop.isSettled(at: 1) && abs(settled.minX - target.frame.minX) < 0.01
+                && abs(settled.maxY - target.frame.maxY) < 0.01)
+            for hide in [0.03, 0.1, 0.25, 2.0] {
+                for back in [nil, 0.02, 0.08, 0.2] as [Double?] {
+                    var body = MovingBody(rest, ceiling: foot)
+                    body.move(to: target, at: 0)
+                    body.move(to: rest, at: hide)
+                    if let back { body.move(to: target, at: hide + back) }
+                    let highest = (0 ... 4000).map { Double(body.body(at: Double($0) / 1000).frame.minY) }.min() ?? 0
+                    #expect(highest >= foot - 1e-9, "\(form) reached \(foot - highest) pt into the band")
+                }
+            }
         }
     }
 
@@ -66,21 +125,21 @@ import Testing
     /// The body's grow is quick (most of the way in 0.2 s) and firm (it overshoots by under a point on a 200 pt
     /// change), and its outline at a moment depends only on the moment.
     @Test func theBodyMorphsQuicklyAndFirmly() {
-        let from = PillBody(frame: CGRect(x: 838.5, y: 4, width: 59, height: 32), topRadius: 16, bottomRadius: 16)
-        let to = PillBody(frame: CGRect(x: 738.5, y: 4, width: 259, height: 120), topRadius: 16, bottomRadius: 20)
+        let from = PillBody(frame: CGRect(x: 790, y: 48, width: 156, height: 36), topRadius: 18, bottomRadius: 18)
+        let to = PillBody(frame: CGRect(x: 690, y: 48, width: 356, height: 120), topRadius: 20, bottomRadius: 20)
         var body = MovingBody(from)
         body.move(to: to, at: 10)
         #expect(body.body(at: 10) == from)
         #expect(body.target == to)
         let at = body.body(at: 10.2)
-        #expect(Double(at.frame.width) > 59 + 0.9 * 200)
+        #expect(Double(at.frame.width) > 156 + 0.9 * 200)
         var widest = 0.0
         for step in 0 ... 200 {
             let frame = body.body(at: 10 + Double(step) / 200).frame
             widest = max(widest, Double(frame.width))
             #expect(frame.width >= 0 && frame.height >= 0)
         }
-        #expect(widest - 259 < 1 && widest >= 259 - 0.01)
+        #expect(widest - 356 < 1 && widest >= 356 - 0.01)
         #expect(body.isSettled(at: 11.5) && !body.isSettled(at: 10.1))
         #expect(body.body(at: 10.13) == body.body(at: 10.13))
         // Retargeted halfway, it carries on from where it is.
@@ -89,6 +148,15 @@ import Testing
         #expect(body.body(at: 10.1) == halfway)
         body.snap(to: to)
         #expect(body.body(at: 0) == to && body.isSettled(at: 0))
+        // Sent on after a delay, it holds still where it is until then.
+        var waiting = MovingBody(from)
+        waiting.move(to: to, at: 0, delay: 0.06)
+        #expect(waiting.body(at: 0.059) == from && waiting.body(at: 0.1) != from && waiting.target == to)
+        // A ceiling holds the outline's top below it and keeps it through a snap.
+        var held = MovingBody(to, ceiling: 60)
+        #expect(held.body(at: 0).frame.minY == 60 && held.body(at: 0).frame.maxY == to.frame.maxY)
+        held.snap(to: from)
+        #expect(held.ceiling == 60 && held.body(at: 0).frame.minY == 60)
     }
 
     /// The radii as drawn never exceed half the width nor, together, the height, so any outline can be drawn.

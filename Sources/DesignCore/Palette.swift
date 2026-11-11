@@ -56,8 +56,6 @@ public enum Palette {
     public static let pill = RGB(hex: 0x09090A)
     /// The hairline that sets the pill off from a dark backdrop.
     public static let edge = RGB(hex: 0x6E6E70)
-    /// The pill's body where it must merge with a camera housing.
-    public static let housing = RGB(0, 0, 0)
     public static let ink = RGB(1, 1, 1)
     /// A switch that is on: aurora a shade deeper, so the white knob stays crisp.
     public static let toggle = RGB(hex: 0x3FD17A)

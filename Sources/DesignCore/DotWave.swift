@@ -2,7 +2,7 @@ import Foundation
 
 /// The listening wave (ARCHITECTURE.md, section 8, "Listening"): one row of dots along the pill's middle line that
 /// shows the voice, its dots growing and brightening with what was said, and comes to rest in the mark's aurora dot
-/// beside the housing. In silence it is one calm row of equal dots. The row's shape is the voice's own, the last
+/// at its end. In silence it is one calm row of equal dots. The row's shape is the voice's own, the last
 /// `span` seconds of it, the newest beside the aurora dot; what was said moves away from it as it ages, so a syllable
 /// is a pulse that crosses the row in 0.75 s. The pill records the level (`LevelFollower`) into a `Trace` every frame;
 /// which dot is how large and bright for a trace and a moment is all decided here, so the view only draws.
@@ -138,9 +138,8 @@ public enum DotWave {
         shimmer(sweep: sweep, row: row(width: width, height: height), height: height)
     }
 
-    /// The shimmer over a row of dots at `xs` (as `row` lays them out): the pill uses this for a row that the housing
-    /// interrupts, whose dots under the housing are left out after the spot has been placed along the whole row.
-    public static func shimmer(sweep: Double, row xs: [Double], height: Double) -> [Dot] {
+    /// The shimmer over a row of dots at `xs` (as `row` lays them out), the spot placed along the whole row.
+    static func shimmer(sweep: Double, row xs: [Double], height: Double) -> [Dot] {
         guard let first = xs.first, let last = xs.last, last > first else { return [] }
         let length = last - first
         let spread = max(0.22, pitch / length)

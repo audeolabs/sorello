@@ -1,4 +1,3 @@
-import DesignCore
 import DictationCore
 import Foundation
 import SorelloUI
@@ -57,7 +56,6 @@ protocol PillPresenting: AnyObject {
     var onStop: () -> Void { get set }
     var onCancel: () -> Void { get set }
     var onNoticeAction: (_ notice: UInt64, _ action: String) -> Void { get set }
-    var adjustments: PillAdjustments { get set }
     func show(_ display: PillDisplay)
 }
 

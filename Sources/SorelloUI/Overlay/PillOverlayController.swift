@@ -19,13 +19,6 @@ public final class PillOverlayController {
     /// The user clicked an action of the notice with that id.
     public var onNoticeAction: (_ notice: UInt64, _ action: String) -> Void = { _, _ in }
 
-    /// The two hidden nudges for the island pill. Applied at once.
-    public var adjustments = PillAdjustments() {
-        didSet {
-            if adjustments != oldValue, lifecycle.appliesChanges { refresh(animated: false) }
-        }
-    }
-
     /// What the pill shows now.
     public private(set) var display = PillDisplay.hidden
     /// The screen the pill is on, as it was read; nil while it has never been shown.
@@ -40,6 +33,13 @@ public final class PillOverlayController {
     private let drawing = OverlayPanel(interactive: false)
     private let controls = ControlPanels()
     private let view: PillView
+    private let clock: () -> TimeInterval
+    /// Fires when the listening time gains a digit, so the pill widens for it.
+    private var widening: Timer?
+    /// When the pill last began to drop in, on `clock`: its controls wait from then (`OverlayLifecycle.controlsWait`).
+    private var droppedAt = -Double.infinity
+    /// Fires when a control that is waiting may take clicks.
+    private var controlsWait: Timer?
     private var lifecycle = OverlayLifecycle()
     private var screenNumber: UInt32?
     private var appearance: PillAppearance
@@ -52,6 +52,7 @@ public final class PillOverlayController {
     /// start times, are on (the session's).
     public init(levels: LevelFeed, clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
         view = PillView(levels: levels, clock: clock)
+        self.clock = clock
         appearance = Self.systemAppearance()
         drawing.contentView = view
         view.onRest = { [weak self] in self?.rested() }
@@ -76,21 +77,26 @@ public final class PillOverlayController {
         }
         drawing.orderOut(nil)
         controls.hide()
+        widening?.invalidate()
+        controlsWait?.invalidate()
     }
 
-    /// Shows `display`: the pill grows out of its housing, changes form, or shrinks back into it, on its spring.
+    /// Shows `display`: the pill drops down from the band, changes form, or goes back up, on its spring.
     public func show(_ display: PillDisplay) {
         guard display != self.display else { return }
         self.display = display
         // A press on a control that is about to change belongs to nothing any more.
         view.pressed = nil
         guard let step = lifecycle.show(display) else { return }
+        if step.drops { droppedAt = clock() }
         if step.chooseScreen, let screen = Self.chooseScreen() {
             let moving = drawing.isVisible && screen.displayNumber != screenNumber
             if moving {
-                // A new dictation on another screen: the pill leaves this one and grows out of that one's housing.
+                // A new dictation on another screen: the pill leaves this one and drops down on that one, where its
+                // controls wait for it again.
                 drawing.orderOut(nil)
                 view.reset()
+                droppedAt = clock()
             }
             if moving || !drawing.isVisible {
                 screenNumber = screen.displayNumber
@@ -106,15 +112,48 @@ public final class PillOverlayController {
 
     private func refresh(animated: Bool) {
         guard let topology else { return }
-        let scene = PillScene(display: display, screen: topology, adjustments: adjustments)
-        let rest = PillGeometry.layout(.rest, on: topology, adjustments: adjustments)
+        var elapsed = 0.0
+        if case .listening(let listening) = display { elapsed = clock() - listening.started }
+        let scene = PillScene(display: display, screen: topology, elapsed: elapsed)
+        let rest = PillGeometry.layout(.rest, on: topology)
         place(covering: [rest.body.frame, scene.layout.body.frame, scene.layout.cancel ?? rest.body.frame,
                          view.scene?.layout.body.frame ?? rest.body.frame], on: topology)
-        view.update(display: display, screen: topology, adjustments: adjustments, appearance: appearance,
-                    animated: animated)
+        view.update(scene, appearance: appearance, animated: animated)
         // Hiding may have come to rest at once; then the panel stays off the screen.
         if lifecycle.phase == .up, !drawing.isVisible { drawing.orderFrontRegardless() }
-        controls.show(lifecycle.phase == .up ? scene.controls : []) { self.global($0, on: topology) }
+        placeControls()
+        widenWhenTheTimeGainsADigit(after: elapsed)
+    }
+
+    /// Puts the controls of what the pill shows on the screen, each once it may take clicks; while the pill is not up,
+    /// none.
+    private func placeControls() {
+        controlsWait?.invalidate()
+        controlsWait = nil
+        guard let topology, let scene = view.scene, lifecycle.phase == .up else { return controls.hide() }
+        let now = clock()
+        let from = scene.controls.map { droppedAt + OverlayLifecycle.controlsWait($0.kind) }
+        controls.show(zip(scene.controls, from).filter { $0.1 <= now }.map(\.0)) { self.global($0, on: topology) }
+        guard let next = from.filter({ $0 > now }).min() else { return }
+        let timer = Timer(timeInterval: next - now, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.placeControls() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        controlsWait = timer
+    }
+
+    /// While listening, refreshes the pill at the moment its time gains a digit, so it widens for it on its spring.
+    private func widenWhenTheTimeGainsADigit(after elapsed: TimeInterval) {
+        widening?.invalidate()
+        widening = nil
+        guard lifecycle.phase == .up, case .listening = display else { return }
+        // A moment after the digit arrives, so the clock read then is past it.
+        let wait = PillScene.timeGainsADigit(after: elapsed) - elapsed + 0.005
+        let timer = Timer(timeInterval: max(wait, 0.005), repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refresh(animated: true) }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        widening = timer
     }
 
     /// Sizes the drawing panel to cover `frames` and room around them for the spring's give and the edge, growing it
@@ -122,9 +161,8 @@ public final class PillOverlayController {
     private func place(covering frames: [CGRect], on screen: ScreenTopology) {
         var wanted = frames.reduce(CGRect.null) { $0.union($1) }.insetBy(dx: -24, dy: -16)
         wanted = wanted.intersection(CGRect(x: 0, y: 0, width: screen.width, height: screen.height))
-        if wanted.minY > 0 { wanted = CGRect(x: wanted.minX, y: 0, width: wanted.width, height: wanted.maxY) }
         // Window frames land on whole points, so the canvas does too, and the pill is drawn from where the panel
-        // really is: half a point off would put it a pixel beside the housing.
+        // really is, so its edges land on the pixels the geometry chose.
         wanted = CGRect(x: wanted.minX.rounded(.down), y: wanted.minY.rounded(.down),
                         width: wanted.maxX.rounded(.up) - wanted.minX.rounded(.down),
                         height: wanted.maxY.rounded(.up) - wanted.minY.rounded(.down))
@@ -143,7 +181,7 @@ public final class PillOverlayController {
                height: rect.height)
     }
 
-    /// The pill has shrunk back into its housing, or faded: its panels leave the screen.
+    /// The pill has gone back up to its rest and faded: its panels leave the screen.
     private func rested() {
         guard lifecycle.rested() else { return }
         drawing.orderOut(nil)

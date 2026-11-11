@@ -1,10 +1,11 @@
 import AppKit
 import DesignCore
 
-/// Draws the pill (ARCHITECTURE.md, section 8, "The pill"): the body that morphs between forms on the spring, the
-/// cancel bud joined to it, and what each form holds, which fades out before the next fades in. Everything is a Core
-/// Animation layer; a display link runs only while something moves and the view is on screen, at most 60 frames a
-/// second, and each frame writes only what changed. It draws and takes no clicks: the overlay's controls panel does.
+/// Draws the pill (ARCHITECTURE.md, section 8, "The pill"): the body that drops down from the band and morphs between
+/// forms on the spring, the cancel bud joined to it, and what each form holds, which fades out before the next fades
+/// in. Everything is a Core Animation layer, and every motion and fade is computed for the frame's moment; a display
+/// link runs only while something moves or fades and the view is on screen, at most 60 frames a second, and each
+/// frame writes only what changed. It draws and takes no clicks: the overlay's controls panel does.
 ///
 /// The view covers part of one screen; `origin` is the screen point (top left, y down) at its top-left corner, so the
 /// geometry, which is in screen points, can be drawn wherever the panel is.
@@ -18,38 +19,47 @@ final class PillView: NSView {
 
     /// The screen point at the view's top-left corner.
     var origin: CGPoint = .zero {
-        didSet { if origin != oldValue { render(at: CACurrentMediaTime()) } }
+        didSet { if origin != oldValue { render(at: motionNow) } }
     }
     /// Called once each time the pill has gone back to rest after being hidden, so the overlay can take its panels
     /// off the screen.
     var onRest: (() -> Void)?
     /// The control held down, drawn dimmer.
     var pressed: PillControl.Kind? {
-        didSet { if pressed != oldValue { render(at: CACurrentMediaTime()) } }
+        didSet { if pressed != oldValue { render(at: motionNow) } }
     }
     private(set) var scene: PillScene?
 
     private let levels: LevelFeed?
     private let clock: () -> TimeInterval
     private let fixedWave: FixedWave?
-    private let fixedMotionTime: CFTimeInterval?
+    /// A fixed moment on the motion clock, for snapshots and tests; nil follows the display. Setting it draws that
+    /// moment.
+    var fixedMotionTime: CFTimeInterval? {
+        didSet { if let fixedMotionTime, fixedMotionTime != oldValue { render(at: fixedMotionTime) } }
+    }
 
     private var screen: ScreenTopology?
-    private var adjustments = PillAdjustments()
     private var look = PillAppearance()
     private var body: MovingBody?
     private var bud = CancelBud.Model()
+    /// A bud that sets out once the body has dropped into place: when, and the circle it rests in.
+    private var budDue: (time: CFTimeInterval, resting: (centre: Double, radius: Double))?
     private var recorder = DotWave.Recorder()
     private var restReported = true
-    /// Whether the body was last asked to show: its fade is replaced only when that changes.
-    private var bodyShowing = false
-    /// Once hidden, the last fade ends at this moment on the motion clock; the pill is not at rest before it.
-    private var quietAt: CFTimeInterval = 0
+    /// The body's opacity: in as it drops down, out as it goes back up. Its target says whether it was last asked to
+    /// show.
+    private var bodyOpacity = Fade(0)
 
     private let edge = CAShapeLayer()
+    private let edgeMask = CAShapeLayer()
     private let fill = CAShapeLayer()
     private let contentHolder = CALayer()
     private let contentMask = CAShapeLayer()
+    /// Holds what the pill shows, in the screen's points (`PillContent.plane`): its bounds are the part of the screen
+    /// the view covers, so whatever the panel does, each layer in it stays where it is on the screen, and what is
+    /// leaving, which is never placed again, fades where it was drawn.
+    private let contentPlane = CALayer()
     private let glyph = CAShapeLayer()
     private var current: PillContent?
     private var leaving: [PillContent] = []
@@ -71,12 +81,15 @@ final class PillView: NSView {
         root.actions = ["sublayers": NSNull()]
         edge.fillColor = nil
         edge.lineJoin = .round
+        edge.mask = edgeMask
         glyph.fillColor = nil
         glyph.strokeColor = NSColor(Palette.ink).cgColor
         glyph.lineWidth = 1.6
         glyph.lineCap = .round
         contentHolder.mask = contentMask
-        for part in [edge, fill, contentHolder, glyph] as [CALayer] { root.addSublayer(part) }
+        contentPlane.actions = ["sublayers": NSNull()]
+        contentHolder.addSublayer(contentPlane)
+        for part in [fill, edge, contentHolder, glyph] as [CALayer] { root.addSublayer(part) }
         setAccessibilityElement(false)
     }
 
@@ -95,7 +108,7 @@ final class PillView: NSView {
     private var motionNow: CFTimeInterval { fixedMotionTime ?? CACurrentMediaTime() }
 
     /// Forgets what was shown, so the next display appears from rest: the pill moving to another screen for a new
-    /// dictation grows out of that screen's housing.
+    /// dictation drops down on that screen.
     func reset() {
         stopLink()
         CATransaction.begin()
@@ -109,26 +122,25 @@ final class PillView: NSView {
         screen = nil
         body = nil
         bud = CancelBud.Model()
+        budDue = nil
         restReported = true
-        bodyShowing = false
+        bodyOpacity = Fade(0)
     }
 
     // MARK: - What to show
 
-    /// Shows `display` on `screen`. `animated` false puts everything in place at once (a pill appearing on a new
-    /// screen, snapshots); otherwise the body springs and the content hands over, or with Reduce Motion cross-fades.
-    func update(display: PillDisplay, screen: ScreenTopology, adjustments: PillAdjustments,
-                appearance: PillAppearance, animated: Bool) {
+    /// Shows `next`. `animated` false puts everything in place at once (a pill appearing on a new screen, snapshots);
+    /// otherwise the body springs and the content hands over, or with Reduce Motion cross-fades.
+    func update(_ next: PillScene, appearance: PillAppearance, animated: Bool) {
         let now = motionNow
-        let next = PillScene(display: display, screen: screen, adjustments: adjustments)
+        let display = next.display, screen = next.screen
         let wasHidden = scene.map { $0.display == .hidden } ?? true
-        // A pill that is up and changes screens or nudges takes its new place at once; one that is appearing grows
-        // out of the new screen's housing.
-        let moved = !wasHidden && (screen != self.screen || adjustments != self.adjustments)
+        // A pill that is up and changes screens takes its new place at once; one that is appearing drops down on the
+        // new screen.
+        let moved = !wasHidden && screen != self.screen
         let travels = animated && !appearance.reduceMotion && !moved
         let fades = animated && !moved
         self.screen = screen
-        self.adjustments = adjustments
         self.look = appearance
         layer?.contentsScale = screen.scale
 
@@ -144,14 +156,11 @@ final class PillView: NSView {
             }
         }
         moveBody(to: next, from: wasHidden, travels: travels, at: now)
-        handOver(to: next, animated: fades, at: now)
+        handOver(to: next, animated: fades, dropping: travels && wasHidden, at: now)
         applyLook(showing: display != .hidden, animated: fades, at: now)
         scene = next
-        if display == .hidden, !wasHidden {
-            restReported = false
-            // What leaves fades out, and a floating body after it; the panels must stay up until both have gone.
-            quietAt = now + (fades ? Motion.hideFades(reduceMotion: appearance.reduceMotion) : 0)
-        }
+        // What leaves fades out, and the body after it; the panels must stay up until both have gone.
+        if display == .hidden, !wasHidden { restReported = false }
         CATransaction.commit()
 
         render(at: now)
@@ -162,25 +171,36 @@ final class PillView: NSView {
     private func moveBody(to next: PillScene, from wasHidden: Bool, travels: Bool, at now: CFTimeInterval) {
         guard let screen else { return }
         let target = next.layout.body
-        let rest = PillGeometry.layout(.rest, on: screen, adjustments: adjustments).body
-        if body == nil { body = MovingBody(wasHidden ? rest : target) }
+        let rest = PillGeometry.layout(.rest, on: screen).body
+        // The rest touches the foot of the band: nothing of the body ever rises above it.
+        let ceiling = Double(rest.frame.minY)
+        if body == nil { body = MovingBody(wasHidden ? rest : target, ceiling: ceiling) }
+        body?.ceiling = ceiling
         if travels {
-            // Appearing from rest it grows out of the housing; called back while still shrinking away, it turns
+            // Appearing from rest it drops down from the band; called back while still going back up, it turns
             // round from where it is.
             if wasHidden, restReported { body?.snap(to: rest) }
-            body?.move(to: target, at: now)
+            // Leaving, it holds still while what it holds fades, so nothing is clipped as it goes.
+            body?.move(to: target, at: now, delay: next.display == .hidden ? Motion.handover : 0)
+        } else if next.display == .hidden, !wasHidden {
+            // Nothing travels: it fades where it is.
+            if let shape = body?.body(at: now) { body?.snap(to: shape) }
         } else {
             body?.snap(to: target)
         }
         let resting = next.layout.cancel.map { (centre: Double($0.midX), radius: Double($0.width) / 2) }
+        if travels, wasHidden, !bud.isShowing, let resting {
+            // Dropping down, the bud waits until the body is on its line.
+            budDue = (now + Motion.drop, resting)
+            return
+        }
+        budDue = nil
         let current = body?.body(at: now).frame ?? target.frame
         bud.update(resting: resting, from: Double(current.maxX), to: Double(target.frame.maxX),
                    endRadius: Double(target.frame.height) / 2, animated: travels, now: now)
     }
 
-    /// The body's colours, and whether it shows. Where there is no housing to grow out of it fades in as it grows and
-    /// out as it shrinks; beside a housing it is black over black and simply there.
-    /// What becomes of the floating body's fade at an update. A change of visibility replaces whatever fade was
+    /// What becomes of the body's fade at an update. A change of visibility replaces whatever fade was
     /// running or still waiting to begin, so an old fade-out never dims a pill shown again; an update that leaves the
     /// visibility as it was lets a fade in progress finish, unless it puts everything in place at once.
     static func bodyFade(wasShowing: Bool, showing: Bool, animated: Bool) -> (cancel: Bool, start: Bool) {
@@ -188,37 +208,26 @@ final class PillView: NSView {
         return (cancel: changed || !animated, start: changed && animated)
     }
 
+    /// The body's colours, and whether it shows: it fades in as it drops down and out as it goes back up.
     private func applyLook(showing: Bool, animated: Bool, at now: CFTimeInterval) {
-        guard let screen else { return }
-        let floating = screen.kind == .none
-        fill.fillColor = NSColor(floating ? Palette.pill : Palette.housing).cgColor
-        // Beside a housing the body merges with the hardware: no edge, unless Increase Contrast asks for one.
-        edge.isHidden = !(floating || look.increaseContrast)
+        fill.fillColor = NSColor(Palette.pill).cgColor
         edge.strokeColor = NSColor(Palette.edge).cgColor
-        // Twice the edge: its inner half lies under the fill, so exactly the edge's width shows, crisp, and the fill's
-        // own antialiased rim never meets the backdrop.
+        // Twice the edge, clipped to the outline: its inner half shows over the fill's own antialiased rim, so the
+        // edge is exactly its width, crisp, and nothing is drawn outside the outline.
         edge.lineWidth = CGFloat(2 * Palette.edgeWidth(highContrast: look.increaseContrast))
-        let opacity: Float = floating && !showing ? 0 : 1
-        let schedule = Motion.bodyFade(showing: showing, reduceMotion: look.reduceMotion)
-        let step = Self.bodyFade(wasShowing: bodyShowing, showing: showing, animated: animated)
-        bodyShowing = showing
-        for part in [edge, fill] {
-            let from = part.presentation()?.opacity ?? part.opacity
-            if step.cancel { part.removeAnimation(forKey: "appear") }
-            if step.start, floating, from != opacity {
-                let fade = CABasicAnimation(keyPath: "opacity")
-                fade.fromValue = from
-                fade.toValue = opacity
-                fade.duration = schedule.duration
-                fade.beginTime = part.convertTime(now, from: nil) + schedule.delay
-                fade.fillMode = .backwards
-                part.add(fade, forKey: "appear")
-            }
-            part.opacity = opacity
+        let opacity = showing ? 1.0 : 0
+        let step = Self.bodyFade(wasShowing: bodyOpacity.target > 0, showing: showing, animated: animated)
+        if step.start {
+            let schedule = Motion.bodyFade(showing: showing, reduceMotion: look.reduceMotion)
+            bodyOpacity.move(to: opacity, at: now, delay: schedule.delay, duration: schedule.duration)
+        } else if step.cancel {
+            bodyOpacity.snap(to: opacity)
         }
     }
 
-    private func handOver(to next: PillScene, animated: Bool, at now: CFTimeInterval) {
+    /// What the pill holds leaves and the next arrives. `dropping`: the pill is appearing from its rest, and what it
+    /// holds waits until the body has nearly dropped into place.
+    private func handOver(to next: PillScene, animated: Bool, dropping: Bool, at now: CFTimeInterval) {
         let key = PillContent.Key(next.display)
         if let current, current.key == key {
             current.configure(next, view: self)
@@ -234,10 +243,10 @@ final class PillView: NSView {
         guard let key else { return }
         let content = PillContent(key: key, arrived: now)
         content.configure(next, view: self)
-        contentHolder.addSublayer(content.layer)
+        contentPlane.addSublayer(content.layer)
         if animated {
             // What leaves goes first; with Reduce Motion the two cross-fade.
-            content.arrive(at: now, delay: replacing && !reduce ? Motion.handover : 0,
+            content.arrive(at: now, delay: dropping ? Motion.drop : replacing && !reduce ? Motion.handover : 0,
                            duration: reduce ? Motion.crossFade : Motion.arrival)
         }
         if case .listening = key { recorder = DotWave.Recorder() }
@@ -265,10 +274,48 @@ final class PillView: NSView {
         CGPoint(x: point.x - origin.x, y: bounds.height - (point.y - origin.y))
     }
 
-    /// The screen rectangle `rect` (top left, y down) in the layer's coordinates.
-    func local(_ rect: CGRect) -> CGRect {
-        CGRect(x: rect.minX - origin.x, y: bounds.height - (rect.maxY - origin.y), width: rect.width,
-               height: rect.height)
+    /// The part of the screen the view covers, in the coordinates the pill's content is placed in.
+    var contentArea: CGRect { PillContent.plane(CGRect(origin: origin, size: bounds.size)) }
+
+    /// The body as it is drawn now: the outline's bounds in screen points (top left, y down), the bud included, and its
+    /// opacity. Nil before anything has been shown.
+    var drawnBody: (frame: CGRect, opacity: Double)? {
+        guard body != nil, let path = fill.path else { return nil }
+        let box = path.boundingBoxOfPath
+        return (CGRect(x: box.minX + origin.x, y: bounds.height + origin.y - box.maxY, width: box.width,
+                       height: box.height), Double(fill.opacity))
+    }
+
+    /// Where the lines and symbols of what the pill shows are drawn now, in screen points (top left, y down).
+    var drawnContent: [CGRect] { (current?.lines ?? []).map(drawn) }
+
+    /// What one form of the pill's content draws now, read from its layers.
+    struct DrawnForm {
+        var key: PillContent.Key
+        /// Whether it is fading out.
+        var leaving: Bool
+        /// The opacity its fade gives it now.
+        var opacity: Double
+        /// Where each thing it draws is, in screen points (top left, y down): its lines and symbols, the actions'
+        /// capsules, the dots and the aurora dot.
+        var marks: [CGRect]
+    }
+
+    /// Every form the pill's content draws now: what it holds, then what is still leaving, oldest first.
+    var drawnForms: [DrawnForm] {
+        let held = current.map { [($0, false)] } ?? []
+        return (held + leaving.map { ($0, true) }).map { content, leaving in
+            DrawnForm(key: content.key, leaving: leaving, opacity: Double(content.layer.opacity),
+                      marks: content.marks.map(drawn))
+        }
+    }
+
+    /// Where the layer `part` is drawn now, through every layer above it, in screen points (top left, y down).
+    private func drawn(_ part: CALayer) -> CGRect {
+        guard let root = layer else { return .null }
+        let box = part.convert(part.bounds, to: root)
+        return CGRect(x: box.minX + origin.x, y: bounds.height + origin.y - box.maxY, width: box.width,
+                      height: box.height)
     }
 
     var scale: CGFloat { CGFloat(screen?.scale ?? 2) }
@@ -280,17 +327,35 @@ final class PillView: NSView {
         guard let body, let scene else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        if let due = budDue, now >= due.time {
+            // The body has dropped: the bud sets out from its end as it was then.
+            let end = Double(body.body(at: due.time).frame.maxX)
+            bud.update(resting: due.resting, from: end, to: Double(body.target.frame.maxX),
+                       endRadius: Double(body.target.frame.height) / 2, animated: true, now: due.time)
+            budDue = nil
+        }
         bud.advance(to: now)
         let shape = body.body(at: now)
         let endRadius = Double(shape.frame.height) / 2
         let budY = Double(scene.layout.cancel?.midY ?? shape.frame.midY)
         let budFrame = bud.frame(at: now, end: Double(shape.frame.maxX), endRadius: endRadius, y: budY)
         var flip = CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: -origin.x, ty: bounds.height + origin.y)
-        let outline = PillPath.outline(shape, bud: budFrame, budY: budY).copy(using: &flip)
+        let outline = PillPath.outline(shape, bud: budFrame, budY: budY, ceiling: body.ceiling).copy(using: &flip)
         edge.path = outline
+        edgeMask.path = outline
         fill.path = outline
         contentMask.path = outline
-        for part in [edge, fill, contentHolder, contentMask, glyph] as [CALayer] { part.frame = bounds }
+        for part in [edge, edgeMask, fill, contentHolder, contentMask, glyph] as [CALayer] { part.frame = bounds }
+        let area = contentArea
+        if contentPlane.bounds != area || contentPlane.position != CGPoint(x: bounds.midX, y: bounds.midY) {
+            contentPlane.bounds = area
+            contentPlane.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        }
+        let opacity = Float(bodyOpacity.value(at: now))
+        if fill.opacity != opacity {
+            fill.opacity = opacity
+            edge.opacity = opacity
+        }
 
         if let budFrame {
             let centre = local(CGPoint(x: budFrame.centre, y: budY))
@@ -303,7 +368,7 @@ final class PillView: NSView {
             glyph.path = cross
             var cancelHeld = false
             if case .cancel = pressed { cancelHeld = true }
-            glyph.opacity = Float(budFrame.glyphAlpha * (cancelHeld ? 0.5 : 1))
+            glyph.opacity = Float(budFrame.glyphAlpha * (cancelHeld ? 0.5 : 1)) * opacity
             glyph.isHidden = false
         } else {
             glyph.isHidden = true
@@ -330,15 +395,18 @@ final class PillView: NSView {
             var stopHeld = false
             if case .stop = pressed { stopHeld = true }
             current.dim(stopHeld ? 0.6 : 1, action: pressedAction)
+            current.showFade(at: now)
         }
         leaving.removeAll { content in
+            content.showFade(at: now)
             guard let end = content.leftAt, now >= end else { return false }
             content.layer.removeFromSuperlayer()
             return true
         }
         CATransaction.commit()
 
-        if scene.display == .hidden, !restReported, body.isSettled(at: now), !bud.isShowing, now >= quietAt {
+        if scene.display == .hidden, !restReported, body.isSettled(at: now), !bud.isShowing,
+           bodyOpacity.isSettled(at: now), leaving.isEmpty {
             restReported = true
             onRest?()
         }
@@ -351,11 +419,13 @@ final class PillView: NSView {
 
     // MARK: - The clock
 
-    /// Whether anything moves at `now`: the body or the bud on their springs, the live wave (which with Reduce Motion
-    /// still changes at each level, without travelling), or the shimmer.
+    /// Whether anything moves at `now`: the body or the bud on their springs, a fade, the live wave (which with
+    /// Reduce Motion still changes at each level, without travelling), or the shimmer.
     private func needsFrames(at now: CFTimeInterval) -> Bool {
         guard let body, let scene else { return false }
-        if !body.isSettled(at: now) || bud.needsFrames(at: now) { return true }
+        if !body.isSettled(at: now) || bud.needsFrames(at: now) || budDue != nil { return true }
+        if !bodyOpacity.isSettled(at: now) { return true }
+        if !leaving.isEmpty || current?.isFading(at: now) == true { return true }
         if scene.display == .hidden { return !restReported }
         switch scene.display {
         case .listening: return true
@@ -411,9 +481,9 @@ final class PillView: NSView {
         timeTimer = timer
     }
 
-    /// The elapsed time for a listening display, at the clock's now (snapshots: twelve seconds in).
+    /// The elapsed time for a listening display, at the clock's now.
     func elapsed(since started: TimeInterval) -> TimeInterval {
-        fixedMotionTime == nil ? clock() - started : 12
+        clock() - started
     }
 }
 

@@ -1,3 +1,4 @@
+import DesignCore
 import Foundation
 
 /// When the overlay's panels come and go, and when it chooses a screen (ARCHITECTURE.md, section 8, "The pill"). A
@@ -6,14 +7,14 @@ import Foundation
 /// The pill appears on the screen with keyboard focus when a dictation starts and stays there for that dictation:
 /// its wait and the notices after it. A new dictation chooses again, even if the pill never left the screen in
 /// between. Once hidden, the panels stay on the screen only until the pill has come to rest; after that nothing (a
-/// change of screens, of accessibility settings, of the nudges) brings them back until something is shown.
+/// change of screens or of accessibility settings) brings them back until something is shown.
 struct OverlayLifecycle: Equatable {
     enum Phase: Equatable {
         /// The panels are off the screen.
         case off
         /// Something is shown.
         case up
-        /// Hidden, and still shrinking or fading away.
+        /// Hidden, and still going back up or fading away.
         case leaving
     }
 
@@ -23,6 +24,17 @@ struct OverlayLifecycle: Equatable {
         var chooseScreen: Bool
         /// The panels must be on the screen.
         var present: Bool
+        /// The pill was not up: it drops in, and its controls wait until it has (`controlsWait`).
+        var drops = false
+    }
+
+    /// How long after a drop begins a control takes clicks, so a click never lands on a control that is not drawn
+    /// yet: Stop and a notice's actions once the body has dropped into place and what it holds has arrived, Cancel
+    /// once its bud has budded off and reached its place beside the pill. A pill that moves to another screen for a
+    /// new dictation drops in there afresh, and its controls wait again.
+    static func controlsWait(_ kind: PillControl.Kind) -> TimeInterval {
+        if case .cancel = kind { return Motion.drop + Motion.bud.response }
+        return Motion.drop + Motion.arrival
     }
 
     private(set) var phase = Phase.off
@@ -41,8 +53,9 @@ struct OverlayLifecycle: Equatable {
             dictation = listening.started
             choose = true
         }
+        let drops = phase != .up
         phase = .up
-        return Step(chooseScreen: choose, present: true)
+        return Step(chooseScreen: choose, present: true, drops: drops)
     }
 
     /// The pill came to rest. True when its panels should leave the screen: it was hidden and nothing has been shown
@@ -53,6 +66,6 @@ struct OverlayLifecycle: Equatable {
         return true
     }
 
-    /// Changes to the screen, the accessibility settings or the nudges are drawn only while the panels are up.
+    /// Changes to the screen or the accessibility settings are drawn only while the panels are up.
     var appliesChanges: Bool { phase != .off }
 }
