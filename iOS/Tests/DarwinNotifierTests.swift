@@ -16,7 +16,7 @@ enum DarwinNotifierTests {
     }
 
     private static func makeNotifier() -> DarwinNotifier {
-        DarwinNotifier(appGroupIdentifier: "group.localflow.tests.\(UUID().uuidString)")
+        DarwinNotifier(appGroupIdentifier: "group.sorello.tests.\(UUID().uuidString)")
     }
 
     /// Lets in-flight deliveries land, so a check for "nothing more arrived" is meaningful.
@@ -25,7 +25,7 @@ enum DarwinNotifierTests {
     }
 
     private static func testNamesSignalsUnderAppGroup() {
-        let notifier = DarwinNotifier(configuration: LocalFlowConfiguration(
+        let notifier = DarwinNotifier(configuration: SorelloConfiguration(
             appGroupIdentifier: "group.example.synthetic", urlScheme: "synthetic-flow"))
         TestSupport.expectEqual(DarwinNotifier.Signal.allCases.map(notifier.name(for:)), [
             "group.example.synthetic.intent", "group.example.synthetic.presence",

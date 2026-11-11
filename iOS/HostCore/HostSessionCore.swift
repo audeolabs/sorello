@@ -42,7 +42,7 @@ enum SessionControlOutcome: Equatable, Sendable {
 final class HostSessionCore {
     let hostRunID: UUID
     let store: SharedDictationStore
-    let settings: LocalFlowSettings
+    let settings: SorelloSettings
     let buffer: DictationSampleBuffer
     let capture: HostCapture
     let transcriber: HostTranscriber
@@ -104,7 +104,7 @@ final class HostSessionCore {
         let endBackgroundTask: OnceAction
     }
 
-    init(hostRunID: UUID = UUID(), store: SharedDictationStore, settings: LocalFlowSettings,
+    init(hostRunID: UUID = UUID(), store: SharedDictationStore, settings: SorelloSettings,
          buffer: DictationSampleBuffer, capture: HostCapture, transcriber: HostTranscriber,
          notifier: DarwinNotifier?, environment: HostEnvironment) {
         self.hostRunID = hostRunID

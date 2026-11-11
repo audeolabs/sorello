@@ -3,7 +3,7 @@ import Foundation
 /// The short, content-free text the keyboard shows for a mode, an error or the host status. Pure and
 /// Foundation-only, so it can move to Shared with tests.
 enum KeyboardMessages {
-    static let openLocalFlow = "Open LocalFlow to start a session"
+    static let openSorello = "Open LocalFlow to start a session"
     static let noSpeech = "No speech detected"
     static let preparingModel = "Preparing model…"
     static let starting = "Starting…"
@@ -44,7 +44,7 @@ enum KeyboardMessages {
         case .error(let code): return text(for: code)
         case .ready: return "Ready to dictate"
         // Describes, never instructs: a tap on the bar's text types the top-row key under it.
-        case .hostUnavailable: return launcherFailed ? openLocalFlow : "Start opens LocalFlow"
+        case .hostUnavailable: return launcherFailed ? openSorello : "Start opens LocalFlow"
         }
     }
 
@@ -103,7 +103,7 @@ enum KeyboardMessages {
         case .interrupted: return "Dictation was interrupted"
         case .deviceLocked: return "Dictation stopped when iPhone locked"
         case .keyboardDismissed: return "Stopped because the keyboard closed"
-        case .sessionInactive: return openLocalFlow
+        case .sessionInactive: return openSorello
         case .modelUnavailable: return "The speech model is missing"
         case .modelFailed: return "The speech model failed to load"
         case .transcriptionFailed: return "Transcription failed"
@@ -261,7 +261,7 @@ enum BarStatus: Equatable, Sendable {
         case .ready:
             self = hint.map { .text($0, attention: true) } ?? .none
         case .starting, .hostUnavailable:
-            self = title == KeyboardMessages.openLocalFlow ? .text(title, attention: false) : .none
+            self = title == KeyboardMessages.openSorello ? .text(title, attention: false) : .none
         case .recording, .transcribing, .waitingForModel, .preparingModel:
             self = .none
         }

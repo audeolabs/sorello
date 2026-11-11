@@ -44,7 +44,7 @@ link_host=${link_host%%/*}
 [ -d "$app" ] || { echo "Not a directory: $app" >&2; exit 2; }
 built=$app
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/localflow-appstore-check.XXXXXX") || exit 2
+work=$(mktemp -d "${TMPDIR:-/tmp}/sorello-appstore-check.XXXXXX") || exit 2
 trap 'rm -rf "$work"' EXIT
 failures=0
 

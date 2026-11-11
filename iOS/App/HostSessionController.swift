@@ -29,7 +29,7 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
     /// When the app last became active after the background, nil until then (`HostSessionPolicy.showsBounce`).
     private var activeSince: Date?
 
-    let configuration: LocalFlowConfiguration?
+    let configuration: SorelloConfiguration?
     let preferences = AppPreferences()
     let settings: SharedSettingsModel
     let transcriber: ParakeetTranscriber
@@ -47,11 +47,11 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
     private var hapticRequestID: UUID?
 
     private init() {
-        configuration = LocalFlowConfiguration.main
+        configuration = SorelloConfiguration.main
         transcriber = ParakeetTranscriber(preferences: preferences)
         dictionary = DictionaryModel(transcriber: transcriber)
         let store = configuration.flatMap(SharedDictationStore.init(configuration:))
-        let sharedSettings = configuration.flatMap(LocalFlowSettings.init(configuration:))
+        let sharedSettings = configuration.flatMap(SorelloSettings.init(configuration:))
         self.store = store
         settings = SharedSettingsModel(settings: sharedSettings)
         guard let configuration, let store, let sharedSettings else {

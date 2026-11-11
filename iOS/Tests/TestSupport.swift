@@ -33,7 +33,7 @@ enum TestSupport {
     /// A fresh directory under the temporary directory; callers remove it with `defer`.
     static func makeTemporaryDirectory() -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("LocalFlowIOSTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("SorelloIOSTests-\(UUID().uuidString)", isDirectory: true)
         try! FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }

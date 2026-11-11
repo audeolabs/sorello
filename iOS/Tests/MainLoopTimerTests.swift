@@ -57,7 +57,7 @@ enum MainLoopTimerTests {
     @MainActor
     private static func testFiresInEveryCommonMode() {
         // A mode of the main run loop's common modes, as UIKit's tracking mode is while a touch is tracked.
-        let tracking = RunLoop.Mode("LocalFlowTestsTracking")
+        let tracking = RunLoop.Mode("SorelloTestsTracking")
         CFRunLoopAddCommonMode(CFRunLoopGetMain(), CFRunLoopMode(rawValue: tracking.rawValue as CFString))
         let fired = Fired()
         let defaultOnly = Locked(false)

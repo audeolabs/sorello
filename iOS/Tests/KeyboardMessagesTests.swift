@@ -81,7 +81,7 @@ enum KeyboardMessagesTests {
         }
         TestSupport.expectEqual(status(recording, "Listening", notice: KeyboardMessages.storeWriteFailed),
                                 .notice(KeyboardMessages.storeWriteFailed))
-        TestSupport.expectEqual(status(.starting, KeyboardMessages.openLocalFlow), .text(KeyboardMessages.openLocalFlow, attention: false))
+        TestSupport.expectEqual(status(.starting, KeyboardMessages.openSorello), .text(KeyboardMessages.openSorello, attention: false))
     }
 
     /// The bar shows marks rather than status words, but VoiceOver still speaks every state in words. What the bar does

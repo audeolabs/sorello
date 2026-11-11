@@ -7,7 +7,7 @@ final class KeyboardChrome: ObservableObject {
     @Published var isMenuOpen = false
     /// The layout profile the trackpad uses in this field, for the menu's text-width choice.
     @Published var layout = FieldLayoutParameters.standard.defaultLayout
-    /// Left-handed (`LocalFlowSettings.leftHanded`): the dictation controls mirrored to the bar's left. Read when the
+    /// Left-handed (`SorelloSettings.leftHanded`): the dictation controls mirrored to the bar's left. Read when the
     /// keyboard appears.
     @Published var leftHanded = false
 }
@@ -1033,7 +1033,7 @@ struct MenuPanelView: View {
                 case .open:
                     Button {
                         onClose()
-                        client.openLocalFlow()
+                        client.openSorello()
                     } label: {
                         Label("Open LocalFlow", systemImage: "arrow.up.forward.app")
                             .font(.subheadline.weight(.medium))

@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 @main
-struct LocalFlowApp: App {
+struct SorelloApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var host = HostSessionController.shared
 

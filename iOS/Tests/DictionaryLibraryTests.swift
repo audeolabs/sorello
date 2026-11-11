@@ -30,7 +30,7 @@ enum DictionaryLibraryTests {
     /// A fresh suite, removed when `body` returns.
     @MainActor
     private static func withDefaults(_ body: (UserDefaults) -> Void) {
-        let name = "LocalFlowIOSTests-\(UUID().uuidString)"
+        let name = "SorelloIOSTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!
         defer { defaults.removePersistentDomain(forName: name) }
         body(defaults)

@@ -345,8 +345,8 @@ enum KeyboardLookTests {
         TestSupport.expectEqual(status(.error(.modelFailed), title: "The speech model failed to load"),
                                 .text("The speech model failed to load", attention: true))
         TestSupport.expectEqual(status(.ready, title: "Ready to dictate", hint: "Model failed to load"), .text("Model failed to load", attention: true))
-        TestSupport.expectEqual(status(.hostUnavailable, title: KeyboardMessages.openLocalFlow), .text(KeyboardMessages.openLocalFlow, attention: false))
-        TestSupport.expectEqual(status(.starting, title: KeyboardMessages.openLocalFlow), .text(KeyboardMessages.openLocalFlow, attention: false))
+        TestSupport.expectEqual(status(.hostUnavailable, title: KeyboardMessages.openSorello), .text(KeyboardMessages.openSorello, attention: false))
+        TestSupport.expectEqual(status(.starting, title: KeyboardMessages.openSorello), .text(KeyboardMessages.openSorello, attention: false))
         TestSupport.expectEqual(status(recording, title: "Listening", notice: "Couldn't reach LocalFlow"), .notice("Couldn't reach LocalFlow"))
         TestSupport.expectEqual(status(.ready, title: "", notice: "No speech detected", chips: true), .notice("No speech detected"))
         // Nothing: the island's motion or Start's dot says it.

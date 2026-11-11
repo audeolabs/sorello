@@ -6,7 +6,7 @@ import WidgetKit
 /// the Lock Screen, which draws only `SessionActivityState`, the phase and its timers, and reads nothing else; and the
 /// session control ("Session control").
 @main
-struct LocalFlowActivityBundle: WidgetBundle {
+struct SorelloActivityBundle: WidgetBundle {
     var body: some Widget {
         SessionActivityWidget()
         SessionControl()

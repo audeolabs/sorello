@@ -35,10 +35,10 @@ final class AppPreferences: ObservableObject {
     }
 }
 
-/// `LocalFlowSettings` (App Group, shared with the keyboard) as SwiftUI state.
+/// `SorelloSettings` (App Group, shared with the keyboard) as SwiftUI state.
 @MainActor
 final class SharedSettingsModel: ObservableObject {
-    let settings: LocalFlowSettings?
+    let settings: SorelloSettings?
 
     @Published var sessionMinutes: Int { didSet { settings?.sessionMinutes = sessionMinutes } }
     @Published var spokenDelimitersEnabled: Bool { didSet { settings?.spokenDelimitersEnabled = spokenDelimitersEnabled } }
@@ -50,9 +50,9 @@ final class SharedSettingsModel: ObservableObject {
     @Published var softKeyEdgesEnabled: Bool { didSet { settings?.softKeyEdgesEnabled = softKeyEdgesEnabled } }
     @Published var leftHanded: Bool { didSet { settings?.leftHanded = leftHanded } }
 
-    init(settings: LocalFlowSettings?) {
+    init(settings: SorelloSettings?) {
         self.settings = settings
-        sessionMinutes = settings?.sessionMinutes ?? LocalFlowSettings.defaultSessionMinutes
+        sessionMinutes = settings?.sessionMinutes ?? SorelloSettings.defaultSessionMinutes
         spokenDelimitersEnabled = settings?.spokenDelimitersEnabled ?? true
         spokenNumbersEnabled = settings?.spokenNumbersEnabled ?? true
         pressEnterEnabled = settings?.pressEnterEnabled ?? true

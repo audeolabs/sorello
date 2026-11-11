@@ -63,7 +63,7 @@ final class KeyboardDictationClient: ObservableObject {
     let instanceID = UUID()
     weak var target: KeyboardTextTarget?
 
-    private let configuration = LocalFlowConfiguration.main
+    private let configuration = SorelloConfiguration.main
     private var store: SharedDictationStore?
     private var ledger = KeyboardResultLedger()
     /// The result files as last read; most passes decide from it without touching the files.
@@ -110,7 +110,7 @@ final class KeyboardDictationClient: ObservableObject {
         keyHapticsEnabled = false
         // Without Full Access the mode cannot change while visible, so nothing needs polling.
         if access == .fullAccess, let configuration, let notifier {
-            let settings = LocalFlowSettings(configuration: configuration)
+            let settings = SorelloSettings(configuration: configuration)
             hapticsEnabled = settings?.hapticsEnabled ?? false
             keyHapticsEnabled = settings?.keyHapticsEnabled ?? false
             observations = [notifier.observe(.status) { [weak self] in self?.refresh() },
@@ -218,20 +218,20 @@ final class KeyboardDictationClient: ObservableObject {
     }
 
     /// "Open LocalFlow" in the menu: the same launcher as the bounce, without a dictation request.
-    func openLocalFlow() {
+    func openSorello() {
         notice = nil
         var attempted = false
         if let url = configuration?.dictateURL, let target {
             attempted = target.openContainingApp(url) { [weak self] opened in
                 guard let self, !opened else { return }
                 self.launcherFailed = true
-                self.show(KeyboardMessages.openLocalFlow)
+                self.show(KeyboardMessages.openSorello)
                 self.refresh()
             }
         }
         if !attempted {
             launcherFailed = true
-            show(KeyboardMessages.openLocalFlow)
+            show(KeyboardMessages.openSorello)
         }
         refresh()
     }

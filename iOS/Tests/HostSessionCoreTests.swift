@@ -1531,9 +1531,9 @@ private final class CoreHarness {
     let clock: Clock
     let background = BackgroundTasks()
     let directory = TestSupport.makeTemporaryDirectory()
-    let suite = "LocalFlowIOSTests.\(UUID().uuidString)"
+    let suite = "SorelloIOSTests.\(UUID().uuidString)"
     let store: SharedDictationStore
-    let settings: LocalFlowSettings
+    let settings: SorelloSettings
     let buffer: DictationSampleBuffer
     let fakeCapture: FakeCapture?
     let transcriber = FakeTranscriber()
@@ -1548,7 +1548,7 @@ private final class CoreHarness {
         let clock = Clock()
         self.clock = clock
         store = SharedDictationStore(directory: directory)
-        settings = LocalFlowSettings(defaults: UserDefaults(suiteName: suite)!)
+        settings = SorelloSettings(defaults: UserDefaults(suiteName: suite)!)
         buffer = DictationSampleBuffer(maxDuration: maxDuration)
         fakeCapture = injected == nil ? FakeCapture(clock: clock) : nil
         let background = self.background

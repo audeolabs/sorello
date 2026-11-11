@@ -150,7 +150,7 @@ enum SelfTest {
               let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: identifier) else {
             return "unresolved"
         }
-        let probe = container.appendingPathComponent(".localflow-selftest-\(UUID().uuidString)")
+        let probe = container.appendingPathComponent(".sorello-selftest-\(UUID().uuidString)")
         guard (try? Data().write(to: probe)) != nil else { return "unwritable" }
         try? FileManager.default.removeItem(at: probe)
         return "usable"

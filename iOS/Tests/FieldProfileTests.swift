@@ -346,10 +346,10 @@ extension FieldProfileTests {
 
     fileprivate static func testRememberedChoicesReadAsStored() {
         // A throwaway suite with an invented name, removed afterwards.
-        let suite = "LocalFlowIOSTests.\(UUID().uuidString)"
+        let suite = "SorelloIOSTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        let settings = LocalFlowSettings(defaults: defaults)
+        let settings = SorelloSettings(defaults: defaults)
         var cache = FieldLayoutOverrideCache()
         TestSupport.expectEqual(cache.overrides { settings.fieldLayoutOverrides }, [:])
         // A choice the keyboard writes applies once the cache is refreshed.

@@ -85,7 +85,7 @@ struct NeverCorrectStore: Sendable {
     var beforeWrite: (@Sendable () -> Void)?
 
     /// Nil when the App Group container is unavailable (a missing entitlement or group).
-    init?(configuration: LocalFlowConfiguration) {
+    init?(configuration: SorelloConfiguration) {
         guard let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: configuration.appGroupIdentifier) else { return nil }
         self.init(directory: Self.directory(inContainer: container))

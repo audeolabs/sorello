@@ -38,7 +38,7 @@ struct HomeView: View {
 
                 Section {
                     Picker("Session length", selection: $settings.sessionMinutes) {
-                        ForEach(LocalFlowSettings.sessionMinuteOptions, id: \.self) { Text("\($0) min").tag($0) }
+                        ForEach(SorelloSettings.sessionMinuteOptions, id: \.self) { Text("\($0) min").tag($0) }
                     }
                     .accessibilityHint("A session ends after this long without dictation")
                     .accessibilityIdentifier("settings.sessionLength")

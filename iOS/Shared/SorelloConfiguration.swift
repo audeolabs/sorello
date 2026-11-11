@@ -1,13 +1,13 @@
 import Foundation
 
 /// Identifiers injected into both Info.plists by the Makefile, so no Swift file hardcodes one.
-struct LocalFlowConfiguration: Equatable, Sendable {
+struct SorelloConfiguration: Equatable, Sendable {
     static let appGroupIdentifierKey = "LocalFlowAppGroupIdentifier"
     static let urlSchemeKey = "LocalFlowURLScheme"
     static let universalLinkKey = "LocalFlowUniversalLink"
     static let dictateHost = "dictate"
 
-    static let main = LocalFlowConfiguration(infoDictionary: Bundle.main.infoDictionary)
+    static let main = SorelloConfiguration(infoDictionary: Bundle.main.infoDictionary)
 
     var appGroupIdentifier: String
     var urlScheme: String

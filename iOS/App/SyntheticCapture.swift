@@ -197,7 +197,7 @@ private final class SyntheticSource: SampleConverter {
 /// Drives the pipeline every 100 ms on its own serial queue, as an input tap would.
 private final class SyntheticFeeder: @unchecked Sendable {
     private let pipeline: CapturePipeline<SyntheticSource>
-    private let queue = DispatchQueue(label: "localflow.synthetic-mic", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "sorello.synthetic-mic", qos: .userInitiated)
     private var timer: DispatchSourceTimer?   // confined to `queue`
 
     init(pipeline: CapturePipeline<SyntheticSource>) {

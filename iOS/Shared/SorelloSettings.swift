@@ -2,7 +2,7 @@ import Foundation
 
 /// Settings the keyboard also reads, stored in the App Group's UserDefaults suite. No transcript
 /// history is stored here.
-struct LocalFlowSettings {
+struct SorelloSettings {
     static let sessionMinuteOptions = [5, 15, 60]
     static let defaultSessionMinutes = 5
 
@@ -38,7 +38,7 @@ struct LocalFlowSettings {
 
     let defaults: UserDefaults
 
-    init?(configuration: LocalFlowConfiguration) {
+    init?(configuration: SorelloConfiguration) {
         guard let defaults = UserDefaults(suiteName: configuration.appGroupIdentifier) else { return nil }
         self.init(defaults: defaults)
     }
