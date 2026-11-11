@@ -516,7 +516,7 @@ enum DictationIslandTests {
                            "the second end shrank the guard: \(String(describing: twice.stopGuard(now: 1.2)))")
     }
 
-    /// While recording, the middle (the cold start's caption, a notice, "Open LocalFlow to start a session") lies between
+    /// While recording, the middle (the cold start's caption, a notice, "Open Sorello to start a session") lies between
     /// the menu and Cancel: plain text, with room for a short line.
     private static func testRecordingKeepsTheMiddleForItsWords() {
         for bar in barWidths {

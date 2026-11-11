@@ -118,7 +118,7 @@ private struct WordsTransition: ViewModifier {
 
 // MARK: The ridge mark
 
-/// The LocalFlow ridge mark (`RidgeMark`, KeyboardCore): the W line in white, the dot in the phase's accent.
+/// The ridge mark (`RidgeMark`, KeyboardCore): the W line in white, the dot in the phase's accent.
 struct MarkView: View {
     let state: SessionActivityState
     let isStale: Bool

@@ -324,7 +324,7 @@ final class KeyAreaView: UIView {
         return id
     }
 
-    /// The click follows the system Keyboard Clicks setting; the haptic follows LocalFlow's.
+    /// The click follows the system Keyboard Clicks setting; the haptic follows Sorello's.
     private func keyTouchedDown() {
         UIDevice.current.playInputClick()
         guard keyHapticsAllowed() else { return }

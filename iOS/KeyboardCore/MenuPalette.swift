@@ -2,7 +2,7 @@ import Foundation
 
 /// The menu panel's colours (ARCHITECTURE.md, "Top row", menu), as sRGB components so their contrast is testable:
 /// a white card in light mode and a dark grey one in dark mode, with text that reads at WCAG AA (4.5:1) on it, and
-/// "Open LocalFlow" in the brand's accent (`BrandPalette.link`). On the key fill (grey in dark mode) Apple's blue
+/// "Open Sorello" in the brand's accent (`BrandPalette.link`). On the key fill (grey in dark mode) Apple's blue
 /// measures 1.7:1. Pure.
 struct MenuPalette: Equatable {
     struct RGB: Equatable {
@@ -26,7 +26,7 @@ struct MenuPalette: Equatable {
     var card: RGB
     var primary: RGB
     var secondary: RGB
-    /// "Open LocalFlow": aurora on the dark card, a deep aurora on the light one.
+    /// "Open Sorello": aurora on the dark card, a deep aurora on the light one.
     var link: RGB
     /// The session line's ridge mark: ink with the accent's dot, like every other mark. Its dot shows the session as
     /// Start's does (`SessionDot.menuColor`), unlit in the card's grey.

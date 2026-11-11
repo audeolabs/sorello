@@ -30,7 +30,7 @@ enum KeyboardMessages {
         "Open Settings › General › Keyboard › Keyboards › \(keyboardName), then turn on Allow Full Access."
     }
 
-    /// `launcherFailed`: opening LocalFlow from this keyboard instance has failed before, so idle
+    /// `launcherFailed`: opening Sorello from this keyboard instance has failed before, so idle
     /// guidance asks the user to open it instead of promising a tap will.
     static func title(for mode: KeyboardMode, launcherFailed: Bool) -> String {
         switch mode {
@@ -62,7 +62,7 @@ enum KeyboardMessages {
     /// What VoiceOver hears as the island's value: while it is Stop, the mode and the time while recording, then any
     /// `detail` (the model still loading); on Start, `detail`, the status the bar shows as Start's dot (the session's
     /// time left, the model, no session; `spokenStatus`). Empty for the wait, whose label names it. A notice, an error
-    /// and "Open LocalFlow to start a session" are the middle's words, which VoiceOver reaches on its own.
+    /// and "Open Sorello to start a session" are the middle's words, which VoiceOver reaches on its own.
     static func islandAccessibilityValue(for mode: KeyboardMode, detail: String?, now: Date) -> String {
         switch mode {
         case .starting: return "Starting"
@@ -76,7 +76,7 @@ enum KeyboardMessages {
     }
 
     /// The status words the bar does not show, for VoiceOver, only from a live host: the session's time left in the
-    /// menu's words, the model loading when the user dictates or preparing now, no session (Start opens LocalFlow), and
+    /// menu's words, the model loading when the user dictates or preparing now, no session (Start opens Sorello), and
     /// the model still loading while recording. Nil where the bar's own words or the island's label say it all.
     static func spokenStatus(mode: KeyboardMode, status: HostStatus?, launcherFailed: Bool, now: Date) -> String? {
         let live = status.flatMap { status -> HostStatus? in
@@ -130,7 +130,7 @@ enum KeyboardMessages {
     }
 
     /// The menu's order: the session first; at the accessibility sizes, where the session line alone can fill the
-    /// first screen, the actions first ("Open LocalFlow" and the text width), the tip then pointing above.
+    /// first screen, the actions first ("Open Sorello" and the text width), the tip then pointing above.
     static func menuItems(accessibilitySize: Bool) -> [MenuItem] {
         accessibilitySize ? [.open, .picker, .divider, .session, .details, .tip] : [.session, .details, .open, .divider, .tip, .picker]
     }
@@ -237,7 +237,7 @@ enum CapsuleContent: Equatable, Sendable {
 
 /// What the bar's middle shows beside any chips (ARCHITECTURE.md, "Top row"): words only where they earn their space.
 /// A notice whenever one is up; the words of what the user must act on (Full Access, a broken install or versions,
-/// "Open LocalFlow to start a session" after the launcher failed), of an error, and of a model that cannot load
+/// "Open Sorello to start a session" after the launcher failed), of an error, and of a model that cannot load
 /// (`hint`); otherwise nothing: the island's motion says it is starting, recording or waiting, and Start's dot
 /// (`SessionDot`) whether a session is on. Nothing beside a chip but a notice.
 enum BarStatus: Equatable, Sendable {
@@ -297,7 +297,7 @@ enum SessionDot: Equatable, Sendable {
     init(mode: KeyboardMode, sessionReady: Bool) {
         switch mode {
         case .preparingModel: self = .preparing
-        // Start opens LocalFlow, or dictation cannot run here.
+        // Start opens Sorello, or dictation cannot run here.
         case .hostUnavailable, .needsFullAccess, .configurationError, .incompatible: self = .off
         default: self = sessionReady ? .ready : .off
         }

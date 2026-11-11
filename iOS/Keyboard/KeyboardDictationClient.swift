@@ -26,7 +26,7 @@ struct KeyboardViewState: Equatable {
     var mode: KeyboardMode = .hostUnavailable
     var title = ""
     var hint: String?
-    /// A short-lived notice (a failed write, no speech, open LocalFlow). Shown before any idle hint.
+    /// A short-lived notice (a failed write, no speech, open Sorello). Shown before any idle hint.
     var notice: String?
     var canInsertLast = false
     /// The last inserted dictation can still be removed (see `UndoTracker`).
@@ -79,7 +79,7 @@ final class KeyboardDictationClient: ObservableObject {
     private var shownStatus = StoreRead<HostStatus>.absent
     private var manualInsertID: UUID?
     private var launcherFailed = false
-    /// The record request this instance last bounced to LocalFlow: until the host picks it up, Start stays Start
+    /// The record request this instance last bounced to Sorello: until the host picks it up, Start stays Start
     /// (`KeyboardPresenter.shownMode`).
     private var bouncedRequestID: UUID?
     private var notice: (text: String, until: Date)?
@@ -217,7 +217,7 @@ final class KeyboardDictationClient: ObservableObject {
         state.canUndo = canUndo
     }
 
-    /// "Open LocalFlow" in the menu: the same launcher as the bounce, without a dictation request.
+    /// "Open Sorello" in the menu: the same launcher as the bounce, without a dictation request.
     func openSorello() {
         notice = nil
         var attempted = false
@@ -427,7 +427,7 @@ final class KeyboardDictationClient: ObservableObject {
     private enum Haptic { case press, listening, success, failure }
 
     private func playHaptic(_ haptic: Haptic) {
-        // iOS plays keyboard haptics only with Full Access, and the user can turn them off in LocalFlow.
+        // iOS plays keyboard haptics only with Full Access, and the user can turn them off in Sorello.
         guard hapticsEnabled, let view = target?.feedbackView else { return }
         let generators = self.generators ?? (impact: UIImpactFeedbackGenerator(style: .medium, view: view),
                                              notification: UINotificationFeedbackGenerator(view: view))

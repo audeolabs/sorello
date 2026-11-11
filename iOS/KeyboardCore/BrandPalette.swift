@@ -3,7 +3,7 @@ import Foundation
 /// The keyboard's colours (ARCHITECTURE.md, "Keyboard look"). The controls are monochrome: the action keys and caps lock
 /// take the label colour's side (a light key on the dark keyboard, a graphite one on the light), and dictation lives in
 /// a dark island in both modes, in the spirit of the Dynamic Island: near-black on the dark keyboard, graphite on the
-/// light one, where a black slab across the bar would be the heaviest thing on the keyboard. The Wilderness Labs colours of the app's
+/// light one, where a black slab across the bar would be the heaviest thing on the keyboard. The brand colours of the app's
 /// `Theme` are accents only, in small things that mark a state: aurora for the mark's dot (on Start, with the session's
 /// heartbeat, and the dot the recording wave settles into) and the menu's link, glacier for the wait's shimmer alone, ember
 /// for an error's symbol. On the light keyboard the bright hues are too pale for glyphs on the backdrop, so those take deeper
@@ -39,7 +39,7 @@ struct BrandPalette: Equatable {
     /// Accents on the backdrop: the menu's mark (aurora) and an error's symbol (ember).
     var aurora: RGB
     var ember: RGB
-    /// "Open LocalFlow" in the menu.
+    /// "Open Sorello" in the menu.
     var link: RGB
     /// Primary text: the candidates.
     var text: RGB

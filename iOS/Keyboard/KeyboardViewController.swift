@@ -242,7 +242,7 @@ final class KeyboardViewController: UIInputViewController, KeyboardTextTarget {
     private var layoutChoices: [String: FieldLayout] = [:]
 
     /// Remembered choices, the soft-key-edge and autocorrect switches and the trackpad multipliers live in the
-    /// App Group. iOS lets a keyboard without Full Access read it but not write it; LocalFlow reads it only with Full
+    /// App Group. iOS lets a keyboard without Full Access read it but not write it; Sorello reads it only with Full
     /// Access, so these typing features stay off without it. One handle is kept, renewed each time the keyboard
     /// appears; its values are read from the suite at each use.
     private var fieldSettings: SorelloSettings? {

@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// The Wilderness Labs palette (wilderness-labs-site, `public/css/style.css`): forest night, aurora green,
+/// The palette of the earlier maker's website (its `public/css/style.css`): forest night, aurora green,
 /// glacier cyan, coral and ember. The app is always dark, as the site is (`UIUserInterfaceStyle`). As on the keyboard
 /// and the Live Activity, the controls are monochrome: white ink on a near-black pill with a hairline edge, and the
 /// brand colours only on small dots, glyphs and switches that mark a state (ARCHITECTURE.md, "Keyboard look").
@@ -97,7 +97,7 @@ enum DisplayFace {
         }
     }
 
-    /// The navigation bar's large titles (Home's "LocalFlow", Dictionary's) in the display face; inline titles stay in
+    /// The navigation bar's large titles (Home's "Sorello", Dictionary's) in the display face; inline titles stay in
     /// the system font. Called at launch and again when the text size changes.
     @MainActor
     static func styleLargeTitles() {
@@ -116,7 +116,7 @@ extension Font {
     }
 }
 
-/// The app's name as installed ("LocalFlow Dev" for development builds), for setup instructions.
+/// The app's name as installed ("Sorello Dev" for development builds), for setup instructions.
 enum AppIdentity {
     static var displayName: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Sorello"
@@ -310,7 +310,7 @@ struct StateDot: View {
     }
 }
 
-/// LocalFlow's ridge mark (`RidgeMark`, shared with the keyboard and the Live Activity): the W line or its dot.
+/// The ridge mark (`RidgeMark`, shared with the keyboard and the Live Activity): the W line or its dot.
 struct RidgeMarkShape: Shape {
     var dot = false
     var weight = 1.0

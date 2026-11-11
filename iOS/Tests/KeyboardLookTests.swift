@@ -249,7 +249,7 @@ enum KeyboardLookTests {
         TestSupport.expectEqual(trail.map(\.fraction), [0, 0.5, 1])
     }
 
-    /// "Open LocalFlow" is the brand's accent, and still reads at 4.5:1 on the card.
+    /// "Open Sorello" is the brand's accent, and still reads at 4.5:1 on the card.
     private static func testMenuLinkIsTheBrandAccent() {
         variants { palette, name in
             let dark = name.hasPrefix("dark"), high = name.hasSuffix("high")
@@ -325,11 +325,11 @@ enum KeyboardLookTests {
     }
 
     /// The middle keeps words only where they earn their space: what the user must act on (Full Access, the microphone,
-    /// a broken install or versions, "Open LocalFlow to start a session" after the launcher failed), an error that says
+    /// a broken install or versions, "Open Sorello to start a session" after the launcher failed), an error that says
     /// why a dictation was lost, a model that cannot load, and a notice. Everything the island's own motion says, or
     /// Start's dot, goes: the cold start's "Model loading" while recording, "Transcribing…" and "Preparing model…" in
     /// the wait, "Preparing model…" idle, the session line and "Session on", "Model loads when you dictate", and "Start
-    /// opens LocalFlow". Nothing shows beside a chip but a notice.
+    /// opens Sorello". Nothing shows beside a chip but a notice.
     private static func testBarStatusKeepsWordsWhereTheyEarnTheirSpace() {
         let recording = KeyboardMode.recording(level: 0.5, startedAt: Date())
         func status(_ mode: KeyboardMode, title: String = "", hint: String? = nil, notice: String? = nil, chips: Bool = false) -> BarStatus {

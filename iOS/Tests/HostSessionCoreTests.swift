@@ -1825,7 +1825,7 @@ enum HostSessionLockTests {
     private static let R = Fixture.requestID
     private static let S = Fixture.otherRequestID
 
-    /// A session running with LocalFlow in the background, as after the user swipes away.
+    /// A session running with Sorello in the background, as after the user swipes away.
     @MainActor
     private static func backgroundSession(_ h: CoreHarness) {
         h.core.userStartSession()
@@ -2124,7 +2124,7 @@ enum HostSessionLockLatchTests {
     private static let S = Fixture.otherRequestID
     private static let T = UUID(uuidString: "00000000-0000-4000-8000-000000000004")!
 
-    /// A session with LocalFlow in the background, then the lock notification.
+    /// A session with Sorello in the background, then the lock notification.
     @MainActor
     private static func lockedBackgroundSession(_ h: CoreHarness) {
         h.core.userStartSession()

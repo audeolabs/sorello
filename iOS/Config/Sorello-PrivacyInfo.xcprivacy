@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <!--
-The app's privacy manifest (ARCHITECTURE.md, "App Store packaging"). LocalFlow
+The app's privacy manifest (ARCHITECTURE.md, "App Store packaging"). Sorello
 collects nothing and makes no network requests. Required-reason APIs:
 - UserDefaults: its own preferences (AppPreferences, CA92.1) and the settings
   shared with the keyboard through the App Group (SorelloSettings, 1C8F.1).

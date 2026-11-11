@@ -1,6 +1,6 @@
 import Foundation
 
-/// The header failures every LocalFlow binary file reports, each through its own error type's cases.
+/// The header failures every LF binary file reports, each through its own error type's cases.
 protocol LFBinaryFileError: Error {
     /// Shorter than the magic or the header (and, for each format, a length the header disagrees with).
     static var wrongSize: Self { get }
@@ -8,7 +8,7 @@ protocol LFBinaryFileError: Error {
     static var unsupportedVersion: Self { get }
 }
 
-/// Reads LocalFlow's binary model files: the swipe lexicon (LFLX), the tap model (LFTP) and the word files
+/// Reads the LF binary model files: the swipe lexicon (LFLX), the tap model (LFTP) and the word files
 /// (LFWL, LFWN, LFWR, LFWE). Each is little-endian and starts with a 4-byte magic and a u32 version; the rest
 /// of each header and its data are the format's own.
 enum LFBinaryFile {

@@ -467,7 +467,7 @@ enum IslandBudTests {
 
     /// Which dictation the island shows, by its request (`IslandBud.Shown`), so the bud becomes Undo only when this
     /// keyboard put in that very dictation: from the start of a dictation, also when the bar first appears while one is
-    /// already under way (back from LocalFlow); a new dictation forgets the last one at once, even before its request
+    /// already under way (back from Sorello); a new dictation forgets the last one at once, even before its request
     /// is known; going idle keeps it for the landing.
     private static func testTheBarKnowsWhichDictationItShows() {
         let a = UUID(), b = UUID()

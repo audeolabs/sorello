@@ -54,7 +54,7 @@ enum KeyboardMessagesTests {
     /// Both waits for a transcript show only an indicator in the capsule (the processing island's shimmer), never
     /// "Preparing model…" beside a "Preparing" capsule; VoiceOver hears the wait from the capsule's label. VoiceOver
     /// hears the mode and the time while recording from Stop's value. The island holds none of dictation's text (a
-    /// notice, "Open LocalFlow to start a session"); the middle does, as plain text VoiceOver reaches on its own, so
+    /// notice, "Open Sorello to start a session"); the middle does, as plain text VoiceOver reaches on its own, so
     /// the island's value does not repeat it. It is empty for the wait, and on Start without a `detail`.
     private static func testVoiceOverReadsWhatTheIslandShows() {
         let startedAt = Fixture.now, now = Fixture.now + 75
@@ -86,7 +86,7 @@ enum KeyboardMessagesTests {
 
     /// The bar shows marks rather than status words, but VoiceOver still speaks every state in words. What the bar does
     /// not show is Start's (or the recording's) value: the session's time left, a model that loads or is loading, Start
-    /// opening LocalFlow; the wait is the island's label; an error, a notice and "Open LocalFlow to start a session"
+    /// opening Sorello; the wait is the island's label; an error, a notice and "Open Sorello to start a session"
     /// are the middle's words. Every state has words somewhere.
     private static func testVoiceOverSpeaksEveryStateInWords() {
         let now = Fixture.now
@@ -212,7 +212,7 @@ enum KeyboardMessagesTests {
     }
 
     /// At the largest text size the session status alone can fill the menu's first screen, so at the accessibility
-    /// sizes the actions ("Open LocalFlow" and the text width) come first, then the status and the tip (which then
+    /// sizes the actions ("Open Sorello" and the text width) come first, then the status and the tip (which then
     /// points above); otherwise the status leads and the width choice follows its tip.
     private static func testTheLargestTextSizesPutTheMenusActionsFirst() {
         TestSupport.expectEqual(KeyboardMessages.menuItems(accessibilitySize: false), [.session, .details, .open, .divider, .tip, .picker])

@@ -201,7 +201,7 @@ struct DictationBarView: View {
                             KeyboardMetrics.candidateTapArea(strip: $0, barHeight: barHeight)
                         }
                     } else {
-                        // While a dictation runs this is plain text: a notice, or "Open LocalFlow to start a session".
+                        // While a dictation runs this is plain text: a notice, or "Open Sorello to start a session".
                         Middle(client: client, state: state, height: height - 8, controls: controls, layout: layout,
                                undoArriving: undoInFlight, onAction: onAction)
                     }
@@ -263,7 +263,7 @@ struct DictationBarView: View {
         .onChange(of: form) { old, new in
             if old == .expanded, new == .processing { controls.captureEnded() }
         }
-        // From the bar's first appearance, which may come mid-dictation (back from LocalFlow).
+        // From the bar's first appearance, which may come mid-dictation (back from Sorello).
         .onChange(of: form, initial: true) { _, form in shown.observe(form: form, request: state.dictationRequestID) }
         .onChange(of: state.dictationRequestID, initial: true) { _, request in shown.observe(form: form, request: request) }
         // The island grows and shrinks with a short spring, and its contents hand over with it; with Reduce Motion
@@ -319,7 +319,7 @@ private struct Middle: View {
     }
 
     private var undoShown: Bool { state.canUndo && !state.mode.isInProgress }
-    /// Not while a dictation is in progress: the middle is dictation's then (a notice, "Open LocalFlow to start a
+    /// Not while a dictation is in progress: the middle is dictation's then (a notice, "Open Sorello to start a
     /// session").
     private var insertLastShown: Bool { state.canInsertLast && !state.mode.isInProgress }
 
@@ -674,7 +674,7 @@ private struct DictationIsland: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var contrast
     /// Counts taps on Start without a session: each pops its dot once, the light acknowledgement while iOS asks to open
-    /// LocalFlow.
+    /// Sorello.
     @State private var bounces = 0
 
     var body: some View {
@@ -919,7 +919,7 @@ private struct CancelTapShape: Shape {
     }
 }
 
-/// The menu: session status, "Open LocalFlow", the trackpad tip with the field's text width, and details of anything
+/// The menu: session status, "Open Sorello", the trackpad tip with the field's text width, and details of anything
 /// that keeps dictation from working (the actions first at the accessibility sizes). A tap outside the card closes it. The
 /// card lies over the keys with none peeking out (`MenuCover`): over the three rows above the bottom row, or all four
 /// when its content needs more, and scrolls inside its rounded corners when even that is too little (landscape, the

@@ -1,4 +1,4 @@
-# LocalFlow for iPhone, built with swiftc and make only (no Xcode project or
+# Sorello for iPhone, built with swiftc and make only (no Xcode project or
 # SwiftPM). Run `make -C iOS <target>` from the repository root, or `make` in
 # this directory. README.md documents usage; ARCHITECTURE.md is the contract.
 .DEFAULT_GOAL := all
@@ -691,7 +691,7 @@ E2E_HEADPHONES ?=
 # e2e-sim-probe: seconds between recording and finish, the completion timeout,
 # whether to send the app to the background while it records, and whether to
 # also open <scheme>://dictate (the simulator asks "Open in …?", which needs a tap).
-# E2E_FROM_BACKGROUND=1 needs a running session: LocalFlow goes to the background
+# E2E_FROM_BACKGROUND=1 needs a running session: Sorello goes to the background
 # first and the request is admitted there, as for every dictation after the first.
 E2E_SPEAK_SECONDS ?= 4
 E2E_TIMEOUT ?= 600
@@ -806,7 +806,7 @@ e2e-sim-probe:
 # - cancel: a cancel intent ends a recording.
 # - kill-relaunch: the app is killed while recording; relaunched while the record
 #   intent is still fresh, it reports the request interrupted and never restarts it.
-# - url-hint: with LocalFlow in the background and no session, a record intent and
+# - url-hint: with Sorello in the background and no session, a record intent and
 #   <scheme>://dictate admit nothing (the simulator holds the URL behind its "Open
 #   in …?" alert; the in-app background hint path is covered by host tests). Only
 #   arriving in the foreground admits, judging freshness then: a fresh intent

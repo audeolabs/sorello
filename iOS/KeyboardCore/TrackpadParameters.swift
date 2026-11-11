@@ -23,7 +23,7 @@ struct TrackpadParameters: Equatable, Sendable {
     /// Straight-line movement from touch-down tolerated at the hold timer (≤ 16 pt activates on
     /// device, ≥ 18 pt does not).
     var holdSlop: Double = 16
-    /// LocalFlow's own drag-along-space activation; off (Apple has none, and it would conflict with
+    /// Sorello's own drag-along-space activation; off (Apple has none, and it would conflict with
     /// the hold slop).
     var dragActivationDistance: Double = .infinity
 
