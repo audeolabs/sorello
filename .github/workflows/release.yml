@@ -1,0 +1,85 @@
+# The signed build of a release, left as a draft for the owner to publish (ARCHITECTURE.md, section 10).
+name: Release
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release
+defaults:
+  run:
+    shell: bash
+env:
+  GH_REPO: ${{ github.repository }}
+jobs:
+  # A version is released once. This is asked before anything is built, from lists: an answer that could not be had
+  # stops the job, and never passes for "no". A draft shows only to a token that may write, which is why this job
+  # may: it runs nothing from the repository.
+  unreleased:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: The version has no release, no draft and no tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          VERSION=$(gh api "repos/$GH_REPO/contents/Config/identity.conf?ref=$COMMIT" --jq .content \
+            | base64 --decode | sed -n 's/^VERSION=//p')
+          if ! [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+            echo "::error::Config/identity.conf at $COMMIT gives no version"
+            exit 1
+          fi
+          releases=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq '.[] | "\(.id) \(.tag_name)"' \
+            | awk -v tag="v$VERSION" '$2 == tag { print $1 }')
+          tags=$(gh api "repos/$GH_REPO/git/matching-refs/tags/v$VERSION" --jq '.[].ref')
+          if [ -n "$releases" ] || grep -Fxq "refs/tags/v$VERSION" <<< "$tags"; then
+            echo "::error::There is already a release, a draft or a tag v$VERSION: raise VERSION in identity.conf"
+            exit 1
+          fi
+  package:
+    needs: unreleased
+    uses: ./.github/workflows/package.yml
+    # What Package's jobs may ask for: a called workflow gets no more than the job that calls it.
+    permissions:
+      contents: read
+      actions: read
+    with:
+      channel: release
+      commit: ${{ github.sha }}
+    secrets: inherit
+  # Publishing the draft is the owner's: it creates the tag.
+  draft:
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.package.outputs.zip }}
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ github.sha }}
+          VERSION: ${{ needs.package.outputs.version }}
+          BUILD: ${{ needs.package.outputs.build }}
+          ZIP: ${{ needs.package.outputs.zip }}
+          SHA256: ${{ needs.package.outputs.sha256 }}
+        run: |
+          echo "$SHA256  $ZIP" | shasum -a 256 --check
+          # Asked again: the build took minutes, and a release made on a tag that exists would keep that tag's commit.
+          releases=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq '.[] | "\(.id) \(.tag_name)"' \
+            | awk -v tag="v$VERSION" '$2 == tag { print $1 }')
+          tags=$(gh api "repos/$GH_REPO/git/matching-refs/tags/v$VERSION" --jq '.[].ref')
+          if [ -n "$releases" ] || grep -Fxq "refs/tags/v$VERSION" <<< "$tags"; then
+            echo "::error::There is already a release, a draft or a tag v$VERSION"
+            exit 1
+          fi
+          notes="Version $VERSION ($BUILD), built from $COMMIT. Signed with the Developer ID and notarized by Apple.
+
+          SHA-256 of $ZIP: $SHA256"
+          gh release create "v$VERSION" "$ZIP" --target "$COMMIT" --draft --title "Sorello $VERSION" --notes "$notes"
