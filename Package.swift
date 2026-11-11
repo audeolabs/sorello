@@ -11,11 +11,16 @@ let mainActor: [SwiftSetting] = strict + [.defaultIsolation(MainActor.self)]
 
 let package = Package(
     name: "Sorello",
-    platforms: [.macOS(.v26)],
+    // iOS is here for the iPhone app, which links the two libraries below (ARCHITECTURE.md, section 13).
+    platforms: [.macOS(.v26), .iOS(.v26)],
     products: [
         .executable(name: "Sorello", targets: ["Sorello"]),
         .executable(name: "SorelloSnapshots", targets: ["SorelloSnapshots"]),
         .executable(name: "sorello-transcribe", targets: ["SorelloTranscribe"]),
+        // What the iPhone app links, built for iOS by iOS/Makefile: the app takes the first, its keyboard the second.
+        .library(name: "SorelloSpeech", type: .static,
+                 targets: ["SpeechEngine", "DictionaryKit", "TextRules", "DictationCore"]),
+        .library(name: "SorelloText", type: .static, targets: ["TextRules"]),
     ],
     // Sorello's one dependency: Sparkle updates the app (ARCHITECTURE.md, section 6, "Updates"). One exact version, so
     // what is signed and shipped is what was reviewed.
