@@ -237,12 +237,6 @@ private struct WelcomeStep: View {
                 .displayType(DisplayType(size: 52))
                 .foregroundStyle(Theme.ink)
                 .accessibilityAddTraits(.isHeader)
-            Text("Hold a key and speak. Let go, and your words appear wherever you were typing.")
-                .font(.system(size: 14))
-                .foregroundStyle(Theme.secondaryInk)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 10)
             HStack(alignment: .top, spacing: 8) {
                 Promise(symbol: "laptopcomputer", text: String(localized: "On this Mac"))
                 Promise(symbol: "eye.slash", text: String(localized: "Nothing sent"))
