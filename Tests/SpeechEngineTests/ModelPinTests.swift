@@ -26,6 +26,10 @@ struct ModelPinTests {
         MacDescription(system: try #require(SystemVersion(version)))
     }
 
+    static func iPhone(_ version: String) throws -> MacDescription {
+        MacDescription(system: try #require(SystemVersion(version)), platform: .iOS)
+    }
+
     @Test func readsThePinsShape() throws {
         let pin = try ModelPin(data: Self.pin(builds: [Self.build("macos26", requires: #"{"macos": "26.0"}"#,
                                                                   bytes: "138084519")]))
@@ -53,6 +57,12 @@ struct ModelPinTests {
         #expect(pin.build(for: try Self.mac("15.7")) == nil)
     }
 
+    /// The tests run on a Mac, which describes itself as one.
+    @Test func thisMacDescribesItselfAsAMac() {
+        #expect(MacDescription.current().platform == .macOS)
+        #expect(MacDescription.current().system == SystemVersion(ProcessInfo.processInfo.operatingSystemVersion))
+    }
+
     @Test func theFirstFittingBuildWins() throws {
         let pin = try ModelPin(data: Self.pin(builds: [
             Self.build("newest", requires: #"{"macos": "27.0"}"#, digest: Self.other),
@@ -71,6 +81,8 @@ struct ModelPinTests {
     func versionsCompareAsNumbers(required: String, system: String, fits: Bool) throws {
         let pin = try ModelPin(data: Self.pin(builds: [Self.build("only", requires: "{\"macos\": \"\(required)\"}")]))
         #expect((pin.build(for: try Self.mac(system)) != nil) == fits, "\(required) on \(system)")
+        let iPhones = try ModelPin(data: Self.pin(builds: [Self.build("only", requires: "{\"ios\": \"\(required)\"}")]))
+        #expect((iPhones.build(for: try Self.iPhone(system)) != nil) == fits, "iOS \(required) on \(system)")
     }
 
     @Test func versionsReadOnlyAsNumbers() {
@@ -91,21 +103,57 @@ struct ModelPinTests {
         ]))
         #expect(pin.build(for: try Self.mac("27.2"))?.directory == "plain")
         #expect(pin.builds.map(\.directory) == ["plain"])
+        let both = try ModelPin(data: Self.pin(builds: [
+            Self.build("ane-only", requires: #"{"macos": "26.0", "ios": "26.0", "neural_engine": true}"#),
+        ]))
+        #expect(both.build(for: try Self.mac("27.2")) == nil)
+        #expect(both.build(for: try Self.iPhone("27.0")) == nil)
     }
 
-    /// A known requirement that cannot be judged passes the build over too: it never fits by mistake.
+    /// A known requirement that cannot be judged passes the build over too, on both systems: it never fits by mistake,
+    /// and a Mac does not take a build whose iOS version it cannot read.
     @Test func aBuildWhoseRequirementCannotBeJudgedIsPassedOver() throws {
         let pin = try ModelPin(data: Self.pin(builds: [
             Self.build("number", requires: #"{"macos": 26}"#),
             Self.build("words", requires: #"{"macos": "twenty-six"}"#),
+            Self.build("ios-number", requires: #"{"macos": "26.0", "ios": 26}"#),
+            Self.build("ios-words", requires: #"{"ios": "twenty-six", "macos": "26.0"}"#),
+            Self.build("mac-words", requires: #"{"ios": "26.0", "macos": "twenty-six"}"#),
             Self.build("plain", requires: #"{"macos": "26.0"}"#, digest: Self.other),
         ]))
         #expect(pin.builds.map(\.directory) == ["plain"])
+        #expect(pin.build(for: try Self.mac("27.2"))?.directory == "plain")
+        #expect(pin.build(for: try Self.iPhone("27.0")) == nil)
     }
 
-    @Test func aBuildThatRequiresNothingFitsEveryMac() throws {
+    /// A Mac reads only `macos` and an iPhone only `ios`: a build fits a system it names, at that system's version.
+    @Test func eachSystemJudgesOnlyItsOwnRequirement() throws {
+        let pin = try ModelPin(data: Self.pin(builds: [
+            Self.build("iphone", requires: #"{"ios": "26.0"}"#),
+            Self.build("both", requires: #"{"macos": "26.0", "ios": "27.0"}"#, digest: Self.other),
+            Self.build("old-mac", requires: #"{"macos": "15.0"}"#),
+        ]))
+        #expect(pin.build(for: try Self.mac("27.2"))?.directory == "both", "A Mac never takes a build for iPhones")
+        #expect(pin.build(for: try Self.mac("15.7"))?.directory == "old-mac")
+        #expect(pin.build(for: try Self.mac("14.6")) == nil)
+        #expect(pin.build(for: try Self.iPhone("26.1"))?.directory == "iphone")
+        #expect(pin.build(for: try Self.iPhone("18.6")) == nil, "An iPhone never takes a build for Macs")
+
+        let later = try ModelPin(data: Self.pin(builds: [
+            Self.build("both", requires: #"{"macos": "30.0", "ios": "26.0"}"#),
+        ]))
+        #expect(later.build(for: try Self.iPhone("26.0"))?.directory == "both", "The macOS version is not the iPhone's")
+        #expect(later.build(for: try Self.mac("27.2")) == nil, "The iOS version is not the Mac's")
+    }
+
+    /// A contract change: a build that names neither system used to fit every Mac. It now fits nothing, on a Mac or an
+    /// iPhone, although it reads and stays in the pin's list.
+    @Test func aBuildThatNamesNeitherSystemFitsNothing() throws {
         let pin = try ModelPin(data: Self.pin(builds: [Self.build("any", requires: "{}")]))
-        #expect(pin.build(for: try Self.mac("12.0"))?.directory == "any")
+        #expect(pin.builds.map(\.directory) == ["any"])
+        #expect(pin.build(for: try Self.mac("12.0")) == nil)
+        #expect(pin.build(for: try Self.mac("27.2")) == nil)
+        #expect(pin.build(for: try Self.iPhone("27.0")) == nil)
     }
 
     @Test func noBuildsIsNotAnError() throws {
