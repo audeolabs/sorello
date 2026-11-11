@@ -764,6 +764,15 @@ About show it at rest in the island's capsule: the row's ink is centred in
 the capsule both ways, and the aurora dot's glow is drawn around that dot
 without moving anything.
 
+Sorello Nightly's icon is that icon with a few small orange stars on the
+field, around the mark and clear of it and of the aurora dot's glow, so a
+nightly is told from a release at a glance in the Dock, the app switcher
+and Finder. The stars are always in the same places. Nothing else about a
+nightly looks different: its menu-bar icon, setup and About show the mark
+as every build does, and a development build has the plain icon.
+`Resources/AppIcon-Nightly.icns` holds the nightly's icon, and a nightly
+build carries it as its icon.
+
 ### Windows
 
 - **Menu**: the menu-bar item opens an ordinary menu. The system draws
