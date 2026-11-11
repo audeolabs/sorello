@@ -1,0 +1,26 @@
+# What every change must pass (ARCHITECTURE.md, section 10).
+name: Check
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+# A pull request's newer push replaces its older run. Each push to main has a group of its own, so its run is
+# neither cancelled nor dropped when another push follows: a nightly is built only from a push whose check passed.
+concurrency:
+  group: check-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  check:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The snapshot scenes do not pin how scroll bars show, and a runner settles on it only after its first
+      # pictures are drawn. Saying it outright keeps a picture the same whenever it is drawn.
+      - run: defaults write -g AppleShowScrollBars -string Always
+      # One test at a time: the runner has three cores.
+      - run: make check TEST_FLAGS=--no-parallel
