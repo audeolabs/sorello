@@ -6,9 +6,10 @@ Audeo Labs and is in early development, at version 0.0.1. It understands English
 
 ## Download
 
-- Sorello, from the latest release: https://github.com/audeolabs/sorello/releases/latest/download/Sorello.dmg
 - Sorello Nightly, built each night that the code has changed:
   https://github.com/audeolabs/sorello/releases/download/nightly/Sorello-Nightly.dmg
+- Sorello, from the latest release, once there is one:
+  https://github.com/audeolabs/sorello/releases/latest/download/Sorello.dmg
 
 Until the first release is published, the nightly is the build to get.
 
@@ -51,12 +52,14 @@ These use Hold to Talk's shortcut, `fn` unless you chose another.
 - **Hold to Talk.** Hold `fn`, speak, and let go. The words are pasted at the cursor.
 - **Hands-free.** Tap `fn` twice quickly and speak with nothing held. Tap it once more to stop and paste.
 - **Tap to Toggle.** Press once to start and again to stop. It has no shortcut until you give it one.
-- **Cancel.** Press Escape to throw a dictation away, while you speak or while it is still being transcribed.
-  Nothing is pasted.
+- **Cancel.** Press Escape to throw away the dictation you are recording. When nothing is recording, Escape
+  throws away the dictations still waiting to be transcribed. Text that is already being pasted is not taken
+  back.
 - **Paste Again.** Pastes your last dictation again. It has no shortcut until you give it one.
 - **Copy Last Dictation,** in the menu, puts your last dictation on the clipboard.
 
-You can start a new dictation while the last one is still being transcribed. Each is pasted in the order you spoke.
+A recording stops by itself after 15 minutes, and what it heard is pasted. You can start a new dictation while the
+last one is still being transcribed. Each is pasted in the order you spoke.
 
 Change the shortcuts in Settings, on the Shortcuts screen. A shortcut is a key with modifiers, such as `⌃⌥Space`,
 or modifier keys alone, such as `fn` or the right `⌥`. It can't be Escape, or a key that types on its own. The
@@ -105,8 +108,9 @@ words fit: the first word is not capitalised, and a full stop the sentence doesn
 ### Macros
 
 A macro pastes saved text when you say its phrase. Add one in Settings, on the Macros screen: what you say, and
-what to paste. Say the phrase on its own and the saved text is pasted exactly as you saved it. Case and punctuation
-don't matter; said inside a longer dictation, the phrase is just words.
+what to paste. Say the phrase on its own and the saved text is pasted as you saved it, untouched by the rules
+above, except that spaces and blank lines at its ends are left off. Case and punctuation in what you say don't
+matter; said inside a longer dictation, the phrase is just words.
 
 ### Dictionary
 
@@ -122,10 +126,11 @@ off.
 ### Run Log
 
 The Run Log keeps your last 20 dictations, with their audio, on this Mac. Open it from the menu. You can play a
-dictation, copy it, transcribe it again with today's dictionary and rules (nothing is pasted), or delete it. If a
-transcription fails, retry it here. Clear All deletes every dictation and its audio, and makes Sorello forget the
-last dictation, so Paste Again and Copy Last Dictation have nothing to paste. "Keep a Run Log" on the General
-screen turns it off.
+dictation, copy it, transcribe it again with today's rules and the dictionary words that apply everywhere
+(nothing is pasted), or delete it. If a transcription fails, retry it here. Clear All deletes every dictation and
+its audio, and makes Sorello forget the last dictation, so Paste Again and Copy Last Dictation have nothing to
+paste. Turning off "Keep a Run Log" on the General screen stops new dictations from being kept; it does not delete
+the ones already there, so use Clear All for that.
 
 ### Other settings
 
