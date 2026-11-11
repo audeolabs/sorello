@@ -4,17 +4,17 @@ import Persistence
 import SorelloUI
 import SpeechEngine
 
-/// The menu-bar app (ARCHITECTURE.md, section 8, "Windows"): no Dock icon, a status item with its menu, the main
-/// window and setup, one running instance. It builds the composition at launch, starts the model's preparation,
-/// takes permission changes made in System Settings without a relaunch, and lets go of the microphone and any stream
-/// before it quits, whether by Quit, `osascript … quit` or SIGTERM.
+/// The menu-bar app (ARCHITECTURE.md, section 8, "Windows"): a status item with its menu, the main window and setup,
+/// one running instance, and a Dock icon only while one of its windows is open. It builds the composition at launch,
+/// starts the model's preparation, takes permission changes made in System Settings without a relaunch, and lets go
+/// of the microphone and any stream before it quits, whether by Quit, `osascript … quit` or SIGTERM.
 @MainActor
 final class AppShell: NSObject, NSApplicationDelegate {
     private let showsSetup: Bool
     private var app: AppComposition?
     private var models: WindowModels?
     private var statusItem: StatusItemController?
-    private var windows = WindowPresenter()
+    private let windows = WindowPresenter(dock: SystemDock())
     private var overlay: PillOverlayController?
     private var terminationSignal: (any DispatchSourceSignal)?
     /// The shutdown, once something asked the app to quit.
@@ -33,7 +33,8 @@ final class AppShell: NSObject, NSApplicationDelegate {
         let application = NSApplication.shared
         let shell = AppShell(showsSetup: showsSetup)
         application.delegate = shell
-        // A copy run outside its bundle has no LSUIElement; the app is a menu-bar app either way.
+        // A copy run outside its bundle has no LSUIElement; the app starts as a menu-bar app either way, and is in the
+        // Dock only while one of its windows is open.
         application.setActivationPolicy(.accessory)
         application.run()
         exit(0)
@@ -95,7 +96,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
         if showsSetup && models.setupIsNeeded { showSetup() }
     }
 
-    /// Opening the app again (from Finder, Spotlight or `open`) shows the main window, since there is no Dock icon.
+    /// Opening the app again (from Finder, Spotlight, `open` or the Dock icon) shows the main window.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         showMain(at: nil)
         return false
@@ -157,7 +158,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
     private func showSetup() {
         guard let models, let app else { return }
         // The steps are fixed as setup opens: once the model's step is there, it stays for that setup.
-        if !windows.isShowingSetup { models.setup.steps = models.setupSteps }
+        if !windows.isOpen(.setup) { models.setup.steps = models.setupSteps }
         models.setup.step = models.setupStartStep
         windows.showSetup(models.setup, title: app.info.name)
     }

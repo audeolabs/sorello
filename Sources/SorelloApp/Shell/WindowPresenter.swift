@@ -3,40 +3,144 @@ import DesignCore
 import SorelloUI
 import SwiftUI
 
-/// The app's windows: the main window, setup and the notices' text. Each is made once, kept while the app runs, and
-/// brought forward with the app activated, which an app with no Dock icon has to ask for.
-@MainActor
-struct WindowPresenter {
-    private var main: NSWindow?
-    private var setup: NSWindow?
-    private var notices: [String: NSWindow] = [:]
+/// A window of Sorello's in the sense of ARCHITECTURE.md, section 8, "Windows": while one is open, Sorello is an
+/// ordinary app with a Dock icon. The pill, the Accessibility card and alerts are not among them.
+enum AppWindow: Hashable {
+    case setup
+    case main
+    /// A notice's text, one window per notice, named by its title.
+    case notice(String)
+}
 
-    /// Shows the main window, at `section` if given and otherwise at the section it last showed.
-    mutating func showMain(_ model: MainWindowModel, section: MainSection?, title: String) {
-        if let section { model.section = section }
-        let window = main ?? Self.mainWindow(model, title: title)
-        main = window
-        Self.bringForward(window)
+/// The few AppKit calls that carry out what `WindowPresenter` decides, and nothing else, so that tests can replace
+/// them: a test never puts a window on screen or changes its own process's activation policy.
+@MainActor
+protocol DockPresence {
+    /// Whether Sorello is the active app.
+    var isActive: Bool { get }
+    /// Makes Sorello an ordinary app: a Dock icon, a place in the app switcher, and its menus while it is in front.
+    func enterDock()
+    /// Makes Sorello a menu-bar app again: no Dock icon and no place in the app switcher.
+    func leaveDock()
+    /// Asks for Sorello to be the active app.
+    func activate()
+    /// Puts `window` in front of Sorello's other windows, out of the Dock if it was minimised, and makes it key.
+    func bringForward(_ window: NSWindow)
+    /// Gives the front to the app behind Sorello, leaving the pill and every panel of Sorello's where they are.
+    /// `closing` is the window whose close made Sorello leave the Dock; it is still on screen while it closes.
+    func yieldFront(closing: NSWindow)
+}
+
+/// `DockPresence` as AppKit does it.
+struct SystemDock: DockPresence {
+    var isActive: Bool { NSApp.isActive }
+
+    func enterDock() { NSApp.setActivationPolicy(.regular) }
+
+    func leaveDock() { NSApp.setActivationPolicy(.accessory) }
+
+    func activate() { NSApp.activate() }
+
+    func bringForward(_ window: NSWindow) {
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        window.makeKeyAndOrderFront(nil)
+        // Activation is a request the system may refuse; the window still comes to the front of its level.
+        window.orderFrontRegardless()
     }
 
-    mutating func showSetup(_ model: SetupModel, title: String) {
-        let window = setup ?? Self.setupWindow(model, title: title)
-        setup = window
-        Self.bringForward(window)
+    func yieldFront(closing: NSWindow) {
+        // Hiding is the documented way to give the front to "the next app in line", and an app without a Dock
+        // icon would otherwise stay in front with no window. But a hidden app's panels stay hidden, and the pill
+        // must appear for the next dictation without Sorello coming forward, so the hidden panels are put back at
+        // once without activating Sorello. The closing window goes first, or it would be put back with them.
+        closing.orderOut(nil)
+        NSApp.hide(nil)
+        NSApp.unhideWithoutActivation()
+    }
+}
+
+/// The app's windows: the main window, setup and the notices' text. Each is made once and kept while the app runs.
+/// The presenter knows which are open, from the first time each is shown until it closes, by whatever means: its
+/// close button, ⌘W or Close in the Window menu, or Done in setup. A minimised window is still open. Sorello is in the
+/// Dock exactly while one is open (ARCHITECTURE.md, section 8, "Windows").
+@MainActor
+final class WindowPresenter {
+    private let dock: any DockPresence
+    private var made: [AppWindow: NSWindow] = [:]
+    /// The open windows, the one most recently in front last.
+    private(set) var open: [AppWindow] = []
+    private var observers: [any NSObjectProtocol] = []
+
+    init(dock: any DockPresence) {
+        self.dock = dock
+    }
+
+    isolated deinit {
+        for observer in observers { NotificationCenter.default.removeObserver(observer) }
+    }
+
+    /// Whether Sorello is in the Dock: one of its windows is open.
+    var isInDock: Bool { !open.isEmpty }
+
+    /// Whether `window` is open, on screen or minimised.
+    func isOpen(_ window: AppWindow) -> Bool { open.contains(window) }
+
+    /// The window, once it has been made.
+    func window(_ window: AppWindow) -> NSWindow? { made[window] }
+
+    /// Shows the main window, at `section` if given and otherwise at the section it last showed.
+    func showMain(_ model: MainWindowModel, section: MainSection?, title: String) {
+        if let section { model.section = section }
+        show(.main) { Self.mainWindow(model, title: title) }
+    }
+
+    func showSetup(_ model: SetupModel, title: String) {
+        show(.setup) { Self.setupWindow(model, title: title) }
     }
 
     func closeSetup() {
-        setup?.close()
+        made[.setup]?.close()
     }
 
-    /// Whether setup's window is on screen.
-    var isShowingSetup: Bool { setup?.isVisible ?? false }
-
     /// Shows the full text of a notice, one window per notice.
-    mutating func showNotice(title: String, files: [URL]) {
-        let window = notices[title] ?? Self.noticeWindow(title: title, files: files)
-        notices[title] = window
-        Self.bringForward(window)
+    func showNotice(title: String, files: [URL]) {
+        show(.notice(title)) { Self.noticeWindow(title: title, files: files) }
+    }
+
+    /// The first window to open makes Sorello an ordinary app before it activates, so the window comes forward the
+    /// way any app's does; every window is then brought forward with the app active.
+    private func show(_ id: AppWindow, make: () -> NSWindow) {
+        let window = made[id] ?? watch(make(), as: id)
+        if !isInDock { dock.enterDock() }
+        dock.activate()
+        dock.bringForward(window)
+        markInFront(id)
+    }
+
+    private func markInFront(_ id: AppWindow) {
+        open.removeAll { $0 == id }
+        open.append(id)
+    }
+
+    /// Hears `window` close, for as long as the presenter keeps it.
+    private func watch(_ window: NSWindow, as id: AppWindow) -> NSWindow {
+        made[id] = window
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(forName: NSWindow.willCloseNotification, object: window,
+                                            queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated { self?.closed(id) }
+        })
+        return window
+    }
+
+    /// The last window to close makes Sorello a menu-bar app again and, if it was in front, gives the front to the
+    /// app behind it. One that was not in front leaves the front where it is.
+    private func closed(_ id: AppWindow) {
+        guard isOpen(id) else { return }
+        open.removeAll { $0 == id }
+        guard !isInDock else { return }
+        dock.leaveDock()
+        if dock.isActive, let window = made[id] { dock.yieldFront(closing: window) }
     }
 
     /// The main window as the app builds it, not yet on screen.
@@ -98,12 +202,6 @@ struct WindowPresenter {
         container.addSubview(host)
         return container
     }
-
-    private static func bringForward(_ window: NSWindow) {
-        NSApp.activate()
-        window.makeKeyAndOrderFront(nil)
-        window.orderFrontRegardless()
-    }
 }
 
 /// A notice's text, as it ships in the app: the licence or attribution, verbatim and selectable.
@@ -133,8 +231,9 @@ private struct NoticeText: View {
     }
 }
 
-/// The app's menu. It is never shown, because the app has no Dock icon, but its key equivalents work in the app's
-/// windows: Quit, Close, Settings, and the Edit commands, without which ⌘V would not paste into setup's test field.
+/// The app's menu, in the menu bar while Sorello is in front, which it can be only while one of its windows is open.
+/// Its key equivalents work in the app's windows: Quit, Close, Settings, and the Edit commands, without which ⌘V would
+/// not paste into setup's test field.
 @MainActor
 enum MainMenu {
     static func make(appName: String, target: AnyObject) -> NSMenu {
