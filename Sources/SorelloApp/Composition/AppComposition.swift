@@ -261,7 +261,7 @@ final class AppComposition {
     /// download said it was here, the download looks again, so it offers itself once more.
     private func watchDownload() {
         guard let download else { return }
-        let live = self.live, runtime = self.runtime, dictionary = self.dictionary
+        let live = self.live, runtime = self.runtime, dictionary = self.dictionary, speech = self.speech
         live.modelDownload = download.current
         let states = download.states()
         watching.append(Task { @MainActor in
@@ -269,13 +269,26 @@ final class AppComposition {
                 let arrived = state == .installed && live.modelDownload != .installed
                 live.modelDownload = state
                 guard arrived else { continue }
-                runtime.retryPreparation()
                 if let encoder = download.vocabulary() { dictionary.adoptVocabulary(encoder) }
+                Task { await Self.prepareAfterArrival(speech) }
             }
         })
         following.append(Following {
             if runtime.state.engine == .failed(.modelMissing) && live.modelDownload == .installed { download.refresh() }
         })
+    }
+
+    /// Asks the engine to prepare now that the model is in the store. A preparation already under way may have
+    /// looked before the model arrived; asking joins it, and if it ends without the model, asking once more starts an
+    /// attempt that looks again. Any other ending is left as it is, so a model that failed to load is not loaded twice.
+    nonisolated private static func prepareAfterArrival(_ speech: any AppSpeech) async {
+        await speech.prepare()
+        var now: EngineReadiness?
+        for await readiness in speech.readiness() {
+            now = readiness
+            break
+        }
+        if now == .failed(.modelMissing) { await speech.prepare() }
     }
 
     private func watchSystem() {

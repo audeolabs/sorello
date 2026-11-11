@@ -86,8 +86,9 @@ final class FakeSpeech: AppSpeech {
         var retried = "a retried transcript"
         var retries = 0
         var readiness: EngineReadiness
-        /// What the engine becomes when it is asked to prepare; nil leaves it as it is.
-        var afterPrepare: EngineReadiness?
+        /// What the engine becomes when it is asked to prepare, one for each time it is asked, then the last for
+        /// ever; empty leaves it as it is.
+        var afterPrepares: [EngineReadiness] = []
         var prepares = 0
         var subscribers: [UUID: AsyncStream<EngineReadiness>.Continuation] = [:]
     }
@@ -117,16 +118,24 @@ final class FakeSpeech: AppSpeech {
     /// How many times the engine was asked to prepare.
     var prepares: Int { state.withLock { $0.prepares } }
 
-    /// What the engine becomes the next times it is asked to prepare.
+    /// What the engine becomes each next time it is asked to prepare: an attempt per value, the last repeated.
+    var afterPrepares: [EngineReadiness] {
+        get { state.withLock { $0.afterPrepares } }
+        set { state.withLock { $0.afterPrepares = newValue } }
+    }
+
+    /// What the engine becomes every next time it is asked to prepare.
     var afterPrepare: EngineReadiness? {
-        get { state.withLock { $0.afterPrepare } }
-        set { state.withLock { $0.afterPrepare = newValue } }
+        get { afterPrepares.last }
+        set { afterPrepares = newValue.map { [$0] } ?? [] }
     }
 
     func prepare() async {
-        let next = state.withLock { state in
+        let next = state.withLock { state -> EngineReadiness? in
             state.prepares += 1
-            return state.afterPrepare
+            guard let first = state.afterPrepares.first else { return nil }
+            if state.afterPrepares.count > 1 { state.afterPrepares.removeFirst() }
+            return first
         }
         if let next { publish(next) }
     }

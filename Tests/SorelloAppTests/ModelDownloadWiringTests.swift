@@ -116,6 +116,38 @@ import Testing
         #expect(await eventually { harness.windows.main.general.status.model == .ready })
     }
 
+    /// A preparation already under way when the model arrived had looked before it did and ends without it; the app
+    /// asks once more, and that attempt finds the model.
+    @Test func aPreparationThatLookedTooEarlyIsFollowedByOneThatLooksAgain() async throws {
+        let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
+        let download = FakeDownload(.downloading(received: 1))
+        let harness = Harness(directory: directory.url, defaults: suite.defaults, download: download,
+                              readiness: .failed(.modelMissing))
+        harness.app.start()
+        #expect(await eventually { harness.app.runtime.state.engine == .failed(.modelMissing) })
+        let prepares = harness.speech.prepares
+        harness.speech.afterPrepares = [.failed(.modelMissing), .ready]
+        download.publish(.installed)
+        #expect(await eventually { harness.app.runtime.state.engine == .ready })
+        #expect(harness.speech.prepares == prepares + 2)
+    }
+
+    /// A model that arrives and then fails to load is not loaded twice.
+    @Test func aModelThatFailsToLoadIsNotLoadedTwice() async throws {
+        let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
+        let download = FakeDownload(.downloading(received: 1))
+        let harness = Harness(directory: directory.url, defaults: suite.defaults, download: download,
+                              readiness: .failed(.modelMissing))
+        harness.app.start()
+        #expect(await eventually { harness.app.runtime.state.engine == .failed(.modelMissing) })
+        let prepares = harness.speech.prepares
+        harness.speech.afterPrepare = .failed(.loadFailed)
+        download.publish(.installed)
+        #expect(await eventually { harness.app.runtime.state.engine == .failed(.loadFailed) })
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(harness.speech.prepares == prepares + 1)
+    }
+
     /// The engine found the stored model missing (a damaged copy it removed): the download looks again, so it offers
     /// itself once more.
     @Test func aModelTheEngineCannotFindIsLookedForAgain() async throws {
