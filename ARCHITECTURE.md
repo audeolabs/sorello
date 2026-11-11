@@ -539,7 +539,11 @@ moved or written over, and its store works without it until it opens.
   are removed at launch. Clear removes the index and every audio and
   temporary file, and cancels any save that began before it. Retry
   transcribes an entry's audio again with today's dictionary and text
-  rules and replaces the entry's text; it never pastes.
+  rules and replaces the entry's words; it never pastes or presses a
+  key. An entry goes on saying how it ended, so a retry never turns
+  pasted words into a command alone, or a command into words: such a
+  retry, like one that hears nothing or fails, leaves the entry as it
+  was.
 
 ## 8. Look and motion
 
@@ -660,7 +664,9 @@ A reviewer checks every change against these.
 2. No content in logs. Diagnostics go through one type, `Diagnostics`,
    whose events are a compile-time name and numbers. `print`, `NSLog`,
    `os_log` and `Logger` are not used elsewhere in `Sources`, except in
-   the two command-line tools.
+   the two command-line tools. The app itself writes to standard output
+   only in its two verification modes, `--self-test` and `--snapshots`,
+   which report on synthetic recordings to the person who ran them.
 3. In storage Sorello manages, audio and transcripts exist only in the Run
    Log. Clearing it deletes them and makes the app forget the last
    dictation and any audio kept for a correction suggestion. What a
@@ -717,6 +723,10 @@ Review does.
   with a file in place of the microphone and a recorder in place of the
   paste, and prints what would have been inserted. It needs no permission,
   so it proves the packaged app end to end from a clean location.
+- `Sorello --snapshots <dir>` renders the menu-bar item, the menu panel,
+  every window and every setup step as the app wires them to its stores.
+  `Sorello --no-setup` opens the app without its setup window, so a
+  packaged build can be launched and quit without touching a permission.
 - What tests cannot show is checked by hand on a Mac, on the installed
   build: grant, deny and revoke each permission; rebuild and relaunch;
   hold, toggle, cancel and Paste Again into a native text field, a browser

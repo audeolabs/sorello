@@ -30,14 +30,24 @@ public struct StatusIndicator: View {
     }
 }
 
+public extension EnvironmentValues {
+    /// Holds the clock-driven animations (the preparing dot's breath, the glacier line's travel) still at this point
+    /// of their period, from 0 to 1; nil lets them run. The snapshot scenes set it, so no picture depends on the
+    /// moment it was rendered.
+    @Entry var frozenAnimationPhase: Double? = nil
+}
+
 /// A glacier dot with a soft halo that swells and fades on the wait's rhythm. With Reduce Motion it stands still.
 private struct PreparingDot: View {
     let size: CGFloat
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.frozenAnimationPhase) private var frozenPhase
 
     var body: some View {
         if reduceMotion {
             dot(phase: 0.5)
+        } else if let frozenPhase {
+            dot(phase: 0.5 - 0.5 * cos(2 * .pi * frozenPhase))
         } else {
             TimelineView(.animation(minimumInterval: 1.0 / 30)) { timeline in
                 let period = 1.1
@@ -62,6 +72,7 @@ private struct PreparingDot: View {
 public struct GlacierBar: View {
     private let fraction: Double?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.frozenAnimationPhase) private var frozenPhase
 
     /// A line filled to `fraction` from 0 to 1, or travelling without one.
     public init(fraction: Double? = nil) {
@@ -78,6 +89,9 @@ public struct GlacierBar: View {
                 } else if reduceMotion {
                     Capsule().fill(Theme.glacier).frame(width: proxy.size.width * 0.25)
                         .offset(x: proxy.size.width * 0.375)
+                } else if let frozenPhase {
+                    Capsule().fill(Theme.glacier).frame(width: proxy.size.width * 0.25)
+                        .offset(x: proxy.size.width * (-0.25 + 1.25 * frozenPhase))
                 } else {
                     TimelineView(.animation(minimumInterval: 1.0 / 60)) { timeline in
                         let period = 1.6

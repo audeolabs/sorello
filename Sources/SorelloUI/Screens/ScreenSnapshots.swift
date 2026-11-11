@@ -3,8 +3,12 @@ import SwiftUI
 
 /// The windows' scenes for the snapshot tool: the menu panel in each state, every section of the main window with
 /// invented data and its empty and error states, and each setup step. Main window sections are drawn tall enough to
-/// show all their content, and again at the window's minimum size, where nothing may be clipped.
+/// show all their content, and again at the window's minimum size, where nothing may be clipped. Clock-driven
+/// animations are held at `frozenPhase`, so every render of a scene is the same picture.
 public enum ScreenSnapshots {
+    /// Where the scenes hold the preparing dot and the glacier line: the line's segment in the middle of its travel.
+    public static let frozenPhase = 0.4
+
     /// Every window scene, in the order the tool writes them.
     public static var scenes: [SnapshotScene] {
         menuPanel + mainWindow + setup
@@ -28,6 +32,7 @@ public enum ScreenSnapshots {
             SnapshotScene(name: "menu-panel-\(name)", size: CGSize(width: WindowChrome.menuPanelWidth, height: 400)) {
                 MenuPanelView(model: .sample(status: status, lastDictation: last))
                     .frame(maxHeight: .infinity, alignment: .top)
+                    .environment(\.frozenAnimationPhase, frozenPhase)
             }
         }
     }
@@ -59,6 +64,7 @@ public enum ScreenSnapshots {
         for section in MainSection.allCases {
             scenes.append(SnapshotScene(name: "main-minimum-\(section.slug)", size: minimum) {
                 MainWindowView(model: .sample(section: section, status: problems))
+                    .environment(\.frozenAnimationPhase, frozenPhase)
             })
         }
         return scenes
@@ -69,6 +75,7 @@ public enum ScreenSnapshots {
         SnapshotScene(name: "main-\(name)",
                       size: CGSize(width: WindowChrome.Kind.main.defaultSize.width, height: height)) {
             MainWindowView(model: model())
+                .environment(\.frozenAnimationPhase, frozenPhase)
         }
     }
 
@@ -97,6 +104,7 @@ public enum ScreenSnapshots {
         return scenes.map { name, model in
             SnapshotScene(name: "setup-\(name)", size: WindowChrome.Kind.setup.defaultSize) {
                 SetupView(model: model)
+                    .environment(\.frozenAnimationPhase, frozenPhase)
             }
         }
     }

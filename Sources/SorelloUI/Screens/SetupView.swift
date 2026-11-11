@@ -216,7 +216,7 @@ private struct WelcomeStep: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            IslandEmblem(scale: 1.4)
+            MarkEmblem(scale: 1.4)
                 .padding(.bottom, 30)
             Text(verbatim: appName)
                 .font(.display(52))
