@@ -63,7 +63,7 @@ decoder settings under `"decode"` (`beam`, `top_k`, `length_power`,
 build copies exactly the listed files into `SorelloKeyboard.appex/Swipe/`,
 checks each copy against its hash and stops on any mismatch, missing file or
 invalid path, then adds `bundle.json` and the licenses in
-`../Resources/Swipe/`. A changed `bundle.json` or `SWIPE_BUNDLE_DIR` rebuilds
+`Resources/Swipe/`. A changed `bundle.json` or `SWIPE_BUNDLE_DIR` rebuilds
 the app. The keyboard loads the bundle off the main thread when it starts (the
 encoder on the CPU only); a missing or invalid bundle leaves swipe typing off.
 Swipes, candidates and decoder state stay in memory and are never logged,

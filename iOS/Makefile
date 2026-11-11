@@ -432,7 +432,7 @@ $(APP_SIGNATURE): $(APP_BINARY) $(KEYBOARD_BINARY) $(ACTIVITY_BINARY) $(APP_ENTI
 		Config/SorelloActivity-Info.plist $(ICON_SOURCE) $(PARAKEET_STAMP) Config/Sorello-PrivacyInfo.xcprivacy \
 		Config/SorelloKeyboard-PrivacyInfo.xcprivacy Config/SorelloActivity-PrivacyInfo.xcprivacy \
 		$(wildcard ../Resources/Parakeet/*) ../scripts/label-localflow-model.py \
-		$(SWIPE_STAMP) $(wildcard ../Resources/Swipe/*) $(APP_FONTS)
+		$(SWIPE_STAMP) $(wildcard Resources/Swipe/LICENSE-*) $(APP_FONTS)
 	@rm -rf "$(APPEX_BUNDLE)" "$(ACTIVITY_APPEX_BUNDLE)" "$(APP_BUNDLE)/_CodeSignature" "$(APP_BUNDLE)/embedded.mobileprovision" "$(APP_BUNDLE)/Fonts"
 	@mkdir -p "$(APPEX_BUNDLE)" "$(ACTIVITY_APPEX_BUNDLE)"
 	@cp "$(APP_BINARY)" "$(APP_BUNDLE)/Sorello"
@@ -509,7 +509,7 @@ ifneq ($(strip $(SWIPE_BUNDLE_DIR)),)
 		cp -X "$$src/$$path" "$$dest/$$path"; \
 		[ "$$(shasum -a 256 "$$dest/$$path" | awk '{ print $$1 }')" = "$$digest" ] || fail "$$path does not match its SHA-256 in bundle.json"; \
 	done < "$$list"; \
-	cp -X "$$src/bundle.json" ../Resources/Swipe/* "$$dest/"; \
+	cp -X "$$src/bundle.json" Resources/Swipe/LICENSE-* "$$dest/"; \
 	count=$$(wc -l < "$$list" | tr -d ' '); rm -f "$$list"; \
 	echo "Copied the swipe bundle ($$count files verified)"
 endif
