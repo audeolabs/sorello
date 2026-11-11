@@ -59,6 +59,7 @@ extension WindowModels {
         case .pressEnter: settings.pressEnterCommand = on
         case .correctionSuggestions: settings.correctionSuggestions = on
         case .keepRunLog: settings.keepRunLog = on
+        case .checkForUpdates: break
         }
     }
 

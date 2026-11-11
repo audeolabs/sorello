@@ -21,8 +21,17 @@ public enum StatusMenuSnapshots {
              false),
             ("model-no-build", AppStatus(model: .sampleNoBuild, microphone: .granted, accessibility: .granted), false),
         ]
-        return states.map { name, status, copyable in
+        var texts = states.map { name, status, copyable in
             ("menu-\(name)", StatusMenuController(model: .sample(status: status, hasLastDictation: copyable)).text)
         }
+        // A build with an update feed has the update row, in each of its forms; the states above have none.
+        for (name, updates) in [("updates", UpdateRowState.checkForUpdates(isEnabled: true)),
+                                ("updates-checking", .checkForUpdates(isEnabled: false)),
+                                ("update-available", .updateAvailable)] {
+            let model = StatusMenuModel.sample(hasLastDictation: true)
+            model.updates = updates
+            texts.append(("menu-\(name)", StatusMenuController(model: model).text))
+        }
+        return texts
     }
 }

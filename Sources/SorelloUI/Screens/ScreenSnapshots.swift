@@ -21,6 +21,12 @@ public enum ScreenSnapshots {
         let preparing = AppStatus(model: .preparing, microphone: .notDetermined, accessibility: .granted)
         var scenes: [SnapshotScene] = [
             main("general", height: 1060, .sample(section: .general)),
+            // A build that can update itself: General has the switch for the daily check.
+            main("general-updates", height: 1120, window(.general) { window in
+                window.general.offersUpdates = true
+                window.general.toggles[.checkForUpdates] = true
+                return window
+            }),
             main("general-problems", height: 1100, .sample(section: .general, status: problems)),
             main("general-preparing", height: 640, .sample(section: .general, status: preparing)),
             main("general-cpu", height: 640, window(.general) { $0.generalReplaced(.sample(hardware: .processor)) }),

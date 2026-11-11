@@ -11,6 +11,8 @@ nonisolated public enum GeneralToggle: CaseIterable, Hashable, Sendable {
     case pressEnter
     case correctionSuggestions
     case keepRunLog
+    /// Whether the updater checks for a newer version once a day by itself. Only a build that can update itself has it.
+    case checkForUpdates
 
     /// The switch's name.
     public var title: String {
@@ -22,6 +24,7 @@ nonisolated public enum GeneralToggle: CaseIterable, Hashable, Sendable {
         case .pressEnter: String(localized: "Say “press enter” to send")
         case .correctionSuggestions: String(localized: "Suggest dictionary words")
         case .keepRunLog: String(localized: "Keep a Run Log")
+        case .checkForUpdates: String(localized: "Check for updates automatically")
         }
     }
 
@@ -36,6 +39,8 @@ nonisolated public enum GeneralToggle: CaseIterable, Hashable, Sendable {
         case .correctionSuggestions:
             String(localized: "When you fix a word right after dictating it, offers to add it.")
         case .keepRunLog: String(localized: "The last 20 dictations and their audio, kept only on this Mac.")
+        case .checkForUpdates:
+            String(localized: "Once a day. Nothing is installed until you choose Install.")
         }
     }
 
@@ -49,6 +54,7 @@ nonisolated public enum GeneralToggle: CaseIterable, Hashable, Sendable {
         case .pressEnter: "return"
         case .correctionSuggestions: "text.badge.plus"
         case .keepRunLog: "clock.arrow.circlepath"
+        case .checkForUpdates: "arrow.down.circle"
         }
     }
 }
