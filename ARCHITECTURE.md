@@ -1271,6 +1271,11 @@ and ship it. This section holds what concerns both apps.
   else is Sorello: the name on the Home
   Screen, in the keyboard list and in every sentence the app shows, its
   icon (section 8), its code, and the files its build makes.
+- **Look.** The iPhone app's display text (its large titles, its
+  onboarding headlines and its name) is set as section 8 sets the Mac
+  app's: Urbanist Medium, tracked in by 0.015 em. Everything else is the
+  system font. The app carries the repository's one copy of the font,
+  from `Resources/Fonts`, with its licence beside it.
 - **Versions.** The iPhone app has its own version and build number, in
   its `Info.plist` templates and its build. `Config/identity.conf` is the
   Mac app's alone.
