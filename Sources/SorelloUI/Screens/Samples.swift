@@ -22,12 +22,12 @@ public extension AppStatus {
 
 /// Sample menus for the menu-bar item.
 public extension StatusMenuModel {
-    static func sample(status: AppStatus = .sampleReady, lastDictation: String? = "Sphinx of black quartz, judge my vow. The five boxing wizards jump quickly over the lazy dog.") -> StatusMenuModel {
+    static func sample(status: AppStatus = .sampleReady, hasLastDictation: Bool = true) -> StatusMenuModel {
         StatusMenuModel(appName: "Sorello", status: status,
                         shortcuts: [.holdToTalk: .function,
                                     .tapToToggle: KeyCombo(modifiers: [.control(.either), .option(.either)],
                                                            key: KeyName(label: "Space"))],
-                        lastDictation: lastDictation)
+                        hasLastDictation: hasLastDictation)
     }
 }
 

@@ -7,12 +7,21 @@ import Testing
 struct StatusMenuRowsTests {
     static let toggle = KeyCombo(modifiers: [.control(.either), .option(.either)], key: KeyName(label: "Space"))
     static let shortcuts: [ShortcutKind: KeyCombo] = [.holdToTalk: .function, .tapToToggle: toggle]
-    static let dictation = "Sphinx of black quartz, judge my vow. The five boxing wizards jump quickly."
 
     static func rows(_ status: AppStatus, shortcuts: [ShortcutKind: KeyCombo] = shortcuts,
-                     lastDictation: String? = dictation) -> [StatusMenuRow] {
-        StatusMenuRow.rows(appName: "Sorello", status: status, shortcuts: shortcuts, lastDictation: lastDictation)
+                     hasLastDictation: Bool = true) -> [StatusMenuRow] {
+        StatusMenuRow.rows(appName: "Sorello", status: status, shortcuts: shortcuts,
+                           hasLastDictation: hasLastDictation)
     }
+
+    static let statuses = [
+        AppStatus.sampleReady,
+        AppStatus(model: .preparing, microphone: .granted, accessibility: .granted),
+        AppStatus(model: .ready, microphone: .granted, accessibility: .granted, shortcutsPaused: true),
+        AppStatus(model: .failed(.couldNotLoad), microphone: .granted, accessibility: .granted),
+        AppStatus(model: .ready, microphone: .denied, accessibility: .granted),
+        AppStatus(model: .ready, microphone: .granted, accessibility: .missing),
+    ]
 
     /// One line per row, as a reader of the contract would list it.
     static func summary(_ rows: [StatusMenuRow]) -> [String] {
@@ -35,8 +44,6 @@ struct StatusMenuRowsTests {
         "command openShortcuts | Tap to Toggle | ⌃⌥Space",
         "command openShortcuts | Paste Again | Not set",
         "separator",
-        "heading | Last Dictation",
-        "information | Sphinx of black quartz, judge my vow…",
         "command copyLastDictation | Copy Last Dictation",
         "separator",
         "command openDictionary | Dictionary",
@@ -91,11 +98,35 @@ struct StatusMenuRowsTests {
         #expect(rows[1].help == "Opens the General screen to manage Accessibility access")
     }
 
-    @Test func withoutADictationTheLineSaysSoAndCopyIsUnavailable() {
-        let rows = Self.rows(.sampleReady, lastDictation: nil)
-        let section = Array(Self.summary(rows).drop { $0 != "heading | Last Dictation" }.prefix(3))
-        #expect(section == ["heading | Last Dictation", "information | Nothing dictated yet.",
-                            "unavailable copyLastDictation | Copy Last Dictation"])
+    @Test func withoutADictationCopyIsUnavailable() {
+        let rows = Self.rows(.sampleReady, hasLastDictation: false)
+        let unavailable = Self.shortcutsAndBelow.map {
+            $0 == "command copyLastDictation | Copy Last Dictation"
+                ? "unavailable copyLastDictation | Copy Last Dictation" : $0
+        }
+        #expect(Self.summary(rows) == ["information | Ready", "separator"] + unavailable)
+    }
+
+    /// The menu never shows what was dictated: in every state, with a dictation or without, the only heading is
+    /// Shortcuts and the only row that is not a command is the state line.
+    @Test func theStateLineIsTheOnlyRowThatIsNotACommand() {
+        for status in Self.statuses {
+            for hasLastDictation in [true, false] {
+                let rows = Self.rows(status, hasLastDictation: hasLastDictation)
+                #expect(rows.filter { $0.kind == .information }.map(\.id) == [.state])
+                #expect(rows.filter { $0.kind == .heading }.map(\.title) == ["Shortcuts"])
+            }
+        }
+    }
+
+    /// Copy Last Dictation is a group of its own, between the shortcuts and the ways into the app.
+    @Test func copyIsAGroupOfItsOwn() throws {
+        for status in Self.statuses {
+            let rows = Self.rows(status)
+            let copy = try #require(rows.firstIndex { $0.command == .copyLastDictation })
+            #expect(rows[copy - 1].kind == .separator && rows[copy + 1].kind == .separator)
+            #expect(rows[copy - 2].command == .openShortcuts && rows[copy + 2].command == .openDictionary)
+        }
     }
 
     @Test func everyShortcutCanBeUnset() {
@@ -144,9 +175,9 @@ struct StatusMenuRowsTests {
     }
 
     @Test func theModelGivesTheRowsOfItsValues() {
-        let model = StatusMenuModel.sample(lastDictation: nil)
+        let model = StatusMenuModel.sample(hasLastDictation: false)
         #expect(model.rows == StatusMenuRow.rows(appName: model.appName, status: model.status,
-                                                 shortcuts: model.shortcuts, lastDictation: nil))
+                                                 shortcuts: model.shortcuts, hasLastDictation: false))
     }
 
     @Test func eachCommandReachesItsAction() {
@@ -161,65 +192,5 @@ struct StatusMenuRowsTests {
             actions.perform(command)
         }
         #expect(reported == ["copy", "retry", "general", "shortcuts", "dictionary", "runlog", "settings", "quit"])
-    }
-}
-
-/// The last dictation in the menu: its start, on one line, short enough that the menu stays about as wide as an
-/// ordinary menu.
-@MainActor
-struct LastDictationLineTests {
-    static let limit = StatusMenuRow.lastDictationLimit
-
-    @Test func theLimitKeepsTheMenuOrdinary() {
-        #expect((30...48).contains(Self.limit))
-    }
-
-    @Test func shortTextIsShownWhole() {
-        #expect(StatusMenuRow.lastDictationLine("Pack my box with five dozen liquor jugs.")
-            == "Pack my box with five dozen liquor jugs.")
-    }
-
-    @Test func textOfExactlyTheLimitIsShownWhole() {
-        let text = String(repeating: "abcd ", count: 20).prefix(Self.limit).description
-        #expect(text.count == Self.limit)
-        #expect(StatusMenuRow.lastDictationLine(text) == text.trimmingCharacters(in: .whitespaces))
-    }
-
-    @Test func longTextIsCutAtAWordAndEndsInAnEllipsis() {
-        let line = StatusMenuRow.lastDictationLine(
-            "Sphinx of black quartz, judge my vow. The five boxing wizards jump quickly over the lazy dog.")
-        #expect(line == "Sphinx of black quartz, judge my vow…")
-        #expect(line.count <= Self.limit)
-    }
-
-    @Test func lineBreaksAndRunsOfWhitespaceBecomeSingleSpaces() {
-        #expect(StatusMenuRow.lastDictationLine("  Warm regards,\n\nAda\t \r\nNorthwind  ")
-            == "Warm regards, Ada Northwind")
-    }
-
-    @Test func lineBreaksAreCollapsedBeforeTheTextIsCut() {
-        let line = StatusMenuRow.lastDictationLine(
-            "Dear Quillon Bay team,\n\nThe crates of pears arrive on Thursday morning at nine.")
-        #expect(line == "Dear Quillon Bay team, The crates of…")
-        #expect(!line.contains("\n"))
-    }
-
-    @Test func oneVeryLongWordIsCutWithinItself() {
-        let word = String(repeating: "Vexlimer", count: 12)
-        let line = StatusMenuRow.lastDictationLine(word)
-        #expect(line.count == Self.limit)
-        #expect(line.hasSuffix("…"))
-        #expect(word.hasPrefix(line.dropLast()))
-    }
-
-    /// A word boundary near the start would leave the line nearly empty; the long word is cut instead.
-    @Test func aBoundaryTooNearTheStartIsNotUsed() {
-        let line = StatusMenuRow.lastDictationLine("Go " + String(repeating: "Okonkwo", count: 10))
-        #expect(line.count == Self.limit)
-        #expect(line.hasPrefix("Go Okonkwo"))
-    }
-
-    @Test func textOfOnlyWhitespaceSaysSo() {
-        #expect(StatusMenuRow.lastDictationLine("\n\n") == "Spaces and line breaks only")
     }
 }
