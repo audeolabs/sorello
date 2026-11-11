@@ -45,10 +45,12 @@ can use them unchanged.
   word right after a dictation, Sorello can offer to add it.
 - **Run Log.** The last 20 dictations are kept locally with their audio for
   playback and retry.
+- **Stay current.** Once a day Sorello checks whether a newer version is
+  out, and Check for Updates… in the menu checks at once. A newer version
+  is installed only when the user chooses Install (section 6, "Updates").
 
-Not in 0.0.1: automatic updates (there is no public feed yet), translation,
-cloud transcription, LLM cleanup, screen capture. The last four are not
-planned.
+Not in 0.0.1, and not planned: translation, cloud transcription, LLM
+cleanup, screen capture.
 
 ## 2. Modules
 
