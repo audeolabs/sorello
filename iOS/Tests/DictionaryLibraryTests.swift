@@ -113,7 +113,7 @@ enum DictionaryLibraryTests {
         withDefaults { defaults in
             let library = DictionaryLibrary(defaults: defaults, encoder: nil)
             TestSupport.expect(!library.canEdit, "edits allowed without a vocabulary")
-            TestSupport.expectEqual(library.save(text: "Zorblax", strength: 1, replacing: nil), DictionaryEditor.unavailableMessage)
+            TestSupport.expectEqual(library.save(text: "Zorblax", strength: 1, replacing: nil), DictionaryChangeError.noVocabulary.message)
             TestSupport.expectEqual(library.entries, [])
             TestSupport.expectEqual(defaults.object(forKey: DictionaryStorage.entriesKey) == nil, true)
         }

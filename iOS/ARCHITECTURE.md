@@ -872,11 +872,12 @@ correction detection on iOS: entries are added by hand.
   Group, under the keys and in the payloads the earlier build of this app
   wrote (`custom_dictionary`, `custom_dictionary_ignore`, `DictionaryStorage`
   JSON version 1: `{"entries":[{"strength":…,"text":…}],"version":1}` and
-  `{"ignore":[…],"version":1}`, sorted keys). `DictionaryKit` validates every
-  entry; the dictionary value, its editor and this storage are the app's own
-  (`HostCore/DictionaryStorage.swift`, ported from the earlier build), because
-  the Mac app keeps its dictionary in a file of another shape. The iOS UI
-  shows no ignore list but keeps what is stored.
+  `{"ignore":[…],"version":1}`, sorted keys). The dictionary's value and its
+  editor are `DictionaryKit`'s (`CustomDictionary`, `DictionaryEditor`), which
+  validate every entry and refuse what could not have been saved. Only this
+  storage is the app's own (`HostCore/DictionaryStorage.swift`, ported from
+  the earlier build), because the Mac app keeps its dictionary in a file of
+  another shape. The iOS UI shows no ignore list but keeps what is stored.
 - **`DictionaryLibrary`** (HostCore, `@MainActor`, tested) owns loading,
   edits and persistence. Every edit is validated, persisted, then published,
   and raises `revision`. Without a vocabulary nothing can be edited. Saved

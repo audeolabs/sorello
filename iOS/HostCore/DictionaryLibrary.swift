@@ -9,7 +9,7 @@ import Foundation
 final class DictionaryLibrary {
     private let defaults: UserDefaults
     private let editor: DictionaryEditor
-    private(set) var dictionary: SavedDictionary
+    private(set) var dictionary: CustomDictionary
     private(set) var loadFailed: Bool
     /// Rises with every change, so a decoding snapshot can be told apart from a newer one.
     private(set) var revision: UInt64 = 1
@@ -25,7 +25,7 @@ final class DictionaryLibrary {
             dictionary = loaded
             loadFailed = false
         case .failure:
-            dictionary = SavedDictionary()
+            dictionary = CustomDictionary()
             loadFailed = true
         }
     }
@@ -62,7 +62,7 @@ final class DictionaryLibrary {
     func reset() {
         DictionaryStorage.remove(from: defaults)
         loadFailed = false
-        dictionary = SavedDictionary()
+        dictionary = CustomDictionary()
         changed()
     }
 
@@ -78,7 +78,7 @@ final class DictionaryLibrary {
 
     private static let resetFirstMessage = "Reset the saved dictionary first."
 
-    private func apply(_ result: Result<SavedDictionary, DictionaryEditError>) -> String? {
+    private func apply(_ result: Result<CustomDictionary, DictionaryChangeError>) -> String? {
         guard !loadFailed else { return Self.resetFirstMessage }
         switch result {
         case .success(let updated):

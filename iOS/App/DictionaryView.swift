@@ -77,7 +77,7 @@ struct DictionaryView: View {
             }
         } footer: {
             if !dictionary.hasVocabulary {
-                Text(DictionaryEditor.unavailableMessage).foregroundStyle(Theme.coral)
+                Text(DictionaryChangeError.noVocabulary.message).foregroundStyle(Theme.coral)
             } else if !dictionary.entries.isEmpty {
                 // A legend for the row's glyphs, a few words each, in the row's order. Each phrase stays whole with its
                 // glyph; at accessibility sizes each has its own line instead, and its words wrap where words do.
