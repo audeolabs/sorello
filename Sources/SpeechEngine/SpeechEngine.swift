@@ -199,14 +199,14 @@ public actor SpeechEngine: SpeechTranscribing {
             readinessHub.publish(.preparing)
             do {
                 model = try loader()
-                Diagnostics.record("speech.prepared", ["seconds": Self.seconds(since: started)])
+                Self.record("speech.prepared", ["seconds": Self.seconds(since: started)])
                 outcome = .ready
             } catch {
-                Diagnostics.record("speech.preparationFailed", ["seconds": Self.seconds(since: started)])
+                Self.record("speech.preparationFailed", ["seconds": Self.seconds(since: started)])
                 outcome = .failed(error)
             }
         } else {
-            Diagnostics.record("speech.modelMissing")
+            Self.record("speech.modelMissing")
             outcome = .failed(.modelMissing)
         }
         readinessHub.publish(outcome)
@@ -529,6 +529,15 @@ public actor SpeechEngine: SpeechTranscribing {
     }
 
     private static func uptime() -> TimeInterval { ProcessInfo.processInfo.systemUptime }
+
+    /// Records one of the engine's events through `Diagnostics` (ARCHITECTURE.md, section 9), on the Mac only: the
+    /// iPhone app writes no log at all (iOS/ARCHITECTURE.md, "Privacy and security invariants"), and the runtime it
+    /// used before wrote none.
+    private static func record(_ event: StaticString, _ values: KeyValuePairs<StaticString, Double> = [:]) {
+        #if os(macOS)
+        Diagnostics.record(event, values)
+        #endif
+    }
 
     private static func seconds(since start: ContinuousClock.Instant) -> Double {
         let elapsed = ContinuousClock.now - start
