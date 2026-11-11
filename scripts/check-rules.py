@@ -200,7 +200,14 @@ def code_only(src):
 IMPORT = re.compile(
     r"(?:^|;)[ \t]*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|package|internal|fileprivate|private)\s+)?import\s+"
     r"(?:(?:struct|class|enum|protocol|typealias|func|let|var)\s+)?([A-Za-z_]\w*)", re.MULTILINE)
-NETWORK = re.compile(r"\b(URLSession|NWConnection|NWListener|NWBrowser|CFNetwork|WKWebView|CFSocketCreate|getaddrinfo)\b")
+# URLSession and every type named after it (its configuration, its delegates) are allowed in one file, the model's
+# download (ARCHITECTURE.md, section 9, invariant 1). The rest are allowed nowhere.
+SESSION = re.compile(r"\b(?:NS)?URLSession\w*")
+SESSION_FILE = "Sources/SpeechEngine/ModelDownloader.swift"
+NETWORK = re.compile(r"\b(NSURLConnection|NWConnection|NWListener|NWBrowser|CFNetwork|WKWebView|CFSocketCreate|getaddrinfo)\b")
+# The model's host is in Models/model.lock.json and nowhere in the sources, comments and strings included. The words
+# a user reads, "Hugging Face", are two words and do not match.
+HOST = re.compile(r"huggingface|(?<![\w-])hf\.co\b", re.IGNORECASE)
 LOG_CALLS = r"(?:print|debugPrint|dump|NSLog|os_log)\s*\("
 LOGGING = re.compile(
     r"(?<![\w.])" + LOG_CALLS + r"|\b(?:Swift|Foundation|os|OSLog)\s*\.\s*" + LOG_CALLS + r"|\b(?:Logger|OSLog)\s*\(")
@@ -214,11 +221,17 @@ NEUTRAL = {"SpeechEngine": {"AppKit", "SwiftUI", "UIKit", "Cocoa"}, "Persistence
 MAY_PRINT = ("SorelloSnapshots", "SorelloTranscribe")
 
 
-def lint_swift(module, name, src):
-    """The (rule, line number, line) violations in one Swift source of `module`."""
+def lint_swift(path, src):
+    """The (rule, line number, line) violations in the Swift source at `path`, relative to the repository."""
+    module = path.split("/")[1] if path.startswith("Sources/") else ""
+    name = os.path.basename(path)
     raw = src.split("\n")
     code, bare = scan(src)
     may_log = module in MAY_PRINT or name == "Diagnostics.swift"
+    may_connect = path == SESSION_FILE
+
+    def connects(text):
+        return NETWORK.search(text) or (SESSION.search(text) and not may_connect)
     found = set()
 
     for imported in IMPORT.finditer(code):
@@ -226,7 +239,7 @@ def lint_swift(module, name, src):
         number = code.count("\n", 0, imported.start(1)) + 1
         text = raw[number - 1].strip()
         if framework == "Network":
-            found.add(("Sorello makes no network connections", number, text))
+            found.add(("only the model's download opens a connection, through URLSession", number, text))
         if module in PURE and framework in UI_AND_MODEL:
             found.add(("pure modules import only Foundation", number, text))
         if framework in NEUTRAL.get(module, ()):
@@ -234,8 +247,8 @@ def lint_swift(module, name, src):
 
     for number, line in enumerate(code.split("\n"), 1):
         text = raw[number - 1].strip()
-        if NETWORK.search(line):
-            found.add(("Sorello makes no network connections", number, text))
+        if connects(line):
+            found.add(("only the model's download opens a connection, through URLSession", number, text))
         if LOGGING.search(line) and not may_log:
             found.add(("log only through Diagnostics, which cannot carry content", number, text))
         if UNCHECKED.search(line) and not any("Safe:" in near for near in raw[max(0, number - 4):number + 3]):
@@ -246,8 +259,8 @@ def lint_swift(module, name, src):
     for offset, body in bare:
         number = bisect.bisect_right(line_starts, offset)
         text = raw[number - 1].strip()
-        if NETWORK.search(body):
-            found.add(("Sorello makes no network connections", number, text))
+        if connects(body):
+            found.add(("only the model's download opens a connection, through URLSession", number, text))
         if LOGGING.search(body) and not may_log:
             found.add(("log only through Diagnostics, which cannot carry content", number, text))
     return sorted(found, key=lambda violation: (violation[1], violation[0]))
@@ -255,7 +268,7 @@ def lint_swift(module, name, src):
 
 def self_test():
     def rules(module, src, name="File.swift"):
-        return sorted({rule.split(" ")[0] for rule, _, _ in lint_swift(module, name, src)})
+        return sorted({rule.split(" ")[0] for rule, _, _ in lint_swift("Sources/%s/%s" % (module, name), src)})
 
     cases = [
         # (module, source, the first word of each rule that should fire[, file name])
@@ -276,8 +289,19 @@ def self_test():
         ("SorelloApp", "fingerprint(of: x)", []),
         ("SorelloTranscribe", 'print("x")', []),
         ("DictationCore", 'print("x")', [], "Diagnostics.swift"),
-        ("SorelloApp", "let s = URLSession.shared", ["Sorello"]),
+        ("SorelloApp", "let s = URLSession.shared", ["only"]),
         ("SorelloApp", "// URLSession is forbidden in this application.", []),
+        # URLSession, and every type named after it, only in the model's download; other networking nowhere.
+        ("SpeechEngine", "let s = URLSession(configuration: .ephemeral)", [], "ModelDownloader.swift"),
+        ("SpeechEngine", "final class D: NSObject, URLSessionDataDelegate {}", [], "ModelDownloader.swift"),
+        ("SpeechEngine", "let s = URLSession(configuration: .ephemeral)", ["only"]),
+        ("SpeechEngine", "let c = URLSessionConfiguration.ephemeral", ["only"], "ModelDownload.swift"),
+        ("SorelloApp", "let s = URLSession(configuration: .default)", ["only"], "ModelDownloader.swift"),
+        ("SpeechEngine", "let c = NSURLSession.shared", ["only"]),
+        ("SpeechEngine", "let c = NWConnection(host: h, port: p, using: .tls)", ["only"], "ModelDownloader.swift"),
+        ("SpeechEngine", "import Network", ["only"], "ModelDownloader.swift"),
+        ("SpeechEngine", "let c = NSURLConnection(request: r, delegate: d)", ["only"], "ModelDownloader.swift"),
+        ("SpeechEngine", "let pattern = /URLSession/", [], "ModelDownloader.swift"),
         # `#/.../#` regex literals are text, escaped delimiters included, and a quote inside one starts no string.
         ("TextRules", "let pattern = #/URLSession/#", []),
         ("TextRules", "let found = text.firstMatch(of: #/[/]print(1)/#)", []),
@@ -327,11 +351,11 @@ def self_test():
         ("TextRules", "let x = a / b / c", []),
         # What looks like a bare regex may have been code, so its text is searched: a banned name in one is
         # reported. `#/.../#` is the way out.
-        ("TextRules", "let pattern = /URLSession/", ["Sorello"]),
+        ("TextRules", "let pattern = /URLSession/", ["only"]),
         # Imports, however they are laid out.
-        ("SorelloApp", "import Network", ["Sorello"]),
-        ("SorelloApp", "    @preconcurrency import Network", ["Sorello"]),
-        ("SorelloApp", "import Foundation; import Network", ["Sorello"]),
+        ("SorelloApp", "import Network", ["only"]),
+        ("SorelloApp", "    @preconcurrency import Network", ["only"]),
+        ("SorelloApp", "import Foundation; import Network", ["only"]),
         ("DesignCore", "import AppKit", ["pure"]),
         ("DesignCore", "  #if os(macOS)\n    import AppKit\n  #endif", ["pure"]),
         ("DesignCore", "public import SwiftUI", ["pure"]),
@@ -356,8 +380,16 @@ def self_test():
         if got != expected:
             failures += 1
             print("check-rules self-test: %r in %s gave %s, expected %s" % (src, module, got, expected), file=sys.stderr)
+    # The model's host is named nowhere in the sources, in code, strings or comments; the words a user reads are fine.
+    for line, expected in [('let u = "https://huggingface.co/x"', True), ("// fetched from HuggingFace", True),
+                           ('let h = "cdn.hf.co"', True), ('let h = "https://hf.co/x"', True),
+                           ('Text("from Hugging Face")', False), ("self.coordinator = c", False),
+                           ('let s = "shf.com"', False), ('let s = "hf.com"', False)]:
+        if bool(HOST.search(line)) != expected:
+            failures += 1
+            print("check-rules self-test: the host rule on %r gave %s" % (line, not expected), file=sys.stderr)
     # A violation is reported on the line it is on.
-    numbered = lint_swift("DesignCore", "File.swift", "import Foundation\n\nimport\n  AppKit\n")
+    numbered = lint_swift("Sources/DesignCore/File.swift", "import Foundation\n\nimport\n  AppKit\n")
     if [number for _, number, _ in numbered] != [4]:
         failures += 1
         print("check-rules self-test: wrong line for a split import: %r" % (numbered,), file=sys.stderr)
@@ -380,13 +412,12 @@ def main():
                 continue
             path = os.path.join(directory, name)
             relative = os.path.relpath(path, ROOT)
-            module = os.path.relpath(path, sources).split(os.sep)[0]
             with open(path, encoding="utf-8") as handle:
                 src = handle.read()
-            for rule, number, text in lint_swift(module, name, src):
+            for rule, number, text in lint_swift(relative.replace(os.sep, "/"), src):
                 report(rule, "%s:%d: %s" % (relative, number, text))
 
-    # The old names are gone, comments included.
+    # The old names are gone, comments included, and the model's host is named in no source.
     for top in ("Sources", "Config", "scripts", "Makefile"):
         start = os.path.join(ROOT, top)
         paths = [start] if os.path.isfile(start) else [
@@ -400,9 +431,11 @@ def main():
             except (UnicodeDecodeError, OSError):
                 continue
             for number, line in enumerate(lines, 1):
+                where = "%s:%d: %s" % (os.path.relpath(path, ROOT), number, line.strip())
                 if OLD_NAMES.search(line):
-                    report("an earlier product's name is still in the code",
-                           "%s:%d: %s" % (os.path.relpath(path, ROOT), number, line.strip()))
+                    report("an earlier product's name is still in the code", where)
+                if top == "Sources" and HOST.search(line):
+                    report("no source names the model's host; it is in Models/model.lock.json", where)
 
     # No model weights, audio or build output in Git.
     inside = subprocess.run(["git", "-C", ROOT, "rev-parse", "--is-inside-work-tree"], capture_output=True, text=True)
