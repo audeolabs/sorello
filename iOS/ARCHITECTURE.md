@@ -1100,7 +1100,7 @@ no buttons.
     activity therefore turns stale soon after its session would have ended,
     and then reads "Session ended" with no timers; the next launch ends it.
 - **Look.** Monochrome, as the keyboard's island: white ink on a near-black
-  pill, the ridge mark (`RidgeMark`) with its dot in the phase's accent
+  pill, the ring mark (`RingMark`) with its state dot in the phase's accent
   (aurora ready, coral recording, glacier waiting), a coral recording dot
   beside the timer, and a strip of dots in the keyboard wave's form (one row,
   `DotWave.lift`, `DotWave.glow`): a calm row of equal dots when
@@ -1298,9 +1298,9 @@ every other point of the bar
   puts them (pure, tested), its right end always at the bar's trailing
   padding.
   - **Start** (idle, errors, and where dictation cannot run): the compact
-    island, the ridge mark beside "Start", as wide as its label needs and
+    island, the ring mark beside "Start", as wide as its label needs and
     never narrower than 2.4 times its height. The mark is always the
-    brand's, its dot aurora; the session shows in the dot's motion
+    brand's, its state dot aurora; the session shows in that dot's motion
     (`SessionDot`, `SessionMark`; an amber dot for "no session" makes the
     logo look worse, and iOS's own orange microphone dot means a session is
     on). It is a quiet cue, not the primary signal
@@ -1309,9 +1309,9 @@ every other point of the bar
     - **A session ready: a heartbeat.** A soft aurora ring ripples out from
       the dot's edge, 3.5 pt beyond it over 1 s, ease-out, fading from 0.6
       opacity, then rests; every 3 s, the first 0.4 s after the mark
-      appears (`SessionDot.Heartbeat`, every constant in one place). It has
-      all but faded (under 10% opacity) by the time it meets the W's line
-      (at 4.5 pt it would cross it at about a quarter).
+      appears (`SessionDot.Heartbeat`, every constant in one place). It is
+      drawn beneath the mark's white dots, so it passes behind the two
+      nearest the state dot, and it stays inside Start's pill.
       `HeartbeatRingView` runs each ripple as a Core Animation group at
       most 30 frames a second, started by a main-thread timer once per
       period, only while it is in a window, so between ripples nothing
@@ -1450,14 +1450,14 @@ every other point of the bar
   side by side), and reads at WCAG AA (4.5:1 or
   better) in light and dark mode (`MenuPalette`: a white card in light
   mode, a dark grey one in dark mode, "Open Sorello" and the session line's
-  ridge mark in the brand's accent, `BrandPalette.link`). When it does not fit (landscape, the largest sizes) it
+  ring mark in the brand's accent, `BrandPalette.link`). When it does not fit (landscape, the largest sizes) it
   scrolls inside its rounded corners. At the accessibility sizes the actions
   come first ("Open Sorello", then the text-width choice), then the
   session status and the tip, which points above
   (`KeyboardMessages.menuItems`), so the first screen is never all status.
   The session line keeps the time left ("Session ends in 5 min if idle",
-  which the bar shows only as Start's dot); its ridge mark is ink with the
-  accent's dot, like every other mark (`MenuPalette.markLine`, `markDot`),
+  which the bar shows only as Start's dot); its ring mark is ink with the
+  accent's state dot, like every other mark (`MenuPalette.markLine`, `markDot`),
   and shows the session as Start's does: the same `SessionMark` from the
   same state, heartbeat, breathing, still or (with Reduce Motion) unlit in
   the card's grey (`MenuPalette.unlitDot`). A tap outside the panel's card,
@@ -1569,11 +1569,32 @@ the highlighted candidate's text 4.5:1 on its pill.
   with white text on the dark keyboard, darker than the backdrop like the
   Dynamic Island on a dark screen, with a grey hairline that sets it off; on
   the light keyboard it is graphite (#2B2B2E): black across the bar would be
-  the heaviest thing on the keyboard. Start carries the ridge mark
-  (`RidgeMark`, a W line and a dot, drawn as a vector, 19 pt and 1.3 times
-  its drawn weight), its line white and its dot aurora, with the
-  session in its motion ([Top row](#top-row)). Start is dimmed to 45% where
-  dictation cannot run here.
+  the heaviest thing on the keyboard. Start carries the ring mark
+  (`RingMark`, below), 19 pt across, its seven dots white and its state
+  dot aurora, with the session in that dot's motion
+  ([Top row](#top-row)). Start is dimmed to 45% where dictation cannot
+  run here.
+- **The ring mark** (`RingMark`, pure, tested): eight dots on a ring, drawn
+  as a vector. It is the one mark the app draws inside itself: on Home and
+  in onboarding, on the keyboard's Start and in its menu, and in the Live
+  Activity. It is not the app icon's mark, which is Sorello's row of dots.
+  - On a square 27 units across, the ring is centred and 9.3 units in
+    radius. Angles run round it from its bottom, up its right side.
+  - The **state dot**, 3.1 units in radius, is at 327°, so a little left of
+    the bottom. It carries the state's colour and is always the largest.
+    It is the dot the session shows in: the heartbeat's ring grows out of
+    it, it breathes, and it is the dot that is unlit.
+  - Seven **white dots**, each 2.05 units in radius, follow it 42° apart, at
+    285°, 243°, 201°, 159°, 117°, 75° and 33°. They are the surface's ink
+    at 80%. The ring is open at the bottom: 66° lie between the last white
+    dot and the state dot.
+  - It is fitted to a box by scaling the square to the box's shorter side
+    and centring it. It has one weight at every size and is never
+    distorted. No two dots touch.
+  - Blended with the surface, the white dots keep 3:1 against the island
+    and against the menu's card, in every mode (`KeyboardLookTests`).
+  - The state dot is drawn above the white dots, and the heartbeat's ring
+    beneath them.
 - **The recording wave** (`DotWave`, pure, tested): one row of white dots
   6.2 pt apart along the island's middle line that shows the voice: each
   dot grows (1.4 to 2.85 pt radius, never touching) and brightens (half to
