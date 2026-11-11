@@ -4,14 +4,20 @@ import Foundation
 import SpeechEngine
 
 // sorello-transcribe: transcribes audio files with the real model through the engine's streaming path, for
-// verification (ARCHITECTURE.md, section 11). Each transcript goes to standard output; where the encoder runs, and
-// preparation and transcription times, go to standard error. It reads only the files it is given and writes only the model store it is pointed at.
+// verification (ARCHITECTURE.md, section 11). Each transcript goes to standard output; where the encoder runs, what a
+// download fetched, and preparation and transcription times, go to standard error. It reads only the files it is
+// given and writes only the model store it is pointed at. With --download it fetches this Mac's build of the model
+// into that store as the app does, from the pin's address or, to stage a failure, from --source.
 
 let usage = """
-    usage: sorello-transcribe --model <bundle-dir> [--store <dir>] [--word <text>[=<strength>]]... [--realtime] \
-    [--cpu] <file>...
+    usage: sorello-transcribe --model <bundle-dir> [--store <dir>] [options] <file>...
+           sorello-transcribe --download --pin <file> --store <dir> [--source <address>] [options] <file>...
       --model     the model bundle (the directory holding bundle.json)
       --store     where to keep the stable copy of the model; without it the bundle is loaded in place
+      --download  download the build the pin lists for this Mac into --store, as the app does, then transcribe
+      --pin       the pin, Models/model.lock.json
+      --source    fetch the build from this address instead of the pin's: HTTPS, or plain HTTP to 127.0.0.1
+    options:
       --word      a dictionary word, with an optional strength (default 1); repeat for more
       --realtime  hand the audio over at the speed it would be recorded, and time only the wait after the end
       --cpu       run the encoder on Core ML's CPU kernels, as on a Mac without a Neural Engine
@@ -24,6 +30,9 @@ func fail(_ message: String) -> Never {
 
 var model: URL?
 var store: URL?
+var downloads = false
+var pinFile: URL?
+var source: URL?
 var realtime = false
 var forcesCPU = false
 var words: [DictionaryEntry] = []
@@ -37,6 +46,14 @@ while let argument = arguments.popFirst() {
     case "--store":
         guard let value = arguments.popFirst() else { fail(usage) }
         store = URL(fileURLWithPath: value, isDirectory: true)
+    case "--download":
+        downloads = true
+    case "--pin":
+        guard let value = arguments.popFirst() else { fail(usage) }
+        pinFile = URL(fileURLWithPath: value)
+    case "--source":
+        guard let value = arguments.popFirst(), let url = URL(string: value) else { fail(usage) }
+        source = url
     case "--word":
         guard let value = arguments.popFirst() else { fail(usage) }
         var text = value, strength = DictionaryValidation.defaultStrength
@@ -60,16 +77,65 @@ while let argument = arguments.popFirst() {
         files.append(URL(fileURLWithPath: argument))
     }
 }
-guard let model, !files.isEmpty else { fail(usage) }
+guard !files.isEmpty, downloads ? (model == nil && pinFile != nil && store != nil) : (model != nil && pinFile == nil),
+      source == nil || downloads else { fail(usage) }
 
 func seconds(_ duration: Duration) -> String {
     let value = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
     return String(format: "%.3f s", value)
 }
 
+/// The version the download names itself with: the app's, from `Config/identity.conf` beside the pin's directory.
+func version(besidePin pin: URL) -> String {
+    let identity = pin.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Config/identity.conf")
+    let lines = (try? String(contentsOf: identity, encoding: .utf8))?.split(separator: "\n") ?? []
+    return lines.first { $0.hasPrefix("VERSION=") }.map { String($0.dropFirst("VERSION=".count)) } ?? "0"
+}
+
+/// Downloads this Mac's build of the model into `store`, says what was fetched, and returns the model to load.
+func download(pinFile: URL, store: URL, source: URL?) async -> PinnedModel {
+    var pin: ModelPin
+    do {
+        pin = try ModelPin(contentsOf: pinFile)
+        if let source { pin = try pin.replacingSource(source) }
+    } catch {
+        fail("sorello-transcribe: the pin cannot be used (\(error))")
+    }
+    let model = PinnedModel(pin: pin, storeDirectory: store)
+    guard let build = model.build else { fail("sorello-transcribe: the pin lists no build for this Mac") }
+    FileHandle.standardError.write(Data("download: build \(build.directory), \(build.bytes) bytes\n".utf8))
+    let report = await ModelDownload(model: model, version: version(besidePin: pinFile)).download()
+    var lines: [String] = []
+    if report.wasAlreadyThere {
+        lines.append("download: the model was already in the store; nothing fetched")
+    } else {
+        let ending = switch report.state {
+        case .installed: "installed"
+        case .failed(let reason): "failed, \(reason)"
+        case .absent: "stopped"
+        case .unavailable: "no build for this Mac"
+        case .downloading: "still downloading"
+        }
+        lines.append(String(format: "download: %@, %lld bytes fetched in %.3f s", ending, report.fetched, report.seconds))
+    }
+    for offset in report.continuedFrom { lines.append("download: continued a file from byte \(offset)") }
+    if report.startedAgain > 0 {
+        lines.append("download: \(report.startedAgain) file(s) sent again from the start; the server ignored the range")
+    }
+    FileHandle.standardError.write(Data((lines.joined(separator: "\n") + "\n").utf8))
+    guard report.state == .installed else { exit(1) }
+    return model
+}
+
 let snapshot = DictionarySnapshot(revision: 1, entries: words)
 let compute = forcesCPU ? SpeechCompute.cpu : .forThisMac()
-let engine = SpeechEngine(modelDirectory: model, storeDirectory: store, compute: compute, dictionary: { _ in snapshot })
+let engine: SpeechEngine
+if downloads, let pinFile, let store {
+    engine = SpeechEngine(model: await download(pinFile: pinFile, store: store, source: source), compute: compute,
+                          dictionary: { _ in snapshot })
+} else {
+    engine = SpeechEngine(modelDirectory: model, storeDirectory: store, compute: compute, dictionary: { _ in snapshot })
+}
 let reason = forcesCPU ? "forced by --cpu" : "this Mac's hardware"
 FileHandle.standardError.write(Data("encoder: \(engine.compute) (\(reason))\n".utf8))
 let clock = ContinuousClock()
