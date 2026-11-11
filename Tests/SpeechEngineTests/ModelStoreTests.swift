@@ -16,12 +16,13 @@ struct ModelStoreTests {
         var root: URL { base.appendingPathComponent("store", isDirectory: true) }
         var bundleURL: URL { base.appendingPathComponent("App.app/Model", isDirectory: true) }
 
-        /// Invented files; the manifest text alone changes the identity.
+        /// Invented files, and a manifest that lists them; the manifest's name alone changes the identity.
         static func synthetic(manifest: String) -> [String: Data] {
-            ["bundle.json": Data("{\"model\":\"\(manifest)\"}".utf8),
-             "vocabulary.json": Data("{\"0\":\"▁synthetic\"}".utf8),
-             "Encoder.mlmodelc/model.mil": Data("program".utf8),
-             weights: Data((0..<4096).map { UInt8(truncatingIfNeeded: $0 &* 13 &+ 5) })]
+            let files = ["vocabulary.json": Data("{\"0\":\"▁synthetic\"}".utf8),
+                         "Encoder.mlmodelc/model.mil": Data("program".utf8),
+                         weights: Data((0..<4096).map { UInt8(truncatingIfNeeded: $0 &* 13 &+ 5) })]
+            let listing = files.keys.sorted().map { "\"\($0)\":\"\(SpeechCore.sha256(files[$0] ?? Data()))\"" }
+            return files.merging(["bundle.json": Data("{\"model\":\"\(manifest)\",\"files\":{\(listing.joined(separator: ","))}}".utf8)]) { $1 }
         }
 
         func bundle(manifest: String) throws -> URL {
@@ -31,6 +32,18 @@ struct ModelStoreTests {
                 try data.write(to: url)
             }
             return bundleURL
+        }
+
+        /// Writes the synthetic model `manifest` into `directory`, as a finished download leaves it.
+        @discardableResult
+        func write(manifest: String, into directory: URL, leaving omitted: Set<String> = []) throws -> String {
+            let files = Self.synthetic(manifest: manifest)
+            for (path, data) in files where !omitted.contains(path) {
+                let url = directory.appendingPathComponent(path)
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try data.write(to: url)
+            }
+            return SpeechCore.sha256(files["bundle.json"] ?? Data())
         }
 
         deinit { try? FileManager.default.removeItem(at: base) }
@@ -281,5 +294,151 @@ struct ModelStoreTests {
         }, prepare: { _ in })
         #expect(settled.standardizedFileURL.path == target)
         #expect(entries(scratch.root) == [try identity(bundle)])
+    }
+
+    // MARK: - Downloads
+
+    /// A download's own directory in the store, made by the store, under its lock.
+    private func downloadDirectory(_ store: ModelStore, _ identity: String,
+                                   sourceLocation: SourceLocation = #_sourceLocation) throws -> URL {
+        guard case .download(let directory) = store.prepareDownload(identity) else {
+            Issue.record("The store gave no download directory", sourceLocation: sourceLocation)
+            throw Rejected()
+        }
+        return directory
+    }
+
+    /// A finished download becomes the stored model in one rename: every inode is kept, so the first load at the
+    /// final path is the only cold one.
+    @Test func aFinishedDownloadIsInstalledByOneRename() throws {
+        let scratch = Scratch(), store = ModelStore(root: scratch.root)
+        let identity = SpeechCore.sha256(Scratch.synthetic(manifest: "first")["bundle.json"] ?? Data())
+        #expect(store.stored(identity) == nil)
+        let download = try downloadDirectory(store, identity)
+        #expect(download.standardizedFileURL.deletingLastPathComponent().path == scratch.root.standardizedFileURL.path,
+                "A download is kept inside the store")
+        #expect(download.lastPathComponent.hasPrefix("."), "A download is hidden from everything that lists models")
+        try scratch.write(manifest: "first", into: download)
+        let inode = fileNumber(download.appendingPathComponent(Scratch.weights))
+        let installed = try #require(store.installDownload(identity))
+        #expect(installed.standardizedFileURL.path == scratch.root.appendingPathComponent(identity).standardizedFileURL.path)
+        #expect(contents(of: installed) == Scratch.synthetic(manifest: "first"))
+        #expect(fileNumber(installed.appendingPathComponent(Scratch.weights)) == inode)
+        #expect(entries(scratch.root) == [identity], "The download's directory became the model")
+        #expect(ModelStore(root: scratch.root).stored(identity)?.standardizedFileURL.path == installed.standardizedFileURL.path)
+    }
+
+    /// An unfinished download is found again after a quit, and left alone until the pinned model is complete.
+    @Test func anUnfinishedDownloadOutlivesTheApp() throws {
+        let scratch = Scratch()
+        let identity = SpeechCore.sha256(Scratch.synthetic(manifest: "first")["bundle.json"] ?? Data())
+        let first = try downloadDirectory(ModelStore(root: scratch.root), identity)
+        try scratch.write(manifest: "first", into: first, leaving: [Scratch.weights])
+        let partial = contents(of: first)
+        let later = ModelStore(root: scratch.root)
+        #expect(later.stored(identity) == nil)
+        #expect(later.installDownload(identity) == nil, "A download missing a file is not a model")
+        #expect(try downloadDirectory(later, identity) == first, "The same directory is found again")
+        #expect(contents(of: first) == partial, "Looking for the model leaves the download alone")
+        #expect(!FileManager.default.fileExists(atPath: scratch.root.appendingPathComponent(identity).path))
+    }
+
+    /// Nothing that is not the pinned build is installed: a download without its manifest, or with another one.
+    @Test func aDownloadThatIsNotThePinnedBuildIsNotInstalled() throws {
+        let scratch = Scratch(), store = ModelStore(root: scratch.root)
+        let identity = SpeechCore.sha256(Scratch.synthetic(manifest: "first")["bundle.json"] ?? Data())
+        let download = try downloadDirectory(store, identity)
+        try scratch.write(manifest: "first", into: download, leaving: ["bundle.json"])
+        #expect(store.installDownload(identity) == nil)
+        try scratch.write(manifest: "second", into: download)
+        #expect(store.installDownload(identity) == nil)
+        #expect(store.stored(identity) == nil)
+        #expect(entries(scratch.root) == [download.lastPathComponent], "A refused download is left as it was")
+    }
+
+    /// Once the pinned model is complete, a download, a stale staging copy and an older model all go.
+    @Test func everythingElseGoesOnceThePinnedModelIsComplete() throws {
+        let scratch = Scratch(), store = ModelStore(root: scratch.root)
+        let old = try scratch.write(manifest: "old", into: scratch.base.appendingPathComponent("old-bundle"))
+        _ = store.install(bundle: scratch.base.appendingPathComponent("old-bundle"), as: old)
+        let identity = SpeechCore.sha256(Scratch.synthetic(manifest: "first")["bundle.json"] ?? Data())
+        let download = try downloadDirectory(store, identity)
+        try scratch.write(manifest: "first", into: download, leaving: [Scratch.weights])
+        let staging = scratch.root.appendingPathComponent(".staging-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        #expect(Set(entries(scratch.root)) == [old, download.lastPathComponent, staging.lastPathComponent],
+                "Nothing is removed while the pinned model is incomplete")
+        // The model arrives another way: copied from an app that carries it.
+        let bundle = try scratch.bundle(manifest: "first")
+        #expect(store.install(bundle: bundle, as: identity) != nil)
+        #expect(entries(scratch.root) == [identity])
+        guard case .stored(let stored) = store.prepareDownload(identity) else {
+            Issue.record("A download is not begun for a model that is there")
+            return
+        }
+        #expect(stored.standardizedFileURL.path == scratch.root.appendingPathComponent(identity).standardizedFileURL.path)
+    }
+
+    /// The copy is writable, so a stored model is trusted only if its marker and manifest are both the pinned ones.
+    @Test func aTamperedStoredModelIsNotStored() throws {
+        let scratch = Scratch(), store = ModelStore(root: scratch.root)
+        let identity = try scratch.write(manifest: "first", into: try downloadDirectory(
+            store, SpeechCore.sha256(Scratch.synthetic(manifest: "first")["bundle.json"] ?? Data())))
+        let installed = try #require(store.installDownload(identity))
+        try Data("{\"model\":\"edited\"}".utf8).write(to: installed.appendingPathComponent("bundle.json"))
+        #expect(store.stored(identity) == nil)
+    }
+
+    /// A copy from the app is checked against the pinned identity too.
+    @Test func aBundleThatIsNotThePinnedBuildIsNotInstalled() throws {
+        let scratch = Scratch(), bundle = try scratch.bundle(manifest: "second")
+        let identity = SpeechCore.sha256(Scratch.synthetic(manifest: "first")["bundle.json"] ?? Data())
+        #expect(ModelStore(root: scratch.root).install(bundle: bundle, as: identity) == nil)
+        #expect(entries(scratch.root).isEmpty)
+    }
+
+    /// Two processes finishing the same download (two stores here): both are handed the one complete copy.
+    @Test func concurrentDownloadInstalls() throws {
+        let scratch = Scratch()
+        let identity = SpeechCore.sha256(Scratch.synthetic(manifest: "first")["bundle.json"] ?? Data())
+        try scratch.write(manifest: "first", into: try downloadDirectory(ModelStore(root: scratch.root), identity))
+        let target = scratch.root.appendingPathComponent(identity).standardizedFileURL.path
+        let root = scratch.root
+        let results = Mutex<[String?]>([])
+        DispatchQueue.concurrentPerform(iterations: 4) { _ in
+            let path = ModelStore(root: root).installDownload(identity)?.standardizedFileURL.path
+            results.withLock { $0.append(path) }
+        }
+        #expect(results.withLock { $0 } == Array(repeating: target, count: 4))
+        #expect(contents(of: scratch.root.appendingPathComponent(identity)) == Scratch.synthetic(manifest: "first"))
+        #expect(entries(scratch.root) == [identity])
+    }
+
+    /// Another process copying the model from its app while a download is being installed must wait for the lock,
+    /// and then finds the installed model complete instead of replacing it.
+    @Test func aDownloadInstallKeepsOutAnotherProcess() throws {
+        let scratch = Scratch(), bundle = try scratch.bundle(manifest: "first")
+        let identity = try identity(bundle)
+        try scratch.write(manifest: "first", into: try downloadDirectory(ModelStore(root: scratch.root), identity))
+        let other = ModelStore(root: scratch.root)
+        let handedOut = Mutex<String?>(nil)
+        let finished = DispatchGroup()
+        let store = ModelStore(root: scratch.root, afterCheck: {
+            finished.enter()
+            DispatchQueue.global().async {
+                handedOut.withLock { $0 = other.install(bundle: bundle, as: identity)?.standardizedFileURL.path }
+                finished.leave()
+            }
+            _ = finished.wait(timeout: .now() + 1)
+        })
+        let target = scratch.root.appendingPathComponent(identity)
+        let inode = fileNumber(try downloadDirectory(ModelStore(root: scratch.root), identity)
+            .appendingPathComponent(Scratch.weights))
+        #expect(store.installDownload(identity)?.standardizedFileURL.path == target.standardizedFileURL.path)
+        finished.wait()
+        #expect(handedOut.withLock { $0 } == target.standardizedFileURL.path)
+        #expect(fileNumber(target.appendingPathComponent(Scratch.weights)) == inode,
+                "The other process used the installed download instead of copying over it")
+        #expect(entries(scratch.root) == [identity])
     }
 }
