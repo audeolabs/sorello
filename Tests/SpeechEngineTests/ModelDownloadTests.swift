@@ -235,6 +235,26 @@ struct ModelDownloadTests {
         declared.expectNothingLoadable()
     }
 
+    /// What an earlier run left counts against the size before the manifest is fetched, so a manifest that arrives
+    /// too large cannot take the directory past it either.
+    @Test func filesAlreadyHereCountBeforeTheManifest() async throws {
+        let setup = Setup()
+        guard case .download(let directory) = ModelStore(root: setup.store).prepareDownload(setup.build.identity) else {
+            Issue.record("No download directory")
+            return
+        }
+        let weights = directory.appendingPathComponent(Self.weights)
+        try FileManager.default.createDirectory(at: weights.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try setup.build.files[Self.weights, default: Data()].write(to: weights)
+        setup.server.answer(Build.address("bundle.json"),
+                            .body(Data(repeating: 0x20, count: Int(setup.build.size)), declared: false))
+        let report = try #require(await finish(setup.download()))
+        #expect(report.state == .failed(.check))
+        #expect(report.fetched + 200_000 <= setup.build.size, "Never more on disk than the build's size")
+        #expect(setup.downloaded["bundle.json.sorello-part"] == nil)
+        setup.expectNothingLoadable()
+    }
+
     /// A pin whose size is smaller than what the files are stops at its size.
     @Test func aBuildLargerThanItsPinIsRefused() async throws {
         let small = Build(bytes: 120_000)

@@ -110,9 +110,10 @@ private final class Run {
 
     func perform() async -> (ModelFetch.Ending, ModelFetch.Tally) {
         do {
-            written = onDisk(ModelPin.manifestName)
+            // Everything an earlier run left counts from the start, before the manifest says what it is, so no
+            // answer, the manifest's included, can take the directory past the build's size.
+            written = fetch.store.downloadedBytes(build.manifestSHA256)
             let files = try Self.files(in: try await manifest())
-            written += files.reduce(0) { $0 + onDisk($1.path) }
             fetch.progress(written)
             if let free = fetch.freeSpace(directory), free < build.bytes - written { throw Stop.failed(.disk) }
             for file in files { try await obtain(file.path, digest: file.digest) }
@@ -162,11 +163,6 @@ private final class Run {
 
     private func partLocation(_ path: String) -> URL {
         URL(fileURLWithPath: location(path).path + ModelFetch.partSuffix)
-    }
-
-    /// The bytes of `path` on disk, finished or in part.
-    private func onDisk(_ path: String) -> Int64 {
-        Self.size(location(path)) ?? Self.size(partLocation(path)) ?? 0
     }
 
     private static func size(_ url: URL) -> Int64? {
