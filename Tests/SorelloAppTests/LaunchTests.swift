@@ -33,6 +33,18 @@ import Testing
         #expect(LaunchMode(arguments: ["--cpu"]) == .app(showsSetup: true), "The app itself cannot be forced")
     }
 
+    /// `--download` makes the packaged app download its model into a temporary store first; it is one way to the
+    /// model, so it does not go with `--model`.
+    @Test func theSelfTestCanDownloadTheModel() {
+        let file = URL(fileURLWithPath: "a.wav")
+        #expect(LaunchMode(arguments: ["--self-test", "--download", "a.wav"])
+                == .selfTest(files: [file], model: nil, forcesCPU: false, downloads: true))
+        #expect(LaunchMode(arguments: ["--self-test", "a.wav", "--download", "--cpu"])
+                == .selfTest(files: [file], model: nil, forcesCPU: true, downloads: true))
+        #expect(LaunchMode(arguments: ["--self-test", "--download", "--model", "/m", "a.wav"]) == .usage(LaunchMode.usage))
+        #expect(LaunchMode(arguments: ["--download"]) == .app(showsSetup: true), "The app itself downloads only when asked")
+    }
+
     @Test func snapshotsTakeOneDirectory() {
         #expect(LaunchMode(arguments: ["--snapshots", "/tmp/out"]) == .snapshots(URL(fileURLWithPath: "/tmp/out", isDirectory: true)))
         #expect(LaunchMode(arguments: ["--snapshots"]) == .usage(LaunchMode.usage))
@@ -40,29 +52,56 @@ import Testing
 }
 
 @Suite struct AppInfoTests {
-    @Test func readsTheIdentityAndTheModelFromAnAppBundle() throws {
-        let directory = try TemporaryDirectory()
-        let app = directory.url.appendingPathComponent("Example.app", isDirectory: true)
+    /// An invented pin, as `Models/model.lock.json` is laid out.
+    static let pin = Data("""
+        {"model": "kea-test", "manifest": "bundle.json", "source": "https://models.example.com/resolve/0123",
+         "builds": [{"directory": "macos26", "manifest_sha256": "\(String(repeating: "c3", count: 32))",
+                     "bytes": 4096, "requires": {"macos": "26.0"}}]}
+        """.utf8)
+
+    /// An app bundle with the identity and resources every build has: the pin and the model's notices.
+    static func makeApp(in directory: URL) throws -> URL {
+        let app = directory.appendingPathComponent("Example.app", isDirectory: true)
         let resources = app.appendingPathComponent("Contents/Resources", isDirectory: true)
-        let model = resources.appendingPathComponent("Model", isDirectory: true)
-        try FileManager.default.createDirectory(at: model, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: resources.appendingPathComponent("ModelNotices"),
+                                                withIntermediateDirectories: true)
         let plist: [String: Any] = ["CFBundleIdentifier": "com.example.dictation", "CFBundleName": "Example",
                                     "CFBundleDisplayName": "Example Dev", "CFBundleShortVersionString": "1.2.3",
                                     "CFBundleVersion": "45", "NSHumanReadableCopyright": "Copyright Example",
                                     "CFBundlePackageType": "APPL"]
         try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
             .write(to: app.appendingPathComponent("Contents/Info.plist"))
-        try JSONSerialization.data(withJSONObject: ["base_model": "kea-test", "display_name": "Old Name"])
-            .write(to: model.appendingPathComponent("bundle.json"))
-        try Data("notice".utf8).write(to: model.appendingPathComponent("NOTICE"))
+        try pin.write(to: resources.appendingPathComponent("model.lock.json"))
+        try Data("notice".utf8).write(to: resources.appendingPathComponent("ModelNotices/NOTICE"))
+        return app
+    }
 
-        let bundle = try #require(Bundle(url: app))
+    /// An app that downloads its model has the pin and the model's notices, and no model of its own.
+    @Test func readsTheIdentityThePinAndTheNoticesFromAnAppBundle() throws {
+        let directory = try TemporaryDirectory()
+        let bundle = try #require(Bundle(url: try Self.makeApp(in: directory.url)))
         let info = AppInfo(bundle: bundle)
         #expect(info.name == "Example Dev")
         #expect(info.version == "1.2.3")
         #expect(info.build == "45")
         #expect(info.copyright == "Copyright Example")
         #expect(info.bundleIdentifier == "com.example.dictation")
+        #expect(info.modelDirectory == nil)
+        #expect(info.pin?.builds.map(\.directory) == ["macos26"])
+        #expect(info.modelName == "kea-test", "The model's name comes from the pin")
+        #expect(info.modelNotices.map(\.lastPathComponent) == ["NOTICE"])
+    }
+
+    /// An app built with `SORELLO_MODEL_DIR` carries the model too; its name and notices still come from the pin and
+    /// the notices' own directory.
+    @Test func findsACarriedModel() throws {
+        let directory = try TemporaryDirectory()
+        let app = try Self.makeApp(in: directory.url)
+        let model = app.appendingPathComponent("Contents/Resources/Model", isDirectory: true)
+        try FileManager.default.createDirectory(at: model, withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: ["base_model": "kea-other"])
+            .write(to: model.appendingPathComponent("bundle.json"))
+        let info = AppInfo(bundle: try #require(Bundle(url: app)))
         #expect(info.modelDirectory?.standardizedFileURL.path == model.standardizedFileURL.path)
         #expect(info.modelName == "kea-test")
         #expect(info.modelNotices.map(\.lastPathComponent) == ["NOTICE"])
@@ -74,5 +113,6 @@ import Testing
         let info = AppInfo(bundle: bundle)
         #expect(info.bundleIdentifier == nil)
         #expect(info.modelDirectory == nil)
+        #expect(info.pin == nil)
     }
 }

@@ -5,7 +5,7 @@ import Observation
 nonisolated public enum StatusMenuCommand: Hashable, Sendable {
     /// Load the speech model again after a failure.
     case retryModel
-    /// Open the main window's General screen, where a missing permission is fixed.
+    /// Open the main window's General screen, where a missing permission is fixed and the model is downloaded.
     case openGeneral
     /// Open the main window at Shortcuts.
     case openShortcuts
@@ -28,7 +28,7 @@ public struct StatusMenuActions {
     public var copyLastDictation: () -> Void
     /// Load the speech model again after a failure.
     public var retryModel: () -> Void
-    /// Open the main window's General screen, where a missing permission is fixed.
+    /// Open the main window's General screen, where a missing permission is fixed and the model is downloaded.
     public var openGeneral: () -> Void
     /// Open the main window at Shortcuts.
     public var openShortcuts: () -> Void

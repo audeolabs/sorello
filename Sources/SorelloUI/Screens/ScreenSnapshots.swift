@@ -26,6 +26,13 @@ public enum ScreenSnapshots {
             main("general-cpu", height: 640, window(.general) { $0.generalReplaced(.sample(hardware: .processor)) }),
             main("general-cpu-preparing", height: 640,
                  window(.general) { $0.generalReplaced(.sample(status: preparing, hardware: .processor)) }),
+            main("general-not-downloaded", height: 640, .sample(section: .general, status: model(.sampleNotDownloaded))),
+            main("general-downloading", height: 640, .sample(section: .general, status: model(.sampleDownloading))),
+            main("general-download-failed", height: 640,
+                 .sample(section: .general, status: model(.sampleDownloadFailed))),
+            main("general-download-full-disk", height: 640, .sample(section: .general, status: model(
+                .notDownloaded(.failed(.disk, size: sampleModelSize))))),
+            main("general-no-build", height: 640, .sample(section: .general, status: model(.sampleNoBuild))),
             main("shortcuts", height: 720, .sample(section: .shortcuts)),
             main("shortcuts-recording", height: 760, window(.shortcuts) { $0.shortcutsReplaced(.sample(recording: true)) }),
             main("shortcuts-prompt", height: 720, window(.shortcuts) { $0.shortcutsReplaced(.sample(doubleTap: .prompt)) }),
@@ -65,6 +72,11 @@ public enum ScreenSnapshots {
         change(.sample(section: section))
     }
 
+    /// Everything granted, with the model as given.
+    private static func model(_ model: ModelStatus) -> AppStatus {
+        AppStatus(model: model, microphone: .granted, accessibility: .granted)
+    }
+
     // MARK: Setup
 
     private static var setup: [SnapshotScene] {
@@ -86,6 +98,15 @@ public enum ScreenSnapshots {
                                     model: .failed(.couldNotLoad))),
             ("test-full", .sample(step: .test, microphone: .granted, accessibility: .granted,
                                   testText: fullTestField)),
+            ("model", .sample(step: .model, model: .sampleNotDownloaded, includesModel: true)),
+            ("model-downloading", .sample(step: .model, model: .sampleDownloading, includesModel: true)),
+            ("model-failed", .sample(step: .model, model: .sampleDownloadFailed, includesModel: true)),
+            ("model-done", .sample(step: .model, model: .preparing, includesModel: true)),
+            ("model-no-build", .sample(step: .model, model: .sampleNoBuild, includesModel: true)),
+            ("test-downloading", .sample(step: .test, microphone: .granted, accessibility: .granted,
+                                         model: .sampleDownloading, includesModel: true)),
+            ("test-not-downloaded", .sample(step: .test, microphone: .granted, accessibility: .granted,
+                                            model: .sampleNotDownloaded, includesModel: true)),
         ]
         return scenes.map { name, model in
             SnapshotScene(name: "setup-\(name)", size: WindowChrome.Kind.setup.defaultSize) {

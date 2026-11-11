@@ -168,8 +168,8 @@ public enum NoticeMessage: Sendable, Equatable {
             String(localized: "Microphone access is off in System Settings",
                    comment: "Notice: the user has not allowed the microphone")
         case .engineFailed(.modelMissing):
-            String(localized: "This build has no speech model",
-                   comment: "Notice: the app was built without the speech model")
+            String(localized: "The speech model isn’t downloaded yet",
+                   comment: "Notice: a dictation could not start because the speech model is not on this Mac")
         case .engineFailed(.modelCorrupt):
             String(localized: "The speech model is damaged. Reinstall the app.",
                    comment: "Notice: a model file does not match its manifest")

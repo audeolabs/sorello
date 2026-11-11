@@ -54,23 +54,36 @@ public final class DictionaryStore: Sendable {
         var dictionary: ScopedDictionary
         var revision: UInt64
         var file: FileState
+        /// The speech model's vocabulary, once the model is on this Mac.
+        var encoder: BPEEncoder?
+        var editor: ScopedDictionaryEditor
     }
 
     private let fileURL: URL
-    private let encoder: BPEEncoder?
-    private let editor: ScopedDictionaryEditor
     private let state: Mutex<State>
     public let opening: Opening
 
     /// Loads `fileURL`, creating its directory, readable only by the user, if it is missing. `encoder` is the speech
-    /// model's vocabulary; without it the dictionary loads but cannot be changed.
+    /// model's vocabulary; without it the dictionary loads but cannot be changed until `adoptVocabulary` gives it one.
     public init(fileURL: URL, encoder: BPEEncoder?) {
         self.fileURL = fileURL
-        self.encoder = encoder
-        editor = ScopedDictionaryEditor(encoder: encoder)
         let (opening, dictionary, file) = Self.load(fileURL, encoder: encoder)
         self.opening = opening
-        state = Mutex(State(dictionary: dictionary, revision: 1, file: file))
+        state = Mutex(State(dictionary: dictionary, revision: 1, file: file, encoder: encoder,
+                            editor: ScopedDictionaryEditor(encoder: encoder)))
+    }
+
+    /// Gives a store opened without the speech model's vocabulary the vocabulary, once the model has been downloaded,
+    /// so the dictionary can be changed without a relaunch. A store that has a vocabulary keeps the one it has.
+    /// Returns whether this one was taken.
+    @discardableResult
+    public func adoptVocabulary(_ encoder: BPEEncoder) -> Bool {
+        state.withLock { state in
+            guard state.encoder == nil else { return false }
+            state.encoder = encoder
+            state.editor = ScopedDictionaryEditor(encoder: encoder)
+            return true
+        }
     }
 
     /// Reads the file. A file that cannot be opened is left alone; one that opens but is not a dictionary is moved
@@ -97,7 +110,7 @@ public final class DictionaryStore: Sendable {
 
     /// Whether changes can be made: the vocabulary is loaded and nothing forbids writing the file. A file that could
     /// not be opened is tried again by the next change.
-    public var canEdit: Bool { editor.canEdit && state.withLock { $0.file } != .readOnly }
+    public var canEdit: Bool { state.withLock { $0.editor.canEdit && $0.file != .readOnly } }
 
     /// The words for a dictation into `appID` (nil: no app, as for a Run Log retry), with the revision they belong to.
     public func snapshot(for appID: String?) -> DictionarySnapshot {
@@ -110,53 +123,53 @@ public final class DictionaryStore: Sendable {
     /// Adds a word, or edits the entry `original` (its text may change), limited to `apps` (none: everywhere).
     public func save(text: String, strength: Float, apps: Set<String> = [],
                      replacing original: DictionaryKey? = nil) throws(DictionaryChangeError) {
-        try change { editor.saving(text: text, strength: strength, apps: apps, replacing: original, in: $0) }
+        try change { $0.saving(text: text, strength: strength, apps: apps, replacing: original, in: $1) }
     }
 
     /// Removes an entry and its app limits. Returns false when there was no such entry.
     @discardableResult
     public func remove(_ key: DictionaryKey) throws(DictionaryChangeError) -> Bool {
-        try change { editor.removing(key, in: $0) }
+        try change { $0.removing(key, in: $1) }
     }
 
     /// A suggestion's "Add to <App>" (`app`) or "Add everywhere" (nil). An existing word keeps its text, takes the
     /// higher strength, and gains the app unless it already applies everywhere.
     public func add(_ word: String, strength: Float, to app: DictionaryApp?) throws(DictionaryChangeError) {
-        try change { editor.adding(word, strength: strength, to: app, in: $0) }
+        try change { $0.adding(word, strength: strength, to: app, in: $1) }
     }
 
     /// Adds an app words can be limited to, or updates a known app's name.
     public func register(_ app: DictionaryApp) throws(DictionaryChangeError) {
-        try change { editor.registering(app, in: $0) }
+        try change { $0.registering(app, in: $1) }
     }
 
     /// Forgets an app and removes the words only it had. Returns false when the app was not known.
     @discardableResult
     public func removeApp(id: String) throws(DictionaryChangeError) -> Bool {
-        try change { editor.removingApp(id, in: $0) }
+        try change { $0.removingApp(id, in: $1) }
     }
 
     /// "Don't suggest": the key is never offered as a suggestion again.
     public func ignore(_ key: DictionaryKey) throws(DictionaryChangeError) {
-        try change { editor.ignoring(key, in: $0) }
+        try change { $0.ignoring(key, in: $1) }
     }
 
     /// Takes a key off the ignore list. Returns false when it was not on it.
     @discardableResult
     public func unignore(_ key: DictionaryKey) throws(DictionaryChangeError) -> Bool {
-        try change { editor.unignoring(key, in: $0) }
+        try change { $0.unignoring(key, in: $1) }
     }
 
     /// Validates, writes, then publishes. Returns whether anything changed; an edit that changes nothing is neither
     /// written nor published.
     @discardableResult
     private func change(
-        _ propose: (ScopedDictionary) -> Result<ScopedDictionary, DictionaryChangeError>?
+        _ propose: (ScopedDictionaryEditor, ScopedDictionary) -> Result<ScopedDictionary, DictionaryChangeError>?
     ) throws(DictionaryChangeError) -> Bool {
         let outcome: Result<Bool, DictionaryChangeError> = state.withLock { state in
-            guard editor.canEdit else { return .failure(.noVocabulary) }
+            guard state.editor.canEdit else { return .failure(.noVocabulary) }
             if state.file == .unopened {
-                let (_, dictionary, file) = Self.load(fileURL, encoder: encoder)
+                let (_, dictionary, file) = Self.load(fileURL, encoder: state.encoder)
                 guard file != .unopened else { return .failure(.notSaved) }
                 if dictionary != state.dictionary {
                     state.dictionary = dictionary
@@ -164,7 +177,7 @@ public final class DictionaryStore: Sendable {
                 }
                 state.file = file
             }
-            guard let proposed = propose(state.dictionary) else { return .success(false) }
+            guard let proposed = propose(state.editor, state.dictionary) else { return .success(false) }
             switch proposed {
             case .failure(let error):
                 return .failure(error)

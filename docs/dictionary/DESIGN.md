@@ -88,8 +88,8 @@ The stored text is the normalized text. (`DictionaryEntryError` and
 `normalize`, `encodable`, `check_strength` and `validate`,
 `lf-text/src/dictionary.rs:176-241`; vectors `validation`; `EntryTests.validation`)
 
-Some callers have no vocabulary: loading in a build without the bundled
-model, or the Linux `localflowctl dict list` without the model. These callers skip
+Some callers have no vocabulary: loading before the speech model is on the
+Mac, or the Linux `localflowctl dict list` without the model. These callers skip
 the `<unk>` check in step 3 and nothing else.
 (`DictionaryValidation.validate` with a nil encoder,
 `DictionaryEntry.swift`; `parse` with no tokenizer,

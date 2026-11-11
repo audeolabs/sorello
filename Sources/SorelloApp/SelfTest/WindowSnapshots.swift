@@ -17,7 +17,8 @@ import SwiftUI
 ///
 /// The stores are real and live in a temporary directory, filled with invented words, macros and Run Log entries,
 /// and one dictation is run through the session so the menu's Copy Last Dictation is available. The engine and the
-/// platform are stand-ins that report ready and granted, so the pictures show the app as it is when all is well.
+/// platform are stand-ins that report ready and granted, and the model's download is one that says the model is here
+/// and is as large as the app's own pin says, so the pictures show the app as it is when all is well.
 @MainActor
 enum WindowSnapshots {
     static func run(into directory: URL) -> Never {
@@ -52,12 +53,13 @@ enum WindowSnapshots {
         let capture = FileCapture(clock: clock)
         let microphones = [AudioInputDevice(id: "built-in", name: "MacBook Pro Microphone", isDefault: true),
                            AudioInputDevice(id: "studio", name: "Studio Headset", isDefault: false)]
+        let info = AppInfo.main()
         let app = AppComposition(
-            info: AppInfo.main(), storage: AppStorage(paths: AppPaths(root: data), defaults: defaults),
+            info: info, storage: AppStorage(paths: AppPaths(root: data), defaults: defaults),
             platform: .quiet(capture: capture, inserter: RecordingInserter(), trusted: true,
                              microphones: microphones, clock: clock),
             speech: { _ in ReadySpeech(transcript: "Meet Okonkwo by the north gate at nine.") },
-            pill: NoPill(), levels: LevelFeed())
+            download: HeldDownload(info), pill: NoPill(), levels: LevelFeed())
         let models = WindowModels(app: app)
         await fill(app, capture: capture, clock: clock)
         // Let the models follow what changed.
@@ -77,6 +79,8 @@ enum WindowSnapshots {
                     .frame(width: size.width, height: size.height).preferredColorScheme(.dark))
             })
         }
+        // Every step, the model's included, as a setup that opens without the model has them.
+        models.setup.steps = SetupStep.allCases
         for step in SetupStep.allCases {
             scenes.append(SnapshotScene(name: "app-setup-\(slug(step))", size: WindowChrome.Kind.setup.defaultSize) {
                 models.setup.step = step
@@ -215,6 +219,7 @@ enum WindowSnapshots {
     private static func slug(_ step: SetupStep) -> String {
         switch step {
         case .welcome: "welcome"
+        case .model: "model"
         case .microphone: "microphone"
         case .accessibility: "accessibility"
         case .shortcut: "shortcut"
@@ -276,4 +281,33 @@ private final class NoPill: PillPresenting {
     var onCancel: () -> Void = {}
     var onNoticeAction: (UInt64, String) -> Void = { _, _ in }
     func show(_ display: PillDisplay) {}
+}
+
+/// The model's download as the pictures have it: the model is here, so nothing is offered or started, and its size is
+/// the one the app's own pin gives this Mac, which setup's model step states. The vocabulary is the carried model's,
+/// when the app carries one, as it is without a download.
+nonisolated private final class HeldDownload: ModelDownloading {
+    let size: Int64
+    private let encoder: BPEEncoder?
+
+    init(_ info: AppInfo) {
+        size = info.pin?.build(for: .current())?.bytes ?? 0
+        encoder = info.modelDirectory.flatMap {
+            try? BPEEncoder(vocabularyFile: $0.appendingPathComponent("vocabulary.json"))
+        }
+    }
+
+    var current: ModelDownloadState { .installed }
+
+    func states() -> AsyncStream<ModelDownloadState> {
+        AsyncStream { continuation in
+            continuation.yield(.installed)
+            continuation.finish()
+        }
+    }
+
+    func start() {}
+    func cancel() {}
+    func refresh() {}
+    func vocabulary() -> BPEEncoder? { encoder }
 }

@@ -60,12 +60,17 @@ final class AppShell: NSObject, NSApplicationDelegate {
         let clock = platform.clock
         let overlay = PillOverlayController(levels: levels, clock: { clock.now })
         self.overlay = overlay
+        // The engine and the download are made together, from the same pinned model, so they mean the same build.
+        let model = info.pin.map {
+            PinnedModel(pin: $0, storeDirectory: paths.modelsDirectory, carriedDirectory: info.modelDirectory)
+        }
         let app = AppComposition(
             info: info, storage: AppStorage(paths: paths, defaults: .standard), platform: platform,
             speech: { store in
-                SpeechEngine(modelDirectory: info.modelDirectory, storeDirectory: paths.modelsDirectory,
-                             dictionary: { store.snapshot(for: $0) })
+                SpeechEngine.forApp(info, model: model, store: paths.modelsDirectory, compute: .forThisMac(),
+                                    dictionary: { store.snapshot(for: $0) })
             },
+            download: model.map { PinnedDownload(model: $0, version: info.version) },
             pill: overlay, levels: levels)
         self.app = app
         let models = WindowModels(app: app)
@@ -151,6 +156,8 @@ final class AppShell: NSObject, NSApplicationDelegate {
 
     private func showSetup() {
         guard let models, let app else { return }
+        // The steps are fixed as setup opens: once the model's step is there, it stays for that setup.
+        if !windows.isShowingSetup { models.setup.steps = models.setupSteps }
         models.setup.step = models.setupStartStep
         windows.showSetup(models.setup, title: app.info.name)
     }

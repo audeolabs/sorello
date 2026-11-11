@@ -48,7 +48,20 @@ public final class AboutModel {
     }
 }
 
-/// About: the name and version, the promise that nothing leaves the Mac, the model's notice and everyone else's.
+/// About's promise, in words that are true of an app that downloads its speech model (ARCHITECTURE.md, section 9,
+/// invariant 1): what is said stays on the Mac, and the download is the one thing the app connects for.
+nonisolated enum AboutCopy {
+    /// The promise.
+    static var privacyTitle: String { String(localized: "Nothing you say leaves this Mac.") }
+
+    /// What stays on the Mac, and the one connection the app makes.
+    static func privacyDetail(appName: String) -> String {
+        String(localized: "Speech is recognised here, and the Run Log, the dictionary and your settings stay here. \(appName) connects to the network only to download its speech model.",
+               comment: "About: the app's name")
+    }
+}
+
+/// About: the name and version, the promise that nothing said leaves the Mac, the model's notice and everyone else's.
 public struct AboutScreen: View {
     private let model: AboutModel
 
@@ -77,9 +90,8 @@ public struct AboutScreen: View {
 
             CardGroup(String(localized: "Privacy")) {
                 Card {
-                    SettingRow(String(localized: "\(model.appName) makes no network connections."),
-                               detail: String(localized: "Speech is recognised on this Mac. The Run Log, the dictionary and your settings never leave it."),
-                               symbol: "network.slash", symbolTint: Theme.ink)
+                    SettingRow(AboutCopy.privacyTitle, detail: AboutCopy.privacyDetail(appName: model.appName),
+                               symbol: "eye.slash", symbolTint: Theme.ink)
                 }
             }
             CardGroup(String(localized: "Speech model")) {

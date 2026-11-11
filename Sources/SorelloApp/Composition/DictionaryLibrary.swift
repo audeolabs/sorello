@@ -14,8 +14,8 @@ import Observation
 final class DictionaryLibrary {
     /// The store the engine reads its snapshots from.
     @ObservationIgnored let store: DictionaryStore
-    /// The speech model's vocabulary, for validating what is typed; nil without the model.
-    @ObservationIgnored let encoder: BPEEncoder?
+    /// The speech model's vocabulary, for validating what is typed; nil until the model is on this Mac.
+    @ObservationIgnored private(set) var encoder: BPEEncoder?
     /// Called after every published change.
     @ObservationIgnored var didChange: (@MainActor () -> Void)?
 
@@ -31,6 +31,14 @@ final class DictionaryLibrary {
         self.encoder = encoder
         dictionary = store.dictionary
         revision = store.revision
+        canEdit = store.canEdit
+    }
+
+    /// The model has arrived: the dictionary takes its vocabulary and can be changed from now on, without a relaunch.
+    func adoptVocabulary(_ encoder: BPEEncoder) {
+        guard self.encoder == nil else { return }
+        store.adoptVocabulary(encoder)
+        self.encoder = encoder
         canEdit = store.canEdit
     }
 

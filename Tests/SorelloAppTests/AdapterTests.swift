@@ -4,6 +4,7 @@ import Foundation
 import MacPlatform
 import Persistence
 import SorelloUI
+import SpeechEngine
 import Testing
 import TextRules
 @testable import SorelloApp
@@ -198,7 +199,22 @@ private struct NoLayout: KeyboardLayout {
     @Test func theEngineAndPermissionsAsTheWindowsShowThem() {
         #expect(ModelStatus(.preparing) == .preparing)
         #expect(ModelStatus(.ready) == .ready)
-        #expect(ModelStatus(.failed(.modelMissing)) == .failed(.missing))
+        #expect(ModelStatus(.failed(.modelMissing)) == .notDownloaded(.unavailable), "A copy with nothing to download")
+        let size: Int64 = 138_084_519
+        #expect(ModelStatus(.failed(.modelMissing), download: .absent, size: size)
+                == .notDownloaded(.notStarted(size: size)))
+        #expect(ModelStatus(.failed(.modelMissing), download: .downloading(received: 7), size: size)
+                == .notDownloaded(.downloading(received: 7, size: size)))
+        for (failure, problem) in [(ModelDownloadFailure.connection, ModelDownloadProblem.connection),
+                                   (.server, .server), (.check, .check), (.disk, .disk)] {
+            #expect(ModelStatus(.failed(.modelMissing), download: .failed(failure), size: size)
+                    == .notDownloaded(.failed(problem, size: size)))
+        }
+        #expect(ModelStatus(.failed(.modelMissing), download: .unavailable, size: 0) == .notDownloaded(.unavailable))
+        #expect(ModelStatus(.failed(.modelMissing), download: .installed, size: size) == .preparing,
+                "The model has arrived and the engine is about to look for it")
+        #expect(ModelStatus(.ready, download: .absent, size: size) == .ready, "The engine's own state wins")
+        #expect(ModelStatus(.failed(.loadFailed), download: .installed, size: size) == .failed(.couldNotLoad))
         #expect(ModelStatus(.failed(.modelCorrupt)) == .failed(.damaged))
         #expect(ModelStatus(.failed(.loadFailed)) == .failed(.couldNotLoad))
         #expect(MicrophoneStatus(.unknown) == .notDetermined)

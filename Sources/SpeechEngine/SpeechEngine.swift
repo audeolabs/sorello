@@ -5,8 +5,11 @@ import Synchronization
 
 /// Loads the model on the engine's executor, or says why it cannot.
 typealias ModelLoader = @Sendable () throws(EngineFailure) -> any SpeechModel
+/// Looks for the model on the engine's executor, each time it is asked to prepare: how to load it, or nil when it is
+/// not on this Mac.
+typealias ModelLocator = @Sendable () -> ModelLoader?
 
-/// Turns speech into text with the bundled model (ARCHITECTURE.md, sections 4 and 5).
+/// Turns speech into text with the pinned model (ARCHITECTURE.md, sections 4 and 5).
 ///
 /// The engine is an actor with its own serial executor, a dispatch queue, so blocking Core ML and Accelerate calls
 /// never occupy the cooperative thread pool. Model loading, warm-up, every prediction and every decode run there, one
@@ -23,7 +26,7 @@ public actor SpeechEngine: SpeechTranscribing {
     private let queue = DispatchSerialQueue(label: "sorello.speech", qos: .userInitiated)
     /// Where the encoder runs, chosen when the engine was made. The General screen says which one this Mac uses.
     public nonisolated let compute: SpeechCompute
-    private let loader: ModelLoader?
+    private let locate: ModelLocator
     private let dictionary: @Sendable (String?) -> DictionarySnapshot
     private let retainedLifetime: TimeInterval
     private let beforeDelivery: (@Sendable (UInt64) -> Void)?
@@ -40,14 +43,24 @@ public actor SpeechEngine: SpeechTranscribing {
 
     public nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
 
-    /// - `modelDirectory`: the model bundle in the app's resources; nil when the app was built without the model,
-    ///   which makes the engine `failed(.modelMissing)` for good.
-    /// - `storeDirectory`: where the stable copy of the model is kept (`Application Support/<bundle id>/Models`), so
-    ///   the Neural Engine's compiled model survives app updates; nil loads straight from `modelDirectory`. The CPU
-    ///   fallback loads the same copy, so both paths check the same files and share one store.
+    /// The engine the app uses (ARCHITECTURE.md, section 5, "Getting the model"). Each time it is asked to prepare it
+    /// looks for `model`'s build: in the store, then in the app when the app carries it, which is copied to the store
+    /// once. Until it finds it, the engine is `failed(.modelMissing)`, so it becomes ready without a relaunch once a
+    /// download has put the model in the store.
     /// - `compute`: where the encoder runs. The default reads this Mac's hardware, once, now; the verification tools
     ///   pass `.cpu` to prove the fallback on a Mac that has a Neural Engine.
     /// - `dictionary`: the words for a dictation into an app (nil: no app), read once when its stream opens.
+    public init(model: PinnedModel, compute: SpeechCompute = .forThisMac(),
+                dictionary: @escaping @Sendable (String?) -> DictionarySnapshot) {
+        self.init(locate: Self.locator(model, compute: compute), present: model.isOnThisMac, compute: compute,
+                  dictionary: dictionary)
+    }
+
+    /// An engine for a model bundle given directly, as `sorello-transcribe --model` gives one.
+    /// - `modelDirectory`: the bundle; nil gives the engine nowhere to look, so it stays `failed(.modelMissing)`.
+    /// - `storeDirectory`: where the stable copy of the bundle is kept, so the Neural Engine's compiled model survives
+    ///   a rebuild; nil loads straight from `modelDirectory`. The CPU fallback loads the same copy, so both paths
+    ///   check the same files and share one store.
     public init(modelDirectory: URL?, storeDirectory: URL?, compute: SpeechCompute = .forThisMac(),
                 dictionary: @escaping @Sendable (String?) -> DictionarySnapshot) {
         let loader = modelDirectory.map { bundle in
@@ -56,20 +69,82 @@ public actor SpeechEngine: SpeechTranscribing {
         self.init(loader: loader, compute: compute, dictionary: dictionary)
     }
 
-    /// `beforeDelivery` runs on the engine's executor after a stream's result is made and before it is handed over,
-    /// so tests can land a cancel there.
+    /// An engine whose model is always `loader`, or never there when it is nil.
     init(loader: ModelLoader?, compute: SpeechCompute = .neuralEngine,
+         dictionary: @escaping @Sendable (String?) -> DictionarySnapshot,
+         retainedLifetime: TimeInterval = 90, beforeDelivery: (@Sendable (UInt64) -> Void)? = nil) {
+        self.init(locate: { loader }, present: loader != nil, compute: compute, dictionary: dictionary,
+                  retainedLifetime: retainedLifetime, beforeDelivery: beforeDelivery)
+    }
+
+    /// `present` says whether the model looks to be there now, which decides the first readiness: `preparing`, or
+    /// `failed(.modelMissing)`. `beforeDelivery` runs on the engine's executor after a stream's result is made and
+    /// before it is handed over, so tests can land a cancel there.
+    init(locate: @escaping ModelLocator, present: Bool, compute: SpeechCompute = .neuralEngine,
          dictionary: @escaping @Sendable (String?) -> DictionarySnapshot,
          retainedLifetime: TimeInterval = 90, beforeDelivery: (@Sendable (UInt64) -> Void)? = nil) {
         self.compute = compute
         self.beforeDelivery = beforeDelivery
-        self.loader = loader
+        self.locate = locate
         self.dictionary = dictionary
         self.retainedLifetime = retainedLifetime
-        readinessHub = ReadinessHub(loader == nil ? .failed(.modelMissing) : .preparing)
+        readinessHub = ReadinessHub(present ? .preparing : .failed(.modelMissing))
     }
 
-    /// The bundled model on `compute`, from the store's stable copy when there is one.
+    /// Where `model` is, looked for afresh each time: the store's complete copy, else the app's own copy installed
+    /// into the store (or loaded in place when the store cannot take it), else nothing.
+    static func locator(_ model: PinnedModel, compute: SpeechCompute) -> ModelLocator {
+        let store = ModelStore(root: model.storeDirectory)
+        return { () -> ModelLoader? in
+            guard let identity = model.build?.manifestSHA256 else { return nil }
+            let carried = model.carriedDirectory
+            if let stored = store.stored(identity) {
+                return storedLoader(stored, store: store, carried: carried, compute: compute)
+            }
+            guard let carried else { return nil }
+            if let installed = store.install(bundle: carried, as: identity) {
+                return storedLoader(installed, store: store, carried: carried, compute: compute)
+            }
+            return { () throws(EngineFailure) -> any SpeechModel in try load(carried, compute: compute) }
+        }
+    }
+
+    /// Loads the store's copy. Files that do not match the manifest are removed with the copy; then the app's own
+    /// copy is loaded in place if it has one, and otherwise the model is missing again, so it can be downloaded
+    /// again. A copy whose files are right but which Core ML will not load is kept and reported, unless the app's
+    /// own copy can stand in for it.
+    private static func storedLoader(_ directory: URL, store: ModelStore, carried: URL?,
+                                     compute: SpeechCompute) -> ModelLoader {
+        { () throws(EngineFailure) -> any SpeechModel in
+            let model: CoreMLSpeechModel
+            do {
+                model = try CoreMLSpeechModel(directory: directory, compute: compute)
+            } catch {
+                store.discard(directory)
+                guard let carried else { throw .modelMissing }
+                store.disable()
+                return try load(carried, compute: compute)
+            }
+            do throws(EngineFailure) {
+                try model.prepare()
+                return model
+            } catch {
+                guard let carried else { throw error }
+                store.disable()
+                store.discard(directory)
+                return try load(carried, compute: compute)
+            }
+        }
+    }
+
+    /// The model at `directory`, verified and warmed.
+    private static func load(_ directory: URL, compute: SpeechCompute) throws(EngineFailure) -> any SpeechModel {
+        let model = try CoreMLSpeechModel(directory: directory, compute: compute)
+        try model.prepare()
+        return model
+    }
+
+    /// A model bundle given directly, on `compute`, from the store's stable copy when there is one.
     private static func loader(bundle: URL, store: ModelStore?, compute: SpeechCompute) -> ModelLoader {
         { () throws(EngineFailure) -> any SpeechModel in
             guard let store else {
@@ -94,7 +169,6 @@ public actor SpeechEngine: SpeechTranscribing {
     /// Concurrent calls share one attempt: a call joins the attempt in progress the moment it is made, even while
     /// the engine's executor is busy loading, and only a call made after an attempt has ended starts a new one.
     public nonisolated func prepare() async {
-        guard loader != nil else { return }
         _ = await joinPreparation(retryAfterFailure: true)
     }
 
@@ -108,7 +182,8 @@ public actor SpeechEngine: SpeechTranscribing {
             case .joined:
                 break
             case .started:
-                readinessHub.publish(.preparing)
+                // An engine without its model says it is preparing only once it has found the model.
+                if readinessHub.current != .failed(.modelMissing) { readinessHub.publish(.preparing) }
                 Task { await self.runPreparation() }
             }
         }
@@ -118,16 +193,21 @@ public actor SpeechEngine: SpeechTranscribing {
     public nonisolated func readiness() -> AsyncStream<EngineReadiness> { readinessHub.subscribe() }
 
     private func runPreparation() {
-        guard let loader else { return }
         let started = ContinuousClock.now
         let outcome: EngineReadiness
-        do {
-            model = try loader()
-            Diagnostics.record("speech.prepared", ["seconds": Self.seconds(since: started)])
-            outcome = .ready
-        } catch {
-            Diagnostics.record("speech.preparationFailed", ["seconds": Self.seconds(since: started)])
-            outcome = .failed(error)
+        if let loader = locate() {
+            readinessHub.publish(.preparing)
+            do {
+                model = try loader()
+                Diagnostics.record("speech.prepared", ["seconds": Self.seconds(since: started)])
+                outcome = .ready
+            } catch {
+                Diagnostics.record("speech.preparationFailed", ["seconds": Self.seconds(since: started)])
+                outcome = .failed(error)
+            }
+        } else {
+            Diagnostics.record("speech.modelMissing")
+            outcome = .failed(.modelMissing)
         }
         readinessHub.publish(outcome)
         for waiter in preparation.finish(outcome) { waiter.resume(returning: outcome) }
@@ -138,7 +218,6 @@ public actor SpeechEngine: SpeechTranscribing {
     /// attempt gets that attempt's outcome, even if a retry has started since.
     private func readyModel() async throws(SpeechFailure) -> any SpeechModel {
         if let model { return model }
-        guard loader != nil else { throw .engineUnavailable(.modelMissing) }
         // One step decides whether to wait, start the first attempt, or report the last failure, so a stream never
         // starts a new attempt after one has failed.
         if case .failed(let failure) = await joinPreparation(retryAfterFailure: false) {
@@ -582,6 +661,9 @@ final class ReadinessHub: Sendable {
     init(_ initial: EngineReadiness) {
         state = Mutex(State(current: initial))
     }
+
+    /// The readiness last published.
+    var current: EngineReadiness { state.withLock { $0.current } }
 
     func subscribe() -> AsyncStream<EngineReadiness> {
         let (stream, continuation) = AsyncStream<EngineReadiness>.makeStream()

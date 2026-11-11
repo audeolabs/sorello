@@ -11,8 +11,8 @@ extension WindowModels {
         let general = main.general, app = self.app
         general.hardware = ModelHardware(app.speech.compute)
         follow { [unowned self] in
-            general.modelName = app.info.modelName ?? String(localized: "No speech model",
-                                                             comment: "General: the app was built without a model")
+            general.modelName = app.info.modelName ?? String(localized: "Speech model",
+                                                             comment: "General: the model's row, when it has no name")
             general.status = status
             general.microphones = app.live.microphones.map { MicrophoneOption(id: $0.id, name: $0.name) }
             general.selectedMicrophoneID = app.settings.microphoneID
@@ -21,6 +21,8 @@ extension WindowModels {
         }
         general.actions = GeneralActions(
             retryModel: { app.runtime.retryPreparation() },
+            downloadModel: { app.startDownload() },
+            cancelDownload: { app.cancelDownload() },
             requestMicrophone: { [unowned self] in requestMicrophone() },
             openMicrophoneSettings: { app.platform.system.openMicrophoneSettings() },
             openAccessibilitySettings: { [unowned self] in grantAccessibility() },

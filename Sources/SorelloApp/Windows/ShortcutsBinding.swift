@@ -107,6 +107,7 @@ extension WindowModels {
             openAccessibilitySettings: { [unowned self] in grantAccessibility() },
             openKeyboardSettings: { if let pane = SettingsPane.keyboard { app.platform.system.open(pane) } },
             retryModel: { app.runtime.retryPreparation() },
+            downloadModel: { app.startDownload() },
             recorder: recorderActions,
             finish: {
                 app.settings.setupCompleted = true
@@ -114,20 +115,38 @@ extension WindowModels {
             })
     }
 
-    /// Whether setup should open at launch: the first time, and whenever a permission is missing. The microphone is
-    /// missing only once it was refused; never asked is not a problem, because the first dictation asks.
+    /// Whether setup should open at launch: the first time, whenever a permission is missing, and while the model
+    /// is not on the Mac and can be downloaded. The microphone is missing only once it was refused; never asked is not
+    /// a problem, because the first dictation asks.
     var setupIsNeeded: Bool {
         let status = self.status
-        return !app.settings.setupCompleted || status.accessibility == .missing || status.microphone == .denied
+        return !app.settings.setupCompleted || modelCanBeDownloaded || status.accessibility == .missing
+            || status.microphone == .denied
     }
 
-    /// The step setup opens at: the start the first time, otherwise the first permission that is missing.
+    /// The step setup opens at: the start the first time, otherwise the model's step while it can be downloaded, then
+    /// the first permission that is missing.
     var setupStartStep: SetupStep {
         let status = self.status
         guard app.settings.setupCompleted else { return .welcome }
+        if modelCanBeDownloaded { return .model }
         if status.microphone == .denied { return .microphone }
         if status.accessibility == .missing { return .accessibility }
         return .welcome
+    }
+
+    /// The steps a setup opening now has: the model's only when the model is not on the Mac.
+    var setupSteps: [SetupStep] {
+        let here = app.download.map { $0.current == .installed } ?? true
+        return SetupStep.steps(includingModel: !here)
+    }
+
+    /// The model is not on the Mac, and a download could get it: none has started, or the last one stopped.
+    private var modelCanBeDownloaded: Bool {
+        switch app.live.modelDownload ?? app.download?.current {
+        case .absent?, .failed?: true
+        default: false
+        }
     }
 }
 

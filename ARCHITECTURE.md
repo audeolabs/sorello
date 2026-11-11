@@ -2,8 +2,8 @@
 
 Sorello is a menu-bar dictation app for the Mac, on Apple silicon and on
 Intel. You hold a key, speak, and release; the words appear at the cursor.
-Speech recognition runs on the Mac with a bundled model. Sorello makes no
-network connections.
+Speech recognition runs on the Mac, with a model Sorello downloads once,
+during setup. That download is the only network connection Sorello makes.
 
 This document is the contract the code is written against. It states what
 each part does and where the boundaries are. When behaviour and this
@@ -60,14 +60,14 @@ Sendable` without a comment that says which lock or queue makes it safe.
 | `TextRules` | neutral, pure | nothing | Numbers, spoken delimiters, macros, prompt tag, insertion-context fitting |
 | `DictionaryKit` | neutral | nothing | Entries, validation, tokenizer, bias graph, casing, correction decisions and the correction watch, the `TextFieldReading` protocol it reads text through, the dictionary file |
 | `DesignCore` | neutral, pure | nothing | Palette, dot wave, level meter, pill geometry, motion constants, the mark |
-| `SpeechEngine` | neutral | `DictationCore`, `DictionaryKit` | Model store, feature front end, Core ML encoder, decoder, chunked streaming |
+| `SpeechEngine` | neutral | `DictationCore`, `DictionaryKit` | The model's pin, download and store, feature front end, Core ML encoder, decoder, chunked streaming |
 | `Persistence` | neutral | `DictationCore`, `TextRules` | Settings, macros, Run Log |
 | `SorelloUI` | macOS UI | `DesignCore` | The pill, its overlay window, every screen and control |
 | `MacPlatform` | macOS | `DictationCore`, `DictionaryKit` | Shortcuts, audio capture, text insertion, Accessibility reads, permissions |
 | `SorelloApp` | macOS | all of the above | Composition: builds the objects, connects them, owns windows and the menu bar item |
 | `Sorello` | executable | `SorelloApp` | `@main` only |
 | `SorelloSnapshots` | executable | `SorelloUI` | Renders every pill state and screen to PNG files |
-| `sorello-transcribe` | executable | `SpeechEngine` | Transcribes a WAV file with the real model, for verification |
+| `sorello-transcribe` | executable | `SpeechEngine` | Transcribes a WAV file with the real model, and downloads the model as the app does, for verification |
 
 Rules the compiler enforces through the package graph:
 
@@ -340,7 +340,10 @@ How the runtime uses them:
   model. `finish` is called once; `cancel` wins over it and makes a pending
   `finish` throw `cancelled` promptly. If preparation fails, every waiting
   `finish` throws `engineUnavailable`; `prepare` called again starts a new
-  attempt, and concurrent calls share one.
+  attempt, and concurrent calls share one. `failed(.modelMissing)` means
+  no model is on the Mac yet. A new attempt looks for it again, so the
+  engine becomes ready without a relaunch once the model has arrived
+  (section 5).
 - **Text.** The processor is a snapshot taken when the dictation starts, so
   editing a macro while a dictation waits changes nothing for it. Insertion
   context is read only when the dictation reaches the head of the pipeline,
@@ -380,20 +383,24 @@ Ported from LocalFlow's runtime, which was measured and tuned there:
 - `SpeechEngine` is an actor with its own serial executor. Model loading,
   warm-up and every prediction run there, one at a time. `append` on a
   stream never waits for model work.
-- The bundle is copied once to `Application Support/<bundle id>/Models/<hash>`
-  under a file lock, because Core ML's Neural Engine cache is keyed by the
-  model file's path and identity; loading from the app bundle would
-  recompile after every update. Each file's SHA-256 is checked against the
-  bundle's manifest before loading. The CPU fallback loads the same copy,
-  so both paths share one store and one check. The manifest's
-  `compute_units` records how the bundle was exported; nothing reads it.
+- The model is loaded from the store,
+  `Application Support/<bundle id>/Models/<hash>`, one directory named by
+  the SHA-256 of the model's manifest, because
+  Core ML's Neural Engine cache is keyed by the model file's path and
+  identity: a copy that is never rewritten stays warm across app updates
+  that keep the model. Each file's SHA-256 is checked against the
+  manifest before loading. The CPU fallback loads the same copy, so both
+  paths share one store and one check. The manifest's `compute_units`
+  records how the model was exported; nothing reads it. How the model
+  gets into the store is under "Getting the model" below.
 - Audio is cut into 15 s chunks that overlap by 2 s and are joined on a
   word both chunks heard. Long silences are compacted first. The shared
   vectors in `Tests/Vectors` pin this behaviour, as they do on Linux.
-- Preparation starts at launch. The first preparation on a machine can take
-  minutes on the Neural Engine, which compiles the model for itself; the
-  fallback takes seconds every time. The menu and the General screen show
-  its state and offer a retry after a failure.
+- Preparation starts at launch, and again when a download has put the
+  model in the store. The first preparation on a machine can take minutes
+  on the Neural Engine, which compiles the model for itself; the fallback
+  takes seconds every time. The menu and the General screen show its
+  state and offer a retry after a failure.
 - The dictionary biases decoding through a graph built per dictionary
   revision and app. `docs/dictionary/DESIGN.md` is the contract for
   entries, validation, boosting and correction suggestions.
@@ -404,6 +411,75 @@ Ported from LocalFlow's runtime, which was measured and tuned there:
   A late result from an older dictation never replaces a newer one's.
   Starting a new recording, clearing the Run Log, or the watch ending
   releases it.
+
+### Getting the model
+
+The app does not carry the model. `Models/model.lock.json`, the pin, ships
+in the app as `Contents/Resources/model.lock.json`, and it is all Sorello
+knows about where the model is and what it must be:
+
+- `source`: the address the model's files are under, at one fixed revision
+  of the model's repository on Hugging Face.
+- `builds`: each is a directory under `source` that holds one complete
+  model. A build gives the SHA-256 of its `bundle.json`, its size in
+  bytes, and what it `requires` of the Mac. The only requirement today is
+  `macos`, the lowest system version it runs on.
+
+Sorello uses the first build whose requirements this Mac meets. A build
+that requires something this version of Sorello does not know is passed
+over, so a later pin can list builds for other Macs (an older system, a
+Mac without a Neural Engine) and an app that has never heard of them
+takes none of them by mistake. One build is listed today, for macOS 26 or
+later; a Mac without a Neural Engine runs that same build on its
+processor until it has a build of its own. Builds for other Macs wait on
+other branches of the model's repository until they have been tested, and
+join the list then: nothing else in Sorello changes when one does. When
+no build fits this Mac, Sorello says so and offers no download.
+
+Where the engine looks, in order: the store; then the app itself, when it
+was built with `SORELLO_MODEL_DIR` and so carries a build the pin lists
+that this Mac meets, which is copied to the store once, under the store's
+file lock; otherwise the model is absent. Then the engine reports
+`failed(.modelMissing)`, and it looks again each time it is asked to
+prepare. Once the pinned model is complete in the store, everything else
+there is removed. A stored copy whose files do not match its manifest is
+removed when the engine loads it; without a copy in the app, the model is
+then absent again, and the download is offered again.
+
+The download:
+
+- **Only when asked.** It starts when the user presses Download, in setup
+  or on the General screen, and at no other time: not at launch, not on a
+  timer, and not again by itself after it fails or the app quits.
+- **What is fetched.** `bundle.json` first, which must have the SHA-256
+  the pin gives. Then every file it lists, at the path it lists, each
+  checked against the manifest's SHA-256 when it is complete. A path that
+  is absolute or leaves the build's directory is refused. A file that
+  fails its check is deleted and the download fails. Sorello never writes
+  more bytes than the pin says the build has.
+- **Where it goes.** Into a directory of its own inside the store, which
+  outlives the app quitting. One process at a time downloads into it;
+  another waits for it, and then usually finds the model there. When every file is there and checked, that
+  directory becomes the stored model in one rename, under the store's
+  lock, as a copy from the app does, and the engine is asked to prepare.
+  Nothing is loaded from a download that has not finished, and the engine
+  checks every file again when it loads.
+- **Stopping and going on.** Cancel stops at once. A download that was
+  cancelled, failed, or cut off by quitting goes on from what it has when
+  the user starts it again: finished files are not fetched again, and a
+  part of a file is continued with a range request when the server
+  honours it, and fetched from its start when it does not.
+- **What the user sees.** The bytes received out of the build's size, and
+  when it fails, why, in one of four plain sentences: there is no
+  connection or it dropped; the server did not provide the model; what
+  arrived did not pass its check; the disk is full. None carries an
+  address or a file name.
+- **The connection.** HTTPS only, to `source` and to wherever its host
+  redirects, at most five times and only to HTTPS. One session with no
+  cookies, no cache and no stored credentials. Each request is a GET with
+  `User-Agent: Sorello/<version>`, `Accept-Language: en`, and `Range` when
+  it continues a file; Sorello adds nothing else. A connection that is
+  silent for 30 seconds is given up as dropped.
 
 ## 6. macOS adapters
 
@@ -695,8 +771,9 @@ without moving anything.
   gives it no colours, no rows drawn by hand and no window of its own.
   From the top:
   - the state line with its dot, which is not a command, and under it the
-    command that mends the state when there is one (Retry for the model,
-    the General screen for a permission);
+    command that mends the state when there is one (Retry for a model
+    that failed to load, the General screen for a permission or for a
+    model to download);
   - under the heading Shortcuts, the three shortcuts, each with its keys
     at the trailing edge of its row, or "Not set" there. Choosing one
     opens the Shortcuts screen;
@@ -712,9 +789,29 @@ without moving anything.
   as wide as its own rows and their keys need, like any other menu.
 - **Main window**: a sidebar (General, Shortcuts, Dictionary, Macros, Run
   Log, About) over the screen colour, content in cards.
-- **Setup**: welcome, microphone, Accessibility, shortcut, and a live test.
-  The test has a text field of its own with keyboard focus, so the
-  dictation is pasted there by the ordinary path and nowhere else.
+- **Setup**: welcome, the speech model, microphone, Accessibility,
+  shortcut, and a live test. The model's step is there only when the
+  model is not on the Mac as setup opens, and then it stays for that
+  setup. It says how large the download is and that nothing said to
+  Sorello leaves the Mac; the General screen says where it comes from.
+  Its button starts the download. Once it has started, the user
+  can go on, and it continues behind the later steps. The test has a text
+  field of its own with keyboard focus, so the dictation is pasted there
+  by the ordinary path and nowhere else; until the model is ready, the
+  test says what it is waiting for. At launch, a model that is absent and
+  can be downloaded opens setup at its step, as a missing permission
+  opens it at that permission's.
+- **The model's state** is said the same way wherever it shows. Ready,
+  preparing and failed to load are as they were. When the model is not on
+  the Mac, the menu's state line says "Speech model not downloaded" and
+  its command opens the General screen, where the model's row says how
+  large the download is and has a Download button. While it downloads,
+  the row shows how much has arrived, as a bar and in words, with a
+  Cancel button, and the menu says "Downloading speech model". When it
+  fails, the row says why and offers Try Again. When no build fits this
+  Mac, each says there is no speech model for this Mac yet and offers
+  nothing. A dictation begun without the model ends in a notice that says
+  the model has not been downloaded.
 
 The main window and setup have the sizes their chrome gives them
 (`WindowChrome`), and what a window shows never changes them. Each opens
@@ -732,7 +829,15 @@ version are read from the bundle, never written in code.
 
 A reviewer checks every change against these.
 
-1. No network. No module opens a connection or names a host to contact.
+1. One connection, for the model. Sorello opens a network connection only
+   to download its speech model (section 5, "Getting the model"), and
+   only when the user asks for it. It sends nothing about the user, the
+   Mac or what was dictated: the server learns the address the request
+   came from and which build was asked for. Nothing downloaded is used
+   before its SHA-256 matches the pin. `URLSession` is named in one
+   source file, `Sources/SpeechEngine/ModelDownloader.swift`. No other
+   source opens a connection, and no source names a host: the address is
+   in `Models/model.lock.json`.
 2. No content in logs. Diagnostics go through one type, `Diagnostics`,
    whose events are a compile-time name and numbers. `print`, `NSLog`,
    `os_log` and `Logger` are not used elsewhere in `Sources`, except in
@@ -763,9 +868,9 @@ Review does.
   `make check` runs both plus `scripts/check-rules.sh`; it needs no model
   and no network.
 - `make app` assembles `build/<name>.app` with `scripts/build-app.sh`:
-  the release executable, `Info.plist`, fonts, icon, notices and the model,
-  then signs it with the hardened runtime and the audio-input entitlement.
-  `CODESIGN_IDENTITY` defaults to ad hoc.
+  the release executable, `Info.plist`, fonts, icon, notices, the model's
+  notices and the pin, then signs it with the hardened runtime and the
+  audio-input entitlement. `CODESIGN_IDENTITY` defaults to ad hoc.
 - Identity is one file, `Config/identity.conf`. Development builds are
   "Sorello Dev", `com.audeolabs.sorello.dev`; `CHANNEL=release` builds are
   "Sorello", `com.audeolabs.sorello`. Minimum system: macOS 26, on Apple
@@ -776,13 +881,16 @@ Review does.
   development build. Each architecture is built on its own and joined
   with `lipo`; the build fails unless the signed executable holds exactly
   the architectures asked for.
-- Model weights are not in Git. `Models/model.lock.json` pins the bundle by
-  the SHA-256 of its manifest. `SORELLO_MODEL_DIR` points the build at a
-  local copy. The build checks the manifest against the pin and every file
+- Model weights are not in Git, and in no channel does a build need them:
+  the app downloads the build the pin lists for the Mac it runs on
+  (section 5). `SORELLO_MODEL_DIR` is for a build that should carry the
+  model and never download it. It points at a local copy; the build
+  checks that copy's manifest against the pin's builds and every file
   against the manifest before copying it in, and fails otherwise.
-- A bundled app loads its fonts, icon and model only from its own bundle.
-  The repository's `Resources` directory and the `SORELLO_RESOURCES`
-  override are used only by tests and the tools run from a build tree.
+- A bundled app loads its fonts, icon, pin and notices only from its own
+  bundle, and its model only from the store. The repository's `Resources`
+  directory and the `SORELLO_RESOURCES` override are used only by tests
+  and the tools run from a build tree.
 - The app is not sandboxed: the event tap and Accessibility calls do not
   work in the sandbox.
 
@@ -796,6 +904,17 @@ Review does.
   in `Tests/Vectors`.
 - Engine tests that need the model run only when `SORELLO_MODEL_DIR` is
   set. `sorello-transcribe` checks a synthetic recording end to end.
+- The download is tested against a transport of the tests' own, which
+  serves, stalls, cuts off, redirects and sends the wrong bytes. No test
+  opens a connection. Against the real server it is proved by two tools.
+  `sorello-transcribe --download` fetches this Mac's build into a store
+  it is given, as the app would, and transcribes with it; its `--source`
+  puts another address in place of the pin's, so a failure can be staged
+  against a server on the same Mac. Only that tool can be pointed
+  elsewhere: the app has no such setting. `Sorello --self-test
+  --download` makes the packaged app download into a temporary store
+  with its own pin and then dictate, so it is proved end to end without
+  touching the app's own store.
 - `SorelloSnapshots` renders each pill state under a camera island, under
   a notch and on a screen with neither, and each screen of the app, to
   PNG. A change to anything visible is reviewed in those images. The
@@ -827,7 +946,9 @@ Review does.
   lock and sleep during a recording; the pill on the built-in display, an
   external display and a full-screen Space, and while the system is
   showing something in the camera island; and no network activity during
-  any of it.
+  any of it once the model is on the Mac. The download itself on a real
+  connection: start it, go on through setup while it runs, quit in the
+  middle and continue, cancel, and try it with the network off.
 
 ## 12. Provenance
 

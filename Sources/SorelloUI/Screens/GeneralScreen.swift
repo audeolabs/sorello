@@ -4,6 +4,10 @@ import SwiftUI
 public struct GeneralActions {
     /// Load the speech model again after a failure.
     public var retryModel: () -> Void
+    /// Start the speech model's download, or go on with it after it stopped.
+    public var downloadModel: () -> Void
+    /// Stop the download; what arrived is kept.
+    public var cancelDownload: () -> Void
     /// Ask for the microphone; the system shows its prompt.
     public var requestMicrophone: () -> Void
     /// Open the microphone pane of System Settings, after access was denied.
@@ -16,11 +20,14 @@ public struct GeneralActions {
     public var setToggle: (GeneralToggle, Bool) -> Void
 
     /// Actions that each do nothing unless given.
-    public init(retryModel: @escaping () -> Void = {}, requestMicrophone: @escaping () -> Void = {},
+    public init(retryModel: @escaping () -> Void = {}, downloadModel: @escaping () -> Void = {},
+                cancelDownload: @escaping () -> Void = {}, requestMicrophone: @escaping () -> Void = {},
                 openMicrophoneSettings: @escaping () -> Void = {}, openAccessibilitySettings: @escaping () -> Void = {},
                 selectMicrophone: @escaping (String?) -> Void = { _ in },
                 setToggle: @escaping (GeneralToggle, Bool) -> Void = { _, _ in }) {
         self.retryModel = retryModel
+        self.downloadModel = downloadModel
+        self.cancelDownload = cancelDownload
         self.requestMicrophone = requestMicrophone
         self.openMicrophoneSettings = openMicrophoneSettings
         self.openAccessibilitySettings = openAccessibilitySettings
@@ -41,7 +48,7 @@ nonisolated public enum ModelHardware: Sendable, Equatable {
 /// The General screen's values.
 @Observable
 public final class GeneralModel {
-    /// The speech model's name, as its bundle gives it.
+    /// The speech model's name, as the pin gives it.
     public var modelName: String
     /// The model and permissions, as every window shows them.
     public var status: AppStatus
@@ -91,7 +98,7 @@ public struct GeneralScreen: View {
             CardGroup(String(localized: "Speech model")) {
                 Card {
                     ModelRow(name: model.modelName, status: model.status.model, hardware: model.hardware,
-                             retry: model.actions.retryModel)
+                             actions: model.actions)
                 }
             }
             CardGroup(String(localized: "Permissions")) {
@@ -139,13 +146,15 @@ public struct GeneralScreen: View {
     }
 }
 
-/// The model's state: ready, preparing with a travelling glacier line, or failed with the reason and Retry. Ready and
-/// preparing say where the model runs, because that decides how long preparing takes.
+/// The model's state: ready, preparing with a travelling glacier line, or failed with the reason and Retry; and when
+/// the model is not on this Mac, its download: its size and Download, how much has arrived as a bar and in words with
+/// Cancel, why it stopped with Try Again, or that there is none for this Mac. Ready and preparing say where the model
+/// runs, because that decides how long preparing takes.
 struct ModelRow: View {
     let name: String
     let status: ModelStatus
     let hardware: ModelHardware
-    let retry: () -> Void
+    let actions: GeneralActions
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -160,12 +169,12 @@ struct ModelRow: View {
                         .foregroundStyle(Theme.secondaryInk)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(String(localized: "Speech model"))
+                .accessibilityValue(spokenState)
                 Spacer(minLength: 12)
                 trailing
             }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(String(localized: "Speech model"))
-            .accessibilityValue(spokenState)
         }
         .rowPadding()
     }
@@ -178,18 +187,41 @@ struct ModelRow: View {
                 StatusIndicator(.ready)
                 Text("Ready").font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.ink)
             }
+            .accessibilityHidden(true)
         case .preparing:
             HStack(spacing: 8) {
                 GlacierBar().frame(width: 72)
                 Text("Preparing").font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.ink)
             }
+            .accessibilityHidden(true)
         case .failed:
             HStack(spacing: 10) {
                 StatusIndicator(.problem)
-                Button(String(localized: "Retry"), action: retry)
+                Button(String(localized: "Retry"), action: actions.retryModel)
                     .buttonStyle(PrimaryButtonStyle(size: .compact))
                     .accessibilityHint(StatusLine.Remedy.retryModel.hint)
             }
+        case .notDownloaded(.notStarted):
+            Button(String(localized: "Download"), action: actions.downloadModel)
+                .buttonStyle(PrimaryButtonStyle(size: .compact))
+                .accessibilityHint(String(localized: "Downloads the speech model from Hugging Face"))
+        case .notDownloaded(.downloading(let received, let size)):
+            HStack(spacing: 10) {
+                GlacierBar(fraction: ModelSize.fraction(received: received, of: size)).frame(width: 72)
+                Button(String(localized: "Cancel"), action: actions.cancelDownload)
+                    .buttonStyle(QuietButtonStyle())
+                    .accessibilityHint(String(localized: "Stops the download. Starting it again goes on from here."))
+            }
+        case .notDownloaded(.failed):
+            HStack(spacing: 10) {
+                StatusIndicator(.problem)
+                Button(String(localized: "Try Again"), action: actions.downloadModel)
+                    .buttonStyle(PrimaryButtonStyle(size: .compact))
+                    .accessibilityHint(String(localized: "Downloads the speech model again, from where it stopped"))
+            }
+        case .notDownloaded(.unavailable):
+            StatusIndicator(.problem)
+                .accessibilityHidden(true)
         }
     }
 
@@ -204,6 +236,7 @@ struct ModelRow: View {
         case (.preparing, .processor):
             String(localized: "Loading takes a moment each time the app opens. You can dictate meanwhile.")
         case (.failed(let problem), _): problem.explanation
+        case (.notDownloaded(let download), _): ModelDownloadWords.detail(download)
         }
     }
 
@@ -212,8 +245,30 @@ struct ModelRow: View {
         case .ready: String(localized: "Ready. \(Self.detail(status, on: hardware))")
         case .preparing: String(localized: "Preparing. \(Self.detail(status, on: hardware))")
         case .failed(let problem): String(localized: "Unavailable. \(problem.explanation)")
+        case .notDownloaded(.downloading):
+            String(localized: "Downloading. \(Self.detail(status, on: hardware))")
+        case .notDownloaded: Self.detail(status, on: hardware)
         }
     }
+}
+
+/// What the windows say about the model's download, the same in setup and on the General screen.
+nonisolated enum ModelDownloadWords {
+    /// One line for the download's state: its size and where from, how much has arrived, why it stopped, or that
+    /// there is no model for this Mac.
+    static func detail(_ download: ModelDownloadStatus) -> String {
+        switch download {
+        case .notStarted(let size):
+            String(localized: "Not downloaded yet. \(ModelSize.words(size)), from Hugging Face.",
+                   comment: "General: the model's size, such as 138 MB")
+        case .downloading(let received, let size): ModelSize.progress(received: received, of: size)
+        case .failed(let problem, let size): problem.explanation(size: size)
+        case .unavailable: unavailable
+        }
+    }
+
+    /// No build of the model fits this Mac.
+    static var unavailable: String { String(localized: "There is no speech model for this Mac yet.") }
 }
 
 /// The microphone permission, its state in words, and the button that fixes it.

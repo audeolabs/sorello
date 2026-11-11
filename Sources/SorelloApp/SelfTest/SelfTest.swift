@@ -17,6 +17,10 @@ import SpeechEngine
 /// It needs no permission and keeps nothing: settings, macros, the dictionary and the Run Log live in a temporary
 /// directory, removed at the end, with default settings except that "press enter" is on. Only the model's stable
 /// copy is kept where the app keeps it, so the app's own first launch afterwards is warm.
+///
+/// With `--download` the packaged app first downloads its model, with its own pin, into a temporary store that is
+/// removed at the end, through the same entry the Download buttons use, and says on standard error what it fetched.
+/// The app's own store is never touched, so the download is proved end to end on a Mac that already has the model.
 @MainActor
 enum SelfTest {
     /// How long the model may take to prepare. The first preparation on a Mac with a Neural Engine compiles the
@@ -27,12 +31,13 @@ enum SelfTest {
     static let completionLimit: TimeInterval = 60
 
     /// `forcesCPU` runs the encoder on Core ML's CPU kernels whatever the hardware offers, to prove the fallback.
-    static func run(files: [URL], model: URL?, forcesCPU: Bool) -> Never {
+    /// `downloads` downloads the model into a temporary store first.
+    static func run(files: [URL], model: URL?, forcesCPU: Bool, downloads: Bool) -> Never {
         let application = NSApplication.shared
         application.setActivationPolicy(.accessory)
         Resources.registerFonts()
         Task {
-            let passed = await SelfTestRun(files: files, model: model, forcesCPU: forcesCPU).run()
+            let passed = await SelfTestRun(files: files, model: model, forcesCPU: forcesCPU, downloads: downloads).run()
             exit(passed ? 0 : 1)
         }
         application.run()
@@ -46,6 +51,7 @@ private final class SelfTestRun {
     private let files: [URL]
     private let info: AppInfo
     private let forcesCPU: Bool
+    private let downloads: Bool
     private let clock = SystemSessionClock()
     private let capture: FileCapture
     private let inserter = RecordingInserter()
@@ -54,9 +60,10 @@ private final class SelfTestRun {
     private let defaultsName = "sorello-self-test-\(UUID().uuidString)"
     private var completions: [DictationCompletion] = []
 
-    init(files: [URL], model: URL?, forcesCPU: Bool) {
+    init(files: [URL], model: URL?, forcesCPU: Bool, downloads: Bool) {
         self.files = files
         self.forcesCPU = forcesCPU
+        self.downloads = downloads
         let bundled = AppInfo.main()
         info = model.map { bundled.withModel(at: $0) } ?? bundled
         capture = FileCapture(clock: clock)
@@ -79,20 +86,30 @@ private final class SelfTestRun {
         Console.line("\(info.name) \(info.version) (\(info.build)) self-test, model \(info.modelName ?? "none")")
         Console.line("settings: defaults, with \u{201C}press enter\u{201D} on; nothing is pasted")
 
-        // The model's stable copy goes where the app keeps it, when there is an app; otherwise it is temporary too.
-        let modelStore = info.bundleIdentifier.flatMap { try? AppPaths(bundleIdentifier: $0) }?.modelsDirectory
-            ?? directory.appendingPathComponent("Models", isDirectory: true)
-        let modelDirectory = info.modelDirectory
+        // The model's stable copy goes where the app keeps it, when there is an app; otherwise it is temporary too. A
+        // download always goes to a temporary store, and the app's own copy of the model, if it has one, is not used.
+        let temporaryStore = directory.appendingPathComponent("Models", isDirectory: true)
+        let modelStore = downloads ? temporaryStore
+            : info.bundleIdentifier.flatMap { try? AppPaths(bundleIdentifier: $0) }?.modelsDirectory ?? temporaryStore
+        if downloads && info.pin == nil {
+            Console.error("self-test: --download needs the packaged app, which carries the pin")
+            return false
+        }
+        let info = self.info
+        let model = info.pin.map {
+            PinnedModel(pin: $0, storeDirectory: modelStore, carriedDirectory: downloads ? nil : info.modelDirectory)
+        }
+        let download = downloads ? model.map { PinnedDownload(model: $0, version: info.version) } : nil
         let compute = forcesCPU ? SpeechCompute.cpu : .forThisMac()
         Console.error("encoder: \(compute) (\(forcesCPU ? "forced by --cpu" : "this Mac's hardware"))")
         let app = AppComposition(
             info: info, storage: AppStorage(paths: AppPaths(root: directory), defaults: defaults),
             platform: .quiet(capture: capture, inserter: inserter, trusted: false, clock: clock),
             speech: { store in
-                SpeechEngine(modelDirectory: modelDirectory, storeDirectory: modelStore, compute: compute,
-                             dictionary: { store.snapshot(for: $0) })
+                SpeechEngine.forApp(info, model: model, store: modelStore, compute: compute,
+                                    dictionary: { store.snapshot(for: $0) })
             },
-            pill: pill, levels: pill.levels)
+            download: download, pill: pill, levels: pill.levels)
         app.settings.pressEnterCommand = true
         app.settings.setupCompleted = true
         let forward = app.runtime.onCompletion
@@ -101,9 +118,20 @@ private final class SelfTestRun {
             self?.completions.append(completion)
         }
 
-        let preparing = ContinuousClock.now
         app.start()
-        guard await wait(SelfTest.preparationLimit, until: { app.runtime.state.engine != .preparing }) else {
+        if let download {
+            app.startDownload()
+            let report = await download.download.download()
+            Console.error(Self.describe(report))
+            guard report.state == .installed else { return await finish(app, passed: false) }
+        }
+        let preparing = ContinuousClock.now
+        // After a download the engine is missing its model until the app has asked it to look again.
+        let downloaded = download != nil
+        guard await wait(SelfTest.preparationLimit, until: {
+            let engine = app.runtime.state.engine
+            return engine != .preparing && !(downloaded && engine == .failed(.modelMissing))
+        }) else {
             Console.line("model: still preparing after \(Int(SelfTest.preparationLimit)) s")
             return await finish(app, passed: false)
         }
@@ -261,6 +289,20 @@ private final class SelfTestRun {
             try? await Task.sleep(for: .milliseconds(5))
         }
         return true
+    }
+
+    /// What a download fetched: bytes and seconds, and whether a file was continued or the model was already there.
+    static func describe(_ report: ModelDownloadReport) -> String {
+        var lines: [String] = []
+        if report.wasAlreadyThere {
+            lines.append("download: the model was already there; nothing fetched")
+        } else {
+            lines.append(String(format: "download: %@, %lld bytes in %.3f s", String(describing: report.state),
+                                report.fetched, report.seconds))
+        }
+        lines += report.continuedFrom.map { "download: continued a file from byte \($0)" }
+        if report.startedAgain > 0 { lines.append("download: \(report.startedAgain) file(s) fetched again from the start") }
+        return lines.joined(separator: "\n")
     }
 
     static func seconds(_ duration: Duration) -> String {

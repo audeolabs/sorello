@@ -51,7 +51,7 @@ enum SpeechCore {
         return hex(hasher.finalize())
     }
 
-    private static func hex(_ digest: SHA256.Digest) -> String {
+    static func hex(_ digest: SHA256.Digest) -> String {
         digest.map { String(format: "%02x", $0) }.joined()
     }
 

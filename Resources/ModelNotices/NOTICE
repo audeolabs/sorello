@@ -5,7 +5,7 @@ weights, original model attribution, or CC-BY-4.0 license below.
 kea-b-0.1
 
 Model weights (the Core ML encoder, front-end constants, decoder and joint
-weights and vocabulary in this directory): CC-BY-4.0, see LICENSE.
+weights and vocabulary, which Sorello downloads): CC-BY-4.0, see LICENSE.
 Software (the adapted native inference code in Sorello): MIT License, see
 Software-LICENSE.
 

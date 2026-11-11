@@ -282,6 +282,24 @@ struct StoreTests {
                 "The same data loads once the vocabulary is back")
     }
 
+    /// A downloaded model brings its vocabulary to a store that opened without one: from then on it can be changed,
+    /// without being opened again. A store keeps the first vocabulary it has.
+    @Test func aVocabularyThatArrivesLaterAllowsEdits() throws {
+        let scratch = Scratch()
+        let writer = DictionaryStore(fileURL: scratch.file, encoder: testEncoder)
+        try writer.save(text: "Kubernetes", strength: 1.41)
+        let store = DictionaryStore(fileURL: scratch.file, encoder: nil)
+        #expect(!store.canEdit)
+        let revision = store.revision
+        #expect(store.adoptVocabulary(testEncoder))
+        #expect(store.canEdit)
+        #expect(store.revision == revision && store.dictionary == writer.dictionary, "Nothing it held changed")
+        try store.save(text: "NixOS", strength: 1)
+        #expect(store.dictionary.dictionary.entries.map(\.text) == ["Kubernetes", "NixOS"])
+        #expect(!store.adoptVocabulary(testEncoder), "A store keeps the vocabulary it has")
+        #expect(DictionaryStore(fileURL: scratch.file, encoder: testEncoder).dictionary == store.dictionary)
+    }
+
     @Test func capacities() throws {
         let scratch = Scratch()
         var scoped = ScopedDictionary()
