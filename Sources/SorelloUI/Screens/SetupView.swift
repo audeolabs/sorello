@@ -275,14 +275,14 @@ private struct Promise: View {
     }
 }
 
-/// The speech model: what is downloaded, how large, from where, and that nothing said is ever sent; then how much has
-/// arrived, why it stopped, or that it is here. The download goes on behind the later steps once it has started.
+/// The speech model: how large the download is, and that nothing said leaves the Mac; then how much has arrived, why
+/// it stopped, or that it is here. The download goes on behind the later steps once it has started.
 private struct ModelStep: View {
     let model: SetupModel
 
     var body: some View {
-        StepLayout(symbol: "arrow.down.circle", title: String(localized: "Get the speech model"),
-                   line: SetupCopy.modelLine(appName: model.appName, size: model.modelSize)) {
+        StepLayout(symbol: "arrow.down.circle", title: String(localized: "Speech model"),
+                   line: SetupCopy.modelLine(size: model.modelSize)) {
             state
         }
     }

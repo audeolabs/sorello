@@ -792,9 +792,9 @@ without moving anything.
 - **Setup**: welcome, the speech model, microphone, Accessibility,
   shortcut, and a live test. The model's step is there only when the
   model is not on the Mac as setup opens, and then it stays for that
-  setup. It says what will be downloaded, how large it is, that it comes
-  from Hugging Face, and that nothing said to Sorello is ever sent
-  anywhere. Its button starts the download. Once it has started, the user
+  setup. It says how large the download is and that nothing said to
+  Sorello leaves the Mac; the General screen says where it comes from.
+  Its button starts the download. Once it has started, the user
   can go on, and it continues behind the later steps. The test has a text
   field of its own with keyboard focus, so the dictation is pasted there
   by the ordinary path and nowhere else; until the model is ready, the

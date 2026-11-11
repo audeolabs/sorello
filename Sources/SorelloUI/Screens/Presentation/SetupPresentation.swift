@@ -7,7 +7,7 @@ import Foundation
 /// opened, so a setup has the steps `steps(includingModel:)` gives it, and moves through those.
 nonisolated public enum SetupStep: Int, CaseIterable, Sendable {
     case welcome
-    /// Get the speech model.
+    /// The speech model, and its download.
     case model
     case microphone
     case accessibility
@@ -128,17 +128,15 @@ nonisolated public struct SetupButtons: Equatable, Sendable {
 
 /// Setup's sentences that depend on state.
 nonisolated public enum SetupCopy {
-    /// The model step's one sentence: what is downloaded, how large it is, where from, and that nothing said to the
-    /// app is ever sent anywhere.
+    /// The model step's line: how large the download is, and that nothing said to the app leaves the Mac.
     /// With no build for this Mac there is nothing to download and `size` is 0: then it promises neither a download
     /// nor a size.
-    public static func modelLine(appName: String, size: Int64) -> String {
-        guard size > 0 else {
-            return String(localized: "\(appName) recognises speech on this Mac, with a model of its own. Nothing you say is ever sent anywhere.",
-                          comment: "Setup: the app's name, when there is no model to download for this Mac")
-        }
-        return String(localized: "\(appName) recognises speech on this Mac, with a model it downloads once from Hugging Face. It is \(ModelSize.words(size)). Nothing you say is ever sent anywhere.",
-                      comment: "Setup: the app's name, then the model's size, such as 138 MB")
+    public static func modelLine(size: Int64) -> String {
+        let promise = String(localized: "Nothing you say leaves this Mac.")
+        guard size > 0 else { return promise }
+        let download = String(localized: "A one-time download of \(ModelSize.words(size)).",
+                              comment: "Setup: the model's size, such as 138 MB")
+        return "\(download) \(promise)"
     }
 
     /// What the live test waits for while the model is not on this Mac; nil once it is.

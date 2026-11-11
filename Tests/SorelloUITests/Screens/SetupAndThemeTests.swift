@@ -40,11 +40,9 @@ struct SetupFlowTests {
                       .preparing, .ready, .failed(.couldNotLoad)] {
             #expect(buttons(.model, model: model) == SetupButtons(primary: SetupButton("Continue", .advance)), "\(model)")
         }
-        #expect(SetupCopy.modelLine(appName: "Sorello", size: size)
-                == "Sorello recognises speech on this Mac, with a model it downloads once from Hugging Face. It is 138 MB. Nothing you say is ever sent anywhere.")
+        #expect(SetupCopy.modelLine(size: size) == "A one-time download of 138 MB. Nothing you say leaves this Mac.")
         // With no build for this Mac there is nothing to download: the line promises neither a download nor a size.
-        #expect(SetupCopy.modelLine(appName: "Sorello", size: 0)
-                == "Sorello recognises speech on this Mac, with a model of its own. Nothing you say is ever sent anywhere.")
+        #expect(SetupCopy.modelLine(size: 0) == "Nothing you say leaves this Mac.")
     }
 
     /// Until the model is ready, the test says what it is waiting for.
