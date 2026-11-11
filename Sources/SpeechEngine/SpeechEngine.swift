@@ -260,6 +260,17 @@ public actor SpeechEngine: SpeechTranscribing {
                             retainsAudio: options.retainForCorrection)
     }
 
+    /// Returns once the model work running now has ended. A stream cancelled before this is called, and one whose
+    /// `finish` has returned, does no model work after it returns. The iPhone app lets the engine go when nothing uses
+    /// it and never holds two models at once (ARCHITECTURE.md, section 13), so it waits for this before it counts a
+    /// stream as ended. The engine's work all runs on its one serial queue, so whatever runs there now ends before
+    /// this does.
+    public nonisolated func waitUntilModelWorkEnds() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            queue.async { continuation.resume() }
+        }
+    }
+
     /// Stops a running correction check, so finishing a dictation never waits behind one.
     nonisolated func cancelChecks() { checks.cancelCurrent() }
 
