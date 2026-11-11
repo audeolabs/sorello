@@ -25,7 +25,7 @@ public enum SorelloMain {
 ///     Sorello                                      the menu-bar app
 ///     Sorello --no-setup                           the app, without opening setup (for verification)
 ///     Sorello --self-test [--model <dir>] <wav>…   dictate each file through the real session; exit 0 or 1
-///     Sorello --snapshots <dir>                    render the menu-bar item, menu panel, windows and setup
+///     Sorello --snapshots <dir>                    render the menu-bar item, windows and setup; list the menu
 ///
 /// The app ignores arguments it does not know, because the system can pass its own when it launches an app.
 nonisolated enum LaunchMode: Equatable {

@@ -9,7 +9,7 @@ import SorelloUI
 /// current as it changes, and gives each closure its meaning. One instance for the app's life, made by the shell.
 @MainActor
 final class WindowModels {
-    let menu: MenuPanelModel
+    let menu: StatusMenuModel
     let main: MainWindowModel
     let setup: SetupModel
 
@@ -25,7 +25,7 @@ final class WindowModels {
         self.app = app
         let status = AppStatus(session: app.runtime.state, accessibilityTrusted: app.live.accessibilityTrusted,
                                shortcuts: app.platform.shortcuts.status)
-        menu = MenuPanelModel(appName: app.info.name, status: status, shortcuts: [:], lastDictation: nil)
+        menu = StatusMenuModel(appName: app.info.name, status: status, shortcuts: [:], lastDictation: nil)
         main = MainWindowModel(
             general: GeneralModel(modelName: "", status: status, microphones: [], selectedMicrophoneID: nil,
                                   defaultMicrophoneName: nil, toggles: [:]),
@@ -71,7 +71,7 @@ final class WindowModels {
     /// Key caps for the current keyboard layout.
     var formatter: ShortcutFormatter { app.platform.keyboard() }
 
-    // MARK: - Menu panel
+    // MARK: - Menu
 
     private func connectMenu() {
         let menu = self.menu, app = self.app
@@ -80,10 +80,11 @@ final class WindowModels {
             menu.shortcuts = KeyCombo.all(app.settings.shortcutBindings, formatter: formatter)
             menu.lastDictation = app.runtime.state.lastText
         }
-        menu.actions = MenuPanelActions(
+        menu.actions = StatusMenuActions(
             copyLastDictation: { if let text = app.runtime.state.lastText { app.platform.system.copy(text) } },
             retryModel: { app.runtime.retryPreparation() },
             openGeneral: { app.navigation.openMain(.general) },
+            openShortcuts: { app.navigation.openMain(.shortcuts) },
             openDictionary: { app.navigation.openMain(.dictionary) },
             openRunLog: { app.navigation.openMain(.runLog) },
             openSettings: { app.navigation.openMain(nil) },

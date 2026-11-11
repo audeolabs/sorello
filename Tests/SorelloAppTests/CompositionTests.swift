@@ -88,12 +88,15 @@ import Testing
         #expect(windows.main.dictionary.actions.validate("Okonkwo") == .needsModel)
         #expect(windows.main.dictionary.actions.add("Okonkwo", 1, []) == .needsModel)
 
-        // The menu panel's actions reach the shell and the clipboard closure, never the pasteboard itself.
+        // The menu's commands reach the shell and the clipboard closure, never the pasteboard itself.
         var opened: [MainSection?] = []
         app.navigation.openMain = { opened.append($0) }
         windows.menu.actions.openDictionary()
         windows.menu.actions.openSettings()
-        #expect(opened == [.dictionary, nil])
+        windows.menu.actions.openShortcuts()
+        windows.menu.actions.openGeneral()
+        windows.menu.actions.openRunLog()
+        #expect(opened == [.dictionary, nil, .shortcuts, .general, .runLog])
     }
 
     @Test func shortcutsAreRecordedValidatedAndHandedToTheMonitor() async throws {

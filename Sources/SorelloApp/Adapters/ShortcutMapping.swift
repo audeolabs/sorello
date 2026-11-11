@@ -55,7 +55,7 @@ extension KeyCombo {
         }
     }
 
-    /// Each action's shortcut, for the menu panel; an action without one is absent and shows "Not set".
+    /// Each action's shortcut, for the menu; an action without one is absent and shows "Not set".
     static func all(_ bindings: [ShortcutAction: ShortcutBinding],
                     formatter: ShortcutFormatter) -> [ShortcutKind: KeyCombo] {
         var combos: [ShortcutKind: KeyCombo] = [:]

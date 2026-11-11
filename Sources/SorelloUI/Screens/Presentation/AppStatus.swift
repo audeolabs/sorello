@@ -1,8 +1,8 @@
 import Foundation
 
 // What the windows say about the app's health: the speech model, the two permissions and whether shortcuts are
-// paused. The app layer maps the engine's readiness and the permission adapters to these values; the menu panel's
-// state line, the main window's sidebar and the General screen all read them, so they always agree.
+// paused. The app layer maps the engine's readiness and the permission adapters to these values; the menu's state
+// line, the main window's sidebar and the General screen all read them, so they always agree.
 
 /// The speech model as the windows show it.
 nonisolated public enum ModelStatus: Equatable, Sendable {
@@ -112,7 +112,7 @@ nonisolated public struct StatusLine: Equatable, Sendable {
         case openMicrophoneSettings
         case openAccessibilitySettings
 
-        /// The button's title.
+        /// The title of the menu command and the button that apply it.
         public var title: String {
             switch self {
             case .retryModel: String(localized: "Retry")
@@ -120,12 +120,13 @@ nonisolated public struct StatusLine: Equatable, Sendable {
             }
         }
 
-        /// What the button does, for VoiceOver.
+        /// What applying it does, for VoiceOver.
         public var hint: String {
             switch self {
             case .retryModel: String(localized: "Loads the speech model again")
-            case .openMicrophoneSettings: String(localized: "Opens the microphone settings")
-            case .openAccessibilitySettings: String(localized: "Opens the Accessibility settings")
+            case .openMicrophoneSettings: String(localized: "Opens the General screen to manage microphone access")
+            case .openAccessibilitySettings:
+                String(localized: "Opens the General screen to manage Accessibility access")
             }
         }
     }

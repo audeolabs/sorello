@@ -29,8 +29,8 @@ say -o hello.wav --data-format=LEI16@16000 "Hello from the self test"
 "build/Sorello Dev.app/Contents/MacOS/Sorello" --snapshots build/app-snapshots
 ```
 
-The second command draws the menu panel, every window and every setup step as the app wires them. `--no-setup`
-opens the app without its setup window.
+The second command draws every window and every setup step as the app wires them, and lists the menu's rows.
+`--no-setup` opens the app without its setup window.
 
 Sorello asks for the microphone, to hear you, and for Accessibility, to see its shortcut and to paste. An
 ad hoc development build may need both granted again after it is rebuilt.

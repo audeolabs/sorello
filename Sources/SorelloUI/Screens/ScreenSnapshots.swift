@@ -1,8 +1,8 @@
 import DesignCore
 import SwiftUI
 
-/// The windows' scenes for the snapshot tool: the menu panel in each state, every section of the main window with
-/// invented data and its empty and error states, and each setup step. Main window sections are drawn tall enough to
+/// The windows' scenes for the snapshot tool: every section of the main window with invented data and its empty and
+/// error states, and each setup step. The menu is the system's to draw; `StatusMenuSnapshots` lists its states as text. Main window sections are drawn tall enough to
 /// show all their content, and again at the window's minimum size, where nothing may be clipped. Clock-driven
 /// animations are held at `frozenPhase`, so every render of a scene is the same picture.
 public enum ScreenSnapshots {
@@ -11,30 +11,7 @@ public enum ScreenSnapshots {
 
     /// Every window scene, in the order the tool writes them.
     public static var scenes: [SnapshotScene] {
-        menuPanel + mainWindow + setup
-    }
-
-    // MARK: Menu panel
-
-    private static var menuPanel: [SnapshotScene] {
-        let states: [(String, AppStatus, String?)] = [
-            ("ready", .sampleReady, MenuPanelModel.sample().lastDictation),
-            ("preparing", AppStatus(model: .preparing, microphone: .granted, accessibility: .granted), nil),
-            ("microphone-needed", AppStatus(model: .ready, microphone: .denied, accessibility: .granted), nil),
-            ("accessibility-needed", AppStatus(model: .ready, microphone: .granted, accessibility: .missing),
-             "Pack my box with five dozen liquor jugs."),
-            ("model-failed", AppStatus(model: .failed(.couldNotLoad), microphone: .granted, accessibility: .granted),
-             nil),
-            ("paused", AppStatus(model: .ready, microphone: .granted, accessibility: .granted, shortcutsPaused: true),
-             "How vexingly quick daft zebras jump."),
-        ]
-        return states.map { name, status, last in
-            SnapshotScene(name: "menu-panel-\(name)", size: CGSize(width: WindowChrome.menuPanelWidth, height: 400)) {
-                MenuPanelView(model: .sample(status: status, lastDictation: last))
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .environment(\.frozenAnimationPhase, frozenPhase)
-            }
-        }
+        mainWindow + setup
     }
 
     // MARK: Main window
