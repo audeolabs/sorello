@@ -1,4 +1,5 @@
 import DictationCore
+import DictionaryKit
 import Foundation
 import Synchronization
 import Testing
@@ -23,7 +24,7 @@ struct ModelDownloadTests {
         init(listing paths: [String: String]? = nil, bytes: Int64? = nil) {
             files = ["frontend.json": Data("{\"bins\":128}".utf8),
                      ModelDownloadTests.weights: Data((0..<200_000).map { UInt8(truncatingIfNeeded: $0 &* 31 &+ 7) }),
-                     "vocabulary.json": Data("{\"0\":\"▁invented\"}".utf8)]
+                     "vocabulary.json": Self.vocabulary]
             let listing = paths ?? files.mapValues { SpeechCore.sha256($0) }
             manifest = (try? JSONSerialization.data(withJSONObject: ["model": "kea-invented", "files": listing],
                                                     options: [.sortedKeys])) ?? Data()
@@ -36,6 +37,12 @@ struct ModelDownloadTests {
             // The pin is invented here and always reads.
             pin = (try? ModelPin(data: Data(text.utf8))) ?? { fatalError("The invented pin does not read") }()
         }
+
+        /// A whole vocabulary of invented pieces, so the dictionary could read it.
+        static let vocabulary: Data = {
+            let pieces = (0..<BPEEncoder.vocabularySize).map { "\"\($0)\":\"▁w\($0)\"" }
+            return Data("{\(pieces.joined(separator: ","))}".utf8)
+        }()
 
         static func address(_ path: String) -> String { "\(ModelDownloadTests.source)/macos26/\(path)" }
 

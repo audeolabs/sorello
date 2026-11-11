@@ -63,8 +63,8 @@ final class AppShell: NSObject, NSApplicationDelegate {
         let app = AppComposition(
             info: info, storage: AppStorage(paths: paths, defaults: .standard), platform: platform,
             speech: { store in
-                SpeechEngine(modelDirectory: info.modelDirectory, storeDirectory: paths.modelsDirectory,
-                             dictionary: { store.snapshot(for: $0) })
+                SpeechEngine.forApp(info, store: paths.modelsDirectory, compute: .forThisMac(),
+                                    dictionary: { store.snapshot(for: $0) })
             },
             pill: overlay, levels: levels)
         self.app = app

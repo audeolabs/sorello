@@ -73,6 +73,68 @@ struct EngineTests {
         #expect(await transcribe(engine, Self.speech(1)) == .failure(.engineUnavailable(.modelMissing)))
     }
 
+    /// Without its model the engine has failed and never says it is preparing; each time it is asked to prepare it
+    /// looks again, and once the model has arrived it becomes ready without being made again.
+    @Test func withoutTheModelItLooksAgainEachTimeItIsAsked() async throws {
+        let log = ModelLog()
+        let arrived = Mutex(false)
+        let loader = fakeLoader(log)
+        let looks = Mutex(0)
+        let engine = SpeechEngine(locate: {
+            looks.withLock { $0 += 1 }
+            return arrived.withLock { $0 } ? loader : nil
+        }, present: false, dictionary: { _ in .empty })
+        let readiness = ReadinessLog(engine)
+        #expect(await readiness.first(1) == [.failed(.modelMissing)])
+        await prepare(engine)
+        await prepare(engine)
+        #expect(looks.withLock { $0 } == 2, "Each preparation looks again")
+        let stream = engine.openStream(SpeechStreamOptions())
+        stream.append(Self.speech(1))
+        #expect(await finish(stream) == .failure(.engineUnavailable(.modelMissing)))
+        #expect(readiness.all == [.failed(.modelMissing)], "An engine without its model never says it is preparing")
+
+        arrived.withLock { $0 = true }
+        await prepare(engine)
+        #expect(await readiness.first(3) == [.failed(.modelMissing), .preparing, .ready])
+        #expect(try #require(await transcribe(engine, Self.speech(2))).get() == Self.words(seconds: 2))
+        #expect(log.loads == 1)
+    }
+
+    /// The app's engine over a pinned model: absent until the store holds it, and a stored copy whose files do not
+    /// match its manifest is removed, so the model is absent again and can be downloaded again.
+    @Test func aPinnedModelIsMissingUntilItIsStoredAndADamagedCopyGoes() async throws {
+        let store = FileManager.default.temporaryDirectory.appendingPathComponent("EngineTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: store) }
+        let build = ModelDownloadTests.Build()
+        let model = PinnedModel(pin: build.pin, storeDirectory: store,
+                                mac: MacDescription(system: try #require(SystemVersion("27.2"))))
+        let engine = SpeechEngine(model: model, compute: .cpu, dictionary: { _ in .empty })
+        let readiness = ReadinessLog(engine)
+        #expect(await readiness.first(1) == [.failed(.modelMissing)])
+        await prepare(engine)
+        #expect(readiness.all == [.failed(.modelMissing)])
+
+        // The invented build has the pinned manifest but not the files the engine needs: it cannot be loaded.
+        let models = ModelStore(root: store)
+        guard case .download(let directory) = models.prepareDownload(build.identity) else {
+            Issue.record("No download directory")
+            return
+        }
+        try build.manifest.write(to: directory.appendingPathComponent("bundle.json"))
+        for (path, data) in build.files {
+            let url = directory.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: url)
+        }
+        #expect(models.installDownload(build.identity) != nil)
+        #expect(model.isOnThisMac)
+        await prepare(engine)
+        #expect(await readiness.first(3) == [.failed(.modelMissing), .preparing, .failed(.modelMissing)])
+        #expect(models.stored(build.identity) == nil, "The damaged copy was removed")
+        #expect(!model.isOnThisMac)
+    }
+
     @Test func aBundleWithoutFilesIsMissingAndCorruptFilesAreCorrupt() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

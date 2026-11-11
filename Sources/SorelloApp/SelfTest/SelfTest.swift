@@ -82,15 +82,14 @@ private final class SelfTestRun {
         // The model's stable copy goes where the app keeps it, when there is an app; otherwise it is temporary too.
         let modelStore = info.bundleIdentifier.flatMap { try? AppPaths(bundleIdentifier: $0) }?.modelsDirectory
             ?? directory.appendingPathComponent("Models", isDirectory: true)
-        let modelDirectory = info.modelDirectory
+        let info = self.info
         let compute = forcesCPU ? SpeechCompute.cpu : .forThisMac()
         Console.error("encoder: \(compute) (\(forcesCPU ? "forced by --cpu" : "this Mac's hardware"))")
         let app = AppComposition(
             info: info, storage: AppStorage(paths: AppPaths(root: directory), defaults: defaults),
             platform: .quiet(capture: capture, inserter: inserter, trusted: false, clock: clock),
             speech: { store in
-                SpeechEngine(modelDirectory: modelDirectory, storeDirectory: modelStore, compute: compute,
-                             dictionary: { store.snapshot(for: $0) })
+                SpeechEngine.forApp(info, store: modelStore, compute: compute, dictionary: { store.snapshot(for: $0) })
             },
             pill: pill, levels: pill.levels)
         app.settings.pressEnterCommand = true
