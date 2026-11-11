@@ -2,7 +2,8 @@ import AppKit
 import DesignCore
 import SwiftUI
 
-/// The mark's scenes: the mark itself, the menu-bar icon on a light and a dark bar, and the app icon.
+/// The mark's scenes: the mark itself, the menu-bar icon on a light and a dark bar, and the app icon, plain and
+/// the nightly's.
 enum MarkSnapshots {
     static var scenes: [SnapshotScene] {
         [
@@ -22,6 +23,18 @@ enum MarkSnapshots {
             //   iconutil -c icns build/AppIcon.iconset -o Resources/AppIcon.icns
             SnapshotScene(name: "mark-app-icon", size: CGSize(width: 512, height: 512), background: RGB(0, 0, 0)) {
                 AppIconView().frame(width: 512, height: 512)
+            },
+            // Sorello Nightly's icon beside the plain one, large and at the Dock's usual size, on a strip of dark Dock.
+            SnapshotScene(name: "mark-app-icon-nightly", size: CGSize(width: 572, height: 376),
+                          background: RGB(hex: 0x1E1E20)) {
+                HStack(alignment: .top, spacing: 20) {
+                    ForEach([AppIconView.Variant.plain, .nightly], id: \.self) { variant in
+                        VStack(spacing: 16) {
+                            AppIconView(variant).frame(width: 256, height: 256)
+                            AppIconView(variant).frame(width: 64, height: 64)
+                        }
+                    }
+                }
             },
         ]
     }

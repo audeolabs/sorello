@@ -47,6 +47,9 @@ public enum Palette {
     public static let ember = RGB(hex: 0xF5C66B)
     /// Destructive actions only.
     public static let coral = RGB(hex: 0xFF7D5E)
+    /// Sorello Nightly's stars, on its app icon and nowhere else: an orange plainly apart from ember's amber and
+    /// coral's red, so the stars read as orange even when they are only a few pixels across.
+    public static let tangerine = RGB(hex: 0xFF9233)
 
     /// Window background.
     public static let screen = RGB(hex: 0x05080A)

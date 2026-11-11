@@ -669,6 +669,7 @@ menu-bar item is the one exception: it is the system's own (see Windows).
 | glacier | `#67E8F9` | The wait's shimmer, and preparing |
 | ember | `#F5C66B` | An error's symbol, never a dot |
 | coral | `#FF7D5E` | Destructive actions only |
+| tangerine | `#FF9233` | Sorello Nightly's stars, on its app icon only |
 | screen | `#05080A` | Window background |
 | card | `#0F1A1C` | Rows and cards |
 | pill | `#09090A` | The pill and primary buttons, edged `#6E6E70` at 0.5 pt (1 pt with Increase Contrast) |
