@@ -91,13 +91,14 @@ enum DisplayFace {
     /// How far apart display text's letters are moved, as a fraction of its size: in by 0.015 em.
     static let trackingPerEm: CGFloat = -0.015
 
-    /// The size at the default text size; Dynamic Type scales it with `style`.
+    /// The size at the default text size; Dynamic Type scales it with `style`. SF's own sizes for these styles: Urbanist
+    /// Medium has about SF's cap height, and at its weight a title needs no larger size to hold the page.
     static func size(_ style: Font.TextStyle) -> CGFloat {
         switch style {
-        case .largeTitle: return 36
-        case .title: return 30
-        case .title2: return 25
-        default: return 22
+        case .largeTitle: return 34
+        case .title: return 28
+        case .title2: return 22
+        default: return 20
         }
     }
 
