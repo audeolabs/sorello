@@ -154,6 +154,11 @@ struct DictationBarView: View {
         GeometryReader { geometry in
             let layout = IslandLayout(barWidth: Double(geometry.size.width), controlHeight: Double(height),
                                       startWidth: startWidth(height: Double(height)), form: form, leftHanded: chrome.leftHanded)
+            // Start's and the recording's widths, whatever the form: the ring opens from one into the other.
+            let widths = [IslandForm.compact, .expanded].map {
+                CGFloat(IslandLayout(barWidth: Double(geometry.size.width), controlHeight: Double(height),
+                                     startWidth: startWidth(height: Double(height)), form: $0).island.width)
+            }
             let centreY = CGFloat(barHeight) / 2
             ZStack(alignment: .topLeading) {
                 // Behind the controls: the island's pill, and Cancel's × as a bud of it, which becomes Undo.
@@ -241,7 +246,8 @@ struct DictationBarView: View {
                 }
 
                 DictationIsland(client: client, state: state, height: height, compact: compact, leftHanded: chrome.leftHanded,
-                                menuOpen: menuOpen, onAction: onAction, onStop: controls.captureEnded, onUnavailable: onMenu)
+                                startWidth: widths[0], recordingWidth: widths[1], menuOpen: menuOpen, onAction: onAction,
+                                onStop: controls.captureEnded, onUnavailable: onMenu)
                     .frame(width: CGFloat(layout.island.width), height: height)
                     // With Reduce Motion the island never resizes in view: each form is its own island, cross-faded.
                     .id(reduceMotion ? AnyHashable(form) : AnyHashable(0))
@@ -663,6 +669,9 @@ private struct DictationIsland: View {
     let height: CGFloat
     let compact: Bool
     let leftHanded: Bool
+    /// The island's width as Start and as the recording (`IslandLayout`), its fixed end at the bar's edge.
+    let startWidth: CGFloat
+    let recordingWidth: CGFloat
     /// The menu covers the bar: Start's dot holds still behind it (`SessionDot.look`).
     let menuOpen: Bool
     let onAction: () -> Void
@@ -676,6 +685,25 @@ private struct DictationIsland: View {
     /// Counts taps on Start without a session: each pops its dot once, the light acknowledgement while iOS asks to open
     /// Sorello.
     @State private var bounces = 0
+    /// Where the dots' field (`field`) is, and where Start puts its mark and the recording its wave, as laid out unseen
+    /// there, in the window. (A named coordinate space on the field kept its first place when the hand changed.)
+    @State private var fieldFrame: CGRect?
+    @State private var ringFrame: CGRect?
+    @State private var waveFrame: CGRect?
+    /// Whether the island held Start, as of the last change: while the body for a change is drawn, what it held before.
+    /// Nil until the island has appeared.
+    @State private var heldStart: Bool?
+    /// The island is pressed (`IslandPressStyle`).
+    @State private var pressed = false
+
+    /// `frame` in the field's coordinates.
+    private func inField(_ frame: CGRect?) -> CGRect? {
+        guard let frame, let fieldFrame else { return nil }
+        return frame.offsetBy(dx: -fieldFrame.minX, dy: -fieldFrame.minY)
+    }
+
+    private var ringBox: CGRect? { inField(ringFrame) }
+    private var waveBox: CGRect? { inField(waveFrame) }
 
     var body: some View {
         let palette = BrandPalette(colorScheme: colorScheme, contrast: contrast)
@@ -695,7 +723,16 @@ private struct DictationIsland: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(StartTapShape(compact: compact, capturing: state.mode.isActiveCapture))
         }
-        .buttonStyle(IslandPressStyle())
+        .buttonStyle(IslandPressStyle(pressed: $pressed))
+        // The recording's dots, from the ring's opening to the live wave, in one view the width of the recording island
+        // at its fixed end: the island clips what it has not grown over yet. Outside the button's label, which SwiftUI
+        // rebuilds at a change of form, so the view lasts from Start to the live wave; a press dims it as it dims the label.
+        .overlay(alignment: leftHanded ? .leading : .trailing) {
+            field(palette)
+                .opacity(pressed ? IslandPressStyle.pressedAlpha : 1)
+                .animation(reduceMotion ? nil : IslandPressStyle.fade, value: pressed)
+        }
+        .onChange(of: CapsuleContent(mode: state.mode) == .start, initial: true) { _, start in heldStart = start }
         // The pill itself is the bar's `IslandBody`, behind it, which moves in the same spring.
         // While the island grows, what it will hold stays inside it.
         .clipShape(Capsule())
@@ -713,16 +750,45 @@ private struct DictationIsland: View {
     /// island follows once there is room, so it never shows squeezed (taps work throughout).
     private var arrival: AnyTransition { DictationBarView.handing(over: reduceMotion) }
 
+    /// Whether Start's ring opens into the recording's row when a dictation starts (ARCHITECTURE.md, "Keyboard look", "The
+    /// opening"): not with Reduce Motion, not yet left-handed, and not in an island too narrow for a row of seven dots.
+    /// Otherwise Start hands over as every other form does.
+    private var opens: Bool {
+        guard !reduceMotion, !leftHanded, ringBox != nil, let waveBox else { return false }
+        let row = DotWave.dots(level: 0, width: Double(waveBox.width), height: Double(waveBox.height))
+        return RingOpening.applies(rowCount: row.count)
+    }
+
+    /// Start: what leaves when a dictation starts. With the opening its ring is handed over at once (the dots' field
+    /// draws it from then on), while "Start" and the heartbeat leave by the quick fade; returning, it arrives as before.
+    private var startTransition: AnyTransition {
+        guard opens else { return arrival }
+        let leave = AnyTransition.modifier(active: RingHandedOver(handedOver: true), identity: RingHandedOver(handedOver: false))
+            .combined(with: .opacity)
+            .animation(.easeOut(duration: DictationBarView.handover))
+        return .asymmetric(insertion: arrival, removal: leave)
+    }
+
+    /// Start's ring mark and "Start".
+    private func startRow(mark: some View) -> some View {
+        HStack(spacing: 6) {
+            mark
+            startLabel
+        }
+    }
+
+    private var startLabel: some View {
+        Text("Start").font(.subheadline.weight(.semibold)).lineLimit(1).fixedSize()
+    }
+
     @ViewBuilder private func content(_ palette: BrandPalette) -> some View {
         let ink = Color(palette.island.ink)
         switch CapsuleContent(mode: state.mode) {
         case .start:
-            HStack(spacing: 6) {
-                let dot = SessionDot(mode: state.mode, sessionReady: state.sessionReady)
-                SessionMark(line: ink, dot: dot.color(palette, reduceMotion: reduceMotion),
-                            look: dot.look(reduceMotion: reduceMotion, behindMenu: menuOpen), side: 19, pops: reduceMotion ? 0 : bounces)
-                Text("Start").font(.subheadline.weight(.semibold)).lineLimit(1).fixedSize()
-            }
+            let dot = SessionDot(mode: state.mode, sessionReady: state.sessionReady)
+            startRow(mark: SessionMark(line: ink, dot: dot.color(palette, reduceMotion: reduceMotion),
+                                       look: dot.look(reduceMotion: reduceMotion, behindMenu: menuOpen), side: 19,
+                                       pops: reduceMotion ? 0 : bounces))
             // A process's first live timer text takes about 55 ms to resolve (Foundation's attribute-scope reflection,
             // profiled on the simulator); resolved here while idle, it does not stall Start's first frames. A timer
             // that has ended: it never ticks.
@@ -732,7 +798,7 @@ private struct DictationIsland: View {
                     .hidden()
                     .accessibilityHidden(true)
             }
-            .transition(arrival)
+            .transition(startTransition)
         case .starting, .stop:
             // One view from starting to recording: the dimmed row brightens and the time arrives, nothing blinks.
             recording(palette, startedAt: recordingStartedAt).transition(arrival)
@@ -754,20 +820,10 @@ private struct DictationIsland: View {
     /// The recording's height for the wave's dots, inside the island's rounded ends.
     private var waveHeight: CGFloat { min(24, height - 12) }
 
-    /// Starting and recording: the wave (its calm row, dimmed, until the recording begins), the time while recording, and
-    /// the stop glyph. Left-handed the order is mirrored, so the stop glyph is at the bar's edge, under the thumb and far
-    /// from Cancel, and the wave settles into the mark's dot beside the time.
+    /// Starting and recording: the wave's room (the dots' field draws the wave there: its calm row, dimmed, until the
+    /// recording begins), the time while recording, and the stop glyph.
     private func recording(_ palette: BrandPalette, startedAt: Date?) -> some View {
         let ink = Color(palette.island.ink)
-        let mirrored = leftHanded
-        let wave = DotFieldRepresentable(kind: .wave(live: startedAt != nil), level: Double(state.levels.last ?? 0),
-                                         ink: palette.island.ink, mark: palette.live, reduceMotion: reduceMotion, mirrored: mirrored)
-            .frame(maxWidth: .infinity)
-            .frame(height: waveHeight)
-            .opacity(startedAt == nil ? 0.55 : 1)
-            .animation(.easeOut(duration: 0.15), value: startedAt == nil)
-            // VoiceOver hears the mode from Stop's value; the wave is decoration.
-            .accessibilityHidden(true)
         // The time's room is kept from the start, so nothing in the island moves when the recording begins.
         let time = Group {
             if let startedAt {
@@ -777,16 +833,23 @@ private struct DictationIsland: View {
                 Text(verbatim: "0:00").hidden()
             }
         }
-        .font(.caption.weight(.semibold).monospacedDigit())
         .foregroundStyle(ink.opacity(0.75))
-        .lineLimit(1)
-        .fixedSize()
+        return recordingRow(wave: Color.clear.frame(maxWidth: .infinity).frame(height: waveHeight), time: time, ink: ink)
+    }
+
+    /// The recording's parts: the wave, the time and the stop glyph. Left-handed the order is mirrored, so the stop glyph
+    /// is at the bar's edge, under the thumb and far from Cancel, and the wave settles into the mark's dot beside the time.
+    private func recordingRow(wave: some View, time: some View, ink: Color) -> some View {
+        let time = time
+            .font(.caption.weight(.semibold).monospacedDigit())
+            .lineLimit(1)
+            .fixedSize()
         let stop = RoundedRectangle(cornerRadius: 2.5, style: .continuous)
             .fill(ink)
             .frame(width: 10, height: 10)
             .accessibilityHidden(true)
         return HStack(spacing: 8) {
-            if mirrored {
+            if leftHanded {
                 stop
                 time
                 wave
@@ -796,8 +859,47 @@ private struct DictationIsland: View {
                 stop
             }
         }
-        .padding(.leading, mirrored ? 14 : 12)
-        .padding(.trailing, mirrored ? 12 : 14)
+        .padding(.leading, leftHanded ? 14 : 12)
+        .padding(.trailing, leftHanded ? 12 : 14)
+    }
+
+    /// The recording's dots (`DotFieldView`), the recording island's width at its fixed end: from the first frame of the
+    /// ring's opening to the live wave one view, so no dot blinks (ARCHITECTURE.md, "Keyboard look", "The opening"). Unseen
+    /// beneath it, Start and the recording are laid out as they are drawn, to say where the ring is and where the wave goes.
+    /// While starting and recording it shows at once when the ring opens, and otherwise arrives as the recording's other
+    /// parts do; it leaves with them.
+    private func field(_ palette: BrandPalette) -> some View {
+        let recording = CapsuleContent(mode: state.mode) == .starting || recordingStartedAt != nil
+        // Only from Start, as the change is drawn: not when the keyboard appears mid-dictation.
+        let opening = opens && heldStart == true
+        let end: Alignment = leftHanded ? .leading : .trailing
+        let ink = Color(palette.island.ink)
+        let arrive: Animation = reduceMotion ? .easeOut(duration: 0.15)
+            : .spring(response: 0.24, dampingFraction: 0.82).delay(DictationBarView.handover)
+        let leave: Animation = .easeOut(duration: reduceMotion ? 0.15 : DictationBarView.handover)
+        return ZStack(alignment: end) {
+            startRow(mark: Color.clear.frame(width: 19, height: 19).onGeometryChange(for: CGRect.self) {
+                $0.frame(in: .global)
+            } action: { ringFrame = $0 })
+                .frame(width: startWidth, height: height)
+                .hidden()
+            recordingRow(wave: Color.clear.frame(maxWidth: .infinity).frame(height: waveHeight).onGeometryChange(for: CGRect.self) {
+                $0.frame(in: .global)
+            } action: { waveFrame = $0 }, time: Text(verbatim: "0:00"), ink: ink)
+                .frame(width: recordingWidth, height: height)
+                .hidden()
+            DotFieldRepresentable(kind: recording && waveBox != nil ? .wave(live: recordingStartedAt != nil) : .idle,
+                                  level: Double(state.levels.last ?? 0), ink: palette.island.ink, mark: palette.live,
+                                  reduceMotion: reduceMotion, mirrored: leftHanded, dimmed: recordingStartedAt == nil,
+                                  box: waveBox, opening: opening ? ringBox.map { DotFieldView.Opening(ring: $0) } : nil)
+                .opacity(recording ? 1 : 0)
+                .animation(recording ? (opening ? nil : arrive) : leave, value: recording)
+        }
+        .frame(width: recordingWidth, height: height, alignment: end)
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { fieldFrame = $0 }
+        .allowsHitTesting(false)
+        // VoiceOver hears the mode from Stop's value; the wave is decoration.
+        .accessibilityHidden(true)
     }
 
     /// The mode and the time while recording; on Start, the status its dot shows, in words.
@@ -818,13 +920,14 @@ private struct DictationIsland: View {
 /// white dots in `line` at 80% (`RingMark.whiteStrength`), `side` points across, its state dot in `dot` drawn as `look`
 /// says: with the heartbeat's ring rippling out of it beneath the white dots, breathing (its opacity down to 35% and back
 /// every 1.2 s), lit and still, or unlit. Each change of `pops` (a tap on Start without a session) swells the state dot
-/// once, quickly.
+/// once, quickly. Once its ring is handed over to the opening (`RingHandedOver`) its dots are gone at once.
 private struct SessionMark: View {
     let line: Color
     let dot: BrandPalette.RGB
     let look: SessionDot.Look
     let side: CGFloat
     var pops = 0
+    @Environment(\.ringHandedOver) private var handedOver
     @State private var dim = false
 
     private var breathes: Bool { look == .breathing }
@@ -835,15 +938,19 @@ private struct SessionMark: View {
                 HeartbeatRing(color: UIColor(dot))
                     .allowsHitTesting(false)
             }
-            RingMarkShape().fill(line.opacity(RingMark.whiteStrength))
-            RingMarkShape(state: true).fill(Color(dot))
-                .opacity(breathes && dim ? 0.35 : 1)
-                .keyframeAnimator(initialValue: 1.0, trigger: pops) { content, scale in
-                    content.scaleEffect(scale, anchor: RingMarkShape.stateAnchor)
-                } keyframes: { _ in
-                    SpringKeyframe(SessionDot.popScale, duration: 0.12, spring: .snappy)
-                    SpringKeyframe(1, duration: 0.3, spring: .smooth)
-                }
+            ZStack {
+                RingMarkShape().fill(line.opacity(RingMark.whiteStrength))
+                RingMarkShape(state: true).fill(Color(dot))
+                    .opacity(breathes && dim ? 0.35 : 1)
+                    .keyframeAnimator(initialValue: 1.0, trigger: pops) { content, scale in
+                        content.scaleEffect(scale, anchor: RingMarkShape.stateAnchor)
+                    } keyframes: { _ in
+                        SpringKeyframe(SessionDot.popScale, duration: 0.12, spring: .snappy)
+                        SpringKeyframe(1, duration: 0.3, spring: .smooth)
+                    }
+            }
+            .opacity(handedOver ? 0 : 1)
+            .animation(nil, value: handedOver)
         }
         .frame(width: side, height: side)
         // The dot changes with a small, quick cross-fade (lit and unlit with Reduce Motion).
@@ -862,15 +969,34 @@ private struct SessionMark: View {
     }
 }
 
+/// Start's ring is handed over to the opening (`DictationIsland.startTransition`): `SessionMark` hides its dots at once,
+/// as the dots' field draws the same ring from then on.
+private struct RingHandedOver: ViewModifier {
+    let handedOver: Bool
+
+    func body(content: Content) -> some View {
+        content.environment(\.ringHandedOver, handedOver)
+    }
+}
+
+private extension EnvironmentValues {
+    @Entry var ringHandedOver = false
+}
+
 /// A press on the island dims what it holds a little, quickly both ways; the pill itself stays still, as the Dynamic
 /// Island does under a finger.
 private struct IslandPressStyle: ButtonStyle {
+    static let pressedAlpha = 0.6
+    static let fade = Animation.easeOut(duration: 0.1)
+    /// Reports the press, for what the island holds outside its label (the dots' field).
+    @Binding var pressed: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .opacity(configuration.isPressed ? 0.6 : 1)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.1), value: configuration.isPressed)
+            .opacity(configuration.isPressed ? Self.pressedAlpha : 1)
+            .animation(reduceMotion ? nil : Self.fade, value: configuration.isPressed)
+            .onChange(of: configuration.isPressed) { _, now in pressed = now }
     }
 }
 
