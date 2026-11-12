@@ -192,10 +192,8 @@ hardcodes an identifier.
   The other `UserDefaults` keys ([Shared settings](#shared-settings-sharedsorellosettingsswift),
   `AppPreferences`, the dictionary's) and the files inside those two
   directories carry no product name, and keep theirs too. The privacy
-  page's URL (Home) and the bug report's address
-  ([Bug report](#bug-report-hostcorebugreportemailswift)) are not stored
-  but are outside this repository, so they also keep their old names until
-  they move.
+  policy's URL and the bug report's address are not stored, so they follow
+  the publisher instead (`SupportContact`, [Bug report](#bug-report-hostcorebugreportemailswift)).
 
 ## Shared store and protocol (Shared/)
 
@@ -916,10 +914,17 @@ correction detection on iOS: entries are added by hand.
 
 ### Bug report (HostCore/BugReportEmail.swift)
 
-"Report a bug" builds a `mailto:` draft to `localflow@wildernesslabs.ai` that
+"Report a bug" builds a `mailto:` draft to `support@audeolabs.com` that
 the user reviews in their email app. It contains only the app version and
 build, the iOS version and the generic device type, with no logs, audio,
 transcripts or other user data.
+
+`SupportContact` (`HostCore/AppScreens.swift`) holds the two addresses the
+app shows: `email`, `support@audeolabs.com`, the bug report's recipient, and
+`privacyPolicy`, `https://audeolabs.github.io/sorello/privacy.html`, which
+Home's privacy policy link opens. Both pages are published from this
+repository's `gh-pages` branch, not from `main`; the support page is
+`https://audeolabs.github.io/sorello/`.
 
 ## Host app (App/)
 
@@ -994,7 +999,8 @@ transcripts or other user data.
     end of the title's text so it wraps with the words, and in the section's
     footer) and
     "Left-handed", and links to Diagnostics, Report a bug and the public
-    privacy policy (opened in the browser only on a tap).
+    privacy policy (`SupportContact.privacyPolicy`, opened in the browser
+    only on a tap).
   - Bounce screen: the keyboard's island, large, with the phase in one word
     (`BouncePhase`): "Starting" until the dictation is `recording` (input is
     flowing), then "Listening" with the voice's wave, the coral recording dot

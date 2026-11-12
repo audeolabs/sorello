@@ -6,6 +6,8 @@ enum BugReportEmailTests {
             ("draftContainsPromptsAndOnlySuppliedMetadata", testDraft),
             ("mailtoPreservesRecipientAndDraft", testMailto),
             ("reservedCharactersCannotAddRecipientsOrHeaders", testReservedCharacters),
+            ("reportsGoToAudeoLabsSupport", testSupportRecipient),
+            ("privacyPolicyIsAudeoLabsPublicPage", testPrivacyPolicy),
         ]
     }
 
@@ -51,5 +53,18 @@ enum BugReportEmailTests {
         TestSupport.expectEqual(components.queryItems?.last?.value, draft.body)
         TestSupport.expectEqual(components.fragment, nil)
         TestSupport.expect(!components.percentEncodedQuery!.contains("+"), "mail clients must not treat a literal plus as a space")
+    }
+
+    private static func testSupportRecipient() {
+        let draft = BugReportEmail(recipient: SupportContact.email, appVersion: "0.1.0 (59)",
+                                   systemVersion: "26.0", deviceModel: "iPhone")
+        let components = URLComponents(url: draft.mailtoURL!, resolvingAgainstBaseURL: false)!
+        TestSupport.expectEqual(components.scheme, "mailto")
+        TestSupport.expectEqual(components.path, "support@audeolabs.com")
+    }
+
+    private static func testPrivacyPolicy() {
+        TestSupport.expectEqual(SupportContact.privacyPolicy.absoluteString,
+                                "https://audeolabs.github.io/sorello/privacy.html")
     }
 }

@@ -3,7 +3,8 @@ import Foundation
 /// What the app's own screens show for a state, apart from layout (ARCHITECTURE.md, "Host app"): the session card's
 /// state and its one accent, the speech model's state dot, the start-session screen's phase word and return cue, the
 /// route it names, onboarding's microphone step and spoken progress, the idle countdown in words, when the background
-/// cover hides the app, and when the app's sheets close for the start-session screen. The views only draw these. Pure.
+/// cover hides the app, when the app's sheets close for the start-session screen, and the support addresses. The views
+/// only draw these. Pure.
 
 /// One of the brand colours a state may carry, on a small dot or glyph only (never a fill).
 enum AppAccent: Equatable, Sendable {
@@ -261,4 +262,11 @@ enum OnboardingProgress {
         let count = max(count, 1)
         return "Step \(min(max(index, 0), count - 1) + 1) of \(count)"
     }
+}
+
+/// Where the app sends people for help and for its privacy policy (ARCHITECTURE.md, "Bug report"). Not stored names:
+/// they follow the publisher, not the identifiers the app was first published with.
+enum SupportContact {
+    static let email = "support@audeolabs.com"
+    static let privacyPolicy = URL(string: "https://audeolabs.github.io/sorello/privacy.html")!
 }

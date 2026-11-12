@@ -440,7 +440,7 @@ ARCHITECTURE.md, "Session control", has the rules.
 ## Reporting a bug
 
 Open **Report a bug** on the app's home screen, then **Write email** to open a
-draft addressed to `localflow@wildernesslabs.ai`. Review and edit it in your
+draft addressed to `support@audeolabs.com`. Review and edit it in your
 email app before sending, or cancel without sending. The draft asks for steps
 to reproduce, expected behavior, and what happened; it includes only the app
 version/build, iOS version, and generic device type (iPhone or iPad). It attaches
