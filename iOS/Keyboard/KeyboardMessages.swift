@@ -294,6 +294,10 @@ enum SessionDot: Equatable, Sendable {
         static let lineWidth = 1.0
     }
 
+    /// How far a tap on Start without a session swells the dot, at the pop's peak: it stays clear of the ring mark's
+    /// white dot beside it, with room for the spring's overshoot.
+    static let popScale = 1.4
+
     init(mode: KeyboardMode, sessionReady: Bool) {
         switch mode {
         case .preparingModel: self = .preparing

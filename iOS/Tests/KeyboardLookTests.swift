@@ -16,6 +16,7 @@ enum KeyboardLookTests {
             ("menuLinkIsTheBrandAccent", testMenuLinkIsTheBrandAccent),
             ("ringMarkKeepsItsDots", testRingMarkKeepsItsDots),
             ("ringMarkFitsItsBoxCentred", testRingMarkFitsItsBoxCentred),
+            ("ringMarksStateDotPopsClearOfItsNeighbours", testRingMarksStateDotPopsClearOfItsNeighbours),
             ("ringMarksWhiteDotsStandOffTheirSurface", testRingMarksWhiteDotsStandOffTheirSurface),
             ("capsuleStyleFollowsTheMode", testCapsuleStyleFollowsTheMode),
             ("barStatusKeepsWordsWhereTheyEarnTheirSpace", testBarStatusKeepsWordsWhereTheyEarnTheirSpace),
@@ -348,6 +349,19 @@ enum KeyboardLookTests {
                         TestSupport.expect(gap > 0, "dots \(i) and \(j) touch in \(box) at \(stateScale): \(gap)")
                     }
                 }
+            }
+        }
+    }
+
+    /// No two dots touch in motion either: a tap on Start without a session pops the state dot, and at the pop's peak,
+    /// with 5% more for the spring's overshoot, it still touches no white dot, in Start's box (19 pt) and the menu's (18).
+    private static func testRingMarksStateDotPopsClearOfItsNeighbours() {
+        let popped = SessionDot.popScale * 1.05
+        for side in [19.0, 18.0] {
+            let mark = RingMark.fitted(in: KeyRect(x: 0, y: 0, width: side, height: side))
+            for (index, dot) in mark.whiteDots.enumerated() {
+                let gap = distance(mark.stateDot, dot) - mark.stateRadius * popped - mark.whiteRadius
+                TestSupport.expect(gap > 0, "the popped state dot touches white dot \(index) at \(side) pt: \(gap)")
             }
         }
     }

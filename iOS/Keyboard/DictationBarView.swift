@@ -841,7 +841,7 @@ private struct SessionMark: View {
                 .keyframeAnimator(initialValue: 1.0, trigger: pops) { content, scale in
                     content.scaleEffect(scale, anchor: RingMarkShape.stateAnchor)
                 } keyframes: { _ in
-                    SpringKeyframe(1.6, duration: 0.12, spring: .snappy)
+                    SpringKeyframe(SessionDot.popScale, duration: 0.12, spring: .snappy)
                     SpringKeyframe(1, duration: 0.3, spring: .smooth)
                 }
         }
