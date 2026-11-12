@@ -1280,6 +1280,8 @@ and ship it. This section holds what concerns both apps.
   Live Activity is the ring mark: seven white dots round a ring and a
   larger eighth, which carries the state's colour (`iOS/ARCHITECTURE.md`,
   "Keyboard look").
+  On the keyboard the ring opens into the recording's row of dots when a
+  dictation starts.
 - **Versions.** The iPhone app has its own version and build number, in
   its `Info.plist` templates and its build. `Config/identity.conf` is the
   Mac app's alone.
