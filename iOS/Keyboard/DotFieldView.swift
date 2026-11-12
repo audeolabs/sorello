@@ -45,9 +45,11 @@ final class DotFieldView: UIView {
     }
 
     /// Start's ring as it opens into the wave (ARCHITECTURE.md, "Keyboard look", "The opening"): Start's mark box in
-    /// this view, its ring mirrored with the view's dots. Its dots are the wave's ink and its state dot the wave's mark.
+    /// this view, its ring mirrored with the view's dots, and its state dot's strength as Start shows it (below 1 while it
+    /// breathes). Its dots are the wave's ink and its state dot the wave's mark.
     struct Opening: Equatable {
         var ring: CGRect
+        var stateStrength = 1.0
     }
 
     /// While the microphone starts, the row is dimmed to this; it brightens in `dimDuration` when the recording begins.
@@ -240,7 +242,7 @@ final class DotFieldView: UIView {
                                    width: Double(opening.ring.width), height: Double(opening.ring.height))
                 let frame = RingOpening.frame(ring: ring, row: DotWave.dots(level: 0, width: width, height: height).map(place),
                                               mark: place(DotWave.markDot(level: 0, width: width, height: height)),
-                                              progress: progress, mirrored: mirrored)
+                                              progress: progress, mirrored: mirrored, stateStrength: opening.stateStrength)
                 dots = frame.dots
                 markDot = frame.stateDot
                 alpha = 1 + (alpha - 1) * RingOpening.eased(progress)

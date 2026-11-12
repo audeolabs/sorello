@@ -697,6 +697,8 @@ private struct DictationIsland: View {
     @State private var heldStart: Bool?
     /// The island is pressed (`IslandPressStyle`).
     @State private var pressed = false
+    /// When Start's dot began to breathe, so the ring opens from the strength it shows.
+    @State private var breath = BreathClock()
 
     /// `frame` in the field's coordinates.
     private func inField(_ frame: CGRect?) -> CGRect? {
@@ -803,7 +805,7 @@ private struct DictationIsland: View {
             let dot = SessionDot(mode: state.mode, sessionReady: state.sessionReady)
             startRow(mark: SessionMark(line: ink, dot: dot.color(palette, reduceMotion: reduceMotion),
                                        look: dot.look(reduceMotion: reduceMotion, behindMenu: menuOpen), side: 19,
-                                       pops: reduceMotion ? 0 : bounces, mirrored: leftHanded))
+                                       pops: reduceMotion ? 0 : bounces, mirrored: leftHanded, breathClock: breath))
             // A process's first live timer text takes about 55 ms to resolve (Foundation's attribute-scope reflection,
             // profiled on the simulator); resolved here while idle, it does not stall Start's first frames. A timer
             // that has ended: it never ticks.
@@ -906,7 +908,11 @@ private struct DictationIsland: View {
             DotFieldRepresentable(kind: recording && waveBox != nil ? .wave(live: recordingStartedAt != nil) : .idle,
                                   level: Double(state.levels.last ?? 0), ink: palette.island.ink, mark: palette.live,
                                   reduceMotion: reduceMotion, mirrored: leftHanded, dimmed: recordingStartedAt == nil,
-                                  box: waveBox, opening: opening ? ringBox.map { DotFieldView.Opening(ring: $0) } : nil)
+                                  box: waveBox, opening: opening ? ringBox.map {
+                                      DotFieldView.Opening(ring: $0, stateStrength: breath.since.map {
+                                          SessionMark.breathStrength(since: $0, at: CACurrentMediaTime())
+                                      } ?? 1)
+                                  } : nil)
                 .opacity(recording ? 1 : 0)
                 .animation(recording ? (opening ? nil : arrive) : leave, value: recording)
         }
@@ -944,6 +950,8 @@ private struct SessionMark: View {
     let side: CGFloat
     var pops = 0
     var mirrored = false
+    /// Notes when the state dot began to breathe (Start's mark).
+    var breathClock: BreathClock?
     @Environment(\.ringHandedOver) private var handedOver
     @State private var dim = false
 
@@ -958,7 +966,7 @@ private struct SessionMark: View {
             ZStack {
                 RingMarkShape().fill(line.opacity(RingMark.whiteStrength))
                 RingMarkShape(state: true).fill(Color(dot))
-                    .opacity(breathes && dim ? 0.35 : 1)
+                    .opacity(breathes && dim ? Self.breathLow : 1)
                     .keyframeAnimator(initialValue: 1.0, trigger: pops) { content, scale in
                         content.scaleEffect(scale, anchor: RingMarkShape.stateAnchor)
                     } keyframes: { _ in
@@ -976,15 +984,51 @@ private struct SessionMark: View {
         .accessibilityHidden(true)
         .onAppear { if breathes { breathe() } }
         .onChange(of: breathes) { _, now in
-            if now { breathe() } else { withAnimation(.easeOut(duration: 0.2)) { dim = false } }
+            if now {
+                breathe()
+            } else {
+                breathClock?.since = nil
+                withAnimation(.easeOut(duration: 0.2)) { dim = false }
+            }
         }
+        .onDisappear { breathClock?.since = nil }
     }
+
+    /// The breath: out to `breathLow` and back, each way in `breathHalf` seconds, eased in and out.
+    static let breathLow = 0.35
+    static let breathHalf = 0.6
 
     /// A slow pulse, out and back every 1.2 s, for as long as it breathes.
     private func breathe() {
         dim = false
-        withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) { dim = true }
+        withAnimation(.easeInOut(duration: Self.breathHalf).repeatForever(autoreverses: true)) { dim = true }
+        breathClock?.since = CACurrentMediaTime()
     }
+
+    /// The state dot's strength at `now` for a breath that began at `since`, as `breathe` animates it.
+    static func breathStrength(since: CFTimeInterval, at now: CFTimeInterval) -> Double {
+        let cycle = max(now - since, 0).truncatingRemainder(dividingBy: 2 * breathHalf)
+        let u = cycle < breathHalf ? cycle / breathHalf : (2 * breathHalf - cycle) / breathHalf
+        return 1 - (1 - breathLow) * easeInOut(u)
+    }
+
+    /// SwiftUI's `easeInOut`, the cubic Bézier through (0.42, 0) and (0.58, 1), at `x` of the way through.
+    private static func easeInOut(_ x: Double) -> Double {
+        var low = 0.0, high = 1.0
+        for _ in 0 ..< 32 {
+            let s = (low + high) / 2
+            let xs = 3 * (1 - s) * (1 - s) * s * 0.42 + 3 * (1 - s) * s * s * 0.58 + s * s * s
+            if xs < x { low = s } else { high = s }
+        }
+        let s = (low + high) / 2
+        return 3 * (1 - s) * s * s + s * s * s
+    }
+}
+
+/// When Start's state dot began to breathe (`SessionMark`), nil while it does not: a reference the island keeps, set
+/// without drawing anything again.
+private final class BreathClock {
+    var since: CFTimeInterval?
 }
 
 /// Start's ring is handed over to the opening (`DictationIsland.startTransition`): `SessionMark` hides its dots at once,

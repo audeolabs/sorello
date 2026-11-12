@@ -13,6 +13,7 @@ enum RingOpeningTests {
         ("whiteDotsKeepTheRingsSpacingAtFirst", testWhiteDotsKeepTheRingsSpacingAtFirst),
         ("joiningDotsBrightenInTheSecondHalf", testJoiningDotsBrightenInTheSecondHalf),
         ("mirroredIsTheMirrorImage", testMirroredIsTheMirrorImage),
+        ("stateDotStartsAsStartShowsIt", testStateDotStartsAsStartShowsIt),
         ("opensOnlyIntoSevenDotsOrMore", testOpensOnlyIntoSevenDotsOrMore),
     ]
 
@@ -57,10 +58,11 @@ enum RingOpeningTests {
                     place(DotWave.markDot(level: level, width: box.width, height: box.height)))
         }
 
-        func frame(_ progress: Double, level: Double = 0, resting: RingOpening.End = .ring) -> RingOpening.Frame {
+        func frame(_ progress: Double, level: Double = 0, stateStrength: Double = 1,
+                   resting: RingOpening.End = .ring) -> RingOpening.Frame {
             let wave = wave(level: level)
             return RingOpening.frame(ring: ring, row: wave.row, mark: wave.mark, progress: progress, mirrored: mirrored,
-                                     resting: resting)
+                                     stateStrength: stateStrength, resting: resting)
         }
 
         var description: String {
@@ -285,6 +287,37 @@ enum RingOpeningTests {
                 TestSupport.expect(abs(left.rowLevel - right.rowLevel) < 1e-9, "\(scene), at \(progress): the row's level")
             }
         }
+    }
+
+    /// While the model prepares, Start's state dot breathes: the opening starts from the strength Start shows it at, not
+    /// at full strength (which would flash it), and brightens it to the mark's dot's without a jump; where it is and how
+    /// large are as at full strength. A strength outside 0...1 clamps; one that is not a number is full.
+    private static func testStateDotStartsAsStartShowsIt() {
+        let frame = 1.0 / 60 / RingOpening.duration
+        for scene in scenes {
+            let mark = scene.wave().mark
+            for strength in [0.35, 0.6, 1.0] {
+                let first = scene.frame(0, stateStrength: strength).stateDot
+                TestSupport.expectEqual(first.brightness, strength)
+                TestSupport.expect(near(scene.frame(1e-6, stateStrength: strength).stateDot,
+                                        DotWave.Dot(x: first.x, y: first.y, radius: first.radius, brightness: strength), 1e-3),
+                                   "\(scene): the breathing state dot jumps at the first moment")
+                TestSupport.expectEqual(scene.frame(1, stateStrength: strength).stateDot, mark)
+                for progress in steps {
+                    let a = scene.frame(progress, stateStrength: strength).stateDot
+                    let b = scene.frame(min(progress + frame, 1), stateStrength: strength).stateDot
+                    TestSupport.expect(b.brightness >= a.brightness - 1e-12 && b.brightness - a.brightness < 0.1,
+                                       "\(scene), at \(progress): the state dot's strength jumps from \(a.brightness) to \(b.brightness)")
+                    let full = scene.frame(progress).stateDot
+                    TestSupport.expect(a.x == full.x && a.y == full.y && a.radius == full.radius,
+                                       "\(scene), at \(progress): the strength moved the state dot")
+                }
+            }
+        }
+        let scene = scenes[0]
+        TestSupport.expectEqual(scene.frame(0, stateStrength: -1).stateDot.brightness, 0)
+        TestSupport.expectEqual(scene.frame(0, stateStrength: 2).stateDot.brightness, 1)
+        TestSupport.expectEqual(scene.frame(0, stateStrength: .nan).stateDot.brightness, 1)
     }
 
     /// The opening needs a row of at least seven dots, one for each of the ring's white dots. In a narrower island

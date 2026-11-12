@@ -59,16 +59,19 @@ enum RingOpening {
     /// The string at `progress` (0 is the ring, 1 the row; outside that it clamps, and a progress that is not a number
     /// is the end `resting`), from the ring Start draws in `ring` to the row `row` with its mark's dot `mark`, as the
     /// wave draws them. `mirrored`: the ring is mirrored (`ring(in:mirrored:)`) and the row runs rightwards from the
-    /// mark's dot. A row that cannot take the ring's dots (`applies`) has no opening: the ring until the end, then the
-    /// row.
+    /// mark's dot. `stateStrength` is the state dot's as Start shows it at the first moment (below 1 while it breathes;
+    /// clamped to 0...1, not a number is 1); it goes to the mark's dot's with the eased progress. A row that cannot
+    /// take the ring's dots (`applies`) has no opening: the ring until the end, then the row.
     static func frame(ring box: KeyRect, row: [DotWave.Dot], mark: DotWave.Dot, progress: Double, mirrored: Bool = false,
-                      resting: End = .ring) -> Frame {
+                      stateStrength: Double = 1, resting: End = .ring) -> Frame {
         let progress = progress.isNaN ? (resting == .ring ? 0 : 1) : min(max(progress, 0), 1)
+        let stateStrength = stateStrength.isNaN ? 1 : min(max(stateStrength, 0), 1)
         // Nearest the mark's dot first.
         let row = row.sorted { abs($0.x - mark.x) < abs($1.x - mark.x) }
         let ringMark = ring(in: box, mirrored: mirrored)
         let ringFrame = Frame(
-            stateDot: DotWave.Dot(x: ringMark.stateDot.x, y: ringMark.stateDot.y, radius: ringMark.stateRadius, brightness: 1),
+            stateDot: DotWave.Dot(x: ringMark.stateDot.x, y: ringMark.stateDot.y, radius: ringMark.stateRadius,
+                                  brightness: stateStrength),
             dots: ringMark.whiteDots.map {
                 DotWave.Dot(x: $0.x, y: $0.y, radius: ringMark.whiteRadius, brightness: RingMark.whiteStrength)
             },
@@ -83,7 +86,8 @@ enum RingOpening {
         func flipped(_ dot: DotWave.Dot) -> DotWave.Dot {
             DotWave.Dot(x: flip * dot.x, y: dot.y, radius: dot.radius, brightness: dot.brightness)
         }
-        var frame = rightHanded(ring: flippedBox, row: row.map(flipped), mark: flipped(mark), progress: progress)
+        var frame = rightHanded(ring: flippedBox, row: row.map(flipped), mark: flipped(mark), progress: progress,
+                                stateStrength: stateStrength)
         frame.stateDot = flipped(frame.stateDot)
         frame.dots = frame.dots.map(flipped)
         guard progress <= 0 else { return frame }
@@ -104,7 +108,8 @@ enum RingOpening {
     private static func lerp(_ a: Double, _ b: Double, _ t: Double) -> Double { a * (1 - t) + b * t }
 
     /// The string with the row running leftwards from `mark`; `row` is nearest the mark first and has at least seven dots.
-    private static func rightHanded(ring box: KeyRect, row: [DotWave.Dot], mark: DotWave.Dot, progress: Double) -> Frame {
+    private static func rightHanded(ring box: KeyRect, row: [DotWave.Dot], mark: DotWave.Dot, progress: Double,
+                                    stateStrength: Double) -> Frame {
         let e = eased(progress)
         let scale = max(0, min(box.width, box.height)) / RingMark.side
         let ringRadius = RingMark.ringRadius * scale
@@ -164,7 +169,7 @@ enum RingOpening {
         }
         let head = at(0)
         let state = DotWave.Dot(x: head.x, y: head.y, radius: lerp(RingMark.stateRadius * scale, mark.radius, e),
-                                brightness: lerp(1, mark.brightness, e))
+                                brightness: lerp(stateStrength, mark.brightness, e))
         return Frame(stateDot: state, dots: dots, rowLevel: rowLevel)
     }
 
