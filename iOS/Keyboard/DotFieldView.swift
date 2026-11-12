@@ -230,14 +230,17 @@ final class DotFieldView: UIView {
         }
         dots = dots.map(place)
         markDot = markDot.map(place)
-        if let openedAt, let opening, let target = markDot {
+        if let openedAt, let opening, markDot != nil {
             let progress = (now - openedAt) / RingOpening.duration
             if progress < 1 {
-                // The ring's dots on their way to the row as the wave would draw it now: the calm row while the microphone
-                // starts, the voice once the recording begins. Start's ring is not dimmed; the row is, as it arrives.
+                // The ring's dots on their way to the calm row. If the recording has begun, the trace records the voice
+                // meanwhile and the row shows it once the opening ends. Start's ring is not dimmed; the row is, as it
+                // arrives.
                 let ring = KeyRect(x: Double(opening.ring.minX), y: Double(opening.ring.minY),
                                    width: Double(opening.ring.width), height: Double(opening.ring.height))
-                let frame = RingOpening.frame(ring: ring, row: dots, mark: target, progress: progress, mirrored: mirrored)
+                let frame = RingOpening.frame(ring: ring, row: DotWave.dots(level: 0, width: width, height: height).map(place),
+                                              mark: place(DotWave.markDot(level: 0, width: width, height: height)),
+                                              progress: progress, mirrored: mirrored)
                 dots = frame.dots
                 markDot = frame.stateDot
                 alpha = 1 + (alpha - 1) * RingOpening.eased(progress)
