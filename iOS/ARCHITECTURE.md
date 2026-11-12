@@ -123,8 +123,8 @@ iOS/
   and links `SorelloText`, which is `TextRules` alone. It never links
   `SpeechEngine`, `DictionaryKit` or `HostCore`, and it never captures audio.
 - The Live Activity extension is compiled from `Activity/`, `ActivityCore/`
-  and `KeyboardCore/RidgeMark.swift` with `KeyboardCore/KeyboardLayout.swift`
-  (the ridge mark and its box) and `KeyboardCore/DotWave.swift` (the strip's
+  and `KeyboardCore/RingMark.swift` with `KeyboardCore/KeyboardLayout.swift`
+  (the ring mark and its box) and `KeyboardCore/DotWave.swift` (the strip's
   swell, the keyboard wave's) only. It reads no files, settings or App Group
   ([Live Activity](#live-activity-activity-activitycore)).
 
