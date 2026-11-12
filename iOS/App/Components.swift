@@ -335,39 +335,37 @@ struct StateDot: View {
     }
 }
 
-/// The ridge mark (`RidgeMark`, shared with the keyboard and the Live Activity): the W line or its dot.
-struct RidgeMarkShape: Shape {
-    var dot = false
-    var weight = 1.0
+/// The ring mark (`RingMark`, shared with the keyboard and the Live Activity): its seven white dots, or with `state` its
+/// state dot.
+struct RingMarkShape: Shape {
+    var state = false
 
     func path(in rect: CGRect) -> Path {
-        let mark = RidgeMark.fitted(in: KeyRect(x: Double(rect.minX), y: Double(rect.minY), width: Double(rect.width),
-                                                height: Double(rect.height)), weight: weight)
+        let mark = RingMark.fitted(in: KeyRect(x: Double(rect.minX), y: Double(rect.minY), width: Double(rect.width),
+                                               height: Double(rect.height)))
         var path = Path()
-        if dot {
-            path.addEllipse(in: CGRect(x: mark.dot.x - mark.dotRadius, y: mark.dot.y - mark.dotRadius,
-                                       width: 2 * mark.dotRadius, height: 2 * mark.dotRadius))
+        func add(_ dot: RingMark.Point, _ radius: Double) {
+            path.addEllipse(in: CGRect(x: dot.x - radius, y: dot.y - radius, width: 2 * radius, height: 2 * radius))
+        }
+        if state {
+            add(mark.stateDot, mark.stateRadius)
         } else {
-            path.addLines(mark.line.map { CGPoint(x: $0.x, y: $0.y) })
+            for dot in mark.whiteDots { add(dot, mark.whiteRadius) }
         }
         return path
     }
 }
 
-/// The ridge mark in white with its dot in a state's accent, `side` points across. Decorative.
-struct RidgeMarkView: View {
+/// The ring mark, its white dots white at 80% (`RingMark.whiteStrength`) and its state dot in a state's accent, `side`
+/// points across. Decorative.
+struct RingMarkView: View {
     var dot: Color = Theme.aurora
     var side: CGFloat
-    /// The keyboard draws the small mark heavier, so the W reads (1.3 at 19 pt).
-    var weight: Double?
 
     var body: some View {
-        let weight = weight ?? (side < 32 ? 1.3 : 1.05)
-        let fitted = RidgeMark.fitted(in: KeyRect(x: 0, y: 0, width: Double(side), height: Double(side)), weight: weight)
         ZStack {
-            RidgeMarkShape(weight: weight)
-                .stroke(Color.white, style: StrokeStyle(lineWidth: CGFloat(fitted.lineWidth), lineCap: .round, lineJoin: .round))
-            RidgeMarkShape(dot: true, weight: weight).fill(dot)
+            RingMarkShape().fill(Color.white.opacity(RingMark.whiteStrength))
+            RingMarkShape(state: true).fill(dot)
         }
         .frame(width: side, height: side)
         .accessibilityHidden(true)

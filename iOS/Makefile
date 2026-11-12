@@ -133,7 +133,7 @@ ACTIVITY_ATTRIBUTES_SOURCES ?= Activity/SessionActivityAttributes.swift
 SESSION_CONTROL_INTENT_SOURCES ?= Activity/SessionControlIntent.swift
 # The ridge mark, drawn as the keyboard draws it; KeyboardLayout has its box type; DotWave the swell the strip shares with
 # the keyboard's wave. All are Foundation only.
-ACTIVITY_KEYBOARDCORE_SOURCES ?= KeyboardCore/RidgeMark.swift KeyboardCore/KeyboardLayout.swift KeyboardCore/DotWave.swift
+ACTIVITY_KEYBOARDCORE_SOURCES ?= KeyboardCore/RidgeMark.swift KeyboardCore/RingMark.swift KeyboardCore/KeyboardLayout.swift KeyboardCore/DotWave.swift
 # The app draws the same mark and wave (the session card, onboarding and the start-session screen).
 APP_KEYBOARDCORE_SOURCES ?= $(ACTIVITY_KEYBOARDCORE_SOURCES)
 # The display face, Urbanist Medium (SIL OFL 1.1), the repository's one copy, with its license beside it (`UIAppFonts`).

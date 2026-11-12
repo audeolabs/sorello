@@ -85,7 +85,7 @@ struct BounceView: View {
                     .padding(.horizontal, 22)
                     .transition(Self.outThenIn)
             case .done, .cancelled, .stopped:
-                RidgeMarkView(dot: phase.accent.map(Theme.color) ?? Theme.neutralDot, side: 34)
+                RingMarkView(dot: phase.accent.map(Theme.color) ?? Theme.neutralDot, side: 34)
                     .transition(Self.outThenIn)
             }
         }
@@ -200,7 +200,7 @@ struct HandoffSurface: View {
                         StatusBarLinkCue(visible: false)
                             .padding(.top, 4)
                     }
-                    RidgeMarkView(side: 34)
+                    RingMarkView(side: 34)
                         .frame(maxWidth: .infinity, minHeight: 64, maxHeight: 64)
                         .padding(.top, BounceView.islandTop(height: proxy.size.height, cue: cue))
                 }

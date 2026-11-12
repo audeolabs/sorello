@@ -194,7 +194,7 @@ private struct SessionCard: View {
     private func mark(_ state: SessionCardState) -> some View {
         let side = min(markSide, 40)
         if let accent = state.accent {
-            RidgeMarkView(dot: Theme.color(accent), side: side)
+            RingMarkView(dot: Theme.color(accent), side: side)
                 .animation(.snappy(duration: 0.28), value: accent)
         } else {
             Image(systemName: "mic.slash.fill")
@@ -275,7 +275,7 @@ private struct SessionCard: View {
                 // The words take the width first: the glyph goes where both don't fit on one line.
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 10) {
-                        RidgeMarkView(dot: Theme.aurora, side: min(pillMarkSide, 30))
+                        RingMarkView(dot: Theme.aurora, side: min(pillMarkSide, 30))
                         Text("Start session")
                     }
                     Text("Start session")
