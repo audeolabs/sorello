@@ -83,8 +83,8 @@ private extension View {
 /// The top row (ARCHITECTURE.md, "Top row"): a menu button on the left, Undo / "Insert last dictation" chips or a
 /// one-line status in the middle (the candidate strip instead while it shows, and over both a revert's "Never correct"
 /// offer, unless dictation's own UI is up: `BarMiddleContent`), and the dictation island on the right. Tapping Start
-/// grows the island leftwards into the recording, under half the bar, which holds the wave and the time and is Stop;
-/// Stop contracts it into the short wait for the transcript, which opens back into Start. Its parts go where
+/// grows the island leftwards into the recording, under half the bar, which holds the wave and the time and is Stop
+/// (Start's ring opens into the wave's row as it grows); Stop contracts it into the short wait for the transcript, which opens back into Start. Its parts go where
 /// `IslandLayout` puts them, so Cancel, beside the recording island, never moves while a dictation runs. It renders
 /// `KeyboardDictationClient.state` and the strip only, so typing never re-renders it.
 struct DictationBarView: View {
@@ -121,7 +121,8 @@ struct DictationBarView: View {
     static let islandSpring = Animation.spring(response: IslandBud.Motion.island.response,
                                                dampingFraction: IslandBud.Motion.island.dampingFraction)
     /// What leaves at a change of form goes first, this quickly; what arrives waits as long, so it never lands over
-    /// what is still leaving.
+    /// what is still leaving. One change is not a handover: when a dictation starts, Start's ring opens into the
+    /// recording's row (`DictationIsland.field`), while "Start" leaves this quickly.
     static let handover = 0.06
     /// Leaving: a quick fade. Arriving: a fade after `handover`, from a little smaller where `scaleFrom` is under 1.
     static func handing(over reduceMotion: Bool, scaleFrom: CGFloat = 1, anchor: UnitPoint = .center,
@@ -747,7 +748,8 @@ private struct DictationIsland: View {
     }
 
     /// What it holds hands over as it changes form: what leaves goes first, quickly, and what arrives in the grown
-    /// island follows once there is room, so it never shows squeezed (taps work throughout).
+    /// island follows once there is room, so it never shows squeezed (taps work throughout). From Start to the recording
+    /// the ring opens instead (`startTransition`, `field`).
     private var arrival: AnyTransition { DictationBarView.handing(over: reduceMotion) }
 
     /// Whether Start's ring opens into the recording's row when a dictation starts (ARCHITECTURE.md, "Keyboard look", "The
