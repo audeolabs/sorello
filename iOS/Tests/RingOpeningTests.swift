@@ -14,6 +14,7 @@ enum RingOpeningTests {
         ("joiningDotsBrightenInTheSecondHalf", testJoiningDotsBrightenInTheSecondHalf),
         ("mirroredIsTheMirrorImage", testMirroredIsTheMirrorImage),
         ("stateDotStartsAsStartShowsIt", testStateDotStartsAsStartShowsIt),
+        ("timeWaitsUntilTheStateDotIsOverTheTop", testTimeWaitsUntilTheStateDotIsOverTheTop),
         ("opensOnlyIntoSevenDotsOrMore", testOpensOnlyIntoSevenDotsOrMore),
     ]
 
@@ -318,6 +319,30 @@ enum RingOpeningTests {
         TestSupport.expectEqual(scene.frame(0, stateStrength: -1).stateDot.brightness, 0)
         TestSupport.expectEqual(scene.frame(0, stateStrength: 2).stateDot.brightness, 1)
         TestSupport.expectEqual(scene.frame(0, stateStrength: .nan).stateDot.brightness, 1)
+    }
+
+    /// The time arrives when the recording begins, but not before the state dot is over the top of the ring, an eased
+    /// progress of 0.45: `timeDelay` is that moment in seconds from the opening's start, and there the state dot is at its
+    /// highest, over the dip's middle. `progress(eased:)` undoes `eased`, clamping, and takes not a number as 0.
+    private static func testTimeWaitsUntilTheStateDotIsOverTheTop() {
+        TestSupport.expectEqual(RingOpening.timeArrives, 0.45)
+        for e in stride(from: 0.0, through: 1.0, by: 0.01) {
+            TestSupport.expect(abs(RingOpening.eased(RingOpening.progress(eased: e)) - e) < 1e-12, "progress(eased:) at \(e)")
+        }
+        TestSupport.expectEqual(RingOpening.progress(eased: -1), 0)
+        TestSupport.expectEqual(RingOpening.progress(eased: 2), 1)
+        TestSupport.expectEqual(RingOpening.progress(eased: .nan), 0)
+        let delay = RingOpening.timeDelay
+        TestSupport.expect(abs(RingOpening.eased(delay / RingOpening.duration) - 0.45) < 1e-12, "the time's delay is not at 0.45")
+        TestSupport.expect(delay > 0.3 && delay < 0.32, "the time waits \(delay) s")
+        // Over the top: the state dot is at its highest there, and still on the ring's level, not yet down to the row.
+        for scene in scenes {
+            let at = scene.frame(delay / RingOpening.duration).stateDot
+            for progress in steps {
+                let dot = scene.frame(progress).stateDot
+                TestSupport.expect(dot.y >= at.y - 0.01, "\(scene), at \(progress): the state dot is higher than over the top")
+            }
+        }
     }
 
     /// The opening needs a row of at least seven dots, one for each of the ring's white dots. In a narrower island

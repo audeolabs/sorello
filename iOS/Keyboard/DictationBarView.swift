@@ -696,6 +696,9 @@ private struct DictationIsland: View {
     /// Nil while it is not on screen (the keyboard hidden), so a dictation found running when it appears again never
     /// opens the ring.
     @State private var heldStart: Bool?
+    /// An opening holds the time back until the state dot is over the top of the ring (`RingOpening.timeArrives`): set
+    /// as the ring starts to open, cleared when the dots' field says the time may arrive.
+    @State private var timeHeld = false
     /// The island is pressed (`IslandPressStyle`).
     @State private var pressed = false
     /// When Start's dot began to breathe, so the ring opens from the strength it shows.
@@ -737,10 +740,17 @@ private struct DictationIsland: View {
                 .opacity(pressed ? IslandPressStyle.pressedAlpha : 1)
                 .animation(reduceMotion ? nil : IslandPressStyle.fade, value: pressed)
         }
-        .onChange(of: CapsuleContent(mode: state.mode) == .start) { _, start in heldStart = start }
+        .onChange(of: CapsuleContent(mode: state.mode) == .start) { _, start in
+            // Leaving Start with the ring opening: the time waits for it.
+            timeHeld = !start && opensFromStart
+            heldStart = start
+        }
         // The client's state now, not this body's: it may have changed on the way back.
         .onAppear { heldStart = CapsuleContent(mode: client.state.mode) == .start }
-        .onDisappear { heldStart = nil }
+        .onDisappear {
+            heldStart = nil
+            timeHeld = false
+        }
         // The pill itself is the bar's `IslandBody`, behind it, which moves in the same spring.
         // While the island grows, what it will hold stays inside it.
         .clipShape(Capsule())
@@ -839,12 +849,14 @@ private struct DictationIsland: View {
     private var waveHeight: CGFloat { min(24, height - 12) }
 
     /// Starting and recording: the wave's room (the dots' field draws the wave there: its calm row, dimmed, until the
-    /// recording begins), the time while recording, and the stop glyph.
+    /// recording begins), the time while recording (once the ring, if it opens, has left its place), and the stop glyph.
     private func recording(_ palette: BrandPalette, startedAt: Date?) -> some View {
         let ink = Color(palette.island.ink)
-        // The time's room is kept from the start, so nothing in the island moves when the recording begins.
+        // The time's room is kept from the start, so nothing in the island moves when the time arrives. As the change is
+        // drawn the island still holds Start (`opensFromStart`); from then on `timeHeld` says.
+        let held = opensFromStart || timeHeld
         let time = Group {
-            if let startedAt {
+            if let startedAt, !held {
                 Text(timerInterval: startedAt...Date.distantFuture, countsDown: false)
                     .transition(.opacity.animation(.easeOut(duration: 0.15)))
             } else {
@@ -911,7 +923,8 @@ private struct DictationIsland: View {
                                   reduceMotion: reduceMotion, mirrored: leftHanded, dimmed: recordingStartedAt == nil,
                                   box: waveBox, opening: opening ? ringBox.map {
                                       DotFieldView.Opening(ring: $0, stateStrength: breath.strength(at: CACurrentMediaTime()))
-                                  } : nil)
+                                  } : nil,
+                                  onTimeMayArrive: { timeHeld = false })
                 .opacity(recording ? 1 : 0)
                 .animation(recording ? (opening ? nil : arrive) : leave, value: recording)
         }

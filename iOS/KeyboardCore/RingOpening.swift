@@ -20,6 +20,12 @@ enum RingOpening {
     static let settling = 0.2
     /// The eased progress by which the row has lifted to its line.
     static let lifted = 0.35
+    /// The eased progress by which the state dot is over the top of the ring: the time may arrive from then on, not
+    /// before, as until then the ring stands where the time will be.
+    static let timeArrives = 0.45
+
+    /// How long after the opening begins the time may arrive, in seconds (`timeArrives`).
+    static var timeDelay: Double { progress(eased: timeArrives) * duration }
 
     /// One of the opening's two resting ends.
     enum End: Equatable, Sendable {
@@ -44,6 +50,12 @@ enum RingOpening {
     static func eased(_ progress: Double) -> Double {
         let t = min(max(progress, 0), 1)
         return t < 0.5 ? 2 * t * t : 1 - (2 - 2 * t) * (2 - 2 * t) / 2
+    }
+
+    /// The progress at which the eased progress is `eased` (clamped to 0...1; not a number is 0): `eased`'s inverse.
+    static func progress(eased: Double) -> Double {
+        let e = eased.isNaN ? 0 : min(max(eased, 0), 1)
+        return e <= 0.5 ? (e / 2).squareRoot() : 1 - (2 * (1 - e)).squareRoot() / 2
     }
 
     /// The ring mark as Start draws it in `box` (`RingMark.fitted`), mirrored across the box's middle when `mirrored`.

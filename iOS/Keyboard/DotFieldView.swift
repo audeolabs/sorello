@@ -25,10 +25,13 @@ struct DotFieldRepresentable: UIViewRepresentable {
     var box: CGRect?
     /// Start's ring, given as the wave arrives (`DotFieldView.Kind.idle` to `.wave`), opens into it; nil then, no opening.
     var opening: DotFieldView.Opening?
+    /// Called once an opening is far enough on for the time to arrive (`RingOpening.timeArrives`), or has ended.
+    var onTimeMayArrive: (() -> Void)?
 
     func makeUIView(context: Context) -> DotFieldView { DotFieldView() }
 
     func updateUIView(_ view: DotFieldView, context: Context) {
+        view.onTimeMayArrive = onTimeMayArrive
         view.configure(kind: kind, level: level, ink: ink, mark: mark, reduceMotion: reduceMotion, mirrored: mirrored,
                        dimmed: dimmed, box: box, opening: opening)
     }
@@ -69,6 +72,9 @@ final class DotFieldView: UIView {
     /// An opening has begun and shows its first moment, the ring, until the display link's first frame starts its clock:
     /// the change of form can take a while to reach the screen, and the ring must not have turned by then.
     private var openingPending = false
+    /// Whether this opening has let the time arrive yet.
+    private var timeReleased = true
+    var onTimeMayArrive: (() -> Void)?
     private var dimmed = false
     /// The last change of `dimmed`: when, and how dim the row was then.
     private var dimChange: (time: CFTimeInterval, alpha: Double)?
@@ -115,10 +121,12 @@ final class DotFieldView: UIView {
         if case .wave = kind, self.kind == .idle, let opening, !reduceMotion {
             openedAt = nil
             openingPending = true
+            timeReleased = false
             self.opening = opening
         } else if reduceMotion || kind == .idle || kind == .shimmer {
             openedAt = nil
             openingPending = false
+            releaseTime()
         }
         if dimmed != self.dimmed {
             // The shown row brightens (or dims) in a moment; a row that arrives does so already as it is.
@@ -217,12 +225,14 @@ final class DotFieldView: UIView {
             let progress = openedAt.map { (now - $0) / RingOpening.duration } ?? 0
             if progress < 1 {
                 opened = progress
+                if RingOpening.eased(progress) >= RingOpening.timeArrives { releaseTime() }
             } else {
                 // Opened (`tick` stops the clock unless the wave is live).
                 openedAt = nil
                 follower = DotWave.LevelFollower()
                 trace = DotWave.Trace()
                 lastFrame = nil
+                releaseTime()
             }
         }
         switch kind {
@@ -291,6 +301,14 @@ final class DotFieldView: UIView {
             markLayer.hide()
         }
         setAlpha(alpha, at: now)
+    }
+
+    /// Lets the time arrive, once per opening, outside any SwiftUI update.
+    private func releaseTime() {
+        guard !timeReleased else { return }
+        timeReleased = true
+        guard let onTimeMayArrive else { return }
+        DispatchQueue.main.async { onTimeMayArrive() }
     }
 
     /// Dims the dots to `alpha`. Between frames (nothing else moving, or Reduce Motion) Core Animation runs what is left
