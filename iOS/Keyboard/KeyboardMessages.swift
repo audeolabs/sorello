@@ -215,7 +215,7 @@ extension IslandForm {
     }
 }
 
-/// What the island holds (ARCHITECTURE.md, "Top row"): the ridge mark and "Start"; while starting, the status and the
+/// What the island holds (ARCHITECTURE.md, "Top row"): the ring mark and "Start"; while starting, the status and the
 /// stop glyph; while recording, the wave, the time and the stop glyph; while the recording waits for its transcript, only
 /// the shimmer (no words name the wait).
 enum CapsuleContent: Equatable, Sendable {
@@ -293,6 +293,10 @@ enum SessionDot: Equatable, Sendable {
         /// The ring's stroke, in points.
         static let lineWidth = 1.0
     }
+
+    /// How far a tap on Start without a session swells the dot, at the pop's peak: it stays clear of the ring mark's
+    /// white dot beside it, with room for the spring's overshoot.
+    static let popScale = 1.4
 
     init(mode: KeyboardMode, sessionReady: Bool) {
         switch mode {

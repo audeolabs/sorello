@@ -653,7 +653,7 @@ private final class BudImages {
 }
 
 /// The dictation island (ARCHITECTURE.md, "Top row", "Keyboard look"): a near-black pill in both modes, in the spirit of
-/// the Dynamic Island. Idle it is Start, the ridge mark beside "Start", the mark's dot the session's state (`SessionDot`).
+/// the Dynamic Island. Idle it is Start, the ring mark beside "Start", its state dot the session's state (`SessionDot`).
 /// Starting and recording it is grown towards the bar's middle, under half the bar, and is Stop as a whole: the wave
 /// (`DotFieldRepresentable`), the time and a stop glyph, mirrored left-handed so the stop glyph stays at the bar's edge.
 /// Waiting for the transcript it is the short shimmer, which takes no taps; VoiceOver hears the wait from the label.
@@ -814,17 +814,16 @@ private struct DictationIsland: View {
     }
 }
 
-/// The ridge mark with the session's dot (`SessionDot`), on Start and in the menu, so the two always agree: its line in
-/// `line`, `side` points across, at `weight` times its drawn weight (a little heavier on the island, so the W reads at this
-/// size), its dot in `dot` drawn as `look` says: with the heartbeat's ring rippling out of it, breathing (its opacity
-/// down to 35% and back every 1.2 s), lit and still, or unlit. Each change of `pops` (a tap on Start without a session)
-/// swells the dot once, quickly.
+/// The ring mark with the session's dot (`SessionDot`), on Start and in the menu, so the two always agree: its seven
+/// white dots in `line` at 80% (`RingMark.whiteStrength`), `side` points across, its state dot in `dot` drawn as `look`
+/// says: with the heartbeat's ring rippling out of it beneath the white dots, breathing (its opacity down to 35% and back
+/// every 1.2 s), lit and still, or unlit. Each change of `pops` (a tap on Start without a session) swells the state dot
+/// once, quickly.
 private struct SessionMark: View {
     let line: Color
     let dot: BrandPalette.RGB
     let look: SessionDot.Look
     let side: CGFloat
-    var weight = 1.3
     var pops = 0
     @State private var dim = false
 
@@ -832,17 +831,17 @@ private struct SessionMark: View {
 
     var body: some View {
         ZStack {
-            RidgeMarkShape(weight: weight).stroke(line, style: RidgeMarkShape.style(side: side, weight: weight))
             if look == .heartbeat {
-                HeartbeatRing(color: UIColor(dot), weight: weight)
+                HeartbeatRing(color: UIColor(dot))
                     .allowsHitTesting(false)
             }
-            RidgeMarkShape(dot: true, weight: weight).fill(Color(dot))
+            RingMarkShape().fill(line.opacity(RingMark.whiteStrength))
+            RingMarkShape(state: true).fill(Color(dot))
                 .opacity(breathes && dim ? 0.35 : 1)
                 .keyframeAnimator(initialValue: 1.0, trigger: pops) { content, scale in
-                    content.scaleEffect(scale, anchor: RidgeMarkShape.dotAnchor(weight: weight))
+                    content.scaleEffect(scale, anchor: RingMarkShape.stateAnchor)
                 } keyframes: { _ in
-                    SpringKeyframe(1.6, duration: 0.12, spring: .snappy)
+                    SpringKeyframe(SessionDot.popScale, duration: 0.12, spring: .snappy)
                     SpringKeyframe(1, duration: 0.3, spring: .smooth)
                 }
         }
@@ -1017,7 +1016,7 @@ struct MenuPanelView: View {
                     } icon: {
                         // The session's dot, as on Start.
                         SessionMark(line: color(palette.markLine), dot: sessionDot.menuColor(palette, reduceMotion: reduceMotion),
-                                    look: sessionDot.look(reduceMotion: reduceMotion), side: 18, weight: 1)
+                                    look: sessionDot.look(reduceMotion: reduceMotion), side: 18)
                     }
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(color(palette.primary))

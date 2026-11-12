@@ -96,7 +96,7 @@ struct OnboardingView: View {
 
     private func welcome(compact: Bool) -> some View {
         VStack(spacing: compact ? 18 : 24) {
-            RidgeMarkView(dot: Theme.aurora, side: compact ? 52 : 84)
+            RingMarkView(dot: Theme.aurora, side: compact ? 52 : 84)
                 .padding(.top, compact ? 4 : 64)
             VStack(spacing: 8) {
                 Text("Sorello")

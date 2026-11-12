@@ -1276,6 +1276,10 @@ and ship it. This section holds what concerns both apps.
   app's: Urbanist Medium, tracked in by 0.015 em. Everything else is the
   system font. The app carries the repository's one copy of the font,
   from `Resources/Fonts`, with its licence beside it.
+  The mark the app draws inside itself, on the keyboard's Start and in the
+  Live Activity is the ring mark: seven white dots round a ring and a
+  larger eighth, which carries the state's colour (`iOS/ARCHITECTURE.md`,
+  "Keyboard look").
 - **Versions.** The iPhone app has its own version and build number, in
   its `Info.plist` templates and its build. `Config/identity.conf` is the
   Mac app's alone.

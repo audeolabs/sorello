@@ -1,6 +1,6 @@
 import Foundation
 
-/// ARCHITECTURE.md, "Keyboard look": the brand palette's contrast in both modes and with Increase Contrast, the ridge
+/// ARCHITECTURE.md, "Keyboard look": the brand palette's contrast in both modes and with Increase Contrast, the ring
 /// mark's geometry, the recording wave, and which dictation state shows which colour and text.
 enum KeyboardLookTests {
     static var tests: [TestCase] {
@@ -14,8 +14,10 @@ enum KeyboardLookTests {
             ("highlightedCandidateStaysLegible", testHighlightedCandidateStaysLegible),
             ("swipeTrailIsQuietAndNeutral", testSwipeTrailIsQuietAndNeutral),
             ("menuLinkIsTheBrandAccent", testMenuLinkIsTheBrandAccent),
-            ("ridgeMarkKeepsItsLineAndDot", testRidgeMarkKeepsItsLineAndDot),
-            ("ridgeMarkFitsItsBoxCentred", testRidgeMarkFitsItsBoxCentred),
+            ("ringMarkKeepsItsDots", testRingMarkKeepsItsDots),
+            ("ringMarkFitsItsBoxCentred", testRingMarkFitsItsBoxCentred),
+            ("ringMarksStateDotPopsClearOfItsNeighbours", testRingMarksStateDotPopsClearOfItsNeighbours),
+            ("ringMarksWhiteDotsStandOffTheirSurface", testRingMarksWhiteDotsStandOffTheirSurface),
             ("capsuleStyleFollowsTheMode", testCapsuleStyleFollowsTheMode),
             ("barStatusKeepsWordsWhereTheyEarnTheirSpace", testBarStatusKeepsWordsWhereTheyEarnTheirSpace),
             ("islandTakesItsFormFromTheMode", testIslandTakesItsFormFromTheMode),
@@ -264,47 +266,116 @@ enum KeyboardLookTests {
         }
     }
 
-    // MARK: Ridge mark
+    // MARK: Ring mark
 
-    /// The mark as first drawn, on its 32-unit grid: a W-shaped ridge of five strokes, alternately down and up, and a
-    /// dot centred below its lowest point.
-    private static func testRidgeMarkKeepsItsLineAndDot() {
-        let line = RidgeMark.line
-        TestSupport.expectEqual(line.count, 6)
-        TestSupport.expectEqual(line.first, RidgeMark.Point(x: 5.4, y: 6.1))
-        TestSupport.expectEqual(line.last, RidgeMark.Point(x: 26.6, y: 15.9))
-        for index in line.indices.dropLast() {
-            TestSupport.expect(line[index + 1].x > line[index].x, "the ridge runs left to right")
-            let down = line[index + 1].y > line[index].y
-            TestSupport.expect(down == (index % 2 == 0), "stroke \(index) is not alternately down and up")
-        }
-        TestSupport.expectEqual(RidgeMark.dot, RidgeMark.Point(x: 16, y: 26))
-        TestSupport.expect(RidgeMark.dot.y - RidgeMark.dotRadius > line.map(\.y).max()! + RidgeMark.lineWidth / 2,
-                           "the dot is below the ridge")
+    /// The boxes the mark is drawn in: Start (19), the menu (18), the Live Activity's four, and onboarding's largest.
+    private static let ringMarkBoxes = [KeyRect(x: 0, y: 0, width: 19, height: 19), KeyRect(x: 0, y: 0, width: 20, height: 18),
+                                        KeyRect(x: 0, y: 0, width: 18, height: 16), KeyRect(x: 0, y: 0, width: 24, height: 22),
+                                        KeyRect(x: 0, y: 0, width: 30, height: 28), KeyRect(x: 0, y: 0, width: 84, height: 84)]
+
+    private static func distance(_ a: RingMark.Point, _ b: RingMark.Point) -> Double {
+        ((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y)).squareRoot()
     }
 
-    /// Fitted into a box, the mark keeps its shape (one scale), all its ink inside the box, centred, at any weight.
-    private static func testRidgeMarkFitsItsBoxCentred() {
-        for (box, weight) in [(KeyRect(x: 0, y: 0, width: 16, height: 16), 1.0), (KeyRect(x: 10, y: 4, width: 30, height: 20), 1),
-                              (KeyRect(x: -3, y: 2, width: 12, height: 40), 1), (KeyRect(x: 0, y: 0, width: 19, height: 19), 1.3)] {
-            let mark = RidgeMark.fitted(in: box, weight: weight)
-            let half = mark.lineWidth / 2
-            let xs = mark.line.map(\.x) + [mark.dot.x - mark.dotRadius, mark.dot.x + mark.dotRadius]
-            let ys = mark.line.map(\.y) + [mark.dot.y - mark.dotRadius, mark.dot.y + mark.dotRadius]
-            let minX = min(xs.min()!, mark.line.map(\.x).min()! - half), maxX = max(xs.max()!, mark.line.map(\.x).max()! + half)
-            let minY = min(ys.min()!, mark.line.map(\.y).min()! - half), maxY = max(ys.max()!, mark.line.map(\.y).max()! + half)
+    /// The mark as drawn, on its 27-unit square: a ring 9.3 units in radius, the state dot (3.1) at 327 degrees, a little
+    /// left of the bottom, and seven white dots (2.05) 42 degrees apart from it, round the ring's right side and over
+    /// its top, at 80% of the surface's ink. The ring is open at the bottom, by 66 degrees.
+    private static func testRingMarkKeepsItsDots() {
+        TestSupport.expectEqual(RingMark.side, 27)
+        TestSupport.expectEqual(RingMark.ringRadius, 9.3)
+        TestSupport.expectEqual(RingMark.stateRadius, 3.1)
+        TestSupport.expectEqual(RingMark.stateAngle, 327)
+        TestSupport.expectEqual(RingMark.whiteRadius, 2.05)
+        TestSupport.expectEqual(RingMark.whiteAngles, [285, 243, 201, 159, 117, 75, 33])
+        TestSupport.expectEqual(RingMark.whiteStrength, 0.8)
+        TestSupport.expect(RingMark.stateRadius > RingMark.whiteRadius, "the state dot is not the largest")
+        // The opening: from the last white dot on through the bottom to the state dot.
+        let opening = RingMark.whiteAngles.last! + 360 - RingMark.stateAngle
+        TestSupport.expectEqual(opening, 66)
+        for (a, b) in zip([RingMark.stateAngle] + RingMark.whiteAngles, RingMark.whiteAngles) {
+            TestSupport.expect(abs(a - b - 42) < 1e-9, "the white dots are not 42 degrees apart: \(a), \(b)")
+        }
+
+        // In a 27-point box at the origin, the mark is at its own size: where each dot lands.
+        let mark = RingMark.fitted(in: KeyRect(x: 0, y: 0, width: 27, height: 27))
+        let expected = [(4.517, 15.907), (5.214, 9.278), (10.167, 4.818), (16.833, 4.818), (21.786, 9.278),
+                        (22.483, 15.907), (18.565, 21.300)]
+        func near(_ p: RingMark.Point, _ x: Double, _ y: Double) -> Bool { abs(p.x - x) < 1e-3 && abs(p.y - y) < 1e-3 }
+        TestSupport.expect(near(mark.stateDot, 8.435, 21.300), "the state dot is at \(mark.stateDot)")
+        TestSupport.expectEqual(mark.stateRadius, 3.1)
+        TestSupport.expectEqual(mark.whiteRadius, 2.05)
+        TestSupport.expectEqual(mark.whiteDots.count, 7)
+        for (dot, (x, y)) in zip(mark.whiteDots, expected) {
+            TestSupport.expect(near(dot, x, y), "a white dot is at \(dot), not (\(x), \(y))")
+        }
+        // Open at the bottom: the state dot and the last white dot sit level, either side of the ring's centre, below it.
+        let last = mark.whiteDots.last!
+        TestSupport.expect(abs(mark.stateDot.y - last.y) < 1e-9 && mark.stateDot.y > 13.5, "the opening is not at the bottom")
+        TestSupport.expect(abs((mark.stateDot.x + last.x) / 2 - 13.5) < 1e-9 && mark.stateDot.x < last.x,
+                           "the opening is not centred under the ring, the state dot at its left")
+    }
+
+    /// Fitted into a box, the mark is the 27-unit square scaled to the box's shorter side and centred there: one scale,
+    /// never distorted, every dot inside the box, none touching another (the Live Activity's recording state dot
+    /// included), the state dot the largest.
+    private static func testRingMarkFitsItsBoxCentred() {
+        for box in ringMarkBoxes + [KeyRect(x: 10, y: 4, width: 30, height: 20), KeyRect(x: -3, y: 2, width: 12, height: 40)] {
+            let mark = RingMark.fitted(in: box)
+            let scale = min(box.width, box.height) / 27
+            let centre = RingMark.Point(x: box.midX, y: box.midY)
             let tolerance = 1e-9
-            TestSupport.expect(minX >= box.x - tolerance && maxX <= box.maxX + tolerance, "x outside \(box): \(minX)...\(maxX)")
-            TestSupport.expect(minY >= box.y - tolerance && maxY <= box.maxY + tolerance, "y outside \(box): \(minY)...\(maxY)")
-            TestSupport.expect(abs((minX + maxX) / 2 - box.midX) < 1e-6 && abs((minY + maxY) / 2 - box.midY) < 1e-6, "not centred in \(box)")
-            // It fills the box's shorter side.
-            TestSupport.expect(abs(maxX - minX - box.width) < 1e-6 || abs(maxY - minY - box.height) < 1e-6, "does not fill \(box)")
-            // One scale: the first stroke keeps its direction and the dot its size relative to the line.
-            let scale = mark.lineWidth / (RidgeMark.lineWidth * weight)
-            TestSupport.expect(abs(mark.dotRadius - RidgeMark.dotRadius * weight * scale) < 1e-9, "dot scaled apart from the line")
-            let dx = mark.line[1].x - mark.line[0].x, dy = mark.line[1].y - mark.line[0].y
-            TestSupport.expect(abs(dx - (RidgeMark.line[1].x - RidgeMark.line[0].x) * scale) < 1e-9
-                && abs(dy - (RidgeMark.line[1].y - RidgeMark.line[0].y) * scale) < 1e-9, "the mark is distorted")
+            TestSupport.expect(abs(mark.stateRadius - 3.1 * scale) < tolerance, "the state dot's radius in \(box)")
+            TestSupport.expect(abs(mark.whiteRadius - 2.05 * scale) < tolerance, "the white dots' radius in \(box)")
+            TestSupport.expect(mark.stateRadius > mark.whiteRadius, "the state dot is not the largest in \(box)")
+            // Undistorted: every dot on one circle about the box's centre, at its own angle.
+            let placed = [(mark.stateDot, RingMark.stateAngle)] + Array(zip(mark.whiteDots, RingMark.whiteAngles))
+            for (dot, degrees) in placed {
+                let angle = degrees * .pi / 180
+                let x = centre.x + 9.3 * scale * sin(angle), y = centre.y + 9.3 * scale * cos(angle)
+                TestSupport.expect(abs(dot.x - x) < tolerance && abs(dot.y - y) < tolerance, "the dot at \(degrees) in \(box): \(dot)")
+            }
+            // Inside the box, and the square centred in it.
+            let ink = [(mark.stateDot, mark.stateRadius)] + mark.whiteDots.map { ($0, mark.whiteRadius) }
+            for (dot, radius) in ink {
+                TestSupport.expect(dot.x - radius >= box.x - tolerance && dot.x + radius <= box.maxX + tolerance
+                    && dot.y - radius >= box.y - tolerance && dot.y + radius <= box.maxY + tolerance, "a dot leaves \(box)")
+            }
+            // No two dots touch, not even with the state dot grown as the Live Activity grows it while recording.
+            let grown = SessionActivityMotion.markDotScale(phase: .recording, isStale: false, reduceMotion: false)
+            for stateScale in [1, grown] {
+                for i in ink.indices {
+                    for j in ink.indices where j > i {
+                        let gap = distance(ink[i].0, ink[j].0) - ink[i].1 * (i == 0 ? stateScale : 1) - ink[j].1
+                        TestSupport.expect(gap > 0, "dots \(i) and \(j) touch in \(box) at \(stateScale): \(gap)")
+                    }
+                }
+            }
+        }
+    }
+
+    /// No two dots touch in motion either: a tap on Start without a session pops the state dot, and at the pop's peak,
+    /// with 5% more for the spring's overshoot, it still touches no white dot, in Start's box (19 pt) and the menu's (18).
+    private static func testRingMarksStateDotPopsClearOfItsNeighbours() {
+        let popped = SessionDot.popScale * 1.05
+        for side in [19.0, 18.0] {
+            let mark = RingMark.fitted(in: KeyRect(x: 0, y: 0, width: side, height: side))
+            for (index, dot) in mark.whiteDots.enumerated() {
+                let gap = distance(mark.stateDot, dot) - mark.stateRadius * popped - mark.whiteRadius
+                TestSupport.expect(gap > 0, "the popped state dot touches white dot \(index) at \(side) pt: \(gap)")
+            }
+        }
+    }
+
+    /// The white dots are the surface's ink at 80%: blended with the surface, they keep 3:1 against the island (Start)
+    /// and against the menu's card (the session line), in light and dark, with and without Increase Contrast.
+    private static func testRingMarksWhiteDotsStandOffTheirSurface() {
+        variants { palette, name in
+            let island = palette.island
+            let onIsland = BrandPalette.blend(island.ink, alpha: RingMark.whiteStrength, over: island.color)
+            TestSupport.expect(ratio(onIsland, island.color) >= 3, "the white dots on the island, \(name): \(ratio(onIsland, island.color))")
+            let menu = MenuPalette(dark: name.hasPrefix("dark"), highContrast: name.hasSuffix("high"))
+            let onCard = BrandPalette.blend(menu.markLine, alpha: RingMark.whiteStrength, over: menu.card)
+            TestSupport.expect(ratio(onCard, menu.card) >= 3, "the white dots on the menu's card, \(name): \(ratio(onCard, menu.card))")
         }
     }
 
@@ -422,13 +493,13 @@ enum KeyboardLookTests {
                     }
                 }
             }
-            // Unlit: a neutral grey that still shows on the island, well short of the lit dot and the mark's line.
+            // Unlit: a neutral grey that still shows on the island, well short of the lit dot and the island's ink.
             let unlit = palette.unlitDot, island = palette.island.color
             TestSupport.expect(isGrey(unlit), "the unlit dot has a hue, \(name)")
             // It reads as a graphic at 3:1 (2.6:1 on the dark island is faint).
             TestSupport.expect(ratio(unlit, island) >= 3, "the unlit dot is faint on the island, \(name): \(ratio(unlit, island))")
             TestSupport.expect(ratio(unlit, island) < 0.6 * ratio(palette.live, island), "the unlit dot looks lit, \(name)")
-            TestSupport.expect(ratio(unlit, island) < 0.6 * ratio(palette.island.ink, island), "the unlit dot looks like the line")
+            TestSupport.expect(ratio(unlit, island) < 0.6 * ratio(palette.island.ink, island), "the unlit dot looks like the ink")
         }
         // The heartbeat: subtle, slow and one place to tune it.
         let beat = SessionDot.Heartbeat.self
@@ -438,30 +509,16 @@ enum KeyboardLookTests {
         TestSupport.expect(beat.opacity > 0.3 && beat.opacity <= 0.6, "the ripple starts at \(beat.opacity)")
         TestSupport.expect(beat.firstDelay >= 0.2 && beat.firstDelay <= 0.6, "the first ripple waits \(beat.firstDelay) s")
         // Its widest ring stays inside Start's pill, unclipped: the mark's box starts at Start's padding (14 pt) and is
-        // centred on the bar's control height.
+        // centred on the bar's control height. It ripples out of the ring mark's state dot.
         for height in [KeyboardMetrics.barControlHeight, KeyboardMetrics.compactBarControlHeight] {
             let box = KeyRect(x: 14, y: (height - 19) / 2, width: 19, height: 19)
-            let mark = RidgeMark.fitted(in: box, weight: 1.3)
-            let widest = mark.dotRadius + beat.reach
+            let mark = RingMark.fitted(in: box)
+            let widest = mark.stateRadius + beat.reach
             let r = height / 2
-            let centre = (x: max(r, mark.dot.x), y: r)
-            let distance = ((mark.dot.x - centre.x) * (mark.dot.x - centre.x) + (mark.dot.y - centre.y) * (mark.dot.y - centre.y)).squareRoot()
+            let centre = (x: max(r, mark.stateDot.x), y: r)
+            let distance = ((mark.stateDot.x - centre.x) * (mark.stateDot.x - centre.x)
+                + (mark.stateDot.y - centre.y) * (mark.stateDot.y - centre.y)).squareRoot()
             TestSupport.expect(distance + widest <= r - 0.5, "the ripple leaves Start's pill at \(height): \(distance + widest) of \(r)")
-        }
-        // It has all but faded by the time it meets the W's line (a ring reaching 4.5 pt crosses the W's lower points
-        // at about a quarter of its opacity). Path and opacity share one timing, so the opacity left when the ring's
-        // outer edge reaches the line follows from how far along its growth that is.
-        let mark = RidgeMark.fitted(in: KeyRect(x: 0, y: 0, width: 19, height: 19), weight: 1.3)
-        let clearance = zip(mark.line, mark.line.dropFirst()).map { a, b in
-            let dx = b.x - a.x, dy = b.y - a.y
-            let t = max(0, min(1, ((mark.dot.x - a.x) * dx + (mark.dot.y - a.y) * dy) / (dx * dx + dy * dy)))
-            let x = a.x + t * dx - mark.dot.x, y = a.y + t * dy - mark.dot.y
-            return (x * x + y * y).squareRoot()
-        }.min()! - mark.lineWidth / 2
-        let first = mark.dotRadius + beat.lineWidth, widest = mark.dotRadius + beat.reach
-        if widest > clearance {
-            let left = beat.opacity * (1 - (clearance - first) / (widest - first))
-            TestSupport.expect(left <= 0.1, "the ripple meets the W at \(left) opacity")
         }
     }
 
