@@ -116,9 +116,10 @@ private struct WordsTransition: ViewModifier {
     }
 }
 
-// MARK: The ridge mark
+// MARK: The ring mark
 
-/// The ridge mark (`RidgeMark`, KeyboardCore): the W line in white, the dot in the phase's accent.
+/// The ring mark (`RingMark`, KeyboardCore): its seven white dots white at 80%, its state dot in the phase's accent. Once
+/// the activity is stale, the dots are white at 45% and the state dot white at 35% (`ActivityLook.accent`), unswollen.
 struct MarkView: View {
     let state: SessionActivityState
     let isStale: Bool
@@ -129,19 +130,22 @@ struct MarkView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let fitted = RidgeMark.fitted(in: KeyRect(x: 0, y: 0, width: width, height: height), weight: height < 24 ? 1.35 : 1.1)
+        let fitted = RingMark.fitted(in: KeyRect(x: 0, y: 0, width: width, height: height))
         ZStack(alignment: .topLeading) {
             Path { path in
-                path.addLines(fitted.line.map { CGPoint(x: $0.x, y: $0.y) })
+                let r = fitted.whiteRadius
+                for dot in fitted.whiteDots {
+                    path.addEllipse(in: CGRect(x: dot.x - r, y: dot.y - r, width: 2 * r, height: 2 * r))
+                }
             }
-            .stroke(Color.white.opacity(isStale ? 0.45 : 1),
-                    style: StrokeStyle(lineWidth: fitted.lineWidth, lineCap: .round, lineJoin: .round))
+            .fill(Color.white.opacity(isStale ? 0.45 : RingMark.whiteStrength))
             Circle()
                 .fill(ActivityLook.accent(state.phase, isStale: isStale))
-                .frame(width: fitted.dotRadius * 2, height: fitted.dotRadius * 2)
-                // The dot grows a touch while recording: the one sign of life the mark gives (not with Reduce Motion).
+                .frame(width: fitted.stateRadius * 2, height: fitted.stateRadius * 2)
+                // The state dot grows a touch while recording: the one sign of life the mark gives (not with Reduce
+                // Motion).
                 .scaleEffect(SessionActivityMotion.markDotScale(phase: state.phase, isStale: isStale, reduceMotion: reduceMotion))
-                .position(x: fitted.dot.x, y: fitted.dot.y)
+                .position(x: fitted.stateDot.x, y: fitted.stateDot.y)
         }
         .frame(width: width, height: height)
         .fixedSize()

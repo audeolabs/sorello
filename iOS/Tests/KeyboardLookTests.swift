@@ -315,7 +315,8 @@ enum KeyboardLookTests {
     }
 
     /// Fitted into a box, the mark is the 27-unit square scaled to the box's shorter side and centred there: one scale,
-    /// never distorted, every dot inside the box, none touching another, the state dot the largest.
+    /// never distorted, every dot inside the box, none touching another (the Live Activity's recording state dot
+    /// included), the state dot the largest.
     private static func testRingMarkFitsItsBoxCentred() {
         for box in ringMarkBoxes + [KeyRect(x: 10, y: 4, width: 30, height: 20), KeyRect(x: -3, y: 2, width: 12, height: 40)] {
             let mark = RingMark.fitted(in: box)
@@ -338,11 +339,14 @@ enum KeyboardLookTests {
                 TestSupport.expect(dot.x - radius >= box.x - tolerance && dot.x + radius <= box.maxX + tolerance
                     && dot.y - radius >= box.y - tolerance && dot.y + radius <= box.maxY + tolerance, "a dot leaves \(box)")
             }
-            // No two dots touch.
-            for i in ink.indices {
-                for j in ink.indices where j > i {
-                    let gap = distance(ink[i].0, ink[j].0) - ink[i].1 - ink[j].1
-                    TestSupport.expect(gap > 0, "dots \(i) and \(j) touch in \(box): \(gap)")
+            // No two dots touch, not even with the state dot grown as the Live Activity grows it while recording.
+            let grown = SessionActivityMotion.markDotScale(phase: .recording, isStale: false, reduceMotion: false)
+            for stateScale in [1, grown] {
+                for i in ink.indices {
+                    for j in ink.indices where j > i {
+                        let gap = distance(ink[i].0, ink[j].0) - ink[i].1 * (i == 0 ? stateScale : 1) - ink[j].1
+                        TestSupport.expect(gap > 0, "dots \(i) and \(j) touch in \(box) at \(stateScale): \(gap)")
+                    }
                 }
             }
         }
