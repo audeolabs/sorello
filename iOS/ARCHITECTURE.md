@@ -1425,12 +1425,13 @@ every other point of the bar
   mirrored too (the stop glyph, the time, then the wave, which settles into
   the mark's dot beside the time and moves away from it), so the stop glyph
   stays at the bar's edge, under the thumb and away from Cancel; kept in
-  order it would sit beside Cancel. Start's ring is mirrored too, and it
-  opens the mirrored way ([Keyboard look](#keyboard-look), "The opening");
-  the menu's mark is not. The keys, suggestions, menu card and
-  everything else stay as they are. Every rule of the bar holds mirrored,
-  and off the layout is exactly the right-handed one
-  (`DictationIslandTests`). The keyboard reads it when it appears.
+  order it would sit beside Cancel. Start is mirrored too: the word "Start",
+  then its ring, itself a mirror image, which opens the mirrored way
+  ([Keyboard look](#keyboard-look), "The opening"); the menu's mark is not.
+  The keys, suggestions, menu card and everything else stay as they are.
+  Every rule of the bar holds mirrored, and off the layout is exactly the
+  right-handed one (`DictationIslandTests`). The keyboard reads it when it
+  appears.
 - **Left** (right, left-handed): a menu button (`sorello.menu`) that opens a panel over the key area
   with the session status, "Open Sorello", the trackpad
   tip with the field's text width ("Full width" or "Chat bubble",
@@ -1627,21 +1628,24 @@ the highlighted candidate's text 4.5:1 on its pill.
   - The run-out joins the dip's bottom to the row without a kink: it leaves
     the bottom bending as the dip bends, eases through straight into a
     gentle opposite bend, and meets the row level and straight.
-  - The white dots keep the ring's spacing while the ring first turns and
-    take the row's by the end (with the square of the eased progress), so
-    the last of them is never pushed across the ring's opening into the
-    state dot. Their size and strength go from the mark's to the row's at
-    rest. The row's other dots join on behind the seventh, a pitch apart,
-    and brighten over the second half.
+  - The white dots stay close to the ring's spacing while the ring first
+    turns and take the row's by the end (with the square of the eased
+    progress), so the last of them is never pushed across the ring's opening
+    into the state dot. Their size and strength go from the mark's to the
+    row's at rest. The row's other dots join on behind the seventh, a pitch
+    apart, and brighten over the second half.
   - At every moment no dot leaves the island, no two dots touch, and the
     state dot moves without a jump.
-  - "Start" leaves by its quick fade as the opening begins; the time and
-    the stop glyph arrive as they did. The island grows by its own spring
-    and clips what it has not yet grown over.
-  - If the recording begins before the opening ends, the opening finishes,
-    and the row shows the voice from then on; the level is recorded
-    meanwhile. Any other change (Stop, Cancel, an error) ends the opening
-    at once.
+  - "Start" leaves by its quick fade as the opening begins, and the stop
+    glyph arrives as it did. The time arrives when the recording begins, but
+    not before the state dot is over the top of the ring (an eased progress
+    of 0.45): until then the ring stands where the time will be. The island
+    grows by its own spring and clips what it has not yet grown over.
+  - If the recording begins before the opening ends, the opening finishes on
+    the calm row, and the row shows the voice from that moment on. It begins
+    calm: what was said during the opening is not drawn, so the row never
+    jumps into a shape. Any other change (Stop, Cancel, an error) ends the
+    opening at once.
   - Left-handed, the opening is the mirror image, as the wave is, and so is
     Start's ring on that keyboard. The mark is mirrored nowhere else.
   - With Reduce Motion there is no opening: Start hands over to the
