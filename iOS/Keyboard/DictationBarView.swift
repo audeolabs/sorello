@@ -692,7 +692,8 @@ private struct DictationIsland: View {
     @State private var ringFrame: CGRect?
     @State private var waveFrame: CGRect?
     /// Whether the island held Start, as of the last change: while the body for a change is drawn, what it held before.
-    /// Nil until the island has appeared.
+    /// Nil while it is not on screen (the keyboard hidden), so a dictation found running when it appears again never
+    /// opens the ring.
     @State private var heldStart: Bool?
     /// The island is pressed (`IslandPressStyle`).
     @State private var pressed = false
@@ -733,7 +734,10 @@ private struct DictationIsland: View {
                 .opacity(pressed ? IslandPressStyle.pressedAlpha : 1)
                 .animation(reduceMotion ? nil : IslandPressStyle.fade, value: pressed)
         }
-        .onChange(of: CapsuleContent(mode: state.mode) == .start, initial: true) { _, start in heldStart = start }
+        .onChange(of: CapsuleContent(mode: state.mode) == .start) { _, start in heldStart = start }
+        // The client's state now, not this body's: it may have changed on the way back.
+        .onAppear { heldStart = CapsuleContent(mode: client.state.mode) == .start }
+        .onDisappear { heldStart = nil }
         // The pill itself is the bar's `IslandBody`, behind it, which moves in the same spring.
         // While the island grows, what it will hold stays inside it.
         .clipShape(Capsule())
@@ -761,10 +765,14 @@ private struct DictationIsland: View {
         return RingOpening.applies(rowCount: row.count)
     }
 
+    /// The ring opens from here: it `opens`, and the island holds Start, on screen (as the change is drawn, what it held
+    /// before). Start's leaving and the field's arriving both follow it, so the ring is never hidden without opening.
+    private var opensFromStart: Bool { opens && heldStart == true }
+
     /// Start: what leaves when a dictation starts. With the opening its ring is handed over at once (the dots' field
     /// draws it from then on), while "Start" and the heartbeat leave by the quick fade; returning, it arrives as before.
     private var startTransition: AnyTransition {
-        guard opens else { return arrival }
+        guard opensFromStart else { return arrival }
         let leave = AnyTransition.modifier(active: RingHandedOver(handedOver: true), identity: RingHandedOver(handedOver: false))
             .combined(with: .opacity)
             .animation(.easeOut(duration: DictationBarView.handover))
@@ -878,7 +886,7 @@ private struct DictationIsland: View {
     private func field(_ palette: BrandPalette) -> some View {
         let recording = CapsuleContent(mode: state.mode) == .starting || recordingStartedAt != nil
         // Only from Start, as the change is drawn: not when the keyboard appears mid-dictation.
-        let opening = opens && heldStart == true
+        let opening = opensFromStart
         let end: Alignment = leftHanded ? .leading : .trailing
         let ink = Color(palette.island.ink)
         let arrive: Animation = reduceMotion ? .easeOut(duration: 0.15)
