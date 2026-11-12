@@ -210,13 +210,32 @@ final class DotFieldView: UIView {
         var dots: [DotWave.Dot] = []
         var markDot: DotWave.Dot?
         var alpha = dimAlpha(at: now)
+        // How far the ring has opened, while it opens. When it has, the wave starts from rest: what was said meanwhile is
+        // neither recorded nor drawn, so the row never jumps into a shape (ARCHITECTURE.md, "The opening").
+        var opened: Double?
+        if openedAt != nil || openingPending, opening != nil, case .wave = kind {
+            let progress = openedAt.map { (now - $0) / RingOpening.duration } ?? 0
+            if progress < 1 {
+                opened = progress
+            } else {
+                // Opened (`tick` stops the clock unless the wave is live).
+                openedAt = nil
+                follower = DotWave.LevelFollower()
+                trace = DotWave.Trace()
+                lastFrame = nil
+            }
+        }
         switch kind {
         case .idle:
             // The last frame stays as it was.
             return
         case .wave(let live):
             var shown = live ? level : 0
-            if live && !reduceMotion {
+            if opened != nil {
+                // The calm row the ring opens into (below).
+                dots = DotWave.dots(level: 0, width: width, height: height)
+                shown = 0
+            } else if live && !reduceMotion {
                 // Only a frame after the last moves the row (layout and a new level draw at the same moment again).
                 if now > (lastFrame ?? -.infinity) {
                     follower.follow(level, over: min(now - (lastFrame ?? now), 0.1))
@@ -242,24 +261,15 @@ final class DotFieldView: UIView {
         }
         dots = dots.map(place)
         markDot = markDot.map(place)
-        if openedAt != nil || openingPending, let opening, markDot != nil {
-            let progress = openedAt.map { (now - $0) / RingOpening.duration } ?? 0
-            if progress < 1 {
-                // The ring's dots on their way to the calm row. If the recording has begun, the trace records the voice
-                // meanwhile and the row shows it once the opening ends. Start's ring is not dimmed; the row is, as it
-                // arrives.
-                let ring = KeyRect(x: Double(opening.ring.minX), y: Double(opening.ring.minY),
-                                   width: Double(opening.ring.width), height: Double(opening.ring.height))
-                let frame = RingOpening.frame(ring: ring, row: DotWave.dots(level: 0, width: width, height: height).map(place),
-                                              mark: place(DotWave.markDot(level: 0, width: width, height: height)),
-                                              progress: progress, mirrored: mirrored, stateStrength: opening.stateStrength)
-                dots = frame.dots
-                markDot = frame.stateDot
-                alpha = 1 + (alpha - 1) * RingOpening.eased(progress)
-            } else {
-                // Opened: the wave from here on (`tick` stops the clock unless the wave is live).
-                self.openedAt = nil
-            }
+        if let progress = opened, let opening, let target = markDot {
+            // The ring's dots on their way to the calm row. Start's ring is not dimmed; the row is, as it arrives.
+            let ring = KeyRect(x: Double(opening.ring.minX), y: Double(opening.ring.minY),
+                               width: Double(opening.ring.width), height: Double(opening.ring.height))
+            let frame = RingOpening.frame(ring: ring, row: dots, mark: target, progress: progress, mirrored: mirrored,
+                                          stateStrength: opening.stateStrength)
+            dots = frame.dots
+            markDot = frame.stateDot
+            alpha = 1 + (alpha - 1) * RingOpening.eased(progress)
         }
         // No transaction of its own: the dots change in the same commit as the SwiftUI update that asked for them, so the
         // ring's first moment never shows ahead of the rest of the island (the layers have no implicit animations).
