@@ -1109,6 +1109,8 @@ no buttons.
   while the model prepares); while recording the strip is one still moment
   of the keyboard's voice row, three words of different loudness
   (`DotWave.stillLift`). `DotWave` is compiled into the extension.
+  When the activity is stale the mark's seven dots are white at 45% and its
+  state dot white at 35%, whatever the phase, and the dot does not swell.
   - Compact: the mark leading; trailing, a small strip, or the coral dot and
     the elapsed time while recording, so the island grows as recording starts
     and narrows as it stops. Minimal: the mark, or the coral dot while
@@ -1122,7 +1124,7 @@ no buttons.
   brightness and colour, so the row swells and settles back; changed words
   push up and blur in; the trailing side swaps between the strip and the
   timer, growing out of the island's edge; the minimal view's recording dot
-  pops in; the mark's dot swells a little while recording. With Reduce
+  pops in; the mark's state dot swells a little while recording. With Reduce
   Motion every change is opacity only: nothing grows, shrinks or slides,
   the dots keep one size and the strip's shape shows in brightness
   (`SessionActivityMotion`, pure, tested). Timers are live
@@ -1310,7 +1312,7 @@ every other point of the bar
       the dot's edge, 3.5 pt beyond it over 1 s, ease-out, fading from 0.6
       opacity, then rests; every 3 s, the first 0.4 s after the mark
       appears (`SessionDot.Heartbeat`, every constant in one place). It is
-      drawn beneath the mark's white dots, so it passes behind the two
+      drawn beneath the mark's white dots, so it passes behind the one
       nearest the state dot, and it stays inside Start's pill.
       `HeartbeatRingView` runs each ripple as a Core Animation group at
       most 30 frames a second, started by a main-thread timer once per
@@ -1450,7 +1452,7 @@ every other point of the bar
   side by side), and reads at WCAG AA (4.5:1 or
   better) in light and dark mode (`MenuPalette`: a white card in light
   mode, a dark grey one in dark mode, "Open Sorello" and the session line's
-  ring mark in the brand's accent, `BrandPalette.link`). When it does not fit (landscape, the largest sizes) it
+  state dot in the brand's accent, `BrandPalette.link`). When it does not fit (landscape, the largest sizes) it
   scrolls inside its rounded corners. At the accessibility sizes the actions
   come first ("Open Sorello", then the text-width choice), then the
   session status and the tip, which points above
