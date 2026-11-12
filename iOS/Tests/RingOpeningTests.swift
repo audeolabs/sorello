@@ -15,6 +15,7 @@ enum RingOpeningTests {
         ("mirroredIsTheMirrorImage", testMirroredIsTheMirrorImage),
         ("stateDotStartsAsStartShowsIt", testStateDotStartsAsStartShowsIt),
         ("timeWaitsUntilTheStateDotIsOverTheTop", testTimeWaitsUntilTheStateDotIsOverTheTop),
+        ("dipWidensToTwoPointSixTimesTheRing", testDipWidensToTwoPointSixTimesTheRing),
         ("opensOnlyIntoSevenDotsOrMore", testOpensOnlyIntoSevenDotsOrMore),
     ]
 
@@ -342,6 +343,32 @@ enum RingOpeningTests {
                 let dot = scene.frame(progress).stateDot
                 TestSupport.expect(dot.y >= at.y - 0.01, "\(scene), at \(progress): the state dot is higher than over the top")
             }
+        }
+    }
+
+    /// What is left of the ring hangs beside the state dot as a dip: an arc the ring's own size while the ring first turns
+    /// (until the state dot is over the top), whose radius then grows and never shrinks, reaching 2.6 times the ring's by
+    /// the end, so the dip widens, grows shallow and is pulled flat. The state dot lies on that arc at every moment, so
+    /// the dip the frame reports is the one drawn. In either hand.
+    private static func testDipWidensToTwoPointSixTimesTheRing() {
+        let ringRadius = RingMark.ringRadius * 19 / RingMark.side
+        for scene in scenes {
+            var last = 0.0
+            for progress in steps + [1 - 1e-6] {
+                let frame = scene.frame(progress), dip = frame.dip
+                let centre = DotWave.Dot(x: dip.x, y: dip.y, radius: 0, brightness: 0)
+                TestSupport.expect(abs(distance(frame.stateDot, centre) - dip.radius) < 1e-9,
+                                   "\(scene), at \(progress): the state dot is off the dip (\(distance(frame.stateDot, centre)) from its centre, radius \(dip.radius))")
+                if RingOpening.eased(progress) <= RingOpening.timeArrives {
+                    TestSupport.expect(abs(dip.radius - ringRadius) < 1e-12,
+                                       "\(scene), at \(progress): the dip is \(dip.radius) across while the ring first turns, not the ring's \(ringRadius)")
+                }
+                TestSupport.expect(dip.radius >= last - 1e-12, "\(scene), at \(progress): the dip shrinks from \(last) to \(dip.radius)")
+                last = dip.radius
+            }
+            TestSupport.expect(abs(scene.frame(1 - 1e-6).dip.radius - 2.6 * ringRadius) < 1e-3,
+                               "\(scene): the dip reaches \(scene.frame(1 - 1e-6).dip.radius / ringRadius) times the ring's radius, not 2.6")
+            TestSupport.expect(abs(scene.frame(1).dip.radius - 2.6 * ringRadius) < 1e-9, "\(scene): the dip at the end")
         }
     }
 

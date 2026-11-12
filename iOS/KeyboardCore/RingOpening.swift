@@ -39,6 +39,15 @@ enum RingOpening {
         var dots: [DotWave.Dot]
         /// The level the string's row lies along at this moment.
         var rowLevel: Double
+        /// The dip at this moment: the circle what is left of the ring hangs on, the state dot on it.
+        var dip: Dip
+    }
+
+    /// A circle: its centre and radius.
+    struct Dip: Equatable, Sendable {
+        var x: Double
+        var y: Double
+        var radius: Double
     }
 
     /// Whether a row of `rowCount` dots can take the ring's seven white dots. In a narrower island there is no opening.
@@ -87,9 +96,12 @@ enum RingOpening {
             dots: ringMark.whiteDots.map {
                 DotWave.Dot(x: $0.x, y: $0.y, radius: ringMark.whiteRadius, brightness: RingMark.whiteStrength)
             },
-            rowLevel: box.midY + RingMark.ringRadius * max(0, min(box.width, box.height)) / RingMark.side)
+            rowLevel: box.midY + RingMark.ringRadius * max(0, min(box.width, box.height)) / RingMark.side,
+            dip: Dip(x: box.midX, y: box.midY, radius: RingMark.ringRadius * max(0, min(box.width, box.height)) / RingMark.side))
         if progress >= 1 {
-            return Frame(stateDot: mark, dots: row, rowLevel: mark.y)
+            // Pulled flat: the dip's widest circle, its bottom at the state dot.
+            let radius = ringFrame.dip.radius * (1 + widening)
+            return Frame(stateDot: mark, dots: row, rowLevel: mark.y, dip: Dip(x: mark.x, y: mark.y - radius, radius: radius))
         }
         guard applies(rowCount: row.count) else { return ringFrame }
         // Worked right-handed: mirrored, x is negated on the way in and on the way out.
@@ -102,11 +114,13 @@ enum RingOpening {
                                 stateStrength: stateStrength)
         frame.stateDot = flipped(frame.stateDot)
         frame.dots = frame.dots.map(flipped)
+        frame.dip.x *= flip
         guard progress <= 0 else { return frame }
         // At its first moment the string is the ring exactly; the dots that join later are there, unseen.
         frame.stateDot = ringFrame.stateDot
         frame.dots.replaceSubrange(0 ..< ringFrame.dots.count, with: ringFrame.dots)
         frame.rowLevel = ringFrame.rowLevel
+        frame.dip = ringFrame.dip
         return frame
     }
 
@@ -182,7 +196,7 @@ enum RingOpening {
         let head = at(0)
         let state = DotWave.Dot(x: head.x, y: head.y, radius: lerp(RingMark.stateRadius * scale, mark.radius, e),
                                 brightness: lerp(stateStrength, mark.brightness, e))
-        return Frame(stateDot: state, dots: dots, rowLevel: rowLevel)
+        return Frame(stateDot: state, dots: dots, rowLevel: rowLevel, dip: Dip(x: bottomX, y: dipCentreY, radius: rho))
     }
 
     /// The run-out: the stretch of string between the dip's bottom and the row, `drop` above it. It leaves the bottom
