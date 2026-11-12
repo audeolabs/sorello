@@ -84,9 +84,10 @@ private extension View {
 /// one-line status in the middle (the candidate strip instead while it shows, and over both a revert's "Never correct"
 /// offer, unless dictation's own UI is up: `BarMiddleContent`), and the dictation island on the right. Tapping Start
 /// grows the island leftwards into the recording, under half the bar, which holds the wave and the time and is Stop
-/// (Start's ring opens into the wave's row as it grows); Stop contracts it into the short wait for the transcript, which opens back into Start. Its parts go where
-/// `IslandLayout` puts them, so Cancel, beside the recording island, never moves while a dictation runs. It renders
-/// `KeyboardDictationClient.state` and the strip only, so typing never re-renders it.
+/// (Start's ring opens into the wave's row as it grows); Stop contracts it into the short wait for the transcript,
+/// which opens back into Start. Its parts go where `IslandLayout` puts them, so Cancel, beside the recording island,
+/// never moves while a dictation runs. It renders `KeyboardDictationClient.state` and the strip only, so typing never
+/// re-renders it.
 struct DictationBarView: View {
     @ObservedObject var client: KeyboardDictationClient
     @ObservedObject var chrome: KeyboardChrome
@@ -909,9 +910,7 @@ private struct DictationIsland: View {
                                   level: Double(state.levels.last ?? 0), ink: palette.island.ink, mark: palette.live,
                                   reduceMotion: reduceMotion, mirrored: leftHanded, dimmed: recordingStartedAt == nil,
                                   box: waveBox, opening: opening ? ringBox.map {
-                                      DotFieldView.Opening(ring: $0, stateStrength: breath.since.map {
-                                          SessionMark.breathStrength(since: $0, at: CACurrentMediaTime())
-                                      } ?? 1)
+                                      DotFieldView.Opening(ring: $0, stateStrength: breath.strength(at: CACurrentMediaTime()))
                                   } : nil)
                 .opacity(recording ? 1 : 0)
                 .animation(recording ? (opening ? nil : arrive) : leave, value: recording)
@@ -987,37 +986,45 @@ private struct SessionMark: View {
             if now {
                 breathe()
             } else {
-                breathClock?.since = nil
-                withAnimation(.easeOut(duration: 0.2)) { dim = false }
+                breathClock?.stop(at: CACurrentMediaTime())
+                withAnimation(.easeOut(duration: Self.breathEnd)) { dim = false }
             }
         }
-        .onDisappear { breathClock?.since = nil }
+        .onDisappear { breathClock?.reset() }
     }
 
-    /// The breath: out to `breathLow` and back, each way in `breathHalf` seconds, eased in and out.
+    /// The breath: out to `breathLow` and back, each way in `breathHalf` seconds, eased in and out; when it stops, the
+    /// dot brightens to full in `breathEnd` seconds, eased out.
     static let breathLow = 0.35
     static let breathHalf = 0.6
+    static let breathEnd = 0.2
 
     /// A slow pulse, out and back every 1.2 s, for as long as it breathes.
     private func breathe() {
         dim = false
         withAnimation(.easeInOut(duration: Self.breathHalf).repeatForever(autoreverses: true)) { dim = true }
-        breathClock?.since = CACurrentMediaTime()
+        breathClock?.start(at: CACurrentMediaTime())
     }
 
     /// The state dot's strength at `now` for a breath that began at `since`, as `breathe` animates it.
     static func breathStrength(since: CFTimeInterval, at now: CFTimeInterval) -> Double {
         let cycle = max(now - since, 0).truncatingRemainder(dividingBy: 2 * breathHalf)
         let u = cycle < breathHalf ? cycle / breathHalf : (2 * breathHalf - cycle) / breathHalf
-        return 1 - (1 - breathLow) * easeInOut(u)
+        return 1 - (1 - breathLow) * curve(u, 0.42)
     }
 
-    /// SwiftUI's `easeInOut`, the cubic Bézier through (0.42, 0) and (0.58, 1), at `x` of the way through.
-    private static func easeInOut(_ x: Double) -> Double {
+    /// The state dot's strength `elapsed` seconds into its brightening from `from` to full, as the breath's end animates it.
+    static func breathEndStrength(from: Double, elapsed: Double) -> Double {
+        from + (1 - from) * curve(min(max(elapsed / breathEnd, 0), 1), 0)
+    }
+
+    /// SwiftUI's timing curves, `x` of the way through: the cubic Bézier through (`x1`, 0) and (0.58, 1), so `easeInOut`
+    /// with `x1` 0.42 and `easeOut` with 0.
+    private static func curve(_ x: Double, _ x1: Double) -> Double {
         var low = 0.0, high = 1.0
         for _ in 0 ..< 32 {
             let s = (low + high) / 2
-            let xs = 3 * (1 - s) * (1 - s) * s * 0.42 + 3 * (1 - s) * s * s * 0.58 + s * s * s
+            let xs = 3 * (1 - s) * (1 - s) * s * x1 + 3 * (1 - s) * s * s * 0.58 + s * s * s
             if xs < x { low = s } else { high = s }
         }
         let s = (low + high) / 2
@@ -1025,10 +1032,34 @@ private struct SessionMark: View {
     }
 }
 
-/// When Start's state dot began to breathe (`SessionMark`), nil while it does not: a reference the island keeps, set
+/// Start's state dot's breath (`SessionMark`), so the ring opens from the strength the dot shows: when the breath
+/// began, or when it ended and from what strength the dot brightens back to full. A reference the island keeps, set
 /// without drawing anything again.
 private final class BreathClock {
-    var since: CFTimeInterval?
+    private var since: CFTimeInterval?
+    private var ended: (time: CFTimeInterval, strength: Double)?
+
+    func start(at now: CFTimeInterval) {
+        since = now
+        ended = nil
+    }
+
+    func stop(at now: CFTimeInterval) {
+        ended = since.map { (now, SessionMark.breathStrength(since: $0, at: now)) }
+        since = nil
+    }
+
+    func reset() {
+        since = nil
+        ended = nil
+    }
+
+    /// The dot's strength at `now`: 1 unless it breathes or is brightening back from a breath.
+    func strength(at now: CFTimeInterval) -> Double {
+        if let since { return SessionMark.breathStrength(since: since, at: now) }
+        if let ended { return SessionMark.breathEndStrength(from: ended.strength, elapsed: now - ended.time) }
+        return 1
+    }
 }
 
 /// Start's ring is handed over to the opening (`DictationIsland.startTransition`): `SessionMark` hides its dots at once,
