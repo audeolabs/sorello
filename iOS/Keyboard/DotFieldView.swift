@@ -66,6 +66,9 @@ final class DotFieldView: UIView {
     private var opening: Opening?
     /// When the opening began; nil when none is running.
     private var openedAt: CFTimeInterval?
+    /// An opening has begun and shows its first moment, the ring, until the display link's first frame starts its clock:
+    /// the change of form can take a while to reach the screen, and the ring must not have turned by then.
+    private var openingPending = false
     private var dimmed = false
     /// The last change of `dimmed`: when, and how dim the row was then.
     private var dimChange: (time: CFTimeInterval, alpha: Double)?
@@ -110,10 +113,12 @@ final class DotFieldView: UIView {
         // wave shows (the recording may begin meanwhile); any other change ends it at once, and what follows hands over
         // as before.
         if case .wave = kind, self.kind == .idle, let opening, !reduceMotion {
-            openedAt = now
+            openedAt = nil
+            openingPending = true
             self.opening = opening
         } else if reduceMotion || kind == .idle || kind == .shimmer {
             openedAt = nil
+            openingPending = false
         }
         if dimmed != self.dimmed {
             // The shown row brightens (or dims) in a moment; a row that arrives does so already as it is.
@@ -156,7 +161,7 @@ final class DotFieldView: UIView {
         guard !reduceMotion else { return false }
         switch kind {
         case .idle: return false
-        case .wave(let live): return live || openedAt != nil
+        case .wave(let live): return live || openedAt != nil || openingPending
         case .shimmer: return true
         }
     }
@@ -188,6 +193,11 @@ final class DotFieldView: UIView {
     }
 
     fileprivate func tick(_ link: CADisplayLink) {
+        if openingPending {
+            // The first frame after the change: the opening's clock starts at the frame now on screen, the ring.
+            openingPending = false
+            openedAt = link.timestamp
+        }
         render(at: link.targetTimestamp)
         if !animates { updateClock() }
     }
@@ -232,8 +242,8 @@ final class DotFieldView: UIView {
         }
         dots = dots.map(place)
         markDot = markDot.map(place)
-        if let openedAt, let opening, markDot != nil {
-            let progress = (now - openedAt) / RingOpening.duration
+        if openedAt != nil || openingPending, let opening, markDot != nil {
+            let progress = openedAt.map { (now - $0) / RingOpening.duration } ?? 0
             if progress < 1 {
                 // The ring's dots on their way to the calm row. If the recording has begun, the trace records the voice
                 // meanwhile and the row shows it once the opening ends. Start's ring is not dimmed; the row is, as it
@@ -277,7 +287,7 @@ final class DotFieldView: UIView {
     /// of a change of `dimmed`.
     private func setAlpha(_ alpha: Double, at now: CFTimeInterval) {
         let target = Float(dimmed ? Self.dimmedAlpha : 1)
-        if link == nil, openedAt == nil, let change = dimChange, now - change.time < Self.dimDuration {
+        if link == nil, openedAt == nil, !openingPending, let change = dimChange, now - change.time < Self.dimDuration {
             let fade = CABasicAnimation(keyPath: "opacity")
             fade.fromValue = Float(alpha)
             fade.toValue = target
