@@ -1,24 +1,21 @@
 import SwiftUI
 import UIKit
 
-/// The session's heartbeat on the ridge mark's dot (ARCHITECTURE.md, "Top row"; `SessionDot.Heartbeat`): a ring that
-/// grows from the dot's edge and fades, then rests, on repeat. Core Animation runs each ripple in the render server, at
+/// The session's heartbeat on the ring mark's state dot (ARCHITECTURE.md, "Top row"; `SessionDot.Heartbeat`): a ring
+/// that grows from the dot's edge and fades, then rests, on repeat. Core Animation runs each ripple in the render server, at
 /// most 30 frames a second, so the keyboard does no work per frame; between ripples nothing animates, so the render
 /// server rests too (a repeating group spanning the rest kept it compositing: about 9% of a core on the simulator). A
 /// timer on the main thread starts each ripple, once per `period`. It runs only while the view is in a window, its
-/// first ripple `firstDelay` after it arrives there. Drawn in the mark's box, whose dot it finds as `RidgeMarkShape`
+/// first ripple `firstDelay` after it arrives there. Drawn in the mark's box, whose state dot it finds as `RingMarkShape`
 /// does; it draws outside that box.
 struct HeartbeatRing: UIViewRepresentable {
     let color: UIColor
-    /// The mark's weight (`RidgeMarkShape`), to find its dot.
-    let weight: Double
 
     func makeUIView(context: Context) -> HeartbeatRingView {
         HeartbeatRingView()
     }
 
     func updateUIView(_ view: HeartbeatRingView, context: Context) {
-        view.weight = weight
         view.color = color
     }
 }
@@ -27,10 +24,6 @@ final class HeartbeatRingView: UIView {
     private let ring = CAShapeLayer()
     private static let key = "sorello.heartbeat"
     private var timer: Timer?
-
-    var weight = 1.0 {
-        didSet { if weight != oldValue { setNeedsLayout() } }
-    }
 
     var color = UIColor.clear {
         didSet { ring.strokeColor = color.cgColor }
@@ -50,11 +43,10 @@ final class HeartbeatRingView: UIView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    /// The dot's centre and radius in this view.
+    /// The state dot's centre and radius in this view.
     private var dot: (center: CGPoint, radius: CGFloat) {
-        let mark = RidgeMark.fitted(in: KeyRect(x: 0, y: 0, width: Double(bounds.width), height: Double(bounds.height)),
-                                    weight: weight)
-        return (CGPoint(x: mark.dot.x, y: mark.dot.y), CGFloat(mark.dotRadius))
+        let mark = RingMark.fitted(in: KeyRect(x: 0, y: 0, width: Double(bounds.width), height: Double(bounds.height)))
+        return (CGPoint(x: mark.stateDot.x, y: mark.stateDot.y), CGFloat(mark.stateRadius))
     }
 
     /// A circle about the dot's centre, `radius` points across from it.

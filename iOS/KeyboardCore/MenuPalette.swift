@@ -28,8 +28,8 @@ struct MenuPalette: Equatable {
     var secondary: RGB
     /// "Open Sorello": aurora on the dark card, a deep aurora on the light one.
     var link: RGB
-    /// The session line's ridge mark: ink with the accent's dot, like every other mark. Its dot shows the session as
-    /// Start's does (`SessionDot.menuColor`), unlit in the card's grey.
+    /// The session line's ring mark: ink with the accent's state dot, like every other mark. Its state dot shows the
+    /// session as Start's does (`SessionDot.menuColor`), unlit in the card's grey.
     var markLine: RGB { primary }
     var markDot: RGB { link }
     var unlitDot: RGB { BrandPalette.blend(primary, alpha: 0.38, over: card) }

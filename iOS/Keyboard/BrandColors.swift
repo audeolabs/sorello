@@ -29,34 +29,28 @@ extension Color {
     }
 }
 
-/// The ridge mark (`RidgeMark`) as a SwiftUI shape: its line, or with `dot` its dot, at `weight`. Stroke the line with
-/// `RidgeMarkShape.style(side:weight:)` and fill the dot.
-struct RidgeMarkShape: Shape {
-    var dot = false
-    var weight = 1.0
+/// The ring mark (`RingMark`) as a SwiftUI shape: its seven white dots, or with `state` its state dot. Fill each.
+struct RingMarkShape: Shape {
+    var state = false
 
     func path(in rect: CGRect) -> Path {
-        let mark = RidgeMark.fitted(in: KeyRect(x: Double(rect.minX), y: Double(rect.minY), width: Double(rect.width),
-                                                height: Double(rect.height)), weight: weight)
+        let mark = RingMark.fitted(in: KeyRect(x: Double(rect.minX), y: Double(rect.minY), width: Double(rect.width),
+                                               height: Double(rect.height)))
         var path = Path()
-        if dot {
-            path.addEllipse(in: CGRect(x: mark.dot.x - mark.dotRadius, y: mark.dot.y - mark.dotRadius,
-                                       width: 2 * mark.dotRadius, height: 2 * mark.dotRadius))
+        func add(_ dot: RingMark.Point, _ radius: Double) {
+            path.addEllipse(in: CGRect(x: dot.x - radius, y: dot.y - radius, width: 2 * radius, height: 2 * radius))
+        }
+        if state {
+            add(mark.stateDot, mark.stateRadius)
         } else {
-            path.addLines(mark.line.map { CGPoint(x: $0.x, y: $0.y) })
+            for dot in mark.whiteDots { add(dot, mark.whiteRadius) }
         }
         return path
     }
 
-    /// Where the dot's centre is in the box, as a unit point (the anchor to scale the dot about).
-    static func dotAnchor(weight: Double = 1) -> UnitPoint {
-        let mark = RidgeMark.fitted(in: KeyRect(x: 0, y: 0, width: 1, height: 1), weight: weight)
-        return UnitPoint(x: mark.dot.x, y: mark.dot.y)
-    }
-
-    /// The line's stroke in a box `side` points across.
-    static func style(side: CGFloat, weight: Double = 1) -> StrokeStyle {
-        let mark = RidgeMark.fitted(in: KeyRect(x: 0, y: 0, width: Double(side), height: Double(side)), weight: weight)
-        return StrokeStyle(lineWidth: CGFloat(mark.lineWidth), lineCap: .round, lineJoin: .round)
+    /// Where the state dot's centre is in a square box, as a unit point (the anchor to scale the dot about).
+    static var stateAnchor: UnitPoint {
+        let mark = RingMark.fitted(in: KeyRect(x: 0, y: 0, width: 1, height: 1))
+        return UnitPoint(x: mark.stateDot.x, y: mark.stateDot.y)
     }
 }
