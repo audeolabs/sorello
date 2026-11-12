@@ -215,7 +215,7 @@ extension IslandForm {
     }
 }
 
-/// What the island holds (ARCHITECTURE.md, "Top row"): the ridge mark and "Start"; while starting, the status and the
+/// What the island holds (ARCHITECTURE.md, "Top row"): the ring mark and "Start"; while starting, the status and the
 /// stop glyph; while recording, the wave, the time and the stop glyph; while the recording waits for its transcript, only
 /// the shimmer (no words name the wait).
 enum CapsuleContent: Equatable, Sendable {

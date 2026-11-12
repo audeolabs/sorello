@@ -479,13 +479,13 @@ enum KeyboardLookTests {
                     }
                 }
             }
-            // Unlit: a neutral grey that still shows on the island, well short of the lit dot and the mark's line.
+            // Unlit: a neutral grey that still shows on the island, well short of the lit dot and the island's ink.
             let unlit = palette.unlitDot, island = palette.island.color
             TestSupport.expect(isGrey(unlit), "the unlit dot has a hue, \(name)")
             // It reads as a graphic at 3:1 (2.6:1 on the dark island is faint).
             TestSupport.expect(ratio(unlit, island) >= 3, "the unlit dot is faint on the island, \(name): \(ratio(unlit, island))")
             TestSupport.expect(ratio(unlit, island) < 0.6 * ratio(palette.live, island), "the unlit dot looks lit, \(name)")
-            TestSupport.expect(ratio(unlit, island) < 0.6 * ratio(palette.island.ink, island), "the unlit dot looks like the line")
+            TestSupport.expect(ratio(unlit, island) < 0.6 * ratio(palette.island.ink, island), "the unlit dot looks like the ink")
         }
         // The heartbeat: subtle, slow and one place to tune it.
         let beat = SessionDot.Heartbeat.self

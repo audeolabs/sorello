@@ -954,7 +954,7 @@ transcripts or other user data.
     Actions are near-black pills (#09090A) with a grey hairline and white
     ink; row glyphs are plain; a switch that is on is aurora green; the brand
     colours mark state only, on small dots and glyphs (aurora ready, coral
-    recording, glacier waiting, ember warning). The ridge mark (`RidgeMark`)
+    recording, glacier waiting, ember warning). The ring mark (`RingMark`)
     and the recording wave (`DotWave`) are compiled into the app. The
     display face is the Mac app's: Urbanist Medium, tracked in by 0.015 em
     (the repository's one copy, in `Resources/Fonts` at its root, SIL OFL
