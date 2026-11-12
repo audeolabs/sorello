@@ -1592,7 +1592,9 @@ the highlighted candidate's text 4.5:1 on its pill.
     dot and the state dot.
   - It is fitted to a box by scaling the square to the box's shorter side
     and centring it. It has one weight at every size and is never
-    distorted. No two dots touch.
+    distorted. No two dots touch, at rest or in motion: the state dot's pop
+    on Start and its swell in the Live Activity both stay clear of the
+    white dot beside it.
   - Blended with the surface, the white dots keep 3:1 against the island
     and against the menu's card, in every mode (`KeyboardLookTests`).
   - The state dot is drawn above the white dots, and the heartbeat's ring
@@ -1691,7 +1693,7 @@ the highlighted candidate's text 4.5:1 on its pill.
   before the island grows and Cancel buds out, and the wait's shimmer before
   Undo and Start. A press dims what the island holds;
   a tap on Start without a session also pops its dot once (a quick spring to
-  1.6 times and back). The chips arrive with a short spring from a little
+  1.4 times and back). The chips arrive with a short spring from a little
   smaller; Undo, after a dictation, arrives as Cancel's bud.
   The middle cross-fades when what it holds changes (the strip coming or
   going), never as its words change. Nothing animates while idle but
