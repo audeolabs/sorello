@@ -751,10 +751,10 @@ private struct DictationIsland: View {
     private var arrival: AnyTransition { DictationBarView.handing(over: reduceMotion) }
 
     /// Whether Start's ring opens into the recording's row when a dictation starts (ARCHITECTURE.md, "Keyboard look", "The
-    /// opening"): not with Reduce Motion, not yet left-handed, and not in an island too narrow for a row of seven dots.
-    /// Otherwise Start hands over as every other form does.
+    /// opening"): not with Reduce Motion, and not in an island too narrow for a row of seven dots. Otherwise Start hands
+    /// over as every other form does.
     private var opens: Bool {
-        guard !reduceMotion, !leftHanded, ringBox != nil, let waveBox else { return false }
+        guard !reduceMotion, ringBox != nil, let waveBox else { return false }
         let row = DotWave.dots(level: 0, width: Double(waveBox.width), height: Double(waveBox.height))
         return RingOpening.applies(rowCount: row.count)
     }
@@ -769,11 +769,16 @@ private struct DictationIsland: View {
         return .asymmetric(insertion: arrival, removal: leave)
     }
 
-    /// Start's ring mark and "Start".
+    /// Start's ring mark and "Start", the mark towards the bar's middle (mirrored left-handed).
     private func startRow(mark: some View) -> some View {
         HStack(spacing: 6) {
-            mark
-            startLabel
+            if leftHanded {
+                startLabel
+                mark
+            } else {
+                mark
+                startLabel
+            }
         }
     }
 
@@ -788,7 +793,7 @@ private struct DictationIsland: View {
             let dot = SessionDot(mode: state.mode, sessionReady: state.sessionReady)
             startRow(mark: SessionMark(line: ink, dot: dot.color(palette, reduceMotion: reduceMotion),
                                        look: dot.look(reduceMotion: reduceMotion, behindMenu: menuOpen), side: 19,
-                                       pops: reduceMotion ? 0 : bounces))
+                                       pops: reduceMotion ? 0 : bounces, mirrored: leftHanded))
             // A process's first live timer text takes about 55 ms to resolve (Foundation's attribute-scope reflection,
             // profiled on the simulator); resolved here while idle, it does not stall Start's first frames. A timer
             // that has ended: it never ticks.
@@ -920,13 +925,15 @@ private struct DictationIsland: View {
 /// white dots in `line` at 80% (`RingMark.whiteStrength`), `side` points across, its state dot in `dot` drawn as `look`
 /// says: with the heartbeat's ring rippling out of it beneath the white dots, breathing (its opacity down to 35% and back
 /// every 1.2 s), lit and still, or unlit. Each change of `pops` (a tap on Start without a session) swells the state dot
-/// once, quickly. Once its ring is handed over to the opening (`RingHandedOver`) its dots are gone at once.
+/// once, quickly. `mirrored` (Start on the left-handed keyboard) draws all of it mirrored across its middle. Once its
+/// ring is handed over to the opening (`RingHandedOver`) its dots are gone at once.
 private struct SessionMark: View {
     let line: Color
     let dot: BrandPalette.RGB
     let look: SessionDot.Look
     let side: CGFloat
     var pops = 0
+    var mirrored = false
     @Environment(\.ringHandedOver) private var handedOver
     @State private var dim = false
 
@@ -953,6 +960,7 @@ private struct SessionMark: View {
             .animation(nil, value: handedOver)
         }
         .frame(width: side, height: side)
+        .scaleEffect(x: mirrored ? -1 : 1, y: 1)
         // The dot changes with a small, quick cross-fade (lit and unlit with Reduce Motion).
         .animation(.easeOut(duration: 0.2), value: look)
         .accessibilityHidden(true)
