@@ -57,6 +57,7 @@ struct SorelloIOSTests {
             ("MenuPalette", MenuPaletteTests.tests),
             ("KeyboardLook", KeyboardLookTests.tests),
             ("DictationIsland", DictationIslandTests.tests),
+            ("RingOpening", RingOpeningTests.tests),
             ("IslandBud", IslandBudTests.tests),
             ("KeyAlternates", KeyAlternatesTests.tests),
             ("LFBinaryFile", LFBinaryFileTests.tests),
