@@ -74,6 +74,8 @@ final class DotFieldView: UIView {
     private var openingPending = false
     /// Whether this opening has let the time arrive yet.
     private var timeReleased = true
+    /// Counts openings, so a release queued for one never lets a later one's time arrive.
+    private var openings = 0
     var onTimeMayArrive: (() -> Void)?
     private var dimmed = false
     /// The last change of `dimmed`: when, and how dim the row was then.
@@ -122,6 +124,7 @@ final class DotFieldView: UIView {
             openedAt = nil
             openingPending = true
             timeReleased = false
+            openings += 1
             self.opening = opening
         } else if reduceMotion || kind == .idle || kind == .shimmer {
             openedAt = nil
@@ -307,8 +310,12 @@ final class DotFieldView: UIView {
     private func releaseTime() {
         guard !timeReleased else { return }
         timeReleased = true
-        guard let onTimeMayArrive else { return }
-        DispatchQueue.main.async { onTimeMayArrive() }
+        let opening = openings
+        DispatchQueue.main.async { [weak self] in
+            // Dropped if a new opening began meanwhile: it holds the time again and releases it itself.
+            guard let self, self.openings == opening, self.timeReleased else { return }
+            self.onTimeMayArrive?()
+        }
     }
 
     /// Dims the dots to `alpha`. Between frames (nothing else moving, or Reduce Motion) Core Animation runs what is left
