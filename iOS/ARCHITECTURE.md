@@ -1425,7 +1425,9 @@ every other point of the bar
   mirrored too (the stop glyph, the time, then the wave, which settles into
   the mark's dot beside the time and moves away from it), so the stop glyph
   stays at the bar's edge, under the thumb and away from Cancel; kept in
-  order it would sit beside Cancel. The keys, suggestions, menu card and
+  order it would sit beside Cancel. Start's ring is mirrored too, and it
+  opens the mirrored way ([Keyboard look](#keyboard-look), "The opening");
+  the menu's mark is not. The keys, suggestions, menu card and
   everything else stay as they are. Every rule of the bar holds mirrored,
   and off the layout is exactly the right-handed one
   (`DictationIslandTests`). The keyboard reads it when it appears.
@@ -1540,7 +1542,8 @@ every other point of the bar
   lighter fill in dark mode and a visible edge, a full-point edge on the
   dark island, and deepens the light keyboard's accents further; Reduce
   Motion drops the bar's press shrink, the island's spring (it takes each
-  form at once, cross-faded in 0.15 s), Cancel's budding and travel to Undo
+  form at once, cross-faded in 0.15 s), the ring's opening (Start hands
+  over to the recording, cross-faded), Cancel's budding and travel to Undo
   (it is simply there, cross-faded), the chips' spring, the pill's glide,
   the wave's motion and smoothing (the row stands still at each level),
   the shimmer's sweep and the dot's breathing; key-press highlights stay.
@@ -1599,6 +1602,55 @@ the highlighted candidate's text 4.5:1 on its pill.
     and against the menu's card, in every mode (`KeyboardLookTests`).
   - The state dot is drawn above the white dots, and the heartbeat's ring
     beneath them.
+- **The opening** (its geometry in `RingOpening`, pure and tested; its
+  drawing checked in the keyboard): when a dictation starts, Start's ring
+  opens into the recording's row. The ring's dots are not
+  swapped for the row's: they become them. The eight dots are beads on one
+  string with the state dot at its head, and for 0.65 s, eased in and out,
+  the string goes from the ring to the wave's calm row:
+  - At its first moment the string is the ring, dot for dot as Start draws
+    it. At its last it is the calm row, dot for dot as `DotWave` draws it
+    at rest: the state dot is the dot the wave settles into, and the seven
+    white dots are the seven of the row nearest it. In an island so narrow
+    that its row has fewer than seven dots there is no opening: Start hands
+    over to the recording as it does with Reduce Motion.
+  - The string is a row, a run-out and a dip. The row lies along a level
+    that lifts from the ring's bottom to the island's middle line in the
+    first third (by 0.35 of the eased progress). At first the ring turns
+    in place, so its dots run out of its bottom and away along the row
+    towards the island's growing end; what is left of it becomes a dip
+    below the lifted row.
+  - The state dot comes over the top of the ring and down to the row's end,
+    where the wave will have it, and stays there. What is left of the ring
+    hangs beside it as a dip: an arc whose radius grows to 2.6 times the
+    ring's, so the dip widens, grows shallow and is pulled flat.
+  - The run-out joins the dip's bottom to the row without a kink: it leaves
+    the bottom bending as the dip bends, eases through straight into a
+    gentle opposite bend, and meets the row level and straight.
+  - The white dots keep the ring's spacing while the ring first turns and
+    take the row's by the end (with the square of the eased progress), so
+    the last of them is never pushed across the ring's opening into the
+    state dot. Their size and strength go from the mark's to the row's at
+    rest. The row's other dots join on behind the seventh, a pitch apart,
+    and brighten over the second half.
+  - At every moment no dot leaves the island, no two dots touch, and the
+    state dot moves without a jump.
+  - "Start" leaves by its quick fade as the opening begins; the time and
+    the stop glyph arrive as they did. The island grows by its own spring
+    and clips what it has not yet grown over.
+  - If the recording begins before the opening ends, the opening finishes,
+    and the row shows the voice from then on; the level is recorded
+    meanwhile. Any other change (Stop, Cancel, an error) ends the opening
+    at once.
+  - Left-handed, the opening is the mirror image, as the wave is, and so is
+    Start's ring on that keyboard. The mark is mirrored nowhere else.
+  - With Reduce Motion there is no opening: Start hands over to the
+    recording as before.
+  - Returning to Start is unchanged: the ring arrives with Start's
+    contents.
+  - It is drawn by the wave's own dot layers (`DotFieldView`), by one view
+    from its first frame to the live wave, so no dot blinks. Its display
+    link runs for the opening and stops unless the wave is live.
 - **The recording wave** (`DotWave`, pure, tested): one row of white dots
   6.2 pt apart along the island's middle line that shows the voice: each
   dot grows (1.4 to 2.85 pt radius, never touching) and brightens (half to
@@ -1691,7 +1743,10 @@ the highlighted candidate's text 4.5:1 on its pill.
   At every change of form what leaves goes first, in 0.06 s, and what
   arrives follows after it (`DictationBarView.handover`): the idle line
   before the island grows and Cancel buds out, and the wait's shimmer before
-  Undo and Start. A press dims what the island holds;
+  Undo and Start. One change is not a handover: when a dictation starts,
+  Start's ring opens into the recording's row ("The opening", above), while
+  "Start" leaves and the time and the stop glyph arrive as said. A press
+  dims what the island holds;
   a tap on Start without a session also pops its dot once (a quick spring to
   1.4 times and back). The chips arrive with a short spring from a little
   smaller; Undo, after a dictation, arrives as Cancel's bud.
