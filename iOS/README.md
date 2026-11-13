@@ -371,6 +371,12 @@ dev builds.
   `/sorello-dev/dictate` to `5X346GR227.com.audeolabs.sorello.ios.dev`.
   iOS fetches it (through Apple's CDN) when the app is installed; the app has
   no network code for it. Without it the bounce never opens Sorello.
+- Keep the file served for as long as any installed build names its domain,
+  and keep it there while the site moves. An iPhone that fails to fetch it
+  when Sorello is installed or updated can go on showing "Open Sorello" for
+  days, until iOS checks again; deleting and reinstalling the app makes it
+  check at once. Settings → Developer → Universal Links → Diagnostics shows
+  whether the link is verified.
 
 ## Using the keyboard
 
