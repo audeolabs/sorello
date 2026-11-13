@@ -60,7 +60,7 @@ enum SharedDictationStoreTests {
     private static func testDirectoryIsInGroupCaches() {
         let container = URL(fileURLWithPath: "/synthetic/container", isDirectory: true)
         TestSupport.expectEqual(SharedDictationStore.directory(inContainer: container).path,
-                                "/synthetic/container/Library/Caches/LocalFlowDictation")
+                                "/synthetic/container/Library/Caches/SorelloDictation")
     }
 
     private static func testMissingFilesReadAsAbsent() {

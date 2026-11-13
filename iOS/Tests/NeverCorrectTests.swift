@@ -84,9 +84,9 @@ enum NeverCorrectTests {
     private static func testDirectoryIsInGroupApplicationSupport() {
         let container = URL(fileURLWithPath: "/synthetic/container", isDirectory: true)
         TestSupport.expectEqual(NeverCorrectStore.directory(inContainer: container).path,
-                                "/synthetic/container/Library/Application Support/LocalFlowAutocorrect")
+                                "/synthetic/container/Library/Application Support/SorelloAutocorrect")
         TestSupport.expectEqual(NeverCorrectStore(directory: NeverCorrectStore.directory(inContainer: container)).fileURL.path,
-                                "/synthetic/container/Library/Application Support/LocalFlowAutocorrect/never-correct-words.json")
+                                "/synthetic/container/Library/Application Support/SorelloAutocorrect/never-correct-words.json")
     }
 
     private static func testOnlyCorrectorWordsAreStorable() {

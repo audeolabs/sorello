@@ -10,11 +10,11 @@
 CHANNEL ?= dev
 ifeq ($(CHANNEL),appstore)
 PLATFORM ?= device
-# Kept from the app's first name, as are the dev values below: an update must replace the app people already have
+# Kept from the first upload, as are the dev values below: an update must replace the app people already have
 # (ARCHITECTURE.md, "Identifiers").
-BUNDLE_ID ?= com.ajbarryiii.localflow.ios
-URL_SCHEME ?= localflow
-UNIVERSAL_LINK ?= https://wildernesslabs.ai/localflow/dictate
+BUNDLE_ID ?= com.audeolabs.sorello.ios
+URL_SCHEME ?= sorello
+UNIVERSAL_LINK ?= https://audeolabs.com/sorello/dictate
 DISPLAY_NAME ?= Sorello
 ICON_SOURCE ?= Resources/AppIcon-Source.png
 BUILD_DIR ?= build/appstore
@@ -37,16 +37,16 @@ endif
 endif
 
 PLATFORM ?= simulator
-# Kept from the app's first name, as the App Store values above.
-BUNDLE_ID ?= com.ajbarryiii.localflow.ios.dev
+# Kept, as the App Store values above.
+BUNDLE_ID ?= com.audeolabs.sorello.ios.dev
 KEYBOARD_BUNDLE_ID = $(BUNDLE_ID).keyboard
 ACTIVITY_BUNDLE_ID = $(BUNDLE_ID).activity
 APP_GROUP ?= group.$(BUNDLE_ID)
-URL_SCHEME ?= localflow-dev
+URL_SCHEME ?= sorello-dev
 # The https URL the keyboard opens instead of <scheme>://dictate, universal-links-only, so iOS opens
 # only the app verified for its domain. The app is then signed with the Associated Domains
 # entitlement for its host, which its profile must grant. Empty (dev, simulator, self-test and e2e
-# builds) keeps the scheme; https://wildernesslabs.ai/localflow-dev/dictate is the dev device opt-in.
+# builds) keeps the scheme; https://audeolabs.com/sorello-dev/dictate is the dev device opt-in.
 UNIVERSAL_LINK ?=
 DISPLAY_NAME ?= Sorello Dev
 DEPLOYMENT_TARGET ?= 26.0
@@ -733,8 +733,8 @@ E2E_BUILD_DIR ?= build/e2e-simulator
 E2E_SIM_DEVICE ?= Sorello-E2E
 E2E_PHRASE ?= $(SMOKE_PHRASE)
 E2E_AUDIO = tmp/sorello-synthetic-mic.wav
-# The App Group's dictation directory (SharedDictationStore), whose name is kept from the app's first name.
-E2E_SHARED_DIR = Library/Caches/LocalFlowDictation
+# The App Group's dictation directory (SharedDictationStore), whose name is kept (ARCHITECTURE.md, "Identifiers").
+E2E_SHARED_DIR = Library/Caches/SorelloDictation
 E2E_LOG = $(E2E_BUILD_DIR)/obj/e2e-app.log
 # Launch options of the self-test build (see App/SelfTest.swift).
 E2E_SKIP_ONBOARDING ?=
