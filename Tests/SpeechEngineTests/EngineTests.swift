@@ -435,9 +435,10 @@ struct EngineTests {
         #expect(await suggest(engine, newest) != nil)
     }
 
-    @Test func releasesAndExpiry() async throws {
+    /// With the default lifetime, so that only the release or the discard can drop the kept audio.
+    @Test func releasesAndDiscards() async throws {
         let log = ModelLog()
-        let engine = engine(log, lifetime: 0.3)
+        let engine = engine(log)
         let id = try #require(try await retained(engine).correctionID)
         engine.releaseCorrection(id &- 1)
         #expect(await suggest(engine, id) != nil, "Releasing another id never drops this one")
@@ -453,7 +454,11 @@ struct EngineTests {
         late.append(Self.speech(3))
         engine.discardCorrection()
         #expect(try #require(await finish(late)).get().correctionID == nil)
+    }
 
+    @Test func keptAudioExpires() async throws {
+        let log = ModelLog()
+        let engine = engine(log, lifetime: 0.3)
         let expiring = try #require(try await retained(engine).correctionID)
         try await Task.sleep(for: .milliseconds(450))
         #expect(await suggest(engine, expiring) == nil, "Kept audio expires")
