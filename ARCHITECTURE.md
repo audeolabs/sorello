@@ -1254,11 +1254,12 @@ and ship it. This section holds what concerns both apps.
   kind. The model's downloader is compiled for the Mac only (section 9),
   and the iPhone app's checks fail if one of its three executables names
   a networking API.
-- **Names that stay.** The iPhone app was first handed out under another
-  name, and people have that app on their iPhones through TestFlight. An
-  update must take that app's place and keep what its user has set up.
-  So these keep the names they had, in every build: the bundle
-  identifiers of the app and its two extensions, the App Group, the URL
+- **Names that stay.** The iPhone app is published under Audeo Labs
+  identifiers, as a new app: it does not replace the LocalFlow app that
+  TestFlight carried before, and nothing carries over from it. From its
+  first upload, an update must take the installed app's place and keep
+  what its user has set up. So these keep their names, in every build:
+  the bundle identifiers of the app and its two extensions, the App Group, the URL
   scheme, the universal link and the domain it is associated with, the
   signing team, and the name of everything the app or the keyboard has
   stored on an iPhone (the keys of its preferences, and the directories
