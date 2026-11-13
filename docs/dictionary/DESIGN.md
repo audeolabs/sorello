@@ -626,7 +626,8 @@ are on and Accessibility is trusted, when the dictation starts.
 (`SpeechEngine` and `RetentionGate`, `Sources/SpeechEngine/SpeechEngine.swift`;
 `EngineTests.retainedAudioFindsTheSuggestion`,
 `EngineTests.aNewerRecordingReleasesTheOlderOne`,
-`EngineTests.releasesAndExpiry`, `EngineTests.retentionHasLimits`)
+`EngineTests.releasesAndDiscards`, `EngineTests.keptAudioExpires`,
+`EngineTests.retentionHasLimits`)
 
 A finished dictation is watched only if all of these hold
 (`CorrectionEligibility.isEligible`, `SuggestionPresentation.swift`;
