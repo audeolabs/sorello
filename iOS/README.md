@@ -56,9 +56,9 @@ instead of copying it again.
 | --- | --- | --- |
 | `CHANNEL` | `dev` | `appstore` presets the production identifiers, icon and a device build (see [App Store build](#app-store-build)) |
 | `PLATFORM` | `simulator` | `simulator` or `device` (arm64 only) |
-| `BUNDLE_ID` | `com.ajbarryiii.localflow.ios.dev` | app ID; the keyboard is `$(BUNDLE_ID).keyboard`, the Live Activity `$(BUNDLE_ID).activity` |
+| `BUNDLE_ID` | `com.audeolabs.sorello.ios.dev` | app ID; the keyboard is `$(BUNDLE_ID).keyboard`, the Live Activity `$(BUNDLE_ID).activity` |
 | `APP_GROUP` | `group.$(BUNDLE_ID)` | shared container for app and keyboard |
-| `URL_SCHEME` | `localflow-dev` | `<scheme>://dictate` |
+| `URL_SCHEME` | `sorello-dev` | `<scheme>://dictate` |
 | `UNIVERSAL_LINK` | empty | https URL the keyboard opens instead of the scheme (see [Universal link](#universal-link)) |
 | `DISPLAY_NAME` | `Sorello Dev` | home screen and keyboard list name |
 | `DEPLOYMENT_TARGET` | `26.0` | the encoder uses the `ios19` Core ML opset |
@@ -148,7 +148,7 @@ made current without touching Settings. Run these while the simulator is
 booted, then relaunch the app:
 
 ```bash
-dev=Sorello-Keyboard; kb=com.ajbarryiii.localflow.ios.dev.keyboard
+dev=Sorello-Keyboard; kb=com.audeolabs.sorello.ios.dev.keyboard
 xcrun simctl spawn $dev defaults write -g AppleKeyboards -array $kb "en_US@sw=QWERTY;hw=Automatic" "emoji@sw=Emoji"
 xcrun simctl spawn $dev defaults write com.apple.keyboard.preferences KeyboardsCurrentAndNext -array $kb "en_US@sw=QWERTY;hw=Automatic"
 ```
@@ -279,10 +279,10 @@ next launch prepares cold again.
 
 ## App Store build
 
-`CHANNEL=appstore` builds the production app: `com.ajbarryiii.localflow.ios`
-(keyboard `.keyboard`, Live Activity `.activity`), App Group `group.com.ajbarryiii.localflow.ios`, URL
-scheme `localflow`, universal link
-`https://wildernesslabs.ai/localflow/dictate`, display name "Sorello" and
+`CHANNEL=appstore` builds the production app: `com.audeolabs.sorello.ios`
+(keyboard `.keyboard`, Live Activity `.activity`), App Group `group.com.audeolabs.sorello.ios`, URL
+scheme `sorello`, universal link
+`https://audeolabs.com/sorello/dictate`, display name "Sorello" and
 the production icon, into `build/appstore/`. It always builds for the device,
 refuses the self-test variant, an empty or non-https `UNIVERSAL_LINK`, needs
 the model, and accepts only App Store distribution profiles.
@@ -290,15 +290,15 @@ the model, and accepts only App Store distribution profiles.
 One-time setup in the Apple Developer account, on the Mac:
 
 1. Register the production App IDs (app, keyboard and
-   `com.ajbarryiii.localflow.ios.activity`) and App Group, for example with the
+   `com.audeolabs.sorello.ios.activity`) and App Group, for example with the
    signing helper above set to the production identifiers, and enable the
    **Associated Domains** capability on the app's App ID
-   `com.ajbarryiii.localflow.ios` (not the keyboard's).
+   `com.audeolabs.sorello.ios` (not the keyboard's).
 2. Create an **Apple Distribution** certificate (Xcode → Settings → Accounts →
    Manage Certificates) and an **App Store** provisioning profile for the app
    and for the keyboard, each with the App Group, and one for the Live
    Activity, with no capability. The app's profile must
-   include Associated Domains (`applinks:wildernesslabs.ai`); regenerate it
+   include Associated Domains (`applinks:audeolabs.com`); regenerate it
    after enabling the capability, or the build stops naming it.
 3. Create the app record in App Store Connect, and an App Store Connect API key
    (Users and Access → Integrations) saved as
@@ -339,7 +339,7 @@ make -C iOS appstore-upload "${STORE[@]}" ASC_KEY_ID=<key id> ASC_ISSUER_ID=<iss
     authorize the signing certificate
   - the entitlements: no `get-task-allow`, `beta-reports-active` for
     TestFlight, the App Group (none on the Live Activity), and Associated
-    Domains `applinks:wildernesslabs.ai` on the app only, granted by its
+    Domains `applinks:audeolabs.com` on the app only, granted by its
     profile
   - `SorelloUniversalLink` in the app's and the keyboard's Info.plists
   - the `.ipa` layout
@@ -348,7 +348,7 @@ make -C iOS appstore-upload "${STORE[@]}" ASC_KEY_ID=<key id> ASC_ISSUER_ID=<iss
 
 ### Universal link
 
-Any app can register the `localflow` scheme, and iOS does not define which app
+Any app can register the `sorello` scheme, and iOS does not define which app
 opens it, so another app could receive the keyboard's bounce and show a fake
 Sorello screen. With `UNIVERSAL_LINK` set, the keyboard opens that https URL
 instead, universal-links-only: iOS opens it only in the app verified for the
@@ -359,16 +359,16 @@ builds check that its profile grants Associated Domains. The keyboard gets no
 new entitlement, and the scheme stays registered for the simulator, e2e and
 dev builds.
 
-- App Store builds always use `https://wildernesslabs.ai/localflow/dictate`.
+- App Store builds always use `https://audeolabs.com/sorello/dictate`.
 - Dev builds leave it empty and bounce with the scheme. To try the universal
   link on a device, enable Associated Domains on
-  `com.ajbarryiii.localflow.ios.dev`, regenerate its development profile, and
-  build with `UNIVERSAL_LINK=https://wildernesslabs.ai/localflow-dev/dictate`.
+  `com.audeolabs.sorello.ios.dev`, regenerate its development profile, and
+  build with `UNIVERSAL_LINK=https://audeolabs.com/sorello-dev/dictate`.
 - The association file is
-  `https://wildernesslabs.ai/.well-known/apple-app-site-association`, deployed
-  from the separate `wilderness-labs-site` repository. It maps
-  `/localflow/dictate` to `5X346GR227.com.ajbarryiii.localflow.ios` and
-  `/localflow-dev/dictate` to `5X346GR227.com.ajbarryiii.localflow.ios.dev`.
+  `https://audeolabs.com/.well-known/apple-app-site-association`, deployed
+  from the separate `audeolabs-site` repository. It maps
+  `/sorello/dictate` to `5X346GR227.com.audeolabs.sorello.ios` and
+  `/sorello-dev/dictate` to `5X346GR227.com.audeolabs.sorello.ios.dev`.
   iOS fetches it (through Apple's CDN) when the app is installed; the app has
   no network code for it. Without it the bounce never opens Sorello.
 
@@ -462,7 +462,7 @@ Setup and session:
 - [ ] Onboarding: microphone permission (the step's pill reads Continue and the system prompt asks; Not now skips; Open Settings once access is off), keyboard + Full Access steps, first model preparation with progress.
 - [ ] Dark theme: every screen and sheet (Onboarding, Home, Keyboard setup, Dictionary and its sheets, Diagnostics, Report a bug, the bounce) is dark with readable text on its pills and rows, even with the system in light mode; the Home Screen, Settings and Spotlight icons show Sorello's mark, a row of dots rising into a green one.
 - [ ] Bounce on iOS 26: the keyboard opens Sorello, "Listening" appears only once audio flows, swipe back, dictation inserts.
-- [ ] Universal-link bounce (TestFlight, or a dev build with `UNIVERSAL_LINK=https://wildernesslabs.ai/localflow-dev/dictate`): Start in another app opens Sorello, never Safari, from a cold launch and from the background; the menu's "Open Sorello" does too. With the association file unreachable or the app not associated (for example a fresh install before iOS fetches it), the keyboard shows "Open Sorello" and nothing else opens. Tapping the link in Notes opens Sorello without recording.
+- [ ] Universal-link bounce (TestFlight, or a dev build with `UNIVERSAL_LINK=https://audeolabs.com/sorello-dev/dictate`): Start in another app opens Sorello, never Safari, from a cold launch and from the background; the menu's "Open Sorello" does too. With the association file unreachable or the app not associated (for example a fresh install before iOS fetches it), the keyboard shows "Open Sorello" and nothing else opens. Tapping the link in Notes opens Sorello without recording.
 - [ ] Live Activity (iPhone with a Dynamic Island, and one without, for the Lock Screen and the banner): starting a session shows the mark in the island; Start on the keyboard in another app grows the coral dot and the elapsed time, Stop gives way to the transcribing glyph (preparing first after a restart) and then back to ready, each change quick and calm; long-press shows the expanded view with the timer glyph and the time left, or the recording time; with another app's Live Activity running, the minimal view; the Lock Screen view in dark and light; it goes at End session, idle expiry and a phone call; after force-quitting Sorello the activity reads "Session ended" once its time is past, and the next launch removes it; with Live Activities off, nothing shows and Sorello never asks. No sound or screen wake on any change. Simulator verification (iPhone 17 Pro, iOS 26.4, synthetic microphone, recorded with `simctl io recordVideo`, since screenshots leave out the island) passed on 2026-11-01 for the compact and expanded island, the Lock Screen in dark and light, End session, idle expiry, a killed app's "Session ended" and its removal at the next launch. Not yet checked: the minimal view (no other Live Activity source in the simulator), a phone call, Live Activities turned off, and a device.
 - [ ] Flow Session control (device; Action button, Control Center and Lock Screen): with Sorello not running, suspended, and in front, a press starts a session without opening the app (the island and the microphone indicator appear), Start on the keyboard in another app then dictates without a bounce, and the next press ends the session. iOS shows it as an action, not as opening Sorello. On a locked iPhone it asks for Face ID first; a press within 20 s of locking never starts the microphone on its own. With Live Activities off, or the microphone not yet allowed, it says to open Sorello, and opening it within 30 s starts the session there. Simulator verification (iPhone 17 Pro, iOS 26.4) passed on 2026-11-05 for the registration only: linkd indexed the intent from the app and the extension, and chronod listed the "Flow Session" control with `isLauncher: NO`. The press itself is not yet checked.
 - [ ] Session keep-alive: second dictation without an app switch; the idle countdown resets; the session ends at idle expiry, a call and End session; a lock cancels a dictation in progress but keeps the session.

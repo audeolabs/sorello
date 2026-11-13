@@ -23,8 +23,8 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
         var emoji: [String]
     }
 
-    /// Kept from the app's first name: people's recents are saved under it (ARCHITECTURE.md, "Identifiers").
-    private static let recentsKey = "lf.emojiRecents"
+    /// Kept: people's recents are saved under it (ARCHITECTURE.md, "Identifiers").
+    private static let recentsKey = "emojiRecents"
     /// The catalog, split once.
     private static let catalog: [Section] = EmojiCatalog.categories.map { Section(name: $0.name, symbol: $0.symbol, emoji: $0.emoji) }
 

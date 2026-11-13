@@ -134,12 +134,12 @@ The Makefile injects these into the Info.plists:
 
 | Variable | Default (`CHANNEL=dev`) | `CHANNEL=appstore` |
 | --- | --- | --- |
-| `BUNDLE_ID` | `com.ajbarryiii.localflow.ios.dev` | `com.ajbarryiii.localflow.ios` |
+| `BUNDLE_ID` | `com.audeolabs.sorello.ios.dev` | `com.audeolabs.sorello.ios` |
 | keyboard bundle ID | `$(BUNDLE_ID).keyboard` | `$(BUNDLE_ID).keyboard` |
 | Live Activity bundle ID | `$(BUNDLE_ID).activity` | `$(BUNDLE_ID).activity` |
 | `APP_GROUP` | `group.$(BUNDLE_ID)` | `group.$(BUNDLE_ID)` |
-| `URL_SCHEME` | `localflow-dev` | `localflow` |
-| `UNIVERSAL_LINK` | empty | `https://wildernesslabs.ai/localflow/dictate` |
+| `URL_SCHEME` | `sorello-dev` | `sorello` |
+| `UNIVERSAL_LINK` | empty | `https://audeolabs.com/sorello/dictate` |
 | `DISPLAY_NAME` | `Sorello Dev` | `Sorello` |
 
 The app's and the keyboard's Info.plists carry `SorelloAppGroupIdentifier`
@@ -162,25 +162,28 @@ hardcodes an identifier.
   key and no entitlement.
 - **Channels.** `CHANNEL=appstore` refuses an empty or non-https value. Dev,
   simulator, self-test and e2e builds leave it empty and bounce with the
-  scheme; `https://wildernesslabs.ai/localflow-dev/dictate` is the dev device
+  scheme; `https://audeolabs.com/sorello-dev/dictate` is the dev device
   opt-in. The scheme stays in `CFBundleURLTypes` in every build.
 - **Association file.** iOS fetches
-  `https://wildernesslabs.ai/.well-known/apple-app-site-association`, deployed
-  from the separate `wilderness-labs-site` repository, itself; the app has no
+  `https://audeolabs.com/.well-known/apple-app-site-association`, deployed
+  from the separate `audeolabs-site` repository, itself; the app has no
   network code for it.
-- **Stored names.** A name that an installed copy, or iOS on its behalf, has
-  stored keeps the value it had under the app's first name in every build,
-  and is written in one place with a comment that says it is kept. People
-  have that app through TestFlight, and an update must replace it and keep
-  what they set up. Besides every identifier in the table but the display
-  name, these keep their names:
-  - `Library/Caches/LocalFlowDictation/` in the App Group container, the
+- **Stored names.** The app is published under Audeo Labs with these
+  identifiers. It does not replace the LocalFlow app TestFlight carried
+  before, which keeps its own identifiers and its association file on
+  wildernesslabs.ai; nothing is carried over from it. From the first upload a
+  name that an installed copy, or iOS on its behalf, has stored keeps its
+  value in every build, and is written in one place with a comment that says
+  it is kept, so that an update replaces the app people have and keeps what
+  they set up. Besides every identifier in the table but the display name,
+  these keep their names:
+  - `Library/Caches/SorelloDictation/` in the App Group container, the
     shared files ([Files](#files); `SharedDictationStore`, and the
     Makefile's `E2E_SHARED_DIR`);
-  - `Library/Application Support/LocalFlowAutocorrect/` in the App Group
+  - `Library/Application Support/SorelloAutocorrect/` in the App Group
     container, the never-correct words ([Word autocorrect](#word-autocorrect);
     `NeverCorrectStore`);
-  - `lf.emojiRecents` in the keyboard's own `UserDefaults`, the emoji
+  - `emojiRecents` in the keyboard's own `UserDefaults`, the emoji
     recents (`EmojiPanelView`);
   - the session control's kind `SessionControl` (`SessionControlWidget`),
     the type name of its App Intent `ToggleFlowSessionIntent`, and the Live
@@ -217,7 +220,7 @@ hardcodes an identifier.
 
 ### Files
 
-Directory: `<App Group container>/Library/Caches/LocalFlowDictation/`,
+Directory: `<App Group container>/Library/Caches/SorelloDictation/`,
 created on first write and marked `isExcludedFromBackup` (best effort).
 Records are JSON (`JSONEncoder`, `.secondsSince1970` dates, sorted keys), and
 each carries `schema: Int` (currently `1`).
@@ -3156,7 +3159,7 @@ nothing is stored unless the user accepts:
   revert do not end it. It has no timeout.
 - **The store** (`NeverCorrectStore`, Shared): one JSON file,
   `{"schema": 1, "words": [...]}`, least recently added first, at
-  `<App Group container>/Library/Application Support/LocalFlowAutocorrect/never-correct-words.json`.
+  `<App Group container>/Library/Application Support/SorelloAutocorrect/never-correct-words.json`.
   The directory is created excluded from backup (best effort, as for the
   dictation store), so the words stay on this iPhone. Data protection class A
   on devices: while locked a read gives no words and a write fails, leaving
@@ -3328,7 +3331,7 @@ app reads only the count. The models are fixed.
 - **Signing.** Entitlements come from the profile, plus
   `beta-reports-active` when the profile grants it (TestFlight needs it),
   and, for the app only, `com.apple.developer.associated-domains` =
-  `["applinks:wildernesslabs.ai"]` for the universal link
+  `["applinks:audeolabs.com"]` for the universal link
   ([Identifiers](#identifiers)), signed with an Apple Distribution identity.
 - **Versions.** `CFBundleShortVersionString` stays in the Info.plist
   templates, the same for every bundle. `BUILD_NUMBER` sets
@@ -3359,7 +3362,7 @@ app reads only the count. The models are fixed.
   notes on the keyboard opening the app and on the background microphone, and
   the account steps (App IDs with Associated Domains, distribution
   certificate, profiles, app record), and the association file on
-  wildernesslabs.ai.
+  audeolabs.com.
 
 ## Privacy and security invariants (review checklist)
 
