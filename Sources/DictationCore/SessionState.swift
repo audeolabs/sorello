@@ -87,15 +87,19 @@ public struct SessionSettings: Sendable, Equatable {
     public var restoreClipboard: Bool
     /// The chosen microphone's unique identifier, or nil for the system default.
     public var microphoneID: String?
+    /// Record from another microphone when the system default is a Bluetooth one (`CaptureRequest.avoidBluetooth`).
+    /// On by default.
+    public var avoidBluetoothMicrophone: Bool
     /// Ask the engine to keep what a correction suggestion needs. The app sets this when suggestions are on, the
     /// dictionary is readable and Accessibility is trusted (docs/dictionary/DESIGN.md, section 3.4).
     public var retainForCorrection: Bool
 
     public init(doubleTap: DoubleTapAction = .handsFree, restoreClipboard: Bool = true, microphoneID: String? = nil,
-                retainForCorrection: Bool = false) {
+                avoidBluetoothMicrophone: Bool = true, retainForCorrection: Bool = false) {
         self.doubleTap = doubleTap
         self.restoreClipboard = restoreClipboard
         self.microphoneID = microphoneID
+        self.avoidBluetoothMicrophone = avoidBluetoothMicrophone
         self.retainForCorrection = retainForCorrection
     }
 }

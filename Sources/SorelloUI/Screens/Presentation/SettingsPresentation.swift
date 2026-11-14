@@ -11,6 +11,8 @@ nonisolated public enum GeneralToggle: CaseIterable, Hashable, Sendable {
     case pressEnter
     case correctionSuggestions
     case keepRunLog
+    /// Record from a built-in or wired microphone when the system default is a Bluetooth one.
+    case avoidBluetoothMicrophone
     /// Whether the updater checks for a newer version once a day by itself. Only a build that can update itself has it.
     case checkForUpdates
 
@@ -24,6 +26,7 @@ nonisolated public enum GeneralToggle: CaseIterable, Hashable, Sendable {
         case .pressEnter: String(localized: "Say “press enter” to send")
         case .correctionSuggestions: String(localized: "Suggest dictionary words")
         case .keepRunLog: String(localized: "Keep a Run Log")
+        case .avoidBluetoothMicrophone: String(localized: "Avoid Bluetooth microphones")
         case .checkForUpdates: String(localized: "Check for updates automatically")
         }
     }
@@ -39,6 +42,7 @@ nonisolated public enum GeneralToggle: CaseIterable, Hashable, Sendable {
         case .pressEnter: "return"
         case .correctionSuggestions: "text.badge.plus"
         case .keepRunLog: "clock.arrow.circlepath"
+        case .avoidBluetoothMicrophone: "headphones"
         case .checkForUpdates: "arrow.down.circle"
         }
     }

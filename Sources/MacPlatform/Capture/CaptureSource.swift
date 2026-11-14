@@ -16,8 +16,8 @@ protocol CaptureSourceSink: AnyObject, Sendable {
 
 /// Opens a microphone. Called only on the capture's lifecycle queue.
 protocol CaptureSourceOpening: Sendable {
-    /// Opens the device `request` names (the system default if it names none or that device is gone) and returns
-    /// once it is running. Blocks while it starts. Throws `CaptureFailure`. Must never cause a permission prompt.
+    /// Opens the device `request` names, or if it names none or that device is gone, the system default or the
+    /// microphone that stands in for a Bluetooth default (`MicrophoneChoice`), and returns once it is running. Blocks while it starts. Throws `CaptureFailure`. Must never cause a permission prompt.
     func open(_ request: CaptureRequest, sink: any CaptureSourceSink) throws(CaptureFailure) -> any CaptureSourceRunning
 }
 
@@ -35,9 +35,15 @@ struct AVCaptureSource: CaptureSourceOpening {
         // Opening a device without access would show the system's prompt; access is asked for elsewhere, when the
         // user first dictates.
         guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else { throw .permissionDenied }
-        let chosen = request.deviceID.flatMap(AVCaptureDevice.init(uniqueID:))
-            .flatMap { $0.isConnected && $0.hasMediaType(.audio) ? $0 : nil }
-        guard let device = chosen ?? AVCaptureDevice.default(for: .audio) else { throw .noInputDevice }
+        // The choice is made here, once, from the devices present now; the capture keeps the device it opens.
+        let choice = MicrophoneChoice.resolve(AudioInputDevices().current(), chosenID: request.deviceID,
+                                              avoidBluetooth: request.avoidBluetooth)
+        let device = MicrophoneChoice.device(
+            for: choice,
+            find: { AVCaptureDevice(uniqueID: $0).flatMap { $0.isConnected && $0.hasMediaType(.audio) ? $0 : nil } },
+            systemDefault: { AVCaptureDevice.default(for: .audio) })
+        guard let device else { throw choice == nil ? .noInputDevice : .deviceUnavailable }
+        if choice?.replacing != nil { Diagnostics.record("capture.standIn") }
         let input: AVCaptureDeviceInput
         do { input = try AVCaptureDeviceInput(device: device) } catch { throw .deviceUnavailable }
 

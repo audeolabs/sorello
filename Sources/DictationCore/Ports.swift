@@ -137,8 +137,15 @@ public struct AudioChunk: Sendable, Equatable {
 public struct CaptureRequest: Sendable, Equatable {
     /// The chosen microphone's unique identifier, or nil for the system default.
     public var deviceID: String?
+    /// When the system default is used and it is a Bluetooth device, record from a built-in or wired microphone
+    /// instead, if there is one (ARCHITECTURE.md, section 6, "Audio capture"). A microphone chosen by name is always
+    /// used as chosen.
+    public var avoidBluetooth: Bool
 
-    public init(deviceID: String? = nil) { self.deviceID = deviceID }
+    public init(deviceID: String? = nil, avoidBluetooth: Bool = true) {
+        self.deviceID = deviceID
+        self.avoidBluetooth = avoidBluetooth
+    }
 }
 
 public enum CaptureFailure: Error, Sendable, Equatable {

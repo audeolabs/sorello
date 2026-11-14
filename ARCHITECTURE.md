@@ -185,8 +185,9 @@ cancels that phase's timer.
 ### Rules
 
 1. **Start.** A hold or toggle press while `capture` is `idle` starts a
-   dictation: allocate the id, `startCapture`, `openStream`, and set
-   `captureStart(id)` for 3 s, which includes any wait for the previous
+   dictation: allocate the id, `startCapture` (with the chosen
+   microphone and the Bluetooth switch, section 6, "Audio capture"),
+   `openStream`, and set `captureStart(id)` for 3 s, which includes any wait for the previous
    capture's teardown. The text options and the app in front are read
    once, now, and stay with the dictation. If three dictations already
    exist, show the busy notice and start nothing. If the microphone is
@@ -556,6 +557,47 @@ The download:
   found again by its unique identifier (the default is used if it is
   gone). Samples are converted to 16 kHz mono `Float`. A format change
   mid-capture rebuilds the converter; `stop` flushes the converter's tail.
+- **Bluetooth headsets.** Opening a Bluetooth headset's microphone
+  switches the headset to its call profile: the microphone is poor, and
+  whatever the user is listening to drops to call quality until the
+  recording ends. So when a dictation would record from the system
+  default and the default is a Bluetooth device, Sorello records from
+  another microphone that stands in for it, if there is one. The General
+  switch "Avoid Bluetooth microphones" turns this on or off. It is on by
+  default, as the iPhone app's "Use iPhone microphone" is.
+  - Only the default is replaced. A microphone chosen by name is used as
+    chosen, Bluetooth or not. When a chosen microphone is gone, the
+    default takes its place and may itself be replaced.
+  - The stand-in is the built-in microphone, or failing that the first
+    wired input in the system's order: USB, Thunderbolt, FireWire, PCI,
+    HDMI or DisplayPort. Nothing else stands in: no other Bluetooth
+    device, no virtual or aggregate device, no AirPlay or Continuity
+    (iPhone) microphone, and no device whose transport is unknown. While a
+    laptop's lid is closed, its built-in microphone cannot hear, so it
+    does not stand in then.
+  - With nothing to stand in, or with the switch off, the Bluetooth
+    microphone is used. If the stand-in fails to open, the start fails
+    as it would for any device, and so does a chosen or standing-in
+    microphone that has gone by the time it is opened; Sorello does not
+    then try the Bluetooth microphone.
+  - The choice is made once per dictation, when its capture opens, from
+    the devices present at that moment. A capture keeps the device it
+    opened until it ends. If a headset connects or the default changes
+    during a recording, that recording carries on as it was, and the next
+    dictation chooses again. If the device being recorded from goes away,
+    the capture reports `interrupted`, as for any device.
+  - One pure function, `MicrophoneChoice.resolve`, makes the choice from
+    the device list (each device's identifier, name, transport, whether
+    it is the default and whether it is silenced by a closed lid), the
+    chosen identifier and the switch. The capture adapter calls it to
+    open a device, and the app calls it for the General screen, so General
+    shows the microphone that a dictation started now would record from.
+    The device list is read again whenever a device comes or goes, the
+    default input changes, or the displays change (closing a lid changes
+    them).
+  - The session reads the switch with the chosen microphone when a
+    dictation starts, and both travel in its `CaptureRequest`. Nothing
+    about the choice enters `SessionState`.
 - The microphone is held only from `start` until `stop` or `abort` has
   torn the session down. Starts and teardowns run one at a time, in the
   order asked. Audio stays in memory; nothing is written to disk until the
@@ -890,8 +932,11 @@ which `SorelloSnapshots` writes.
   shortcuts and granted permissions show their title alone, and no
   footnote says how a control works. A line under a row's title says
   only what the title cannot: the model's state, where it runs and its
-  download, a permission that is denied or missing, the Run Log's
-  details, and on About the privacy promise and each notice's licence.
+  download, a permission that is denied or missing, the microphone a
+  dictation records from when it stands in for a Bluetooth default
+  ("Recording from MacBook Pro Microphone", section 6, "Audio
+  capture"), the Run Log's details, and on About the privacy promise and
+  each notice's licence.
   An empty list still says what goes in it.
 - **Setup**: welcome, the speech model, microphone, Accessibility,
   shortcut, and a live test. The model's step is there only when the

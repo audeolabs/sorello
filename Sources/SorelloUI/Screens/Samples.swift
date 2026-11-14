@@ -55,7 +55,7 @@ public extension GeneralModel {
                      selectedMicrophoneID: nil, defaultMicrophoneName: "Built-in Microphone",
                      toggles: [.launchAtLogin: true, .restoreClipboard: true, .spokenNumbers: true,
                                .spokenDelimiters: true, .pressEnter: true, .correctionSuggestions: true,
-                               .keepRunLog: true])
+                               .keepRunLog: true, .avoidBluetoothMicrophone: true])
     }
 }
 

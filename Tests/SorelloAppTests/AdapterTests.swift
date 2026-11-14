@@ -60,9 +60,10 @@ private struct NoLayout: KeyboardLayout {
         settings.doubleTap = .prompt
         settings.restoreClipboard = false
         settings.microphoneID = "mic-7"
+        settings.avoidBluetoothMicrophone = false
         let session = SessionSettings(settings: settings, dictionaryEditable: true, accessibilityTrusted: true)
         #expect(session == SessionSettings(doubleTap: .prompt, restoreClipboard: false, microphoneID: "mic-7",
-                                           retainForCorrection: true))
+                                           avoidBluetoothMicrophone: false, retainForCorrection: true))
     }
 
     @Test func carriesTheDoubleTapAsStored() throws {
