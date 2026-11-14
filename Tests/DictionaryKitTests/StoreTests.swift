@@ -260,6 +260,38 @@ struct StoreTests {
         #expect(store.dictionary.dictionary.entries.map(\.text) == ["Zorblax", "Quint"], "The hidden dictionary survives")
     }
 
+    /// Reading the file without a store changes nothing whatever it finds: a missing file is an empty dictionary and
+    /// no directory is made; a damaged or unopenable one, or one behind a directory that may not be searched, is nil
+    /// and stays exactly as it was.
+    @Test func readingWithoutChangingLeavesEveryFileAlone() throws {
+        let scratch = Scratch()
+        #expect(DictionaryStore.readWithoutChanging(scratch.file, encoder: testEncoder) == ScopedDictionary())
+        #expect(!FileManager.default.fileExists(atPath: scratch.directory.path), "Nothing was made")
+
+        let writer = DictionaryStore(fileURL: scratch.file, encoder: testEncoder)
+        try writer.save(text: "Zorblax", strength: 2)
+        try writer.add("Quint", strength: 1, to: DictionaryApp(id: "com.example.chat", name: "Chat"))
+        let read = try #require(DictionaryStore.readWithoutChanging(scratch.file, encoder: testEncoder))
+        #expect(read == writer.dictionary)
+        #expect(read.decodingWords(for: nil).entries.map(\.text) == ["Zorblax"], "Words limited to an app are kept apart")
+
+        let damaged = Data(#"{"version":1,"entries":[{"text":"  Zorblax","strength":1}],"ignore":[],"apps":[]}"#.utf8)
+        try damaged.write(to: scratch.file)
+        #expect(DictionaryStore.readWithoutChanging(scratch.file, encoder: testEncoder) == nil)
+        #expect(try Data(contentsOf: scratch.file) == damaged && scratch.entries() == ["dictionary.json"],
+                "A damaged file is neither moved nor replaced")
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: scratch.file.path)
+        #expect(DictionaryStore.readWithoutChanging(scratch.file, encoder: testEncoder) == nil)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: scratch.file.path)
+        let folder = scratch.file.deletingLastPathComponent().path
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: folder)
+        #expect(DictionaryStore.readWithoutChanging(scratch.file, encoder: testEncoder) == nil,
+                "A file that may be there is not an empty dictionary")
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder)
+        #expect(try Data(contentsOf: scratch.file) == damaged && scratch.entries() == ["dictionary.json"])
+    }
+
     /// Without the model's vocabulary nothing may change, and saved data loads as it is.
     @Test func editsNeedVocabulary() throws {
         let scratch = Scratch()

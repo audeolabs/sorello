@@ -102,6 +102,18 @@ public final class DictionaryStore: Sendable {
         return (.replacedUnreadable(movedTo: aside), ScopedDictionary(), .usable)
     }
 
+    /// The dictionary saved in `fileURL`, read without changing anything: no directory is made, and a file that
+    /// cannot be read is neither moved nor replaced, as opening a store would. An empty dictionary when there is no
+    /// file; nil when there is one that cannot be opened or read as a dictionary. `encoder` checks the words as the
+    /// store does. For the `sorello` command, which only reads the app's files (ARCHITECTURE.md, section 10, "The
+    /// command").
+    public static func readWithoutChanging(_ fileURL: URL, encoder: BPEEncoder?) -> ScopedDictionary? {
+        var status = stat()
+        if lstat(fileURL.path, &status) != 0 { return errno == ENOENT ? ScopedDictionary() : nil }
+        guard let data = try? Data(contentsOf: fileURL) else { return nil }
+        return DictionaryFile.decode(data, encoder: encoder)
+    }
+
     /// The whole dictionary now.
     public var dictionary: ScopedDictionary { state.withLock { $0.dictionary } }
 
