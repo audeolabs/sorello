@@ -70,8 +70,8 @@ notch.
 ### The menu
 
 Click Sorello's icon in the menu bar. The menu shows whether Sorello is ready, with a command that fixes it when it
-is not. Below that are your three shortcuts (choose one to change it), Copy Last Dictation, Dictionary, Run Log,
-Settings…, Check for Updates… and Quit. The menu never shows what you dictated.
+is not. Below that are your three shortcuts (choose one to change it), Copy Last Dictation, Transcribe File…,
+Dictionary, Run Log, Settings…, Check for Updates… and Quit. The menu never shows what you dictated.
 
 ## What happens to the words
 
@@ -122,6 +122,39 @@ the ones already there, so use Clear All for that.
 On the General screen: which microphone to use (the system default unless you choose one), and whether Sorello
 opens at login.
 
+## Transcribing a file
+
+Sorello can turn an audio or video file into text: WAV, AIFF, CAF, FLAC, MP3, M4A, Ogg and the sound of an MP4 or
+MOV video. It can't read WebM or MKV files. The text is what a Run Log retry gives: the dictionary words that
+apply everywhere, then your rules (numbers, spoken quotes and brackets, macros, "press enter"). Nothing is pasted,
+and neither the file nor its text is kept.
+
+**In Sorello.** Choose Transcribe File… in the menu, then pick a file, or drop one on the Transcribe File window or
+on Sorello's Dock icon. You can also open a file with Sorello from the Finder's Open With. A long file shows how
+far it has got; you can keep dictating meanwhile. When it is done, Copy puts the text on the clipboard and Save…
+writes it to a text file.
+
+**In Terminal.** Sorello carries a command, `sorello`. Link it onto your PATH once:
+
+```sh
+sudo mkdir -p /usr/local/bin
+sudo ln -sf /Applications/Sorello.app/Contents/Helpers/sorello /usr/local/bin/sorello
+```
+
+For Sorello Nightly, link `/Applications/Sorello Nightly.app/Contents/Helpers/sorello` under another name, such
+as `sorello-nightly`. Each uses its own app's speech model and rules. The link keeps working after updates.
+
+```sh
+sorello transcribe talk.m4a > talk.txt
+```
+
+The text goes to standard output, and messages to standard error. `--no-rules` gives the words as heard, without
+your rules; `--no-dictionary` leaves out the dictionary. The command uses the model Sorello has downloaded, whether
+Sorello is running or not, and never downloads anything: if the model isn't there, open Sorello and download it.
+The first time, preparing the model can take a few minutes. It exits with 0 when it worked; 64 for wrong
+arguments; 65 for a file it can't read; 66 for a file that can't be opened; 69 when the model isn't downloaded;
+and 70 when the model couldn't be loaded or the transcription failed.
+
 ## When something is wrong
 
 The menu's first line says what is wrong, and the command under it leads to the fix.
@@ -156,7 +189,8 @@ analytics or crash reporting. It makes two kinds of network connection:
 - **The update check, and an update's download,** from GitHub. The server learns your address and Sorello's name
   and version. An update is installed only if its signature matches the key in the app.
 
-Your audio and transcripts are kept only in the Run Log, on this Mac. To fit the words, Sorello reads up to 16
-characters either side of the cursor, and to offer a dictionary word it watches what it pasted for up to a minute.
-It never reads a password field, and what it reads stays in memory only while it is needed. What you had copied is
-held in memory for about a second while Sorello pastes.
+Your audio and transcripts are kept only in the Run Log, on this Mac. A file you transcribe is read where it is,
+and its text stays in memory until you close the window, unless you save it. To fit the words, Sorello reads up to
+16 characters either side of the cursor, and to offer a dictionary word it watches what it pasted for up to a
+minute. It never reads a password field, and what it reads stays in memory only while it is needed. What you had
+copied is held in memory for about a second while Sorello pastes.

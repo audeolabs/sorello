@@ -45,6 +45,10 @@ two apps share and what keeps them apart.
   word right after a dictation, Sorello can offer to add it.
 - **Run Log.** The last 20 dictations are kept locally with their audio for
   playback and retry.
+- **Transcribe a file.** An audio or video file on the Mac becomes text, in
+  Sorello's Transcribe File window or with the `sorello` command in a
+  terminal. Both give the same text for the same file (section 5,
+  "Transcribing a file").
 - **Stay current.** Once a day Sorello checks whether a newer version is
   out, and Check for Updates… in the menu checks at once. A newer version
   is installed only when the user chooses Install (section 6, "Updates").
@@ -70,7 +74,10 @@ Sendable` without a comment that says which lock or queue makes it safe.
 | `SorelloApp` | macOS | all of the above, and Sparkle | Composition: builds the objects, connects them, owns windows and the menu bar item, and updates the app |
 | `Sorello` | executable | `SorelloApp` | `@main` only |
 | `SorelloSnapshots` | executable | `SorelloUI` | Renders every pill state and screen to PNG files |
-| `sorello-transcribe` | executable | `SpeechEngine` | Transcribes a WAV file with the real model, and downloads the model as the app does, for verification |
+| `FileTranscription` | neutral | `SpeechEngine`, `TextRules`, `DictationCore` | Transcribing one file: reading it, the engine, the text rules, progress. The one path the Transcribe File window and the `sorello` command both take |
+| `SorelloCommand` | macOS | `FileTranscription`, `SpeechEngine`, `Persistence`, `DictionaryKit`, `TextRules`, `DictationCore` | The `sorello` command: its arguments, finding its app and that app's model and saved rules, its output and exit status |
+| `sorello-command` | executable | `SorelloCommand` | `main` only. Shipped in the app as `Contents/Helpers/sorello` (section 10, "The command") |
+| `sorello-transcribe` | executable | `SpeechEngine` | For verification only, never shipped: transcribes files with a model bundle given directly, and downloads the model as the app does |
 
 Rules the compiler enforces through the package graph:
 
@@ -506,6 +513,54 @@ The download:
   it continues a file; Sorello adds nothing else. A connection that is
   silent for 30 seconds is given up as dropped.
 
+### Transcribing a file
+
+`FileTranscriber`, in `FileTranscription`, turns one file into text. The
+Transcribe File window (section 8) and the `sorello` command (section 10,
+"The command") both call it, and nothing else transcribes a file, so the
+same file with the same dictionary and rules gives the same text in both.
+
+- **What it reads.** Whatever `AVAudioFile` opens, which reads a file's
+  first audio track. On macOS 27 that is WAV, AIFF, CAF, FLAC, MP3, AAC
+  and Apple Lossless in M4A, Ogg Vorbis and Ogg Opus, and the soundtrack
+  of an MP4 or MOV video. WebM and Matroska are not, and neither is a
+  video without sound. Sorello adds no decoder of its own and no
+  dependency for this: a file AVFoundation cannot read is refused.
+- **How it fails.** In one of these ways, none of which carries anything
+  the file holds: the file cannot be opened (it is not there, it is a
+  directory, or it may not be read); Sorello cannot read it (a format
+  above it is not, no soundtrack, or damaged part way through); the model
+  is not downloaded; there is no model for this Mac; the model could not
+  be loaded; the transcription failed; or it was cancelled. A failure
+  part way through gives no text at all, never the text so far.
+- **The text.** The text a Run Log retry would give (section 7): the
+  engine transcribes with the dictionary words that apply everywhere, and
+  the transcript then goes through the user's text rules as they are when
+  the transcription starts, in plain style, with no text around a cursor:
+  spoken numbers, spoken quotes and brackets, voice macros, and the
+  trailing "press enter" removed when that rule is on. The caller may leave out the dictionary,
+  the rules or both, as the command's `--no-dictionary` and `--no-rules`
+  do. Nothing is pasted and no key is pressed.
+- **Memory.** The engine reads the file itself, on its executor, in
+  pieces of at most 8192 samples at 16 kHz, and reads the next piece only
+  when the last has gone into the chunker. So however long the file, it
+  holds about one 15 second chunk, one piece and the text. Between chunks
+  it lets other work on the engine run, so a dictation made while a long
+  file is transcribed waits for the chunk in progress, not for the file.
+  A file is not a recording: it keeps nothing for a correction
+  suggestion, and does not release or stop a dictation's.
+- **Progress.** While the model prepares, it says so. Then it says how
+  much of the file's audio has been read, against the file's length as
+  `AVAudioFile` gives it, which for a compressed file may be an estimate:
+  the amount read is never shown as more than the length.
+- **Cancelling** the task stops it before the next piece or chunk, and
+  gives no text.
+- **What is kept.** Nothing. The file is read where it is. The text is
+  held by the window until it closes or takes another file, or written to
+  standard output by the command; neither puts it in the Run Log or
+  anywhere else on disk. The window writes it to a file only when the
+  user chooses Save and where they choose.
+
 ## 6. macOS adapters
 
 ### Shortcuts
@@ -872,6 +927,9 @@ which `SorelloSnapshots` writes.
     opens the Shortcuts screen;
   - Copy Last Dictation, which is unavailable until there is a dictation
     to copy;
+  - Transcribe File…, which is always available. It brings the Transcribe
+    File window forward, opening it if it is closed, and shows its file
+    picker unless a file is being transcribed there;
   - Dictionary, Run Log and Settings (⌘,);
   - Check for Updates…, or Update Available… when a check Sorello made
     on its own has found one (section 6, "Updates"). A build with no
@@ -882,7 +940,8 @@ which `SorelloSnapshots` writes.
   each time the menu opens and kept current while it is open.
 
   The menu never shows what was dictated. No row carries a dictation's
-  text, and the menu is told only whether there is one to copy. So it is
+  text, and the menu is told only whether there is one to copy. A
+  transcribed file's text appears only in its window. So it is
   as wide as its own rows and their keys need, like any other menu.
 - **Main window**: a sidebar (General, Shortcuts, Dictionary, Macros, Run
   Log, About) over the screen colour, content in cards. A screen's title
@@ -905,6 +964,41 @@ which `SorelloSnapshots` writes.
   test says what it is waiting for. At launch, a model that is absent and
   can be downloaded opens setup at its step, as a missing permission
   opens it at that permission's.
+- **Transcribe File**: one window, titled Transcribe File, that turns an
+  audio or video file into text (section 5, "Transcribing a file"). It
+  has these states, each drawn by `SorelloUI` from a value:
+  - *empty*: a drop area that says "Drop an audio or video file", and
+    Choose File…;
+  - *preparing*: the file's name, an indeterminate bar, "Preparing speech
+    model", and Cancel;
+  - *transcribing*: the file's name, a bar, how much has been read
+    against the file's length ("4:10 of 58:02"), and Cancel;
+  - *done*: the file's name, the text in a scrolling field that can be
+    selected but not edited, and Copy, Save… and Choose File…. With no
+    words heard, "No speech heard" takes the text's place, with Choose
+    File… alone;
+  - *failed*: the file's name and one line for the reason. "Sorello can't
+    read this file" for a format it does not read, with the formats it
+    does under it; "This file can't be opened"; "Speech model not
+    downloaded", with Download…, which opens the General screen; "No
+    speech model for this Mac yet"; "Speech model unavailable", with
+    Retry; "Couldn't transcribe this file", with Try Again. Each also has
+    Choose File….
+
+  Choose File… shows the system's file picker as a sheet on the window,
+  offering audio and video files. A file dropped on the window, a file
+  chosen, and a file opened with Sorello from the Finder are taken the
+  same way, one at a time: while one is preparing or being transcribed,
+  the window takes no other, and its drop area does not light up. Cancel
+  goes back to *empty*. Closing the window cancels what it is doing and
+  forgets the text. Copy puts the text on the clipboard; Save… writes it
+  as a plain text file, named after the file, where the user chooses. A
+  dictation made meanwhile is unaffected, and the window is never pasted
+  into by Sorello.
+  The app declares that it can view audio and video files, at the rank
+  that offers it in the Finder's Open With and lets a file be dropped on
+  its Dock icon, but never makes it the default app for any file. A file
+  opened that way opens the window with that file.
 - **The model's state** is said the same way wherever it shows. Ready,
   preparing and failed to load are as they were. When the model is not on
   the Mac, the menu's state line says "Speech model not downloaded" and
@@ -917,16 +1011,17 @@ which `SorelloSnapshots` writes.
   nothing. A dictation begun without the model ends in a notice that says
   the model has not been downloaded.
 
-The main window and setup have the sizes their chrome gives them
-(`WindowChrome`), and what a window shows never changes them. Each opens
-at its default size. The main window can be resized, down to its minimum
-and no further. Setup cannot be resized: it is one size at every step and
+The main window, setup and Transcribe File have the sizes their chrome
+gives them (`WindowChrome`), and what a window shows never changes them:
+a long transcript scrolls. Each opens at its default size. The main
+window and Transcribe File can be resized, down to their minimums and no
+further. Setup cannot be resized: it is one size at every step and
 in every state, so its buttons are always where they were. A notice's
 window opens at one size and can be made no smaller than its own minimum.
 
 Sorello lives in the menu bar. With none of its windows open it has no
-Dock icon and is not in the app switcher. While setup, the main window or
-a notice's window is open, it is an ordinary app: its icon is in the Dock,
+Dock icon and is not in the app switcher. While setup, the main window,
+the Transcribe File window or a notice's window is open, it is an ordinary app: its icon is in the Dock,
 it is in the app switcher, and its menus (its own, Edit and Window) are in
 the menu bar while it is in front. So a window of Sorello's comes back the
 way any app's does: from the Dock, with Command-Tab, and after the system
@@ -970,15 +1065,20 @@ A reviewer checks every change against these.
    `Sources/SorelloApp/Adapters/SparkleUpdater.swift`. No other source
    opens a connection, and no source names a host: the model's address
    is in `Models/model.lock.json` and the feeds' are in
-   `Config/identity.conf`.
+   `Config/identity.conf`. The `sorello` command opens none: it never
+   downloads the model, and links no updater.
 2. No content in logs. Diagnostics go through one type, `Diagnostics`,
    whose events are a compile-time name and numbers. `print`, `NSLog`,
    `os_log` and `Logger` are not used elsewhere in `Sources`, except in
-   the two command-line tools. The app itself writes to standard output
+   the command-line tools: `SorelloSnapshots`, `sorello-transcribe`, and
+   `SorelloCommand`, which writes a file's text to the person who ran
+   the command and keeps no log. The app itself writes to standard output
    only in its two verification modes, `--self-test` and `--snapshots`,
    which report on synthetic recordings to the person who ran them.
 3. In storage Sorello manages, audio and transcripts exist only in the Run
-   Log. Clearing it deletes them and makes the app forget the last
+   Log. A file transcribed in the Transcribe File window or by the
+   command is read where it is, and its text is held in memory only
+   (section 5, "Transcribing a file"). Clearing it deletes them and makes the app forget the last
    dictation and any audio kept for a correction suggestion. What a
    destination app, a backup or a clipboard manager keeps is outside
    Sorello's control.
@@ -1001,7 +1101,7 @@ Review does.
   `make check` runs both plus `scripts/check-rules.sh`; it needs no model,
   and no network once SwiftPM has fetched Sparkle.
 - `make app` assembles `build/<name>.app` with `scripts/build-app.sh`:
-  the release executable, `Info.plist`, fonts, icon, notices, the model's
+  the release executable, the `sorello` command (below), `Info.plist`, fonts, icon, notices, the model's
   notices, the pin and Sparkle's framework in `Contents/Frameworks`, then
   signs it, and everything in Sparkle's framework that runs, with the
   hardened runtime, and the app with the audio-input entitlement. `CODESIGN_IDENTITY` defaults to ad hoc. A
@@ -1052,6 +1152,72 @@ Review does.
 - The app is not sandboxed: the event tap and Accessibility calls do not
   work in the sandbox.
 
+### The command
+
+`sorello transcribe <file>` writes a file's text to standard output, with
+the model the app has downloaded, whether the app is running or not.
+
+- **Where it is.** Every app carries it at `Contents/Helpers/sorello`
+  (not in `Contents/MacOS`, where `sorello` and `Sorello` would be one
+  name on a disk that ignores case). `scripts/build-app.sh` builds the
+  `sorello-command` product for the app's architectures, joins them, and
+  signs it before the app with the app's identity, the hardened runtime
+  and the timestamp, with the identifier `<bundle id>.command` and no
+  entitlement. The build fails unless it holds exactly the architectures
+  asked for. Notarizing the app notarizes it with everything inside it,
+  and the app's signature seals it, so it is updated with the app.
+- **On the PATH.** The user links it: `ln -s
+  /Applications/Sorello.app/Contents/Helpers/sorello
+  /usr/local/bin/sorello`, and for the nightly a link of another name,
+  such as `sorello-nightly`. Neither the app nor the command makes a
+  link. The link survives updates, which replace the app where it is.
+- **Its app.** The command resolves the path it was started by, following
+  symbolic links, and its app is the bundle that holds it at
+  `Contents/Helpers/sorello`. From that bundle's `Info.plist` and
+  resources it takes the bundle identifier, name and version, the pin,
+  and the model the app carries, if any. So a nightly's command uses the
+  nightly's model and data, and a release's the release's. A copy
+  outside an app, a hard link, or the build tree's
+  `.build/…/sorello-command`, finds no app and says so.
+- **Its model.** The app's: the build its pin gives this Mac, in that
+  app's store or carried by it, found as the app's engine finds it, with
+  the same checks and the store's lock, so the command and the app can
+  run at once. It never downloads. When the model is not there it says
+  to open the app and download it there; when no build fits this Mac, it
+  says so. Preparing the model can take minutes the first time on a Mac;
+  if it has not finished within two seconds the command says, once, on
+  standard error, that it is preparing the speech model.
+- **Its rules.** The app's text rules and dictionary words that apply
+  everywhere, read from that app's preferences, `macros.json` and
+  `dictionary.json` (section 7), only read: the command never writes,
+  moves or repairs them. One that cannot be read counts as empty, and the
+  command says so on standard error and goes on. `--no-dictionary`
+  transcribes without the dictionary, and `--no-rules` gives the
+  transcript without the text rules.
+- **Arguments.** `sorello transcribe [--no-dictionary] [--no-rules]
+  <file>`, exactly one file; `--` ends the options. `sorello --version`
+  prints the app's name, version and build, such as `Sorello Nightly
+  0.0.1 (269)`. `sorello --help`, `sorello help` and `sorello transcribe
+  --help` print how to use it to standard output; anything else, no
+  arguments included, prints it to standard error and exits 64.
+- **Output.** Standard output carries the text and nothing else,
+  followed by one newline; when no words were heard it carries nothing.
+  Everything else goes to standard error, each line starting `sorello: `,
+  and a successful run writes nothing there unless the model was slow to
+  prepare or a rules file could not be read. A failure writes no text.
+- **Exit status.** As `sysexits.h` names them:
+
+  | Status | When |
+  |---|---|
+  | 0 | Transcribed, words heard or not |
+  | 64 | The arguments are wrong |
+  | 65 | Sorello cannot read the file |
+  | 66 | The file cannot be opened |
+  | 69 | No app around the command, the model is not downloaded, or no model fits this Mac |
+  | 70 | The model could not be loaded, or the transcription failed |
+
+  Interrupted, it dies of the signal, as any command does.
+
 ### Signed builds
 
 - `scripts/notarize-app.sh <app> <dmg>` has Apple notarize an app, staples
@@ -1082,8 +1248,11 @@ Review does.
   the channel's app signed with the Developer ID, notarizes it into its
   disk image, writes the image's update feed, and proves the app out of
   the image: `--snapshots`, then `--self-test --download` with a
-  recording made by `say`, whose words must come back. A build that
-  fails any of this is not handed on.
+  recording made by `say`, whose words must come back. Then the command
+  in that app: `--version` must name the app, and `transcribe` of the
+  same recording must say the model is not downloaded and exit 69, since
+  the runner's own store for that app is empty. A build that fails any
+  of this is not handed on.
 - **Nightly** runs every night, and when it is started by hand. If `main`
   has not moved since the last nightly, it does nothing. Otherwise it
   packages "Sorello Nightly" from `main` and publishes it in the
@@ -1129,6 +1298,27 @@ Review does.
   in `Tests/Vectors`.
 - Engine tests that need the model run only when `SORELLO_MODEL_DIR` is
   set. `sorello-transcribe` checks a synthetic recording end to end.
+  It stays the developer's tool, as it was before the `sorello` command:
+  it takes a model bundle with `--model` or downloads one with
+  `--download`, `--source` and `--pin`, and has `--word`, `--realtime`
+  and `--cpu`. Neither `make check` nor a workflow runs it, and no app
+  carries it. It reads files as `FileTranscriber` does.
+- A file's transcription is tested with a fake model: the text is the
+  one the same audio gives as a recording, read pieces never pile up
+  ahead of the chunker however long the file, a dictation's stream is
+  served between a long file's chunks, progress rises to the file's
+  length, and cancelling stops it. Files of each kind in "Transcribing a
+  file" are made by the tests from invented signals, a video with a
+  soundtrack among them, and read back; WebM, a video without sound and
+  a text file are refused.
+- `SorelloCommand` is tested through one function that takes the
+  arguments, the path it was started by, the user's Application Support
+  directory and preferences, and a transcriber, and returns the exit
+  status with what it wrote to standard output and standard error. The
+  tests build app bundles of their own in a temporary directory, with
+  links to them, and fake the transcriber; every row of the exit status
+  table, the output rules, the rules and dictionary flags, and that it
+  writes nothing in the app's data are each a test.
 - The download is tested against a transport of the tests' own, which
   serves, stalls, cuts off, redirects and sends the wrong bytes. No test
   opens a connection. Against the real server it is proved by two tools.
@@ -1158,6 +1348,14 @@ Review does.
   menus as text too, since they show only while a window is open.
   `Sorello --no-setup` opens the app without its setup window, so a
   packaged build can be launched and quit without touching a permission.
+- `SorelloSnapshots` renders the Transcribe File window in every state,
+  long transcripts and long file names included, and `Sorello
+  --snapshots` renders it as the app wires it and checks its size like
+  the main window's. `Sorello --self-test --transcribe <file>` runs that
+  window's own model and binding, off screen, with the app's engine: it
+  prints each state the window passes through and then the text it
+  shows, so the window's way in is checked against the command's text
+  for the same file. It needs the model in the app's store, or carried.
 - The updater is tested through `Updating` with a fake: the menu's row,
   the switch in General, and what each does. No test starts Sparkle or
   opens a connection, and neither `--snapshots` nor any other
@@ -1200,7 +1398,12 @@ Review does.
   Updates… from the menu, Sparkle's window and Install, the app that
   opens afterwards with its settings, model and permissions; and, once a
   check Sorello made on its own has found a version, the menu's row and
-  that no window arrived by itself.
+  that no window arrived by itself. Transcribe File: the menu row, the
+  picker, dropping a file on the window, on the Dock icon and with Open
+  With, Copy and Save…, Cancel and closing the window part way through a
+  long file, and a dictation while it runs. The command from a link on
+  the PATH, in a release installed from its disk image, before and after
+  the app has been opened once.
 
 ## 12. Provenance
 
