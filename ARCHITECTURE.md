@@ -544,7 +544,10 @@ same file with the same dictionary and rules gives the same text in both.
 - **Memory.** The engine reads the file itself, on its executor, in
   pieces of at most 8192 samples at 16 kHz, and reads the next piece only
   when the last has gone into the chunker. So however long the file, it
-  holds about one 15 second chunk, one piece and the text. Between chunks
+  holds about one 15 second chunk, one piece and the text. Of the silence
+  before the first speech it holds one chunk at most; a file with no
+  speech at all is then read a second time, without its silence
+  shortened, as a recording with no speech is heard. Between chunks
   it lets other work on the engine run, so a dictation made while a long
   file is transcribed waits for the chunk in progress, not for the file.
   A file is not a recording: it keeps nothing for a correction
