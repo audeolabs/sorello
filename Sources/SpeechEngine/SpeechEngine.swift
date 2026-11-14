@@ -337,39 +337,61 @@ public actor SpeechEngine: SpeechTranscribing {
 
     /// Reads the source `open` makes into one recording's chunker, a piece at a time, and transcribes each chunk as
     /// it fills.
+    ///
+    /// Before any speech the chunker's silence compactor holds back what it has heard, since a recording with no
+    /// speech at all is heard unchanged. A file can be any length, so here it holds at most one chunk of that silence
+    /// and drops the rest, which changes nothing once speech comes. If none ever does, the file is read a second
+    /// time without compaction, which is how a recording with no speech is heard, so the text is still the same.
     private func pull(_ open: AudioSourceOpener,
                       progress: @escaping @Sendable (FileSpeechProgress) -> Void) async throws(FileSpeechFailure) -> String {
         // A file waits here only after preparation has succeeded, which sets the model before it resumes anyone.
         guard let model else { throw .failed }
         let snapshot = dictionary(nil)
         let bias = graphs.graph(for: snapshot) { BiasGraph.build(entries: snapshot.entries, encoder: model.encoder) }
-        let work = StreamWork(id: 0, snapshot: snapshot, bias: bias, retainsAudio: false)
         let check: () throws -> Void = { if Task.isCancelled { throw TranscriptionError.cancelled } }
         do {
             let source = try open()
             let length = max(source.length, 0)
+            var work = StreamWork(id: 0, snapshot: snapshot, bias: bias, retainsAudio: false)
+            var dropped = false
             progress(.transcribing(read: 0, length: length))
-            while true {
-                try check()
-                guard let piece = try source.next() else { break }
-                var chunks = 0
-                try work.transcription.append(piece) { window in
-                    chunks += 1
-                    return try Self.transcribe(window, work: work, model: model, gate: nil, check: check)
-                }
+            var raw = try await read(source, into: work, model: model, check: check) {
                 progress(.transcribing(read: min(max(source.position, 0), length), length: length))
-                if chunks > 0 { await giveWay() }
+                dropped = work.transcription.dropLeadingSilence(beyond: SpeechCore.chunkSamples) || dropped
             }
-            try check()
+            if dropped && !work.transcription.heardSpeech {
+                work = StreamWork(id: 0, snapshot: snapshot, bias: bias, retainsAudio: false)
+                work.transcription = .uncompacted()
+                raw = try await read(open(), into: work, model: model, check: check) {}
+            }
             progress(.transcribing(read: length, length: length))
-            let raw = try work.transcription.finish {
-                try Self.transcribe($0, work: work, model: model, gate: nil, check: check)
-            }
-            try check()
             return CasingRestorer.apply(raw, entries: snapshot.entries)
         } catch {
             throw Self.fileFailure(error)
         }
+    }
+
+    /// Reads `source` to its end into `work`'s chunker, transcribing each chunk as it fills, and returns the text.
+    /// `afterPiece` runs each time a piece has gone in.
+    private func read(_ source: any AudioPieceSource, into work: StreamWork, model: any SpeechModel,
+                      check: () throws -> Void, afterPiece: () -> Void) async throws -> String {
+        while true {
+            try check()
+            guard let piece = try source.next() else { break }
+            var chunks = 0
+            try work.transcription.append(piece) { window in
+                chunks += 1
+                return try Self.transcribe(window, work: work, model: model, gate: nil, check: check)
+            }
+            afterPiece()
+            if chunks > 0 { await giveWay() }
+        }
+        try check()
+        let text = try work.transcription.finish {
+            try Self.transcribe($0, work: work, model: model, gate: nil, check: check)
+        }
+        try check()
+        return text
     }
 
     /// Lets every job already waiting for the engine run before this task goes on, whatever their priority. The task

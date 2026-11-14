@@ -42,6 +42,36 @@ struct CompactorTests {
         }
     }
 
+    /// A reader that can read its input again may have the compactor drop the silence it holds before any speech:
+    /// what it holds stays bounded, and once speech comes the output is the same as without dropping. With no speech
+    /// at all, dropping is reported, and `finish` says no speech was heard, so the caller knows to read again.
+    @Test func droppingLeadingSilenceChangesNothingOnceSpeechComes() {
+        let limit = s(15), piece = 8192
+        let ragged = Array(tone(0.01, level: -20).prefix(37))
+        for (input, hasSpeech) in [(noise(40, level: -50, seed: 3) + tone(5, level: -20) + zeros(3), true),
+                                   (zeros(31) + tone(2, level: -20), true),
+                                   (noise(20, level: -50, seed: 4) + ragged, true),
+                                   (noise(40, level: -50, seed: 5), false)] {
+            var compactor = SilenceCompactor(), output: [Float] = [], dropped = false, most = 0, start = 0
+            while start < input.count {
+                let end = min(start + piece, input.count)
+                compactor.append(Array(input[start..<end])) { output += $0 }
+                dropped = compactor.dropLeadingSilence(beyond: limit) || dropped
+                most = max(most, compactor.heldSamples)
+                start = end
+            }
+            let heard = compactor.finish { output += $0 }
+            #expect(dropped, "The silence before speech outgrew the limit")
+            #expect(most <= limit + piece + SilenceCompactor.frameSamples, "Held \(most) samples")
+            #expect(heard == hasSpeech)
+            if hasSpeech { #expect(output == compact(input), "The same output as without dropping") }
+        }
+        var speaking = SilenceCompactor()
+        speaking.append(tone(1, level: -20) + zeros(30)) { _ in }
+        let droppedAfterSpeech = speaking.dropLeadingSilence(beyond: limit)
+        #expect(!droppedAfterSpeech, "After speech nothing is dropped")
+    }
+
     /// Leading silence keeps its last margin, trailing silence its first, and a partial final frame of speech is kept.
     @Test func edges() {
         let speech = tone(1, level: -20)

@@ -13,11 +13,13 @@ struct FileTests {
     enum Segment {
         case tone(Double)
         case silence(Double)
+        /// Quiet noise, 50 dB below full scale: never speech to the compactor, but heard by the fake model.
+        case hum(Double)
 
         var samples: Int { Signals.s(seconds) }
         var seconds: Double {
             switch self {
-            case .tone(let seconds), .silence(let seconds): seconds
+            case .tone(let seconds), .silence(let seconds), .hum(let seconds): seconds
             }
         }
     }
@@ -27,8 +29,18 @@ struct FileTests {
         var start = 0
         for segment in segments {
             if index < start + segment.samples {
-                guard case .tone = segment else { return 0 }
-                return Float(0.1 * 2.0.squareRoot() * sin(2 * Double.pi * 440 * Double(index) / 16_000))
+                switch segment {
+                case .tone: return Float(0.1 * 2.0.squareRoot() * sin(2 * Double.pi * 440 * Double(index) / 16_000))
+                case .silence: return 0
+                case .hum:
+                    // A hash of the index, so any sample can be made on its own.
+                    var mixed = UInt64(index) &* 0x9E37_79B9_7F4A_7C15
+                    mixed = (mixed ^ (mixed >> 30)) &* 0xBF58_476D_1CE4_E5B9
+                    mixed = (mixed ^ (mixed >> 27)) &* 0x94D0_49BB_1331_11EB
+                    mixed ^= mixed >> 31
+                    let uniform = Double(mixed >> 11) / Double(1 << 53) * 2 - 1
+                    return Float(pow(10, -50.0 / 20) * 3.0.squareRoot() * uniform)
+                }
             }
             start += segment.samples
         }
@@ -199,6 +211,26 @@ struct FileTests {
     }
 
     // MARK: - Memory and fairness
+
+    /// A long quiet start is not held whole, and the text is still the one the same audio gives as a recording:
+    /// whether speech follows it, or there is no speech at all and the file is read again as a recording would hear
+    /// it, unchanged.
+    @Test func aLongQuietStartGivesTheSameText() async throws {
+        let log = ModelLog()
+        let engine = engine(log)
+        for segments: [Segment] in [[.hum(40), .tone(10), .silence(2)], [.silence(32), .tone(3)], [.hum(45)]] {
+            let recording = try #require(await SpeechEngineTests.transcribe(engine, Self.samples(segments))).get()
+            #expect(!recording.isEmpty)
+            let opens = Mutex(0)
+            let text = try #require(await transcribe(engine) {
+                opens.withLock { $0 += 1 }
+                return SignalSource(segments, log: SourceLog(), model: log)
+            }).get()
+            #expect(text == recording)
+            let speech = segments.contains { if case .tone = $0 { true } else { false } }
+            #expect(opens.withLock { $0 } == (speech ? 1 : 2), "Read again only when there was no speech")
+        }
+    }
 
     /// However long the file, the engine reads the next piece only when the last has gone into the chunker: what it
     /// has read is never more than a chunk and a piece ahead of what the model has seen.
