@@ -35,6 +35,8 @@ let package = Package(
         .target(name: "DesignCore", swiftSettings: strict),
         .target(name: "SpeechEngine", dependencies: ["DictationCore", "DictionaryKit"], swiftSettings: strict),
         .target(name: "Persistence", dependencies: ["DictationCore", "TextRules"], swiftSettings: strict),
+        .target(name: "FileTranscription", dependencies: ["SpeechEngine", "TextRules", "DictationCore"],
+                swiftSettings: strict),
 
         // macOS.
         .target(name: "SorelloUI", dependencies: ["DesignCore"], swiftSettings: mainActor),
@@ -42,7 +44,8 @@ let package = Package(
         .target(
             name: "SorelloApp",
             dependencies: ["DictationCore", "TextRules", "DictionaryKit", "DesignCore", "SpeechEngine", "Persistence",
-                           "SorelloUI", "MacPlatform", .product(name: "Sparkle", package: "Sparkle")],
+                           "FileTranscription", "SorelloUI", "MacPlatform",
+                           .product(name: "Sparkle", package: "Sparkle")],
             swiftSettings: mainActor
         ),
         .executableTarget(name: "Sorello", dependencies: ["SorelloApp"], swiftSettings: mainActor),
@@ -58,11 +61,15 @@ let package = Package(
         .testTarget(name: "DesignCoreTests", dependencies: ["DesignCore", "TestSupport"], swiftSettings: strict),
         .testTarget(name: "SpeechEngineTests", dependencies: ["SpeechEngine", "DictionaryKit", "DictationCore", "TestSupport"], swiftSettings: strict),
         .testTarget(name: "PersistenceTests", dependencies: ["Persistence", "DictationCore", "TextRules", "TestSupport"], swiftSettings: strict),
+        .testTarget(name: "FileTranscriptionTests",
+                    dependencies: ["FileTranscription", "SpeechEngine", "TextRules", "DictationCore", "TestSupport"],
+                    swiftSettings: strict),
         .testTarget(name: "MacPlatformTests", dependencies: ["MacPlatform", "DictationCore", "DictionaryKit", "TestSupport"], swiftSettings: strict),
         .testTarget(name: "SorelloUITests", dependencies: ["SorelloUI", "DesignCore", "TestSupport"], swiftSettings: strict),
         .testTarget(name: "SorelloAppTests",
                     dependencies: ["SorelloApp", "DictationCore", "TextRules", "DictionaryKit", "DesignCore",
-                                   "SpeechEngine", "Persistence", "SorelloUI", "MacPlatform", "TestSupport"],
+                                   "SpeechEngine", "Persistence", "FileTranscription", "SorelloUI", "MacPlatform",
+                                   "TestSupport"],
                     swiftSettings: strict),
     ],
     swiftLanguageModes: [.v6]
