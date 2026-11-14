@@ -222,6 +222,9 @@ WEIGHTS = re.compile(r"\.(mlmodelc|mlpackage|f32bin|f16bin|safetensors|wav|caf|m
 UI_AND_MODEL = {"AppKit", "SwiftUI", "UIKit", "Cocoa", "AVFoundation", "AVFAudio", "CoreML"}
 PURE = ("DictationCore", "TextRules", "DesignCore", "DictionaryKit")
 NEUTRAL = {"SpeechEngine": {"AppKit", "SwiftUI", "UIKit", "Cocoa"}, "Persistence": {"AppKit", "SwiftUI", "UIKit", "Cocoa"}}
+# Transcribing a file goes through the engine, which reads the file; this module adds rules and progress to it, and
+# imports no framework that draws or decodes (ARCHITECTURE.md, section 5, "Transcribing a file").
+THROUGH_ENGINE = ("FileTranscription",)
 MAY_PRINT = ("SorelloSnapshots", "SorelloTranscribe")
 
 
@@ -250,6 +253,8 @@ def lint_swift(path, src):
             found.add(("pure modules import only Foundation", number, text))
         if framework in NEUTRAL.get(module, ()):
             found.add(("neutral modules must also build for iOS", number, text))
+        if module in THROUGH_ENGINE and framework in UI_AND_MODEL:
+            found.add(("FileTranscription reads files only through the engine, and draws nothing", number, text))
 
     for number, line in enumerate(code.split("\n"), 1):
         text = raw[number - 1].strip()
@@ -379,6 +384,9 @@ def self_test():
         ("DesignCore", 'let s = "import AppKit"', []),
         ("SpeechEngine", "import CoreML\nimport Accelerate", []),
         ("SpeechEngine", "import AppKit", ["neutral"]),
+        ("FileTranscription", "import SpeechEngine\nimport TextRules", []),
+        ("FileTranscription", "import AVFoundation", ["FileTranscription"]),
+        ("FileTranscription", "import SwiftUI", ["FileTranscription"]),
         ("MacPlatform", "import AppKit", []),
         # Sparkle in its one file, and nowhere else, however the import is written.
         ("SorelloApp", "import Sparkle", [], "Adapters/SparkleUpdater.swift"),
