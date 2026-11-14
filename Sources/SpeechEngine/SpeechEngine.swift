@@ -274,6 +274,118 @@ public actor SpeechEngine: SpeechTranscribing {
     /// Stops a running correction check, so finishing a dictation never waits behind one.
     nonisolated func cancelChecks() { checks.cancelCurrent() }
 
+    // MARK: - Files
+
+    /// Transcribes an audio or video file (ARCHITECTURE.md, section 5, "Transcribing a file") as a Run Log retry
+    /// transcribes a recording: with the dictionary's words that apply everywhere, casing restored, and nothing kept
+    /// for corrections. The same audio gives the same text either way.
+    ///
+    /// The file is opened first, so one that cannot be opened or read fails at once, before any wait for the model.
+    /// Then it waits for preparation like a stream, reporting `preparingModel` while it does, without starting a new
+    /// attempt after one has failed. The engine reads the file on its executor, a piece at a time, and reads the next
+    /// piece only once the last has gone into the chunker, so however long the file only about one chunk is held.
+    /// Between chunks the engine works through whatever else is waiting for it, so a dictation waits for the chunk in
+    /// progress, never for the whole file. Cancelling the calling task stops it before the next piece or chunk, or
+    /// inside a model call, and gives no text.
+    /// - `progress`: called on the calling task or the engine's executor, and never after this returns.
+    public nonisolated func transcribe(file: URL, progress: @escaping @Sendable (FileSpeechProgress) -> Void)
+        async throws(FileSpeechFailure) -> String {
+        do {
+            _ = try AudioFileSource(contentsOf: file)
+        } catch {
+            throw error == .cannotOpen ? .cannotOpen : .unreadable
+        }
+        return try await transcribe(open: { () throws(AudioFileFailure) -> any AudioPieceSource in
+            try AudioFileSource(contentsOf: file)
+        }, progress: progress)
+    }
+
+    /// Transcribes the audio of the source `open` makes, as `transcribe(file:progress:)` does a file's. `open` runs on
+    /// the engine's executor, which then reads the source.
+    nonisolated func transcribe(open: @escaping AudioSourceOpener,
+                                progress: @escaping @Sendable (FileSpeechProgress) -> Void)
+        async throws(FileSpeechFailure) -> String {
+        guard !Task.isCancelled else { throw .cancelled }
+        switch preparation.outcome {
+        case .ready?:
+            break
+        case .failed(let failure)?:
+            throw .engineUnavailable(failure)
+        case .preparing?, nil:
+            progress(.preparingModel)
+            guard let readiness = await preparationOutcome() else { throw .cancelled }
+            if case .failed(let failure) = readiness { throw .engineUnavailable(failure) }
+        }
+        return try await pull(open, progress: progress)
+    }
+
+    /// How the preparation in progress ends, starting the first attempt if none was ever made, or nil as soon as the
+    /// calling task is cancelled: the first preparation on a Mac can take minutes, and a file waiting for it must be
+    /// able to give up at once.
+    private nonisolated func preparationOutcome() async -> EngineReadiness? {
+        let outcome = ResumeOnce<EngineReadiness>()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<EngineReadiness?, Never>) in
+                outcome.wait(continuation)
+                guard !Task.isCancelled else { return }
+                Task { outcome.resume(await self.joinPreparation(retryAfterFailure: false)) }
+            }
+        } onCancel: {
+            outcome.resume(nil)
+        }
+    }
+
+    /// Reads the source `open` makes into one recording's chunker, a piece at a time, and transcribes each chunk as
+    /// it fills.
+    private func pull(_ open: AudioSourceOpener,
+                      progress: @escaping @Sendable (FileSpeechProgress) -> Void) async throws(FileSpeechFailure) -> String {
+        // A file waits here only after preparation has succeeded, which sets the model before it resumes anyone.
+        guard let model else { throw .failed }
+        let snapshot = dictionary(nil)
+        let bias = graphs.graph(for: snapshot) { BiasGraph.build(entries: snapshot.entries, encoder: model.encoder) }
+        let work = StreamWork(id: 0, snapshot: snapshot, bias: bias, retainsAudio: false)
+        let check: () throws -> Void = { if Task.isCancelled { throw TranscriptionError.cancelled } }
+        do {
+            let source = try open()
+            let length = max(source.length, 0)
+            progress(.transcribing(read: 0, length: length))
+            while true {
+                try check()
+                guard let piece = try source.next() else { break }
+                var chunks = 0
+                try work.transcription.append(piece) { window in
+                    chunks += 1
+                    return try Self.transcribe(window, work: work, model: model, gate: nil, check: check)
+                }
+                progress(.transcribing(read: min(max(source.position, 0), length), length: length))
+                if chunks > 0 { await giveWay() }
+            }
+            try check()
+            progress(.transcribing(read: length, length: length))
+            let raw = try work.transcription.finish {
+                try Self.transcribe($0, work: work, model: model, gate: nil, check: check)
+            }
+            try check()
+            return CasingRestorer.apply(raw, entries: snapshot.entries)
+        } catch {
+            throw Self.fileFailure(error)
+        }
+    }
+
+    /// Lets every job already waiting for the engine run before this task goes on, whatever their priority. The task
+    /// waits for a turn on the engine's queue, which comes only after the engine has worked through what was waiting.
+    private func giveWay() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            queue.async { continuation.resume() }
+        }
+    }
+
+    private static func fileFailure(_ error: any Error) -> FileSpeechFailure {
+        if let failure = error as? AudioFileFailure { return failure == .cannotOpen ? .cannotOpen : .unreadable }
+        if error as? TranscriptionError == .cancelled { return .cancelled }
+        return .failed
+    }
+
     /// Transcribes what a stream has been handed so far, while the user is still speaking.
     func drain(_ stream: SpeechStream) async {
         let model: any SpeechModel
