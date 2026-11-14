@@ -124,7 +124,7 @@ struct HomeView: View {
     }
 }
 
-/// The Flow session, as the Live Activity's Lock Screen shows it (`SessionCardState`): with no session, the Start pill
+/// The dictation session, as the Live Activity's Lock Screen shows it (`SessionCardState`): with no session, the Start pill
 /// with the mark, on the background; during one, a card with the mark and the state's dot, the state, the time left or
 /// recorded, the input's glyph and End. With the microphone off, Open Settings is the only action. At accessibility
 /// sizes the glyphs share one line and the words get the card's full width.

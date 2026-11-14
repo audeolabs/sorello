@@ -415,7 +415,7 @@ struct LockScreenView: View {
                     }
                     .accessibilityElement(children: .combine)
                 } else {
-                    Text("Flow session")
+                    Text("Dictation session")
                 }
             case .recording: Text("Tap Stop on the keyboard when done")
             case .transcribing: Text("Your words land in a moment")

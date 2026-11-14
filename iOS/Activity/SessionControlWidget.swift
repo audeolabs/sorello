@@ -10,9 +10,9 @@ struct SessionControl: ControlWidget {
         // Kept: iOS binds a control placed on the Action button or in Control Center to this kind.
         StaticControlConfiguration(kind: "SessionControl") {
             ControlWidgetButton(action: ToggleFlowSessionIntent()) {
-                Label("Flow Session", systemImage: "waveform")
+                Label("Dictation Session", systemImage: "waveform")
             }
         }
-        .displayName("Flow Session")
+        .displayName("Dictation Session")
     }
 }

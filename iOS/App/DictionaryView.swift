@@ -422,7 +422,7 @@ struct StrengthProbeSheet: View {
             Label("Session paused", systemImage: "pause.circle")
                 .font(.footnote)
                 .foregroundStyle(Theme.secondaryInk)
-                .accessibilityLabel("Your Flow session is paused while you record and starts again when you close this.")
+                .accessibilityLabel("Your dictation session is paused while you record and starts again when you close this.")
         }
     }
 
