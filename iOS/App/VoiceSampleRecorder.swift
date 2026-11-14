@@ -2,7 +2,7 @@ import Foundation
 
 /// "Find strength": one sentence from the microphone, at most `maxDuration`, kept in memory only
 /// (invariant 1). It has its own `MicrophoneCapture` and `DictationSampleBuffer`, so it runs only while
-/// no Flow session holds the microphone, and only in the foreground.
+/// no dictation session holds the microphone, and only in the foreground.
 @MainActor
 final class VoiceSampleRecorder {
     static let maxDuration: TimeInterval = 15

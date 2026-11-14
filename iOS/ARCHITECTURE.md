@@ -59,7 +59,7 @@ keyboards entirely. Those fields are out of scope.
    updates (with transitions of at most two seconds) and live timers move it.
    iOS leaves the Dynamic Island out of screenshots and screen recordings.
 
-These lead to the "Flow session" design:
+These lead to the "dictation session" design:
 
 - A session starts **only at the user's request and unlocked**, in one of
   three ways: the user taps "Start session" in the app; the app arrives in
@@ -895,9 +895,9 @@ correction detection on iOS: entries are added by hand.
   An empty dictionary takes the unbiased path.
 - **Find strength.** The app records one sentence of at most 15 s, in the
   foreground only and in memory only, with its own `MicrophoneCapture` and
-  `DictationSampleBuffer`. A running Flow session is ended first and started
-  again when the sheet closes, if the app is still in front; it is not offered
-  while a dictation is in progress. `SpeechEngine.probeStrength`
+  `DictationSampleBuffer`. A running dictation session is ended first and
+  started again when the sheet closes, if the app is still in front; it is not
+  offered while a dictation is in progress. `SpeechEngine.probeStrength`
   transcribes the samples with the dictionary minus the word, then re-decodes
   the same encoder output with the word at each of `VerifyDecision.strengths`
   (×1 to ×8). `StrengthProbe` (pure, `DictionaryKit`) decides "already
@@ -1059,9 +1059,9 @@ repository's `gh-pages` branch, not from `main`; the support page is
 
 ## Live Activity (Activity/, ActivityCore/)
 
-The Flow session shows as a Live Activity: in the Dynamic Island (compact,
-minimal and expanded) and on the Lock Screen. Tapping it opens the app; it has
-no buttons.
+The dictation session shows as a Live Activity: in the Dynamic Island
+(compact, minimal and expanded) and on the Lock Screen. Tapping it opens the
+app; it has no buttons.
 
 - **Content.** `SessionActivityAttributes` (`Activity/`, compiled into the app
   and the extension) has no fixed attributes. Its content state,
@@ -1153,15 +1153,15 @@ no buttons.
 
 ## Session control (Activity/, HostCore/)
 
-The "Flow Session" control starts a Flow session, or ends the one running,
-without opening the app. The user puts it on the Action button, in Control
-Center or on the Lock Screen.
+The "Dictation Session" control starts a dictation session, or ends the one
+running, without opening the app. The user puts it on the Action button, in
+Control Center or on the Lock Screen.
 
 - **Control.** `SessionControl` (`Activity/SessionControlWidget.swift`, in
   the extension's widget bundle) is a `ControlWidgetButton` showing the SF
-  Symbol `waveform` and named "Flow Session". It is a button, not a toggle:
-  a toggle's state is read in the extension, which reads no files, settings
-  or App Group. The session's Live Activity and the microphone indicator
+  Symbol `waveform` and named "Dictation Session". It is a button, not a
+  toggle: a toggle's state is read in the extension, which reads no files,
+  settings or App Group. The session's Live Activity and the microphone indicator
   show whether a session runs.
 - **Intent.** `ToggleFlowSessionIntent` (`Activity/SessionControlIntent.swift`,
   compiled into the app and the extension) is an `AudioRecordingIntent` and a

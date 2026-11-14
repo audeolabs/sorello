@@ -1,6 +1,6 @@
 import Foundation
 
-/// What the session's Live Activity shows (ARCHITECTURE.md, "Live Activity"): the Flow session's phase and the dates
+/// What the session's Live Activity shows (ARCHITECTURE.md, "Live Activity"): the dictation session's phase and the dates
 /// its timers need, never any text or audio. It is the activity's content state, so it shows on the Lock Screen and
 /// in the Dynamic Island. Compiled into the app, the activity extension and the host tests.
 struct SessionActivityState: Codable, Hashable, Sendable {

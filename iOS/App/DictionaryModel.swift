@@ -60,7 +60,7 @@ final class DictionaryModel: ObservableObject {
     }
 }
 
-/// One "Find strength" run: permission, a paused Flow session, the recording, then the probe.
+/// One "Find strength" run: permission, a paused dictation session, the recording, then the probe.
 @MainActor
 final class StrengthProbeModel: ObservableObject {
     enum Phase: Equatable {
@@ -77,7 +77,7 @@ final class StrengthProbeModel: ObservableObject {
 
     @Published private(set) var phase = Phase.starting
     @Published private(set) var level: Float = 0
-    /// A Flow session was ended for the recording and starts again when the sheet closes.
+    /// A dictation session was ended for the recording and starts again when the sheet closes.
     @Published private(set) var pausedSession = false
 
     let word: String
