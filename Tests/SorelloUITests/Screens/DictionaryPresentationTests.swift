@@ -56,6 +56,58 @@ struct DictionaryPresentationTests {
         #expect(DictionaryProblem.tooLong(limit: 100).message.contains("100"))
     }
 
+    @Test func spellingMessagesNeverQuoteASpelling() {
+        let problems: [DictionaryProblem] = [.spellingTooManyWords(limit: 8), .spellingTooLong(limit: 100),
+                                             .spellingNoLetter, .spellingUnencodable, .tooManySpellings(limit: 4),
+                                             .spellingIsTheWord, .spellingTaken, .wordIsASpelling]
+        let all = problems + [.empty, .tooManyWords(limit: 8), .tooLong(limit: 100), .noLetter, .unencodable]
+        #expect(Set(all.map(\.message)).count == all.count, "Each says something different")
+        #expect(DictionaryProblem.tooManySpellings(limit: 4).message.contains("4"))
+        #expect(DictionaryProblem.spellingTooManyWords(limit: 8).message.contains("8"))
+        #expect(DictionaryProblem.spellingTooLong(limit: 100).message.contains("100"))
+    }
+
+    /// The add card checks the word first and its spellings after, and a blank "Sounds like" field is not checked.
+    @MainActor @Test func theAddCardChecksTheWordBeforeItsSpellings() {
+        let model = DictionaryModel(words: [], ignored: [], knownApps: [])
+        var asked: [(String, String?, String)] = []
+        model.actions = DictionaryActions(
+            validate: { $0 == "1234" ? .noLetter : nil },
+            validateSoundsLike: { word, id, field in
+                asked.append((word, id, field))
+                return field.contains("x") ? .spellingTaken : nil
+            })
+        model.draft = DictionaryDraft(text: "1234", soundsLike: "x")
+        #expect(model.draftProblem == .noLetter)
+        model.draft.text = "Sorello"
+        #expect(model.draftProblem == .spellingTaken)
+        #expect(asked.last.map { [$0.0, $0.1 ?? "nil", $0.2] } == ["Sorello", "nil", "x"], "A new word has no id")
+        model.draft.soundsLike = "  "
+        let count = asked.count
+        #expect(model.draftProblem == nil)
+        #expect(asked.count == count, "A blank field is not checked")
+    }
+
+    /// A word's spellings open for editing as they would be typed, and the editor's problem comes from the dictionary.
+    @MainActor @Test func aWordsSpellingsAreEditedInPlace() {
+        let word = DictionaryWord(id: "sorello", text: "Sorello", strength: 1, soundsLike: ["Sarello", "so rello"])
+        #expect(word.soundsLikeLabel == "Sounds like Sarello, so rello")
+        #expect(DictionaryWord(id: "plexa", text: "Plexa", strength: 1).soundsLikeLabel == nil)
+        let model = DictionaryModel(words: [word], ignored: [], knownApps: [])
+        model.actions = DictionaryActions(validateSoundsLike: { word, id, field in
+            word == "Sorello" && id == "sorello" && field == "sorello" ? .spellingIsTheWord : nil
+        })
+        model.editSoundsLike(of: word)
+        #expect(model.editingSoundsLike == SoundsLikeDraft(wordID: "sorello", text: "Sarello, so rello"))
+        #expect(model.soundsLikeProblem == nil)
+        model.editingSoundsLike?.text = "sorello"
+        #expect(model.soundsLikeProblem == .spellingIsTheWord)
+        model.editingSoundsLike?.refusal = .notSaved
+        #expect(model.soundsLikeProblem == .notSaved, "A refused save shows until the text changes")
+        model.editingSoundsLike?.text = "Sarello"
+        #expect(model.editingSoundsLike?.refusal == nil)
+    }
+
     @Test func theCountIsAgainstTheLimit() {
         let locale = Locale(identifier: "en_US")
         #expect(DictionaryCount.label(count: 12, capacity: 1000, locale: locale) == "12 of 1,000 words")

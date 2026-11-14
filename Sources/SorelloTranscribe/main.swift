@@ -19,6 +19,7 @@ let usage = """
       --source    fetch the build from this address instead of the pin's: HTTPS, or plain HTTP to 127.0.0.1
     options:
       --word      a dictionary word, with an optional strength (default 1); repeat for more
+      --sounds-like  a spelling the recognizer writes for the --word before it; repeat for more (at most 4)
       --realtime  hand the audio over at the speed it would be recorded, and time only the wait after the end
       --cpu       run the encoder on Core ML's CPU kernels, as on a Mac without a Neural Engine
     """
@@ -65,6 +66,9 @@ while let argument = arguments.popFirst() {
         case .success(let entry): words.append(entry)
         case .failure(let error): fail("sorello-transcribe: a --word cannot be used: \(error.message)")
         }
+    case "--sounds-like":
+        guard let value = arguments.popFirst(), !words.isEmpty else { fail(usage) }
+        words[words.count - 1].soundsLike.append(value)
     case "--realtime":
         realtime = true
     case "--cpu":
@@ -127,6 +131,16 @@ func download(pinFile: URL, store: URL, source: URL?) async -> PinnedModel {
     return model
 }
 
+// Spellings follow the dictionary's rules (DESIGN §3.7): checked for their word, and one key means one thing.
+for index in words.indices {
+    switch SoundsLike.validate(words[index].soundsLike, word: words[index].text, encoder: nil) {
+    case .success(let spellings): words[index].soundsLike = spellings
+    case .failure(let error): fail("sorello-transcribe: a --sounds-like cannot be used: \(error.message)")
+    }
+}
+guard words.allSatisfy({ $0.soundsLike.isEmpty }) || CustomDictionary(entries: words, ignore: []) != nil else {
+    fail("sorello-transcribe: two --word or --sounds-like values have the same key")
+}
 let snapshot = DictionarySnapshot(revision: 1, entries: words)
 let compute = forcesCPU ? SpeechCompute.cpu : .forThisMac()
 let engine: SpeechEngine

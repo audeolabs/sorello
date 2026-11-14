@@ -147,13 +147,14 @@ public final class BiasGraph: Sendable {
         return try? BiasGraph(phrases: list, tokens: BPEEncoder.vocabularySize)
     }
 
-    /// The token sequences an entry list boosts, in first-seen order. Surfaces with <unk> are skipped; duplicate
-    /// sequences keep the largest strength.
+    /// The token sequences an entry list boosts, in first-seen order: each entry's surfaces, then each of its
+    /// spellings' surfaces at its strength (DESIGN §3.7). Surfaces with <unk> are skipped; duplicate sequences keep the
+    /// largest strength.
     static func phrases(entries: [DictionaryEntry], encoder: BPEEncoder) -> [(tokens: [Int], strength: Float)] {
         var strengths: [[Int]: Float] = [:]
         var order: [[Int]] = []
         for entry in entries {
-            for surface in surfaces(of: entry.text) {
+            for surface in ([entry.text] + entry.soundsLike).flatMap(surfaces(of:)) {
                 let tokens = encoder.encode(DictionaryText.string(surface))
                 guard !tokens.isEmpty, !tokens.contains(BPEEncoder.unknownID) else { continue }
                 if let existing = strengths[tokens] {

@@ -178,7 +178,7 @@ final class CorrectionCoordinator {
         }
         let requestedAt = gate.withdrawals
         let work = engine.correctionCheck(typed: edit.typed, edited: edit.edited, correctionID: edit.correctionID,
-                                          ignore: dictionary.ignoredKeys, isLast: isLast)
+                                          ignore: dictionary.keysNeverSuggested, isLast: isLast)
         check?.cancel()
         check = Task { [weak self] in
             let suggestion = await work()

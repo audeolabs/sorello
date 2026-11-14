@@ -96,6 +96,22 @@ enum DictionaryText {
     static func norm<C: BidirectionalCollection>(_ word: C) -> [Unicode.Scalar] where C.Element == Unicode.Scalar {
         stripEdgePunctuation(fold(word))
     }
+
+    /// End of the shortest transcript run starting at `start` whose folded scalars equal `folded` exactly, each
+    /// transcript scalar's fold consumed whole, or nil (DESIGN §1.4, §3.7). `folds` holds each transcript scalar's fold.
+    static func foldedRun(_ folded: [Unicode.Scalar], folds: [[Unicode.Scalar]], from start: Int) -> Int? {
+        var offset = 0
+        var index = start
+        while offset < folded.count {
+            guard index < folds.count else { return nil }
+            let piece = folds[index]
+            guard offset + piece.count <= folded.count,
+                  folded[offset..<offset + piece.count].elementsEqual(piece) else { return nil }
+            offset += piece.count
+            index += 1
+        }
+        return index
+    }
 }
 
 /// The identity of a dictionary entry: its text folded to lower case, compared and hashed by Unicode scalars, so

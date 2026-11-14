@@ -19,6 +19,10 @@ public enum DictionaryChangeError: Error, Equatable, Sendable {
     case unknownApp
     /// The change could not be written to disk, so it was not made.
     case notSaved
+    /// The entry's spellings cannot be saved (DESIGN §3.7).
+    case soundsLike(SoundsLikeError)
+    /// The word is already another entry's spelling.
+    case spellingOfAnotherWord
 
     public var message: String {
         switch self {
@@ -34,6 +38,8 @@ public enum DictionaryChangeError: Error, Equatable, Sendable {
             return String(localized: "Words can be kept for at most \(DictionaryAppScopes.appCapacity) apps.")
         case .unknownApp: return String(localized: "Add the app before limiting words to it.")
         case .notSaved: return String(localized: "The dictionary couldn’t be saved.")
+        case .soundsLike(let error): return error.message
+        case .spellingOfAnotherWord: return String(localized: "This is already a spelling of another word.")
         }
     }
 }
@@ -53,19 +59,28 @@ public struct DictionaryEditor: Sendable {
     /// Whether anything can be changed: only with a vocabulary.
     public var canEdit: Bool { encoder != nil }
 
-    /// Adds, or edits the entry `original` (its key may change).
-    public func saving(text: String, strength: Float, replacing original: DictionaryKey?,
-                in dictionary: CustomDictionary) -> Result<CustomDictionary, DictionaryChangeError> {
+    /// Adds, or edits the entry `original` (its key may change). `soundsLike` sets the entry's spellings (DESIGN
+    /// §3.7); nil keeps those of the entry it replaces: `original`, or the entry with the same key.
+    public func saving(text: String, strength: Float, soundsLike: [String]? = nil, replacing original: DictionaryKey?,
+                       in dictionary: CustomDictionary) -> Result<CustomDictionary, DictionaryChangeError> {
         guard let encoder else { return .failure(.noVocabulary) }
         switch DictionaryValidation.validate(text: text, strength: strength, encoder: encoder) {
         case .failure(let error):
             return .failure(.invalid(error))
-        case .success(let entry):
+        case .success(var entry):
+            let replaced = original.flatMap { key in dictionary.entries.first { $0.key == key } }
+                ?? dictionary.entries.first { $0.key == entry.key }
+            switch SoundsLike.validate(soundsLike ?? replaced?.soundsLike ?? [], word: entry.text, encoder: encoder) {
+            case .failure(let error): return .failure(.soundsLike(error))
+            case .success(let spellings): entry.soundsLike = spellings
+            }
             var updated = dictionary
             if let original, original != entry.key { updated.remove(original) }
             switch updated.upsert(entry) {
             case .full?: return .failure(.full)
             case .invalidKey?: return .failure(.invalidKey)
+            case .spellingTaken?: return .failure(.soundsLike(.taken))
+            case .spellingOfAnotherWord?: return .failure(.spellingOfAnotherWord)
             case nil: return .success(updated)
             }
         }
@@ -86,7 +101,8 @@ public struct DictionaryEditor: Sendable {
         var updated = dictionary
         switch updated.addIgnore(key) {
         case .full?: return .failure(.ignoreFull)
-        case .invalidKey?: return .failure(.invalidKey)
+        // The ignore list has no spellings.
+        case .invalidKey?, .spellingTaken?, .spellingOfAnotherWord?: return .failure(.invalidKey)
         case nil: return .success(updated)
         }
     }

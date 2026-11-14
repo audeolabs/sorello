@@ -121,9 +121,12 @@ public final class DictionaryStore: Sendable {
     }
 
     /// Adds a word, or edits the entry `original` (its text may change), limited to `apps` (none: everywhere).
-    public func save(text: String, strength: Float, apps: Set<String> = [],
+    /// `soundsLike` sets its spellings; nil keeps those of the entry it replaces (DESIGN §3.7).
+    public func save(text: String, strength: Float, soundsLike: [String]? = nil, apps: Set<String> = [],
                      replacing original: DictionaryKey? = nil) throws(DictionaryChangeError) {
-        try change { $0.saving(text: text, strength: strength, apps: apps, replacing: original, in: $1) }
+        try change {
+            $0.saving(text: text, strength: strength, soundsLike: soundsLike, apps: apps, replacing: original, in: $1)
+        }
     }
 
     /// Removes an entry and its app limits. Returns false when there was no such entry.
