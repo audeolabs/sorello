@@ -1202,8 +1202,9 @@ the model the app has downloaded, whether the app is running or not.
   arguments included, prints it to standard error and exits 64.
 - **Output.** Standard output carries the text and nothing else,
   followed by one newline; when no words were heard it carries nothing.
-  Everything else goes to standard error, each line starting `sorello: `,
-  and a successful run writes nothing there unless the model was slow to
+  Everything else goes to standard error: each message is one line
+  starting `sorello: `, and after wrong arguments how to use it follows.
+  A successful run writes nothing there unless the model was slow to
   prepare or a rules file could not be read. A failure writes no text.
 - **Exit status.** As `sysexits.h` names them:
 
