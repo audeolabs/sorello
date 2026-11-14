@@ -45,6 +45,8 @@ public enum ScreenSnapshots {
             main("shortcuts-off", height: 720, window(.shortcuts) { $0.shortcutsReplaced(.sample(doubleTap: .off)) }),
             main("dictionary", height: 940, .sample(section: .dictionary)),
             main("dictionary-refusing", height: 960, window(.dictionary) { $0.dictionaryReplaced(.sampleRefusing()) }),
+            main("dictionary-sounds-like", height: 1000,
+                 window(.dictionary) { $0.dictionaryReplaced(.sampleEditingSoundsLike()) }),
             main("dictionary-needs-model", height: 960, window(.dictionary) { $0.dictionaryReplaced(.sampleNeedsModel()) }),
             main("dictionary-empty", height: 700, window(.dictionary) { $0.dictionaryReplaced(.sampleEmpty()) }),
             main("macros", height: 640, .sample(section: .macros)),

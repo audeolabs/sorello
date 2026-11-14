@@ -140,7 +140,8 @@ import Testing
         // Without the model's vocabulary the dictionary cannot be edited, and says why.
         #expect(!windows.main.dictionary.canEdit)
         #expect(windows.main.dictionary.actions.validate("Okonkwo") == .needsModel)
-        #expect(windows.main.dictionary.actions.add("Okonkwo", 1, []) == .needsModel)
+        #expect(windows.main.dictionary.actions.add("Okonkwo", 1, [], "") == .needsModel)
+        #expect(windows.main.dictionary.actions.validateSoundsLike("Okonkwo", nil, "Okonquo") == .needsModel)
 
         // The menu's commands reach the shell and the clipboard closure, never the pasteboard itself.
         var opened: [MainSection?] = []
@@ -151,6 +152,44 @@ import Testing
         windows.menu.actions.openGeneral()
         windows.menu.actions.openRunLog()
         #expect(opened == [.dictionary, nil, .shortcuts, .general, .runLog])
+    }
+
+    /// The Dictionary screen's spellings go through the dictionary's own rules (DESIGN §3.7).
+    @Test func theDictionaryScreenAddsAndEditsSpellings() async throws {
+        let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
+        let harness = Harness(directory: directory.url, defaults: suite.defaults,
+                              model: try makeModelDirectory(in: directory.url))
+        let model = harness.windows.main.dictionary
+        harness.app.start()
+        #expect(model.canEdit)
+
+        // What is typed is checked as the dictionary would check it.
+        #expect(model.actions.validateSoundsLike("Sorello", nil, "Sarello, so rello") == nil)
+        #expect(model.actions.validateSoundsLike("Sorello", nil, "sorello") == .spellingIsTheWord)
+        #expect(model.actions.validateSoundsLike("Sorello", nil, "a, b, c, d, e") == .tooManySpellings(limit: 4))
+        #expect(model.actions.validateSoundsLike("Sorello", nil, "1234") == .spellingNoLetter)
+        #expect(model.actions.add("Sorello", 1, [], "Sarello, so rello") == nil)
+        await eventually { model.words.map(\.soundsLike) == [["Sarello", "so rello"]] }
+
+        // Another word can neither take them nor be one.
+        #expect(model.actions.validateSoundsLike("Plexa", nil, "SARELLO") == .spellingTaken)
+        #expect(model.actions.validate("sarello") == .wordIsASpelling)
+        #expect(model.actions.add("sarello", 1, [], "") == .wordIsASpelling)
+        #expect(model.actions.validate("sorello") == nil, "Adding the word again edits it")
+
+        // A row edits its spellings in place; a strength or apps change keeps them, and an empty field clears them.
+        let id = try #require(model.words.first?.id)
+        #expect(model.actions.validateSoundsLike("Sorello", id, "Sarello") == nil)
+        #expect(model.actions.setSoundsLike(id, "Cerello, Sarello") == nil)
+        await eventually { model.words.map(\.soundsLike) == [["Cerello", "Sarello"]] }
+        model.actions.setStrength(id, 2)
+        await eventually { model.words.map(\.strength) == [2] }
+        #expect(model.words.map(\.soundsLike) == [["Cerello", "Sarello"]])
+        #expect(model.actions.add("Sorello", 4, [], "") == nil, "Adding it again without spellings keeps them")
+        await eventually { model.words.map(\.strength) == [4] }
+        #expect(model.words.map(\.soundsLike) == [["Cerello", "Sarello"]])
+        #expect(model.actions.setSoundsLike(id, " ") == nil)
+        await eventually { model.words.map(\.soundsLike) == [[]] }
     }
 
     @Test func shortcutsAreRecordedValidatedAndHandedToTheMonitor() async throws {

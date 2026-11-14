@@ -87,6 +87,24 @@ extension DictionaryProblem {
         // The screen registers an app before it limits a word to it and never adds to the ignore list, so these two
         // arrive only if the file changed under it: the change was not made.
         case .unknownApp, .ignoreFull, .notSaved: self = .notSaved
+        case .soundsLike(let spelling): self.init(spelling)
+        case .spellingOfAnotherWord: self = .wordIsASpelling
+        }
+    }
+
+    /// Spellings that cannot be saved, in the Dictionary screen's words (DESIGN §3.7).
+    init(_ error: SoundsLikeError) {
+        switch error {
+        case .invalid(.tooManyWords): self = .spellingTooManyWords(limit: DictionaryValidation.maxWords)
+        case .invalid(.tooLong): self = .spellingTooLong(limit: DictionaryValidation.maxScalars)
+        case .invalid(.noLetter): self = .spellingNoLetter
+        case .invalid(.unencodable): self = .spellingUnencodable
+        case .tooMany: self = .tooManySpellings(limit: SoundsLike.maxSpellings)
+        case .sameAsWord: self = .spellingIsTheWord
+        case .taken: self = .spellingTaken
+        // The screen splits what is typed at commas and drops empty pieces, and spellings have no strength, so these
+        // arrive only if the dictionary changed under it: the change was not made.
+        case .invalid(.empty), .invalid(.invalidStrength), .comma: self = .notSaved
         }
     }
 

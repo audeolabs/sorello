@@ -5,17 +5,19 @@ import Foundation
 /// The contents of `dictionary.json` (ARCHITECTURE.md, section 7; DESIGN §3.2):
 ///
 ///     {"apps":[{"id":…,"name":…}],
-///      "entries":[{"apps":[…],"strength":…,"text":…}],
+///      "entries":[{"apps":[…],"soundsLike":[…],"strength":…,"text":…}],
 ///      "ignore":[…],
 ///      "version":1}
 ///
-/// JSON with sorted keys. An entry's `apps` is absent when it applies everywhere, and sorted otherwise. Decoding
-/// validates everything and rejects the whole file on any failure, so the caller can move it aside.
+/// JSON with sorted keys. An entry's `apps` is absent when it applies everywhere, and sorted otherwise; its
+/// `soundsLike` is absent when it has no spellings (DESIGN §3.7), so a file from Sorello 0.0.1 loads unchanged and is
+/// written back the same. Decoding validates everything and rejects the whole file on any failure, so the caller can
+/// move it aside.
 enum DictionaryFile {
     static let version = 1
     /// Above the largest file `encode` can produce (1000 entries of 100 four-byte scalars, each limited to 32 apps
-    /// with 155-character identifiers, 1000 ignored keys of 300 four-byte scalars and 32 apps with 100-scalar names:
-    /// about 7 MiB), so whatever was saved loads again.
+    /// with 155-character identifiers and with 4 spellings of 100 four-byte scalars, 1000 ignored keys of 300
+    /// four-byte scalars and 32 apps with 100-scalar names: about 8 MiB), so whatever was saved loads again.
     static let maxBytes = 16 << 20
 
     private struct File: Codable {
@@ -32,6 +34,7 @@ enum DictionaryFile {
 
     private struct EntryRecord: Codable {
         let apps: [String]?
+        let soundsLike: [String]?
         let strength: Float
         let text: String
     }
@@ -54,12 +57,23 @@ enum DictionaryFile {
         }
         for record in file.entries {
             // Stored exactly as validated: normalized, and no two entries share a key.
-            guard case .success(let entry) = DictionaryValidation.validate(text: record.text, strength: record.strength,
+            guard case .success(var entry) = DictionaryValidation.validate(text: record.text, strength: record.strength,
                                                                           encoder: encoder),
-                  DictionaryText.same(entry.text, record.text), !result.dictionary.contains(entry.key),
-                  result.dictionary.upsert(entry) == nil else {
+                  DictionaryText.same(entry.text, record.text), !result.dictionary.contains(entry.key) else {
                 return nil
             }
+            if let stored = record.soundsLike {
+                // Present only when there are spellings, each stored exactly as validated, none repeated.
+                guard !stored.isEmpty,
+                      case .success(let spellings) = SoundsLike.validate(stored, word: entry.text, encoder: encoder),
+                      spellings.count == stored.count,
+                      zip(spellings, stored).allSatisfy({ DictionaryText.same($0, $1) }) else {
+                    return nil
+                }
+                entry.soundsLike = spellings
+            }
+            // No key is both an entry's and a spelling's, or two spellings'.
+            guard result.dictionary.upsert(entry) == nil else { return nil }
             guard let apps = record.apps else { continue }
             let ids = Set(apps)
             guard !ids.isEmpty, ids.count == apps.count, result.scopes.setApps(ids, for: entry.key) == nil else {
@@ -82,7 +96,8 @@ enum DictionaryFile {
         }
         let entries = dictionary.dictionary.entries.map { entry in
             let apps = dictionary.scopes.apps(for: entry.key)
-            return EntryRecord(apps: apps.isEmpty ? nil : apps.sorted(by: precedes), strength: entry.strength,
+            return EntryRecord(apps: apps.isEmpty ? nil : apps.sorted(by: precedes),
+                               soundsLike: entry.soundsLike.isEmpty ? nil : entry.soundsLike, strength: entry.strength,
                                text: entry.text)
         }
         let file = File(apps: dictionary.scopes.apps.map { AppRecord(id: $0.id, name: $0.name) }, entries: entries,

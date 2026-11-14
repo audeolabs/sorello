@@ -179,7 +179,8 @@ final class FakeSpeech: AppSpeech {
             state.checks += 1
             return state.suggestion
         }
-        return { suggestion }
+        // As the engine does, a word whose key is to be ignored is never found.
+        return { suggestion.flatMap { ignore.contains(DictionaryKey($0.word)) ? nil : $0 } }
     }
 
     func releaseCorrection(_ correctionID: UInt64) { state.withLock { $0.released.append(correctionID) } }

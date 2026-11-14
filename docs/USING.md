@@ -103,6 +103,10 @@ Add names and terms that get misheard in Settings, on the Dictionary screen. Eac
 the harder Sorello pulls toward that spelling. A word can be used everywhere or only in apps you choose. The
 dictionary holds up to 1000 words, and can be changed only once the speech model is downloaded.
 
+If Sorello keeps writing a word wrong in the same way, add what it writes under "Sounds like", separated by
+commas: "Sarello, so rello" for Sorello. Sorello then listens for those too and writes the word in their place,
+up to four per word. Don't list an ordinary word there, since it would be replaced wherever you say it.
+
 When you fix a word right after dictating it, Sorello may offer to add it: the pill asks "Add … to your
 dictionary?", with Add (or Add to the app and Add Everywhere), Not Now and Don't Suggest. The offer goes away by
 itself after 12 seconds. It needs Accessibility, and "Suggest dictionary words" on the General screen turns it

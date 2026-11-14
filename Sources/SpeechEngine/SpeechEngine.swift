@@ -340,7 +340,7 @@ public actor SpeechEngine: SpeechTranscribing {
                 try Self.transcribe($0, work: work, model: model, gate: gate, check: check)
             }
             try check()
-            let text = CasingRestorer.apply(raw, entries: work.snapshot.entries)
+            let text = TranscriptRestorer.apply(raw, entries: work.snapshot.entries)
             return SpeechResult(text: text, correctionID: retain(work, id: stream.id, model: model, base: text))
         } catch {
             throw Self.failure(error)
@@ -424,7 +424,7 @@ public actor SpeechEngine: SpeechTranscribing {
                       }) else {
                     return nil
                 }
-                return CasingRestorer.apply(text, entries: entries)
+                return TranscriptRestorer.apply(text, entries: entries)
             })
         let stopped = cancelled()
         // After the last check nothing else can use this dictation's audio.
@@ -514,13 +514,13 @@ public actor SpeechEngine: SpeechTranscribing {
                 try Self.transcribe($0, work: work, model: model, gate: nil, check: check)
             }
             guard let audio = work.retained else { throw SpeechFailure.failed }
-            let base = CasingRestorer.apply(raw, entries: others)
+            let base = TranscriptRestorer.apply(raw, entries: others)
             return try StrengthProbe.find(word: entry.text, base: base) { strength in
                 let entries = others + [DictionaryEntry(text: entry.text, strength: strength)]
                 guard let graph = BiasGraph.build(entries: entries, encoder: model.encoder) else {
                     throw SpeechFailure.failed
                 }
-                return CasingRestorer.apply(try Self.decode(audio.chunks, model: model, bias: graph, check: check),
+                return TranscriptRestorer.apply(try Self.decode(audio.chunks, model: model, bias: graph, check: check),
                                             entries: entries)
             }
         } catch {
@@ -771,7 +771,7 @@ final class RetainedCorrection {
     let model: any SpeechModel
     let chunks: [RetainedChunk]
     let snapshot: DictionarySnapshot
-    /// The transcript after casing restoration, before any text rule (DESIGN §1.6.1).
+    /// The transcript as the dictionary writes it (spellings, then casing), before any text rule (DESIGN §1.6.1, §3.7).
     let base: String
     let deadline: TimeInterval
     /// Shared by every check of this dictation.

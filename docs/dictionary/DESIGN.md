@@ -547,19 +547,24 @@ Application Support, which only the user can read
 
 ```
 {"apps":[{"id":…,"name":…}],
- "entries":[{"apps":[…],"strength":…,"text":…}],
+ "entries":[{"apps":[…],"soundsLike":[…],"strength":…,"text":…}],
  "ignore":[…],
  "version":1}
 ```
 
 It is JSON with sorted keys. An entry's `apps` is absent when it applies
-everywhere, and sorted otherwise (§3.6). Loading accepts the file only up to
+everywhere, and sorted otherwise (§3.6). Its `soundsLike` is absent when it
+has no spellings, and lists them in the user's order otherwise (§3.7). Both
+are optional, so a file written by Sorello 0.0.1, which had neither
+spellings nor the key, loads unchanged and is written back byte for byte
+the same while no spelling is added (`StoreTests.aFileFromSorello001LoadsUnchanged`).
+Loading accepts the file only up to
 16 MiB (`DictionaryFile.maxBytes`). Saving does not check the size; the cap
 is above the largest file a full dictionary encodes to (1000 entries of 100
-four-byte scalars, each limited to 32 apps with 155-character identifiers,
-1000 ignored keys of 300 four-byte scalars and 32 apps with 100-scalar
-names: about 7 MiB), so whatever was saved loads again
-(`StoreTests.fullFileLoadsAgain`).
+four-byte scalars, each limited to 32 apps with 155-character identifiers
+and with 4 spellings of 100 four-byte scalars, 1000 ignored keys of 300
+four-byte scalars and 32 apps with 100-scalar names: about 8 MiB), so
+whatever was saved loads again (`StoreTests.fullFileLoadsAgain`).
 
 Loading validates everything:
 
@@ -567,6 +572,7 @@ Loading validates everything:
   and 32 apps;
 - every entry valid under §1.1 and stored already normalized, with no
   duplicate keys;
+- every entry's spellings as §3.7 says, stored already normalized;
 - every ignore key valid under pin P6 and stored exactly as saved, with no
   repeats;
 - the apps and each entry's apps as §3.6 says.
@@ -849,6 +855,96 @@ everything without a vocabulary. Errors never quote a word or an app.
 `BiasGraphCache`, `Sources/SpeechEngine/SpeechEngine.swift`; tests in
 `AppScopeTests` and `EngineTests.graphCache`)
 
+### §3.7 Sounds-like spellings
+
+An entry can carry up to 4 **spellings**: the wrong forms the recognizer
+writes for it, such as "Sarello" or "so rello" for "Sorello". A spelling is
+boosted with its entry, and wherever one is written in a transcript, the
+entry is written instead. iOS and Linux entries have no spellings, so §1 is
+unchanged for them; for an entry without spellings, nothing here changes
+anything.
+
+**Spellings**
+
+- A spelling is text validated as §1.1's steps 1 to 3 validate an entry,
+  and stored normalized the same way. Its key is `fold` of that text.
+  (`SoundsLike.validate`, `Sources/DictionaryKit/SoundsLike.swift`;
+  `SoundsLikeTests.validation`)
+- A spelling has no comma (U+002C), because Settings separates spellings
+  with commas.
+- An entry's spellings keep the user's order. Two with the same key are one
+  spelling: the first is kept. A spelling with its own entry's key is
+  refused (`sameAsWord`), and an entry has at most 4 (`tooMany`).
+- Across the whole dictionary, whatever the apps, a key is one entry's or one
+  spelling's, never both and never two: a spelling with another entry's key,
+  or another entry's spelling's key, is refused (`taken`), and so is an
+  entry whose key is another entry's spelling (`spellingOfAnotherWord`).
+  So a written spelling always stands for one entry.
+  (`CustomDictionary.upsert`, `DictionaryEntry.swift`;
+  `SoundsLikeTests.oneKeyOneMeaning`)
+- Saving an entry sets its spellings when they are given and keeps the ones
+  it had when they are not. Changing an entry's strength or apps, and a
+  suggestion's Add for a word already there, keep its spellings.
+  (`DictionaryEditor.saving`, `ScopedDictionaryEditor.adding`;
+  `SoundsLikeTests.editsKeepSpellings`)
+- Errors never quote a spelling.
+
+**Boosting.** After each entry's own surfaces (§1.2), each of its spellings
+is boosted as its own surfaces, at the entry's strength. The graph's rules
+are §1.2's; only its phrases are more. (`BiasGraph.phrases`;
+`SoundsLikeTests.spellingsAreBoosted`)
+
+**Writing the entry.** On the raw transcript, before casing restoration
+(§1.4), every spelling written is replaced by its entry's text:
+
+- The spellings of the snapshot's entries are tried longest first by
+  scalar count, then by spelling in scalar order.
+- The scan runs left to right. A match can start only at a position that
+  begins the transcript or follows a non-word character. A spelling matches
+  if its fold equals the folds of a run of transcript scalars starting
+  there, each transcript scalar's fold consumed whole, and the run ends the
+  transcript or is followed by a non-word character. The run is replaced by
+  the entry's text, and the scan continues after it without rescanning the
+  replacement.
+
+Casing restoration then runs on the result. Both run wherever §1.4 runs: on
+every dictation and on every verification re-decode, with the snapshot's
+entries. (`TranscriptRestorer.apply`, `SoundsLike.swift`;
+`SpeechEngine.finishWork`, `suggestCorrection` and `probeStrength`;
+`SoundsLikeTests.replacement`)
+
+**Suggestions.** A correction candidate whose key is any entry's spelling
+is not offered, as if it were ignored: adding it would be refused.
+(`DictionaryLibrary.keysNeverSuggested`, `Sources/SorelloApp/Composition/DictionaryLibrary.swift`;
+`CorrectionCoordinatorTests.aWordThatIsASpellingIsNotSuggested`)
+
+**Settings.** The add card has a "Sounds like" field, and each word's row
+shows its spellings under it and has a button that opens them for editing
+in its place, with Cancel and Save. Spellings are typed separated by
+commas; empty pieces are dropped. What is typed is checked as the
+dictionary would check it, including against the other words, before it
+can be saved. In the add card, a blank field keeps the spellings of a word
+that is there already; in a row's editor, it removes them.
+(`SoundsLike.parse`; `DictionaryScreen`, `DictionaryBinding.swift`;
+`CompositionTests.theDictionaryScreenAddsAndEditsSpellings`)
+
+**Why both.** Measured with synthetic speech (`say`, eight voices; 14
+invented names in 6 sentences each, read by every voice; a dictionary of
+1000 invented words), each name's spellings were what the model wrote for
+it in 4 other sentences, read by half the voices. The name was written
+right in 52% of the test sentences with the name alone, 72% when its
+spellings were only replaced, and 91% when they were boosted as well, the
+same for the voices the spellings came from and the others. With spellings
+that are not ordinary words, no entry was written in any of 320 sentences
+that mention none, under any of the three, and boosting wrote one in 160
+sentences made to sound like the names. When the dictionary's spellings
+included ordinary words ("package", "children"), entries were written in
+6% of those 320 sentences: a spelling is written as its entry wherever it is
+said, which is the rule, and the reason to choose spellings that are not
+words. With 1832 spellings across the 1000 words, a dictation took 28 ms
+against 27 ms without them, the first one after a change (which builds the
+graph) 56 ms against 36 ms, and memory did not change measurably.
+
 ## Platform differences
 
 | Aspect | Sorello (macOS) | iOS | Linux |
@@ -865,3 +961,4 @@ everything without a vocabulary. Errors never quote a word or an app.
 | Suggestion UI | a notice on the pill, 12 s, Add (or Add to <App> / Add everywhere) / Not now / Don't suggest | not applicable | picker dialog (rofi, fuzzel, wofi or tofi), Add / Not now / Don't suggest |
 | Project words | none | none | agent-link words are boosted and never end a session (§2.2) |
 | App-specific words | words limited to apps, chosen by the frontmost app at recording start (§3.6) | none | none |
+| Sounds-like spellings | up to 4 per entry, boosted and replaced by the entry (§3.7) | none | none |

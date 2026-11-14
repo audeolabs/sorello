@@ -124,10 +124,12 @@ struct ScopedDictionaryEditor: Sendable {
 
     var canEdit: Bool { editor.canEdit }
 
-    /// Adds, or edits `original`, limited to `apps` (none: everywhere).
-    func saving(text: String, strength: Float, apps: Set<String>, replacing original: DictionaryKey?,
+    /// Adds, or edits `original`, limited to `apps` (none: everywhere). `soundsLike` as `DictionaryEditor.saving`.
+    func saving(text: String, strength: Float, soundsLike: [String]? = nil, apps: Set<String>,
+                replacing original: DictionaryKey?,
                 in current: ScopedDictionary) -> Result<ScopedDictionary, DictionaryChangeError> {
-        switch editor.saving(text: text, strength: strength, replacing: original, in: current.dictionary) {
+        switch editor.saving(text: text, strength: strength, soundsLike: soundsLike, replacing: original,
+                             in: current.dictionary) {
         case .failure(let error):
             return .failure(error)
         case .success(let dictionary):
@@ -152,8 +154,8 @@ struct ScopedDictionaryEditor: Sendable {
         }
     }
 
-    /// A suggestion's Add to <App> (`app`) or Add everywhere (nil). An existing word keeps its text, takes the higher
-    /// strength, and gains the app unless it already applies everywhere.
+    /// A suggestion's Add to <App> (`app`) or Add everywhere (nil). An existing word keeps its text and spellings, takes
+    /// the higher strength, and gains the app unless it already applies everywhere.
     func adding(_ word: String, strength: Float, to app: DictionaryApp?,
                 in current: ScopedDictionary) -> Result<ScopedDictionary, DictionaryChangeError> {
         guard canEdit else { return .failure(.noVocabulary) }

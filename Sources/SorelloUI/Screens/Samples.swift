@@ -85,11 +85,11 @@ public extension DictionaryModel {
     static func sample() -> DictionaryModel {
         DictionaryModel(
             words: [
-                DictionaryWord(id: "quorvex", text: "Quorvex", strength: 2),
+                DictionaryWord(id: "quorvex", text: "Quorvex", strength: 2, soundsLike: ["Corvex", "quor vex"]),
                 DictionaryWord(id: "brindlemoor", text: "Brindlemoor", strength: 1),
                 DictionaryWord(id: "zentarion api", text: "Zentarion API", strength: 2.83, apps: [sampleApps[1]]),
                 DictionaryWord(id: "kestrelline", text: "Kestrelline", strength: 1.41,
-                               apps: [sampleApps[0], sampleApps[1]]),
+                               apps: [sampleApps[0], sampleApps[1]], soundsLike: ["Kestrel line"]),
                 DictionaryWord(id: "orrin fieldwork", text: "Orrin Fieldwork", strength: 4),
             ],
             ignored: [IgnoredWord(id: "vexel", text: "vexel"), IgnoredWord(id: "tamberlo", text: "Tamberlo")],
@@ -101,6 +101,17 @@ public extension DictionaryModel {
         let model = sample()
         model.draft = DictionaryDraft(text: "1234", strength: 2)
         model.actions = DictionaryActions(validate: { $0.isEmpty ? .empty : .noLetter })
+        return model
+    }
+
+    /// A word's spellings open for editing, with one the dictionary refuses, and spellings typed in the add card.
+    static func sampleEditingSoundsLike() -> DictionaryModel {
+        let model = sample()
+        model.draft = DictionaryDraft(text: "Velmoraine", strength: 1, soundsLike: "Vel Moraine, Belmorain")
+        model.editingSoundsLike = SoundsLikeDraft(wordID: "brindlemoor", text: "Brindle more, brindlemoor")
+        model.actions = DictionaryActions(validateSoundsLike: { word, _, field in
+            field.lowercased().contains(word.lowercased()) ? .spellingIsTheWord : nil
+        })
         return model
     }
 

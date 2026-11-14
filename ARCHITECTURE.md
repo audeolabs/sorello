@@ -41,8 +41,10 @@ two apps share and what keeps them apart.
   Hold to Talk can be set to start one, in place of a hands-free dictation.
   All of these are small deterministic rules.
 - **Dictionary.** Names and terms bias the recognizer, each with its own
-  strength, optionally limited to chosen apps. When the user corrects a
-  word right after a dictation, Sorello can offer to add it.
+  strength, optionally limited to chosen apps. A word can list what it
+  sounds like: the wrong spellings the recognizer writes for it, which are
+  boosted with it and replaced by it. When the user corrects a word right
+  after a dictation, Sorello can offer to add it.
 - **Run Log.** The last 20 dictations are kept locally with their audio for
   playback and retry.
 - **Stay current.** Once a day Sorello checks whether a newer version is
@@ -711,8 +713,9 @@ moved or written over, and its store works without it until it opens.
 
 - **Settings**: typed keys over `UserDefaults`, exposed as one observable
   `SettingsStore`.
-- **Dictionary**: `dictionary.json`. Entries, per-app limits, the ignore
-  list for suggestions. 1000 entries at most.
+- **Dictionary**: `dictionary.json`. Entries with their sounds-like
+  spellings, per-app limits, the ignore list for suggestions. 1000 entries
+  at most. A file from 0.0.1 loads unchanged.
 - **Macros**: `macros.json`.
 - **Run Log**: `history/index.json` and one 16 kHz WAV per entry. Twenty
   entries; older ones and their audio are deleted. It stores no app names.
@@ -1128,7 +1131,9 @@ Review does.
 - `TextRules`, `DictionaryKit` and the chunker run the shared JSON vectors
   in `Tests/Vectors`.
 - Engine tests that need the model run only when `SORELLO_MODEL_DIR` is
-  set. `sorello-transcribe` checks a synthetic recording end to end.
+  set. `sorello-transcribe` checks a synthetic recording end to end; its
+  `--word` and `--sounds-like` give it dictionary words and their
+  spellings, so boosting can be checked with the real model.
 - The download is tested against a transport of the tests' own, which
   serves, stalls, cuts off, redirects and sends the wrong bytes. No test
   opens a connection. Against the real server it is proved by two tools.

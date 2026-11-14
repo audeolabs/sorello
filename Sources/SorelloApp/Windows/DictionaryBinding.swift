@@ -16,7 +16,8 @@ extension WindowModels {
                 DictionaryWord(id: entry.key.text, text: entry.text, strength: Double(entry.strength),
                                apps: scoped.scopes.apps(for: entry.key).sorted().map { id in
                                    AppLimit(id: id, name: scoped.scopes.app(id: id)?.name ?? id)
-                               })
+                               },
+                               soundsLike: entry.soundsLike)
             }
             model.ignored = scoped.dictionary.ignore.map { IgnoredWord(id: $0.text, text: $0.text) }
             model.knownApps = scoped.scopes.apps.map { AppLimit(id: $0.id, name: $0.name) }
@@ -30,11 +31,29 @@ extension WindowModels {
                     text: text, strength: DictionaryValidation.defaultStrength, encoder: library.encoder) {
                     return DictionaryProblem(error)
                 }
-                return nil
+                // A word that is another's spelling is refused by the dictionary as a whole.
+                return Self.trial(text: text, soundsLike: nil, replacing: nil, in: library)
             },
-            add: { text, strength, apps in
+            validateSoundsLike: { text, id, field in
+                guard library.canEdit else { return .needsModel }
+                return Self.trial(text: text, soundsLike: SoundsLike.parse(field), replacing: id.map(DictionaryKey.init),
+                                  in: library)
+            },
+            add: { text, strength, apps, field in
+                let spellings = SoundsLike.parse(field)
                 do throws(DictionaryChangeError) {
-                    try library.save(text: text, strength: Float(strength), apps: Set(apps), replacing: nil)
+                    try library.save(text: text, strength: Float(strength), soundsLike: spellings.isEmpty ? nil : spellings,
+                                     apps: Set(apps), replacing: nil)
+                    return nil
+                } catch {
+                    return DictionaryProblem(error)
+                }
+            },
+            setSoundsLike: { id, field in
+                guard let entry = Self.entry(id, in: library) else { return .notSaved }
+                do throws(DictionaryChangeError) {
+                    try library.save(text: entry.text, strength: entry.strength, soundsLike: SoundsLike.parse(field),
+                                     apps: library.dictionary.scopes.apps(for: entry.key), replacing: entry.key)
                     return nil
                 } catch {
                     return DictionaryProblem(error)
@@ -56,6 +75,21 @@ extension WindowModels {
             chooseApp: { [unowned self] id in chooseApp(for: id) },
             delete: { id in Self.attempt { try library.remove(DictionaryKey(id)) } },
             unignore: { id in Self.attempt { try library.unignore(DictionaryKey(id)) } })
+    }
+
+    /// What saving `text` with `soundsLike` would be refused for, tried against the dictionary as it is without
+    /// changing it; nil when it would be saved. The strength is the entry's own, or the default for a new word.
+    static func trial(text: String, soundsLike: [String]?, replacing original: DictionaryKey?,
+                      in library: DictionaryLibrary) -> DictionaryProblem? {
+        let current = library.dictionary.dictionary
+        let key = original ?? DictionaryKey(DictionaryValidation.normalize(text))
+        let strength = current.entries.first { $0.key == key }?.strength ?? DictionaryValidation.defaultStrength
+        let tried = DictionaryEditor(encoder: library.encoder).saving(text: text, strength: strength,
+                                                                      soundsLike: soundsLike, replacing: original,
+                                                                      in: current)
+        guard case .failure(let error) = tried else { return nil }
+        // The dictionary being full is said by the screen itself.
+        return error == .full ? nil : DictionaryProblem(error)
     }
 
     /// The entry whose identity key is `id`.
