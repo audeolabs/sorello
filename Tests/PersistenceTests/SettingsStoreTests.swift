@@ -24,6 +24,7 @@ import Testing
         #expect(settings.keepRunLog)
         #expect(!settings.launchAtLogin)
         #expect(settings.microphoneID == nil)
+        #expect(settings.avoidBluetoothMicrophone)
         #expect(!settings.setupCompleted)
     }
 
@@ -45,6 +46,7 @@ import Testing
         settings.keepRunLog = false
         settings.launchAtLogin = true
         settings.microphoneID = "synthetic-microphone"
+        settings.avoidBluetoothMicrophone = false
         settings.setupCompleted = true
 
         let reopened = SettingsStore(defaults: suite.defaults)
@@ -61,6 +63,7 @@ import Testing
         #expect(!reopened.keepRunLog)
         #expect(reopened.launchAtLogin)
         #expect(reopened.microphoneID == "synthetic-microphone")
+        #expect(!reopened.avoidBluetoothMicrophone)
         #expect(reopened.setupCompleted)
     }
 
@@ -120,12 +123,13 @@ import Testing
         settings.keepRunLog = false
         settings.launchAtLogin = true
         settings.microphoneID = "synthetic-microphone"
+        settings.avoidBluetoothMicrophone = false
         settings.setupCompleted = true
         let stored = Set(suite.defaults.persistentDomain(forName: suite.suiteName)?.keys.map { $0 } ?? [])
         #expect(stored == [
             "holdToTalkShortcut", "tapToToggleShortcut", "pasteAgainShortcut", "restoreClipboard", "spokenNumbers",
             "spokenDelimiters", "pressEnterCommand", "doubleTap", "promptTag", "correctionSuggestions", "keepRunLog",
-            "launchAtLogin", "microphoneID", "setupCompleted",
+            "launchAtLogin", "microphoneID", "avoidBluetoothMicrophone", "setupCompleted",
         ])
     }
 

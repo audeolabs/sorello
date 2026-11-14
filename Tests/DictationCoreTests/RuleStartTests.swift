@@ -36,6 +36,17 @@ struct RuleStartTests {
         #expect(effects.contains(.openStream(id1, retainForCorrection: true)))
     }
 
+    /// Section 6, "Audio capture": the Bluetooth switch is read with the chosen microphone, and is on unless turned off.
+    @Test func theBluetoothSwitchIsReadAtTheStart() {
+        #expect(SessionSettings().avoidBluetoothMicrophone)
+        #expect(CaptureRequest().avoidBluetooth)
+        var on = Machine()
+        #expect(on.trigger(.holdPressed, at: 10).effects.contains(.startCapture(id1, CaptureRequest(avoidBluetooth: true))))
+        var off = Machine(settings: SessionSettings(microphoneID: "mic-a", avoidBluetoothMicrophone: false))
+        #expect(off.trigger(.holdPressed, at: 10).effects
+            .contains(.startCapture(id1, CaptureRequest(deviceID: "mic-a", avoidBluetooth: false))))
+    }
+
     @Test func idsOnlyGrow() {
         var machine = Machine()
         let first = machine.recordHold(at: 10)

@@ -78,6 +78,12 @@ public final class SettingsStore {
         didSet { Keys.microphoneID.write(microphoneID, to: defaults) }
     }
 
+    /// Record from a built-in or wired microphone when the system default is a Bluetooth one, so a headset stays out of
+    /// its call profile (ARCHITECTURE.md, section 6, "Audio capture"). On by default.
+    public var avoidBluetoothMicrophone: Bool {
+        didSet { Keys.avoidBluetoothMicrophone.write(avoidBluetoothMicrophone, to: defaults) }
+    }
+
     /// Setup has been finished once. Off by default.
     public var setupCompleted: Bool {
         didSet { Keys.setupCompleted.write(setupCompleted, to: defaults) }
@@ -99,6 +105,7 @@ public final class SettingsStore {
         keepRunLog = Keys.keepRunLog.read(from: defaults)
         launchAtLogin = Keys.launchAtLogin.read(from: defaults)
         microphoneID = Keys.microphoneID.read(from: defaults)
+        avoidBluetoothMicrophone = Keys.avoidBluetoothMicrophone.read(from: defaults)
         setupCompleted = Keys.setupCompleted.read(from: defaults)
     }
 
@@ -139,6 +146,7 @@ enum Keys {
     static let keepRunLog = PlainKey("keepRunLog", default: true)
     static let launchAtLogin = PlainKey("launchAtLogin", default: false)
     static let microphoneID = PlainKey<String?>("microphoneID", default: nil)
+    static let avoidBluetoothMicrophone = PlainKey("avoidBluetoothMicrophone", default: true)
     static let setupCompleted = PlainKey("setupCompleted", default: false)
 }
 

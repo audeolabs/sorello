@@ -522,7 +522,8 @@ private struct Step {
         dismissNotice()
         let live = LiveDictation(id: id, style: style, pressTime: pressTime, keys: keys)
         state.capture = .starting(live, stopRequested: false)
-        emit(.startCapture(id, CaptureRequest(deviceID: settings.microphoneID)))
+        emit(.startCapture(id, CaptureRequest(deviceID: settings.microphoneID,
+                                              avoidBluetooth: settings.avoidBluetoothMicrophone)))
         emit(.openStream(id, retainForCorrection: settings.retainForCorrection))
         emit(.setTimer(.captureStart(id), after: SessionTiming.captureStart))
     }

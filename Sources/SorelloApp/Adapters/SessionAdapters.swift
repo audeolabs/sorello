@@ -40,7 +40,7 @@ extension SessionSettings {
     @MainActor
     init(settings: SettingsStore, dictionaryEditable: Bool, accessibilityTrusted: Bool) {
         self.init(doubleTap: settings.doubleTap, restoreClipboard: settings.restoreClipboard,
-                  microphoneID: settings.microphoneID,
+                  microphoneID: settings.microphoneID, avoidBluetoothMicrophone: settings.avoidBluetoothMicrophone,
                   retainForCorrection: settings.correctionSuggestions && dictionaryEditable && accessibilityTrusted)
     }
 }
