@@ -192,3 +192,22 @@ public extension SetupModel {
                    holdToTalk: ShortcutRecorderState(keys: .function), testText: testText)
     }
 }
+
+/// Sample Transcribe File windows, with invented file names and text.
+public extension TranscribeModel {
+    static func sample(_ state: TranscribeState = .empty) -> TranscribeModel {
+        TranscribeModel(appName: "Sorello", state: state)
+    }
+
+    /// A short invented transcript.
+    static let sampleShortText = "Meet Okonkwo by the north gate at nine. Bring the 23 crates of pears, and the map."
+
+    /// An invented transcript far longer than the window, so the field scrolls.
+    static let sampleLongText = (1...60).map { paragraph in
+        ["The quick brown fox jumps over the lazy dog near the Quillon Bay ferry.",
+         "Pack my box with five dozen liquor jugs, then carry it up the hill to the north gate.",
+         "Sphinx of black quartz, judge my vow, said the keeper of the lighthouse at \(paragraph) o’clock.",
+         "How vexingly quick daft zebras jump when the wind turns over the long field."]
+            .joined(separator: " ")
+    }.joined(separator: "\n\n")
+}
