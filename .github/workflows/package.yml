@@ -181,11 +181,15 @@ jobs:
           ./scripts/write-appcast.sh "$APP" "build/$DMG" "$address" build/appcast.xml
           echo "sha256=$(shasum -a 256 build/appcast.xml | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
       # The app is proved as it will arrive: out of the disk image, signed and notarized. It draws its windows, then
-      # downloads its model and dictates a recording made here.
+      # downloads its model and dictates a recording made here. Then its sorello command names the app and, since
+      # the self-test downloaded into a store of its own and this runner's store for the app is empty, says the model
+      # is not downloaded.
       - name: Prove the app in the disk image
         env:
           APP: ${{ steps.build.outputs.app }}
           DMG: ${{ steps.build.outputs.dmg }}
+          VERSION: ${{ steps.build.outputs.version }}
+          BUILD: ${{ steps.build.outputs.build }}
         run: |
           name=$(basename "$APP")
           hdiutil attach "build/$DMG" -nobrowse -readonly -mountpoint "$RUNNER_TEMP/image" > /dev/null
@@ -200,6 +204,28 @@ jobs:
           say -o "$RUNNER_TEMP/hello.wav" --data-format=LEI16@16000 "Hello from the self test"
           "$sorello" --self-test --download "$RUNNER_TEMP/hello.wav" | tee "$RUNNER_TEMP/self-test.log"
           grep -qi "insert: hello from the self.test" "$RUNNER_TEMP/self-test.log"
+          helper="$RUNNER_TEMP/installed/$name/Contents/Helpers/sorello"
+          printed=$("$helper" --version)
+          if [ "$printed" != "${name%.app} $VERSION ($BUILD)" ]; then
+            echo "::error::sorello --version printed \"$printed\", not \"${name%.app} $VERSION ($BUILD)\""
+            exit 1
+          fi
+          status=0
+          "$helper" transcribe "$RUNNER_TEMP/hello.wav" > "$RUNNER_TEMP/command.out" 2> "$RUNNER_TEMP/command.err" \
+            || status=$?
+          cat "$RUNNER_TEMP/command.err"
+          if [ "$status" != 69 ]; then
+            echo "::error::sorello transcribe exited $status without the model, not 69"
+            exit 1
+          fi
+          if ! grep -q "the speech model is not downloaded" "$RUNNER_TEMP/command.err"; then
+            echo "::error::sorello transcribe did not say the speech model is not downloaded"
+            exit 1
+          fi
+          if [ -s "$RUNNER_TEMP/command.out" ]; then
+            echo "::error::sorello transcribe wrote to standard output although it failed"
+            exit 1
+          fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ steps.build.outputs.dmg }}

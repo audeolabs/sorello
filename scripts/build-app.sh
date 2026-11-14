@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Assembles and signs the app bundle (ARCHITECTURE.md, section 10).
+# Assembles and signs the app bundle and its sorello command (ARCHITECTURE.md, section 10).
 #   CHANNEL               dev, nightly or release: which identity from Config/identity.conf (default dev)
 #   ARCHS                 the executable's architectures, arm64 and/or x86_64, separated by spaces. Default: this
 #                         Mac's for dev, both (universal) for nightly and release
@@ -77,26 +77,37 @@ except (OSError, ValueError, KeyError, TypeError, AssertionError):
     sys.exit("build-app: Models/model.lock.json is not a pin the app can read")
 PY
 
-# One build per architecture, joined into one executable. Every --arch build writes to the same products directory,
-# so each slice is copied out before the next one is built. SwiftPM puts Sparkle's framework, which is already
-# universal, beside each slice; the first one's is kept.
+# One build per architecture of the app and of the command, each joined into one executable. Every --arch build writes
+# to the same products directory, so each slice is copied out before the next one is built. SwiftPM puts Sparkle's
+# framework, which is already universal, beside each slice; the first one's is kept.
 SLICES=$(mktemp -d "${TMPDIR:-/tmp}/sorello-slices.XXXXXX")
 trap 'rm -rf "$SLICES"' EXIT
 set --
+COMMANDS=()
 for arch in $WANTED; do
   swift build -c release --arch "$arch" --product Sorello
+  swift build -c release --arch "$arch" --product sorello-command
   PRODUCTS=$(swift build -c release --arch "$arch" --show-bin-path)
   cp "$PRODUCTS/Sorello" "$SLICES/Sorello-$arch"
+  cp "$PRODUCTS/sorello-command" "$SLICES/sorello-$arch"
   [ -d "$SLICES/Sparkle.framework" ] || ditto "$PRODUCTS/Sparkle.framework" "$SLICES/Sparkle.framework"
   set -- "$@" "$SLICES/Sorello-$arch"
+  COMMANDS+=("$SLICES/sorello-$arch")
 done
 
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 if [ $# -eq 1 ]; then
   cp "$1" "$APP/Contents/MacOS/Sorello"
 else
   lipo -create -output "$APP/Contents/MacOS/Sorello" "$@"
+fi
+# The command is in Helpers, not MacOS, where "sorello" and "Sorello" would be one name on a disk that ignores case.
+COMMAND="$APP/Contents/Helpers/sorello"
+if [ ${#COMMANDS[@]} -eq 1 ]; then
+  cp "${COMMANDS[0]}" "$COMMAND"
+else
+  lipo -create -output "$COMMAND" "${COMMANDS[@]}"
 fi
 # The executable links Sparkle and finds it in the app's Frameworks directory.
 install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/Sorello"
@@ -193,6 +204,10 @@ fi
 for code in "$SPARKLE/Versions/B/Autoupdate" "$SPARKLE/Versions/B/Updater.app" "$SPARKLE"; do
   codesign --force --options runtime "$TIMESTAMP" --sign "$CODESIGN_IDENTITY" "$code"
 done
+# The command too, before the app whose signature seals it: the same identity, runtime and timestamp, an identifier of
+# its own, and no entitlement.
+codesign --force --options runtime "$TIMESTAMP" --identifier "$BUNDLE_ID.command" --sign "$CODESIGN_IDENTITY" \
+    "$COMMAND"
 codesign --force --options runtime "$TIMESTAMP" --sign "$CODESIGN_IDENTITY" \
     --entitlements "$ENTITLEMENTS" "$APP"
 codesign --verify --deep --strict "$APP"
@@ -202,6 +217,19 @@ codesign --verify --deep --strict "$APP"
 PACKAGED=$(lipo -archs "$APP/Contents/MacOS/Sorello" | tr ' ' '\n' | sort | paste -sd ' ' -)
 if [ "$PACKAGED" != "$WANTED" ]; then
   echo "build-app: the executable holds $PACKAGED, not $WANTED" >&2
+  rm -rf "$APP"
+  exit 1
+fi
+# So does the command, and it was signed as the command: its identifier, and the hardened runtime.
+PACKAGED=$(lipo -archs "$COMMAND" | tr ' ' '\n' | sort | paste -sd ' ' -)
+if [ "$PACKAGED" != "$WANTED" ]; then
+  echo "build-app: the sorello command holds $PACKAGED, not $WANTED" >&2
+  rm -rf "$APP"
+  exit 1
+fi
+SIGNED=$(codesign --display --verbose "$COMMAND" 2>&1)
+if ! grep -qxF "Identifier=$BUNDLE_ID.command" <<< "$SIGNED" || ! grep -q "flags=.*runtime" <<< "$SIGNED"; then
+  echo "build-app: the sorello command is not signed as $BUNDLE_ID.command with the hardened runtime" >&2
   rm -rf "$APP"
   exit 1
 fi
