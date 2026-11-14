@@ -38,9 +38,11 @@ struct AVCaptureSource: CaptureSourceOpening {
         // The choice is made here, once, from the devices present now; the capture keeps the device it opens.
         let choice = MicrophoneChoice.resolve(AudioInputDevices().current(), chosenID: request.deviceID,
                                               avoidBluetooth: request.avoidBluetooth)
-        let chosen = choice.flatMap { AVCaptureDevice(uniqueID: $0.device.id) }
-            .flatMap { $0.isConnected && $0.hasMediaType(.audio) ? $0 : nil }
-        guard let device = chosen ?? AVCaptureDevice.default(for: .audio) else { throw .noInputDevice }
+        let device = MicrophoneChoice.device(
+            for: choice,
+            find: { AVCaptureDevice(uniqueID: $0).flatMap { $0.isConnected && $0.hasMediaType(.audio) ? $0 : nil } },
+            systemDefault: { AVCaptureDevice.default(for: .audio) })
+        guard let device else { throw choice == nil ? .noInputDevice : .deviceUnavailable }
         if choice?.replacing != nil { Diagnostics.record("capture.standIn") }
         let input: AVCaptureDeviceInput
         do { input = try AVCaptureDeviceInput(device: device) } catch { throw .deviceUnavailable }

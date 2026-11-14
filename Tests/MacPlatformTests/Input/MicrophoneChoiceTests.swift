@@ -75,6 +75,15 @@ struct MicrophoneChoiceTests {
         #expect(resolve([Self.builtIn, Self.usb]) == nil)
     }
 
+    /// The opener opens what the choice names. If that device has gone since the list was read, the start fails; it
+    /// never falls back to the default, which may be the Bluetooth headset.
+    @Test func theOpenerOpensTheChoiceAndNeverFallsBackToTheDefault() {
+        let resolution = resolve([Self.headset, Self.builtIn])
+        #expect(MicrophoneChoice.device(for: resolution, find: { $0 }, systemDefault: { "headset" }) == "built-in")
+        #expect(MicrophoneChoice.device(for: resolution, find: { _ in nil }, systemDefault: { "headset" }) == nil)
+        #expect(MicrophoneChoice.device(for: nil, find: { $0 }, systemDefault: { "unlisted" }) == "unlisted")
+    }
+
     /// How Core Audio's transport types sort: the ones that may stand in, Bluetooth, and everything else.
     @Test(arguments: [
         (kAudioDeviceTransportTypeBuiltIn, Transport.builtIn),

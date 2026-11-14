@@ -577,8 +577,9 @@ The download:
     does not stand in then.
   - With nothing to stand in, or with the switch off, the Bluetooth
     microphone is used. If the stand-in fails to open, the start fails
-    as it would for any device; Sorello does not then try the Bluetooth
-    microphone.
+    as it would for any device, and so does a chosen or standing-in
+    microphone that has gone by the time it is opened; Sorello does not
+    then try the Bluetooth microphone.
   - The choice is made once per dictation, when its capture opens, from
     the devices present at that moment. A capture keeps the device it
     opened until it ends. If a headset connects or the default changes

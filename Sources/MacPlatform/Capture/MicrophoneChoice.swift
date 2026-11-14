@@ -36,4 +36,14 @@ public enum MicrophoneChoice {
         guard let standIn else { return Resolution(device: systemDefault, replacing: nil) }
         return Resolution(device: standIn, replacing: systemDefault)
     }
+
+    /// The device a capture opens for `resolution`: the one it names, found with `find`, or with no resolution (no
+    /// device in the list is the default) the system default. Nil when the named device cannot be had, say because it
+    /// went away after the list was read: the start then fails rather than fall back to the default, which may be the
+    /// Bluetooth microphone the choice avoided.
+    static func device<Device>(for resolution: Resolution?, find: (String) -> Device?,
+                               systemDefault: () -> Device?) -> Device? {
+        guard let resolution else { return systemDefault() }
+        return find(resolution.device.id)
+    }
 }
