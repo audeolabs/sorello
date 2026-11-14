@@ -341,11 +341,13 @@ private struct FileDrop: DropDelegate {
         isOver = false
         guard validateDrop(info: info), let provider = info.itemProviders(for: [.fileURL]).first else { return false }
         let model = self.model
+        // Where the file goes is settled now, as the drop lands; its address arrives later.
+        let deliver = model.actions.dropFile()
         _ = provider.loadObject(ofClass: URL.self) { url, _ in
             guard let url, url.isFileURL else { return }
             Task { @MainActor in
                 // The window may have taken another file since the drop began.
-                if model.state.takesFiles { model.actions.dropFile(url) }
+                if model.state.takesFiles { deliver(url) }
             }
         }
         return true

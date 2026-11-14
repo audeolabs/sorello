@@ -136,7 +136,7 @@ final class TranscribeLog {
     private func drop(_ file: URL) async throws -> FakeFiles.Call {
         openWindow()
         let before = files.all.count
-        binding.model.actions.dropFile(file)
+        binding.model.actions.dropFile()(file)
         await eventually { files.all.count > before }
         return try #require(files.last)
     }
@@ -217,7 +217,7 @@ final class TranscribeLog {
     @Test func aSecondFileIsNotTakenWhileOneIsUnderWay() async throws {
         let call = try await drop(talk)
         let shown = log.shown
-        binding.model.actions.dropFile(other)
+        binding.model.actions.dropFile()(other)
         binding.open(file: other)
         binding.take(other)
         try await Task.sleep(for: .milliseconds(50))
@@ -351,9 +351,10 @@ final class TranscribeLog {
     /// arrives after it closed, nothing is taken: no transcription runs without the window, and it holds no text.
     @Test func aFileArrivingAfterTheWindowClosedIsNotTaken() async throws {
         openWindow()
+        let lateDrop = binding.model.actions.dropFile()
         let picker = try #require(log.pickers.last)
         binding.windowClosed()
-        binding.model.actions.dropFile(talk)
+        lateDrop(talk)
         picker(other)
         try await Task.sleep(for: .milliseconds(50))
         #expect(files.all.isEmpty)
@@ -362,6 +363,26 @@ final class TranscribeLog {
         // Opened again, the window takes files as before.
         binding.open()
         try await drop(talk)
+    }
+
+    /// A drop accepted, or a picker shown, in one opening of the window, whose file arrives only after the window was
+    /// closed and opened again, is not taken: closing cancelled it, and the new opening is free for the next file.
+    @Test func aFileFromAnEarlierOpeningIsNotTaken() async throws {
+        openWindow()
+        let lateDrop = binding.model.actions.dropFile()
+        let latePicker = try #require(log.pickers.last)
+        binding.windowClosed()
+        binding.open()
+        lateDrop(talk)
+        latePicker(talk)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(files.all.isEmpty)
+        #expect(state == .empty)
+
+        let pick = try #require(log.pickers.last)
+        pick(other)
+        await eventually { files.all.count == 1 }
+        #expect(files.last?.file == other)
     }
 
     @Test func chooseFileShowsThePickerAndTakesWhatIsChosen() async throws {

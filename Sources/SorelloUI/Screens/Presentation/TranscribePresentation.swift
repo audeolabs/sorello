@@ -158,8 +158,10 @@ nonisolated public enum TranscribeWords {
 public struct TranscribeActions {
     /// Show the system's file picker as a sheet on the window.
     public var chooseFile: () -> Void
-    /// A file was dropped on the window while it takes files. Only a single file's address is ever given.
-    public var dropFile: (URL) -> Void
+    /// A drop was accepted on the window while it takes files. Called at once, as the drop lands; it returns where
+    /// to deliver the file's address once it has loaded, a moment later. Only a single file's address is ever
+    /// delivered, and the app layer ignores one that arrives after the window has closed, even if it opened again.
+    public var dropFile: () -> @MainActor @Sendable (URL) -> Void
     /// Stop what is running and go back to the empty window.
     public var cancel: () -> Void
     /// Put the text on the clipboard.
@@ -174,7 +176,8 @@ public struct TranscribeActions {
     public var tryAgain: () -> Void
 
     /// Actions that each do nothing unless given.
-    public init(chooseFile: @escaping () -> Void = {}, dropFile: @escaping (URL) -> Void = { _ in },
+    public init(chooseFile: @escaping () -> Void = {},
+                dropFile: @escaping () -> @MainActor @Sendable (URL) -> Void = { { _ in } },
                 cancel: @escaping () -> Void = {}, copy: @escaping () -> Void = {}, save: @escaping () -> Void = {},
                 download: @escaping () -> Void = {}, retry: @escaping () -> Void = {},
                 tryAgain: @escaping () -> Void = {}) {
