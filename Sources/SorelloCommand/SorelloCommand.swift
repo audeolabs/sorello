@@ -192,7 +192,8 @@ public enum SorelloCommand {
 
 /// Says once, after a while, that the model is still preparing (ARCHITECTURE.md, section 10, "The command", "Its
 /// model"). A transcription reports `preparingModel` when it has to wait for the model; if it is still waiting when
-/// the delay has passed, the note is written, and once it has begun transcribing, or has ended, it never is.
+/// the delay has passed, the note is written, and once it has begun transcribing, or has ended, it never is: not even
+/// by a timer that had already decided to write it.
 final class PreparingNote: Sendable {
     private struct State {
         var waiting = false
@@ -226,11 +227,12 @@ final class PreparingNote: Sendable {
             state.waiting = true
             state.timer = Task { [self] in
                 await sleep(SorelloCommand.preparingNoteDelay)
-                let due = self.state.withLock { state in
-                    defer { state.done = true }
-                    return !state.done
+                // Written under the lock `end` takes, so once `end` has returned it never is.
+                self.state.withLock { state in
+                    guard !state.done else { return }
+                    state.done = true
+                    write()
                 }
-                if due { write() }
             }
         }
     }
