@@ -2,12 +2,14 @@ import AppKit
 import DesignCore
 import DictationCore
 import DictionaryKit
+import FileTranscription
 import Foundation
 import MacPlatform
 import Persistence
 import SorelloUI
 import SpeechEngine
 import SwiftUI
+import TextRules
 
 /// `Sorello --snapshots <dir>`: the menu-bar item, every main window section and every setup step as the app draws
 /// them, wired to real stores, rendered to PNG files, and the menu-bar item's menu as the app builds it, listed as
@@ -279,6 +281,17 @@ nonisolated private struct ReadySpeech: AppSpeech {
                          isLast: Bool) -> @Sendable () async -> DictionarySuggestion? { { nil } }
     func releaseCorrection(_ correctionID: UInt64) {}
     func discardCorrection() {}
+    func fileTranscriber(modelFitsThisMac: Bool) -> any FileTranscribing { HeardFile(transcript: transcript) }
+}
+
+/// Files as the pictures have them: each is heard as the same sentence, at once. Only the window's empty state is
+/// drawn, so nothing here is ever asked.
+nonisolated private struct HeardFile: FileTranscribing {
+    let transcript: String
+
+    func transcribe(_ file: URL, rules: TextRuleOptions?,
+                    progress: @escaping @Sendable (FileTranscriptionProgress) -> Void)
+        async throws(FileTranscriptionFailure) -> String { transcript }
 }
 
 /// An updater that checks nothing: idle, ready to be asked, with its daily check on, as a build with a feed starts.

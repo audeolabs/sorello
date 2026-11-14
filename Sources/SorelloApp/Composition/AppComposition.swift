@@ -1,5 +1,6 @@
 import DictationCore
 import DictionaryKit
+import FileTranscription
 import Foundation
 import MacPlatform
 import Observation
@@ -35,11 +36,17 @@ final class LiveState {
     var modelDownload: ModelDownloadState?
 }
 
-/// What the windows ask the app shell to do: show a window, or quit.
+/// What the windows ask the app shell to do: show a window or one of its sheets, or quit.
 struct Navigation {
     var openMain: @MainActor (MainSection?) -> Void = { _ in }
     var openSetup: @MainActor () -> Void = {}
     var closeSetup: @MainActor () -> Void = {}
+    /// Brings Transcribe File forward, opening it if it is closed.
+    var showTranscribe: @MainActor () -> Void = {}
+    /// Shows the file picker as a sheet on Transcribe File, and hands over the file chosen, if any.
+    var chooseAudioFile: @MainActor (_ chosen: @escaping @MainActor (URL) -> Void) -> Void = { _ in }
+    /// Shows the save panel as a sheet on Transcribe File, offering `name`, and writes `text` where the user chooses.
+    var saveText: @MainActor (_ text: String, _ name: String) -> Void = { _, _ in }
     /// Brings a window that is open in front again, as after the system's microphone prompt; a closed one stays shut.
     var bringBack: @MainActor (AppWindow) -> Void = { _ in }
     var showNotice: @MainActor (_ title: String, _ files: [URL]) -> Void = { _, _ in }
@@ -60,6 +67,8 @@ final class AppComposition {
     let history: HistoryStore
     let dictionary: DictionaryLibrary
     let speech: any AppSpeech
+    /// Transcribes Transcribe File's files with `speech`.
+    let files: any FileTranscribing
     /// The model's download, made beside the engine; nil in a copy that has no pin to download from.
     let download: (any ModelDownloading)?
     /// The app's updater; nil in a build with no update feed, and in the self-tests and the snapshots.
@@ -82,10 +91,13 @@ final class AppComposition {
     /// - `speech`: makes the engine over the dictionary store, whose snapshots it reads.
     /// - `download`: the model's download, which nothing starts but the user.
     /// - `updater`: checks for, downloads and installs a newer version, in a build that has an update feed.
+    /// - `modelFitsThisMac`: whether the app's pin has a build for this Mac, so a file's transcription can tell a model
+    ///   not yet downloaded from none at all. A copy without a pin, given its model directly, has one.
     /// - `pill`: where the pill is drawn; `levels` is the feed it draws the voice from.
     init(info: AppInfo, storage: AppStorage, platform: AppPlatform,
          speech makeSpeech: (DictionaryStore) -> any AppSpeech, download: (any ModelDownloading)? = nil,
-         updater: (any Updating)? = nil, pill: any PillPresenting, levels: LevelFeed) {
+         updater: (any Updating)? = nil, modelFitsThisMac: Bool = true, pill: any PillPresenting,
+         levels: LevelFeed) {
         self.info = info
         self.updater = updater
         defaults = storage.defaults
@@ -112,6 +124,7 @@ final class AppComposition {
         self.dictionary = dictionary
         let speech = makeSpeech(store)
         self.speech = speech
+        files = speech.fileTranscriber(modelFitsThisMac: modelFitsThisMac)
         self.pill = pill
 
         let live = self.live

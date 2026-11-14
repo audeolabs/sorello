@@ -1,8 +1,10 @@
 import DictationCore
+import FileTranscription
 import Foundation
 import MacPlatform
 import Persistence
 import SorelloUI
+import TextRules
 
 /// Every window's model, connected to the stores and the session (ARCHITECTURE.md, section 8, "Windows"). SorelloUI
 /// draws plain values and reports actions through closures; this fills the values from the app's state, keeps them
@@ -12,6 +14,8 @@ final class WindowModels {
     let menu: StatusMenuModel
     let main: MainWindowModel
     let setup: SetupModel
+    /// Transcribe File's model, which runs its transcriptions.
+    let transcribe: TranscribeBinding
 
     let app: AppComposition
     let player = RunLogPlayer()
@@ -40,6 +44,16 @@ final class WindowModels {
         setup = SetupModel(appName: app.info.name, microphone: status.microphone, accessibility: status.accessibility,
                            model: status.model, modelSize: app.download?.size ?? 0,
                            holdToTalk: ShortcutRecorderState(keys: .function))
+        let speech = app.speech
+        transcribe = TranscribeBinding(
+            appName: app.info.name, transcriber: app.files,
+            rules: { TextRulesSnapshot(settings: app.settings, macros: app.macros.macros).options },
+            ports: TranscribePorts(show: { app.navigation.showTranscribe() },
+                                   chooseFile: { app.navigation.chooseAudioFile($0) },
+                                   save: { app.navigation.saveText($0, $1) },
+                                   copy: { app.platform.system.copy($0) },
+                                   openGeneral: { app.navigation.openMain(.general) },
+                                   prepareModel: { await speech.prepare() }))
         connectMenu()
         connectGeneral()
         connectShortcuts()
@@ -51,8 +65,9 @@ final class WindowModels {
         player.onStop = { [weak self] in self?.app.live.playingID = nil }
     }
 
-    /// Stops keeping the models current, as the app quits.
+    /// Stops keeping the models current, as the app quits, and any file being transcribed.
     func stop() {
+        transcribe.windowClosed()
         for loop in following { loop.stop() }
         following = []
         player.stop()
@@ -77,7 +92,7 @@ final class WindowModels {
     // MARK: - Menu
 
     private func connectMenu() {
-        let menu = self.menu, app = self.app
+        let menu = self.menu, app = self.app, transcribe = self.transcribe
         follow { [unowned self] in
             menu.status = status
             menu.shortcuts = KeyCombo.all(app.settings.shortcutBindings, formatter: formatter)
@@ -86,6 +101,7 @@ final class WindowModels {
         }
         menu.actions = StatusMenuActions(
             copyLastDictation: { if let text = app.runtime.state.lastText { app.platform.system.copy(text) } },
+            transcribeFile: { transcribe.open() },
             retryModel: { app.runtime.retryPreparation() },
             openGeneral: { app.navigation.openMain(.general) },
             openShortcuts: { app.navigation.openMain(.shortcuts) },

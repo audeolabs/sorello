@@ -109,7 +109,8 @@ private final class SelfTestRun {
                 SpeechEngine.forApp(info, model: model, store: modelStore, compute: compute,
                                     dictionary: { store.snapshot(for: $0) })
             },
-            download: download, pill: pill, levels: pill.levels)
+            download: download, modelFitsThisMac: model.map { $0.build != nil } ?? true, pill: pill,
+            levels: pill.levels)
         app.settings.pressEnterCommand = true
         app.settings.setupCompleted = true
         let forward = app.runtime.onCompletion

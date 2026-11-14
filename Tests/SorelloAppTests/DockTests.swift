@@ -66,7 +66,7 @@ final class FakeApp: FrontApp {
         presenter = WindowPresenter(dock: dock)
         // Weakly, or the presenter, which holds the dock, would never be released, nor its windows.
         dock.name = { [weak presenter] window in
-            let all: [AppWindow] = [.setup, .main, .notice("Licence"), .notice("Credits")]
+            let all: [AppWindow] = [.setup, .main, .transcribe, .notice("Licence"), .notice("Credits")]
             return all.first { presenter?.window($0) === window }.map(Self.describe) ?? "unknown"
         }
     }
@@ -75,6 +75,7 @@ final class FakeApp: FrontApp {
         switch window {
         case .setup: "setup"
         case .main: "main"
+        case .transcribe: "transcribe"
         case .notice(let title): "notice \(title)"
         }
     }
@@ -191,6 +192,41 @@ final class FakeApp: FrontApp {
         showSetup()
         #expect(presenter.isInDock)
         #expect(dock.take() == ["enter Dock", "activate", "front setup"])
+    }
+
+    // MARK: Transcribe File
+
+    /// Transcribe File is a window like the main window: it puts Sorello in the Dock while it is open, and its closing
+    /// is heard, however it closes, so what it was doing can stop.
+    @Test func transcribeFileCountsForTheDockAndItsClosingIsHeard() throws {
+        var closed: [AppWindow] = []
+        presenter.onClose = { closed.append($0) }
+        presenter.appCameToFront(app("Field Notes", 401))
+        presenter.showTranscribe(TranscribeModel.sample(), title: "Transcribe File")
+        #expect(presenter.isInDock)
+        #expect(dock.take() == ["enter Dock", "activate", "front transcribe"])
+        #expect(presenter.window(.transcribe)?.title == "Transcribe File")
+
+        showMain()
+        try clickClose(.transcribe)
+        #expect(closed == [.transcribe])
+        #expect(presenter.isInDock, "The main window is still open")
+        _ = dock.take()
+        try clickClose(.main)
+        #expect(closed == [.transcribe, .main])
+        #expect(dock.take() == ["leave Dock", "hand front to Field Notes"])
+    }
+
+    /// Shown again while it is open, it only comes forward; reopening the app brings it forward with the others.
+    @Test func transcribeFileShownAgainComesForward() {
+        let model = TranscribeModel.sample()
+        presenter.showTranscribe(model, title: "Transcribe File")
+        _ = dock.take()
+        presenter.showTranscribe(model, title: "Transcribe File")
+        #expect(dock.take() == ["activate", "front transcribe"])
+        presenter.reopen(main: main, title: "Sorello Test")
+        #expect(dock.take() == ["activate", "front transcribe"])
+        #expect(presenter.open == [.transcribe])
     }
 
     // MARK: Who gets the front back

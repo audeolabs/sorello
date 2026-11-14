@@ -11,6 +11,9 @@ nonisolated public enum StatusMenuCommand: Hashable, Sendable {
     case openShortcuts
     /// Put the last dictation on the clipboard.
     case copyLastDictation
+    /// Bring the Transcribe File window forward, opening it if it is closed, with its file picker unless a file is
+    /// being transcribed there.
+    case transcribeFile
     /// Open the main window at Dictionary.
     case openDictionary
     /// Open the main window at the Run Log.
@@ -37,6 +40,8 @@ nonisolated public enum UpdateRowState: Equatable, Sendable {
 public struct StatusMenuActions {
     /// Put the last dictation on the clipboard.
     public var copyLastDictation: () -> Void
+    /// Bring the Transcribe File window forward, opening it, with its file picker unless a file is being transcribed.
+    public var transcribeFile: () -> Void
     /// Load the speech model again after a failure.
     public var retryModel: () -> Void
     /// Open the main window's General screen, where a missing permission is fixed and the model is downloaded.
@@ -55,12 +60,14 @@ public struct StatusMenuActions {
     public var quit: () -> Void
 
     /// Actions that each do nothing unless given.
-    public init(copyLastDictation: @escaping () -> Void = {}, retryModel: @escaping () -> Void = {},
+    public init(copyLastDictation: @escaping () -> Void = {}, transcribeFile: @escaping () -> Void = {},
+                retryModel: @escaping () -> Void = {},
                 openGeneral: @escaping () -> Void = {}, openShortcuts: @escaping () -> Void = {},
                 openDictionary: @escaping () -> Void = {}, openRunLog: @escaping () -> Void = {},
                 openSettings: @escaping () -> Void = {}, checkForUpdates: @escaping () -> Void = {},
                 quit: @escaping () -> Void = {}) {
         self.copyLastDictation = copyLastDictation
+        self.transcribeFile = transcribeFile
         self.retryModel = retryModel
         self.openGeneral = openGeneral
         self.openShortcuts = openShortcuts
@@ -78,6 +85,7 @@ public struct StatusMenuActions {
         case .openGeneral: openGeneral()
         case .openShortcuts: openShortcuts()
         case .copyLastDictation: copyLastDictation()
+        case .transcribeFile: transcribeFile()
         case .openDictionary: openDictionary()
         case .openRunLog: openRunLog()
         case .openSettings: openSettings()

@@ -4,10 +4,12 @@ import Persistence
 import SorelloUI
 import SpeechEngine
 
-/// The menu-bar app (ARCHITECTURE.md, section 8, "Windows"): a status item with its menu, the main window and setup,
-/// one running instance, and a Dock icon only while one of its windows is open. It builds the composition at launch,
-/// starts the model's preparation, takes permission changes made in System Settings without a relaunch, and lets go
-/// of the microphone and any stream before it quits, whether by Quit, `osascript … quit` or SIGTERM.
+/// The menu-bar app (ARCHITECTURE.md, section 8, "Windows"): a status item with its menu, the main window, setup and
+/// Transcribe File, one running instance, and a Dock icon only while one of its windows is open. It builds the
+/// composition at launch, starts the model's preparation, takes permission changes made in System Settings without a
+/// relaunch, opens Transcribe File with an audio or video file opened with Sorello from the Finder or dropped on its
+/// Dock icon, and lets go of the microphone and any stream before it quits, whether by Quit, `osascript … quit` or
+/// SIGTERM.
 @MainActor
 final class AppShell: NSObject, NSApplicationDelegate {
     private let showsSetup: Bool
@@ -23,6 +25,8 @@ final class AppShell: NSObject, NSApplicationDelegate {
     private var shutDown = false
     /// AppKit is waiting for `reply(toApplicationShouldTerminate:)`.
     private var replyPending = false
+    /// Files opened with Sorello before it had finished launching, as when opening one is what launched it.
+    private var filesToOpen = OpenedFiles()
 
     private init(showsSetup: Bool) {
         self.showsSetup = showsSetup
@@ -78,7 +82,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
             download: model.map { PinnedDownload(model: $0, version: info.version) },
             // Only a build with an update feed has an updater; it starts with the app.
             updater: Updates.updater(for: info) { SparkleUpdater(info: $0) },
-            pill: overlay, levels: levels)
+            modelFitsThisMac: model.map { $0.build != nil } ?? true, pill: overlay, levels: levels)
         self.app = app
         let models = WindowModels(app: app)
         self.models = models
@@ -86,6 +90,9 @@ final class AppShell: NSObject, NSApplicationDelegate {
             openMain: { [weak self] section in self?.showMain(at: section) },
             openSetup: { [weak self] in self?.showSetup() },
             closeSetup: { [weak self] in self?.windows.closeSetup() },
+            showTranscribe: { [weak self] in self?.showTranscribe() },
+            chooseAudioFile: { [weak self] chosen in self?.panels.chooseFile(chosen) },
+            saveText: { [weak self] text, name in self?.panels.save(text, name: name) },
             bringBack: { [weak self] window in self?.windows.bringBack(window) },
             showNotice: { [weak self] title, files in self?.windows.showNotice(title: title, files: files) },
             alert: { title, message in
@@ -96,12 +103,25 @@ final class AppShell: NSObject, NSApplicationDelegate {
                 alert.runModal()
             },
             quit: { [weak self] in self?.quit(nil) })
+        windows.onClose = { [weak models] window in
+            if window == .transcribe { models?.transcribe.windowClosed() }
+        }
         statusItem = StatusItemController(model: models.menu, appName: info.name)
         app.start()
         watchActivation(app)
         watchFrontApps()
         catchTermination()
         if showsSetup && models.setupIsNeeded { showSetup() }
+        // A file whose opening launched the app, after the launch the app always has, setup included.
+        if let file = filesToOpen.launched() { models.transcribe.open(file: file) }
+    }
+
+    /// An audio or video file opened with Sorello from the Finder, dropped on its Dock icon, or given to `open`: the
+    /// first one goes to Transcribe File, which takes one file at a time. One that arrives before the launch has
+    /// finished waits for it.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let file = filesToOpen.opened(urls) else { return }
+        models?.transcribe.open(file: file)
     }
 
     /// Clicking the Dock icon, or opening the app again from Finder, Spotlight or `open`, brings the open windows
@@ -166,6 +186,16 @@ final class AppShell: NSObject, NSApplicationDelegate {
         windows.showMain(models.main, section: section, title: app.info.name)
     }
 
+    private func showTranscribe() {
+        guard let models else { return }
+        windows.showTranscribe(models.transcribe.model, title: TranscribeWords.title)
+    }
+
+    /// The open and save panels, as sheets on Transcribe File.
+    private var panels: TranscribePanels {
+        TranscribePanels(window: { [weak self] in self?.windows.window(.transcribe) })
+    }
+
     private func showSetup() {
         guard let models, let app else { return }
         // The steps are fixed as setup opens: once the model's step is there, it stays for that setup.
@@ -214,5 +244,31 @@ final class AppShell: NSObject, NSApplicationDelegate {
         }
         source.resume()
         terminationSignal = source
+    }
+}
+
+/// Files opened with Sorello, held until the app has finished launching (ARCHITECTURE.md, section 8, "Windows").
+/// AppKit hands over the file whose opening launched the app before the launch has finished, when there is no window
+/// to show it in yet; the app's ordinary launch runs first and the file goes to Transcribe File after it. Only the
+/// first file of each opening counts, since the window takes one file at a time.
+nonisolated struct OpenedFiles {
+    private var waiting: URL?
+    private var hasLaunched = false
+
+    /// Hears an opening. Returns the file to show now, or nil when there is none or it must wait for the launch.
+    mutating func opened(_ urls: [URL]) -> URL? {
+        guard let file = urls.first(where: \.isFileURL) else { return nil }
+        guard hasLaunched else {
+            if waiting == nil { waiting = file }
+            return nil
+        }
+        return file
+    }
+
+    /// The launch has finished. Returns the file that was waiting for it, if any; later openings go straight through.
+    mutating func launched() -> URL? {
+        hasLaunched = true
+        defer { waiting = nil }
+        return waiting
     }
 }

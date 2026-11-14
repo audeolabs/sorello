@@ -19,7 +19,8 @@ import Testing
     /// The model's actions, each reporting its command.
     static func reporting(into reported: @escaping (StatusMenuCommand) -> Void) -> StatusMenuActions {
         StatusMenuActions(
-            copyLastDictation: { reported(.copyLastDictation) }, retryModel: { reported(.retryModel) },
+            copyLastDictation: { reported(.copyLastDictation) }, transcribeFile: { reported(.transcribeFile) },
+            retryModel: { reported(.retryModel) },
             openGeneral: { reported(.openGeneral) }, openShortcuts: { reported(.openShortcuts) },
             openDictionary: { reported(.openDictionary) }, openRunLog: { reported(.openRunLog) },
             openSettings: { reported(.openSettings) }, quit: { reported(.quit) })
@@ -31,11 +32,12 @@ import Testing
         let items = controller.menu.items
         #expect(items.count == model.rows.count)
         #expect(items.map(\.title) == model.rows.map { $0.kind == .separator ? "" : $0.title })
-        #expect(items.indices.filter { items[$0].isSeparatorItem } == [1, 6, 8])
+        #expect(items.indices.filter { items[$0].isSeparatorItem } == [1, 6, 9])
         #expect(items.filter(\.isSectionHeader).map(\.title) == ["Shortcuts"])
         #expect(items.indices.filter { items[$0].isSectionHeader } == [2])
-        // Copy Last Dictation is a group of its own; the state line is the only item that is not a command.
-        #expect(items[7].title == "Copy Last Dictation")
+        // Copy Last Dictation and Transcribe File… are a group of their own; the state line is the only item that is
+        // not a command.
+        #expect(items[7].title == "Copy Last Dictation" && items[8].title == "Transcribe File…")
         #expect(items.filter { $0.action == nil && !$0.isSeparatorItem && !$0.isSectionHeader }.map(\.title)
             == ["Ready"])
         // The system draws every row: no views, no attributed titles.
@@ -63,8 +65,8 @@ import Testing
     @Test func onlyCommandsThatCanBeUsedAreEnabled() {
         let controller = StatusMenuController(model: .sample(status: Self.failed, hasLastDictation: false))
         let enabled = controller.menu.items.filter { $0.isEnabled && !$0.isSeparatorItem && !$0.isSectionHeader }
-        #expect(enabled.map(\.title) == ["Retry", "Hold to Talk", "Tap to Toggle", "Paste Again", "Dictionary",
-                                         "Run Log", "Settings…", "Quit Sorello"])
+        #expect(enabled.map(\.title) == ["Retry", "Hold to Talk", "Tap to Toggle", "Paste Again", "Transcribe File…",
+                                         "Dictionary", "Run Log", "Settings…", "Quit Sorello"])
         let state = controller.menu.items[0], copy = controller.menu.items[8]
         #expect(state.title == "Speech model unavailable" && !state.isEnabled)
         #expect(copy.title == "Copy Last Dictation" && !copy.isEnabled)
@@ -79,7 +81,7 @@ import Testing
             controller.menu.performActionForItem(at: index)
         }
         #expect(reported == [.retryModel, .openShortcuts, .openShortcuts, .openShortcuts, .copyLastDictation,
-                             .openDictionary, .openRunLog, .openSettings, .quit])
+                             .transcribeFile, .openDictionary, .openRunLog, .openSettings, .quit])
     }
 
     @Test func aMissingPermissionsRemedyOpensGeneral() throws {
@@ -197,6 +199,7 @@ import Testing
             ["command", "Paste Again", "Not set"],
             ["separator"],
             ["command", "doc.on.doc", "Copy Last Dictation"],
+            ["command", "waveform", "Transcribe File…"],
             ["separator"],
             ["command", "character.book.closed", "Dictionary"],
             ["command", "clock.arrow.circlepath", "Run Log"],
@@ -210,7 +213,7 @@ import Testing
         #expect(failed.contains(["unavailable", "doc.on.doc", "Copy Last Dictation"]))
         // Titles start in one column, so the list reads as a table.
         let titles = ["Ready", "Shortcuts", "Hold to Talk", "Tap to Toggle", "Paste Again", "Copy Last Dictation",
-                      "Dictionary", "Run Log", "Settings…", "Quit Sorello"]
+                      "Transcribe File…", "Dictionary", "Run Log", "Settings…", "Quit Sorello"]
         let rows = ready.split(separator: "\n").filter { $0 != "separator" }
         let starts = zip(rows, titles).compactMap { row, title in
             row.range(of: title).map { row.distance(from: row.startIndex, to: $0.lowerBound) }
