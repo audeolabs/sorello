@@ -7,7 +7,8 @@ import Testing
 /// dot) render the same at any moment.
 @MainActor
 struct SnapshotStillnessTests {
-    @Test(arguments: ["main-runlog", "main-general-preparing", "setup-test-preparing"])
+    @Test(arguments: ["main-runlog", "main-general-preparing", "setup-test-preparing", "transcribe-preparing",
+                      "transcribe-transcribing-starting"])
     func aSceneRendersTheSameAtAnyMoment(name: String) async throws {
         // As the snapshot tool does, so another test registering the fonts between the two renders changes nothing.
         Resources.registerFonts()

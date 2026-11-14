@@ -11,12 +11,15 @@ public enum WindowChrome {
         case main
         /// Setup, shown on first launch.
         case setup
+        /// Transcribe File: one file's text.
+        case transcribe
 
         /// The smallest the window may be.
         public var minimumSize: CGSize {
             switch self {
             case .main: CGSize(width: 780, height: 520)
             case .setup: CGSize(width: 600, height: 620)
+            case .transcribe: CGSize(width: 440, height: 380)
             }
         }
 
@@ -25,12 +28,13 @@ public enum WindowChrome {
             switch self {
             case .main: CGSize(width: 880, height: 640)
             case .setup: CGSize(width: 600, height: 620)
+            case .transcribe: CGSize(width: 580, height: 500)
             }
         }
     }
 
-    /// Gives `window` the chrome its screens are drawn for. Setup cannot be resized and can be dragged by its
-    /// background, as a setup assistant can.
+    /// Gives `window` the chrome its screens are drawn for. The main window and Transcribe File can be resized down to
+    /// their minimums; setup cannot be resized and can be dragged by its background, as a setup assistant can.
     public static func apply(to window: NSWindow, kind: Kind) {
         window.styleMask.insert([.titled, .closable, .miniaturizable, .fullSizeContentView])
         window.titlebarAppearsTransparent = true
@@ -39,7 +43,7 @@ public enum WindowChrome {
         window.appearance = NSAppearance(named: .darkAqua)
         window.contentMinSize = kind.minimumSize
         switch kind {
-        case .main:
+        case .main, .transcribe:
             window.styleMask.insert(.resizable)
             window.isMovableByWindowBackground = false
             window.tabbingMode = .disallowed
