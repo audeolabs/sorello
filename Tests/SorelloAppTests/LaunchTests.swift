@@ -45,6 +45,24 @@ import Testing
         #expect(LaunchMode(arguments: ["--download"]) == .app(showsSetup: true), "The app itself downloads only when asked")
     }
 
+    /// `--transcribe` runs one file through Transcribe File's model, with the model found as the other self-test finds
+    /// it, or the one `--model` gives, and `--cpu` as there.
+    @Test func theSelfTestCanTranscribeAFileThroughTheWindow() {
+        let file = URL(fileURLWithPath: "talk.m4a"), model = URL(fileURLWithPath: "/m", isDirectory: true)
+        #expect(LaunchMode(arguments: ["--self-test", "--transcribe", "talk.m4a"])
+                == .transcribeTest(file: file, model: nil, forcesCPU: false))
+        #expect(LaunchMode(arguments: ["--self-test", "--transcribe", "--model", "/m", "--cpu", "talk.m4a"])
+                == .transcribeTest(file: file, model: model, forcesCPU: true))
+        #expect(LaunchMode(arguments: ["--self-test", "--transcribe", "talk.m4a", "--cpu"])
+                == .transcribeTest(file: file, model: nil, forcesCPU: true))
+        #expect(LaunchMode(arguments: ["--self-test", "--transcribe"]) == .usage(LaunchMode.usage))
+        #expect(LaunchMode(arguments: ["--self-test", "--transcribe", "a.wav", "b.wav"]) == .usage(LaunchMode.usage))
+        #expect(LaunchMode(arguments: ["--self-test", "--transcribe", "--model"]) == .usage(LaunchMode.usage))
+        #expect(LaunchMode(arguments: ["--self-test", "--transcribe", "--download", "a.wav"])
+                == .usage(LaunchMode.usage), "It never downloads")
+        #expect(LaunchMode(arguments: ["--transcribe", "a.wav"]) == .app(showsSetup: true))
+    }
+
     @Test func snapshotsTakeOneDirectory() {
         #expect(LaunchMode(arguments: ["--snapshots", "/tmp/out"]) == .snapshots(URL(fileURLWithPath: "/tmp/out", isDirectory: true)))
         #expect(LaunchMode(arguments: ["--snapshots"]) == .usage(LaunchMode.usage))

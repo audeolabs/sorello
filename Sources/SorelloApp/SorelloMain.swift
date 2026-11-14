@@ -13,6 +13,8 @@ public enum SorelloMain {
             SelfTest.run(files: files, model: model, forcesCPU: forcesCPU, downloads: downloads)
         case .updateTest(let feed):
             UpdateSelfTest.run(feed: feed)
+        case .transcribeTest(let file, let model, let forcesCPU):
+            TranscribeSelfTest.run(file: file, model: model, forcesCPU: forcesCPU)
         case .snapshots(let directory):
             WindowSnapshots.run(into: directory)
         case .usage(let message):
@@ -32,6 +34,9 @@ public enum SorelloMain {
 ///                                                  `--download` first downloads the model into a temporary store
 ///     Sorello --self-test --update <feed>          run the packaged app's updater against `feed`, an http or https
 ///                                                  address, for this run only; install a newer build as it ends
+///     Sorello --self-test --transcribe [--model <dir>] [--cpu] <file>
+///                                                  transcribe an audio or video file through Transcribe File's own
+///                                                  model, off screen; print each state and the text; exit 0 or 1
 ///     Sorello --snapshots <dir>                    render the menu-bar item, windows and setup; list the menu
 ///
 /// The app ignores arguments it does not know, because the system can pass its own when it launches an app.
@@ -39,6 +44,7 @@ nonisolated enum LaunchMode: Equatable {
     case app(showsSetup: Bool)
     case selfTest(files: [URL], model: URL?, forcesCPU: Bool, downloads: Bool = false)
     case updateTest(feed: URL)
+    case transcribeTest(file: URL, model: URL?, forcesCPU: Bool)
     case snapshots(URL)
     case usage(String)
 
@@ -46,6 +52,7 @@ nonisolated enum LaunchMode: Equatable {
         usage: Sorello [--no-setup]
                Sorello --self-test [--model <bundle-dir> | --download] [--cpu] <file.wav>...
                Sorello --self-test --update <feed-url>
+               Sorello --self-test --transcribe [--model <bundle-dir>] [--cpu] <file>
                Sorello --snapshots <output-directory>
         """
 
@@ -63,6 +70,29 @@ nonisolated enum LaunchMode: Equatable {
                 return
             }
             self = .updateTest(feed: feed)
+        case "--self-test" where arguments.count > 1 && arguments[1] == "--transcribe":
+            // One file, through the window's way in; the model as the other self-test finds it.
+            var rest = arguments.dropFirst(2)
+            var model: URL?
+            var forcesCPU = false
+            var files: [URL] = []
+            while let argument = rest.popFirst() {
+                if argument == "--cpu" {
+                    forcesCPU = true
+                } else if argument == "--model", let path = rest.popFirst() {
+                    model = URL(fileURLWithPath: path, isDirectory: true)
+                } else if argument.hasPrefix("-") {
+                    self = .usage(Self.usage)
+                    return
+                } else {
+                    files.append(URL(fileURLWithPath: argument))
+                }
+            }
+            guard files.count == 1, let file = files.first else {
+                self = .usage(Self.usage)
+                return
+            }
+            self = .transcribeTest(file: file, model: model, forcesCPU: forcesCPU)
         case "--self-test":
             var rest = arguments.dropFirst()
             var model: URL?
