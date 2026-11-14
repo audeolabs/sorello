@@ -200,6 +200,8 @@ struct ChunkedTranscription {
     private var compactor: SilenceCompactor?
     private var chunker: Chunker
     private var transcript = TranscriptAssembler()
+    /// Whether the compactor heard speech before it finished; true without a compactor, or before `finish`.
+    private(set) var heardSpeech = true
 
     init(size: Int, overlap: Int, compactor: SilenceCompactor? = nil) {
         self.compactor = compactor
@@ -216,10 +218,24 @@ struct ChunkedTranscription {
         try Self.append(samples, &compactor, &chunker, &transcript, transcribe)
     }
 
+    /// The same chunks without compaction: what `recording()` gives for audio with no speech in it, which the
+    /// compactor passes through unchanged.
+    static func uncompacted() -> ChunkedTranscription {
+        ChunkedTranscription(size: SpeechCore.chunkSamples, overlap: SpeechCore.chunkOverlapSamples)
+    }
+
     /// Transcribes the remaining partial chunk, if it holds new audio, and returns the text.
     mutating func finish(transcribe: (AudioWindow) throws -> [HeardWord]) rethrows -> String {
-        try Self.finish(&compactor, &chunker, &transcript, transcribe)
+        try Self.finish(&compactor, &chunker, &transcript, &heardSpeech, transcribe)
         return transcript.text
+    }
+
+    /// Lets the compactor drop the silence it holds before any speech beyond `limit` samples, which bounds what a
+    /// file with a long silent start holds (`SilenceCompactor.dropLeadingSilence`). Returns whether it dropped any;
+    /// if it did and `heardSpeech` is false after `finish`, the text is wrong and the audio must be transcribed again
+    /// with `uncompacted()`.
+    mutating func dropLeadingSilence(beyond limit: Int) -> Bool {
+        compactor?.dropLeadingSilence(beyond: limit) ?? false
     }
 
     // Separate inout properties: a closure capturing self would overlap the chunker's access.
@@ -234,12 +250,12 @@ struct ChunkedTranscription {
     }
 
     private static func finish(_ compactor: inout SilenceCompactor?, _ chunker: inout Chunker,
-                               _ transcript: inout TranscriptAssembler,
+                               _ transcript: inout TranscriptAssembler, _ heardSpeech: inout Bool,
                                _ transcribe: (AudioWindow) throws -> [HeardWord]) rethrows {
         if var active = compactor {
             compactor = nil
             defer { compactor = active }
-            try active.finish { try chunk($0, &chunker, &transcript, transcribe) }
+            heardSpeech = try active.finish { try chunk($0, &chunker, &transcript, transcribe) }
         }
         try chunker.finish { transcript.append(try transcribe($0), covering: $0.range) }
     }
