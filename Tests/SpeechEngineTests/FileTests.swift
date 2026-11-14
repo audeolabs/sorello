@@ -312,6 +312,57 @@ struct FileTests {
         #expect(at < total, "The dictation finished after \(at) of the file's \(total) samples had been read")
     }
 
+    /// The fake model, calling `onProject` with each chunk's sample count before projecting it.
+    final class HookedModel: SpeechModel, Sendable {
+        let encoder = BPEEncoder(pieces: FakeModel.pieces)
+        private let log: ModelLog
+        private let onProject: @Sendable (Int) -> Void
+
+        init(log: ModelLog, onProject: @escaping @Sendable (Int) -> Void) {
+            self.log = log
+            self.onProject = onProject
+        }
+
+        func project(_ samples: [Float], check: () throws -> Void) throws -> Projection? {
+            onProject(samples.count)
+            return try FakeModel(log: log).project(samples, check: check)
+        }
+
+        func decode(_ projection: Projection, offset: Int, bias: BiasGraph?, check: () throws -> Void) throws -> [HeardWord] {
+            try FakeModel(log: log).decode(projection, offset: offset, bias: bias, check: check)
+        }
+    }
+
+    /// The end of a file can cut two chunks: what the compactor still holds completes one, then the last partial one
+    /// follows. A dictation made during the first is served before the second.
+    @Test func aDictationDuringTheLastTwoChunksWaitsForOne() async throws {
+        let log = ModelLog()
+        let started = Mutex(false)
+        let engine = Mutex<SpeechEngine?>(nil)
+        let dictation = Mutex<Task<Result<SpeechResult, SpeechFailure>?, Never>?>(nil)
+        let model = HookedModel(log: log) { count in
+            guard count == SpeechCore.chunkSamples, !started.withLock({ state in defer { state = true }; return state }),
+                  let engine = engine.withLock({ $0 }) else { return }
+            let stream = engine.openStream(SpeechStreamOptions())
+            stream.append(EngineTests.speech(2))
+            dictation.withLock { $0 = Task { await finish(stream, within: 60) } }
+            // Long enough for the dictation's work to be waiting on the engine before this chunk ends.
+            Thread.sleep(forTimeInterval: 0.3)
+        }
+        let made = SpeechEngine(loader: { () throws(EngineFailure) -> any SpeechModel in model }, dictionary: { _ in .empty })
+        engine.withLock { $0 = made }
+        await prepare(made)
+        // 14.9 s of speech cuts no chunk while it is read; the 0.3 s of silence the compactor gives back at the end
+        // completes the first, and 2.2 s from 13 s on are the last.
+        let text = try #require(await transcribe(made) {
+            SignalSource([.tone(14.9), .silence(2)], log: SourceLog(), model: log)
+        }).get()
+        #expect(text.hasPrefix("W0 w1 w2"))
+        _ = try #require(await dictation.withLock({ $0 })?.value).get()
+        #expect(log.projected == [SpeechCore.chunkSamples, Signals.s(2), Signals.s(2.2)],
+                "The dictation's chunk came between the file's last two")
+    }
+
     // MARK: - Progress
 
     /// While the model prepares the file says so; then the amount read rises, never past the length, and ends at it.
