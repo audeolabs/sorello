@@ -259,12 +259,12 @@ final class Harness {
     /// `download`: the model's download, when the app has a pin; `readiness`: the engine's at launch.
     /// `microphone`: the microphone's permission, granted unless a test needs to ask.
     /// `updater`: the app's updater, in a build with an update feed; none otherwise.
-    /// `microphones`: the input devices the platform lists.
+    /// `microphones`: the input devices the platform lists, and their changes.
     init(directory: URL, defaults: UserDefaults, model: URL? = nil, trusted: Bool = true, fontLicence: URL? = nil,
          thirdPartyNotices: URL? = nil,
          compute: SpeechCompute = .neuralEngine, download: FakeDownload? = nil, readiness: EngineReadiness = .ready,
          microphone: any MicrophoneAuthorizing = GrantedMicrophone(), updater: FakeUpdater? = nil,
-         microphones: [AudioInputDevice] = FakeMicrophones.desk) {
+         microphones: any MicrophoneListing = FakeMicrophones()) {
         speech = FakeSpeech(compute: compute, readiness: readiness)
         let info = AppInfo(name: "Sorello Test", version: "0.0.1", build: "1", modelDirectory: model,
                            modelName: model.flatMap(AppInfo.modelName(in:)), thirdPartyNotices: thirdPartyNotices,
@@ -273,7 +273,7 @@ final class Harness {
         let platform = AppPlatform(
             capture: capture, microphone: microphone, frontmostApp: frontmost, inserter: inserter,
             fieldReader: FakeReader(), accessibility: FakeTrust(trusted), shortcuts: shortcuts, loginItem: login,
-            microphones: FakeMicrophones(devices: microphones), keyboard: { ShortcutFormatter(layout: NoKeys()) }, clock: clock,
+            microphones: microphones, keyboard: { ShortcutFormatter(layout: NoKeys()) }, clock: clock,
             system: SystemActions(open: { system.opened.append($0) }, copy: { system.copied.append($0) },
                                   chooseApp: { nil }, grantAccessibility: { _ in system.grants += 1 },
                                   openMicrophoneSettings: {}))

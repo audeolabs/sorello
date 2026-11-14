@@ -1,6 +1,7 @@
 import DictationCore
 import MacPlatform
 import SorelloUI
+import Synchronization
 import Testing
 @testable import SorelloApp
 
@@ -16,7 +17,7 @@ struct MicrophoneStandInTests {
     @Test func generalShowsTheStandInAndItsSwitch() async throws {
         let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
         let harness = Harness(directory: directory.url, defaults: suite.defaults,
-                              microphones: [Self.headset, Self.builtIn])
+                              microphones: FakeMicrophones(devices: [Self.headset, Self.builtIn]))
         harness.app.start()
         let general = harness.windows.main.general
         await eventually { general.standInMicrophoneName == "Desk Microphone" }
@@ -33,6 +34,33 @@ struct MicrophoneStandInTests {
         // A microphone chosen by name is used as chosen, so nothing stands in.
         general.actions.selectMicrophone("headset")
         await eventually { general.standInMicrophoneName == nil }
+    }
+
+    /// General follows the device list: a headset that becomes the default, a lid that closes on the built-in
+    /// microphone, and a headset that goes away.
+    @Test func generalFollowsTheDevices() async throws {
+        let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
+        let devices = ChangingMicrophones()
+        let builtInDefault = AudioInputDevice(id: "built-in", name: "Desk Microphone", isDefault: true,
+                                              transport: .builtIn)
+        let dock = AudioInputDevice(id: "dock", name: "Dock Microphone", isDefault: false, transport: .wired)
+        devices.send([builtInDefault, dock])
+        let harness = Harness(directory: directory.url, defaults: suite.defaults, microphones: devices)
+        harness.app.start()
+        let general = harness.windows.main.general
+        await eventually { general.defaultMicrophoneName == "Desk Microphone" }
+        #expect(general.standInMicrophoneName == nil)
+
+        devices.send([Self.headset, Self.builtIn, dock])
+        await eventually { general.standInMicrophoneName == "Desk Microphone" }
+
+        var closed = Self.builtIn
+        closed.isSilenced = true
+        devices.send([Self.headset, closed, dock])
+        await eventually { general.standInMicrophoneName == "Dock Microphone" }
+
+        devices.send([builtInDefault, dock])
+        await eventually { general.standInMicrophoneName == nil && general.defaultMicrophoneName == "Desk Microphone" }
     }
 
     @Test func nothingStandsInForADefaultThatIsNotBluetooth() async throws {
@@ -54,4 +82,18 @@ struct MicrophoneStandInTests {
         await eventually { harness.capture.requests.count == 2 }
         #expect(harness.capture.requests.map(\.avoidBluetooth) == [true, false])
     }
+}
+
+/// A device list the test changes, as Core Audio's notices would.
+private final class ChangingMicrophones: MicrophoneListing {
+    private let (stream, continuation) = AsyncStream.makeStream(of: [AudioInputDevice].self)
+    private let latest = Mutex<[AudioInputDevice]>([])
+
+    func send(_ devices: [AudioInputDevice]) {
+        latest.withLock { $0 = devices }
+        continuation.yield(devices)
+    }
+
+    func current() -> [AudioInputDevice] { latest.withLock { $0 } }
+    func changes() -> AsyncStream<[AudioInputDevice]> { stream }
 }
