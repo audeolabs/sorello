@@ -28,8 +28,9 @@ struct TranscribePorts {
 ///
 /// A file dropped on the window, chosen in its picker, or opened with Sorello from the Finder comes in through `take`,
 /// and is refused while another is preparing or being transcribed: the window only comes forward. A drop's file and
-/// a picker's choice arrive a moment after the user acts; one that arrives once the window has closed is not taken,
-/// so nothing runs, and no text is held, without the window. The text rules are
+/// a picker's choice arrive a moment after the user acts, and belong to the opening of the window they were made in:
+/// one that arrives once that opening has ended, by the window closing, is not taken, even if the window has opened
+/// again since, so closing the window cancels what was on its way to it. The text rules are
 /// read when a transcription starts and kept for it. Progress, reported on any thread, reaches the window in order on
 /// the main actor. Cancel, closing the window, and taking another file cancel the task and forget the text; a
 /// cancelled transcription changes nothing afterwards.
@@ -44,8 +45,10 @@ final class TranscribeBinding {
     private var file: URL?
     /// The transcription under way, if any.
     private var running: Task<Void, Never>?
-    /// Whether the window is open: from the time the binding brings it forward until it closes.
-    private(set) var windowIsOpen = false
+    /// The window's opening, from the time the binding brings it forward until it closes; nil while it is closed.
+    private var opening: Opening?
+    /// Whether the window is open.
+    var windowIsOpen: Bool { opening != nil }
     /// Hears every state the window is given, in order. The self-test prints them.
     var stateChanged: (@MainActor (TranscribeState) -> Void)?
 
@@ -58,7 +61,7 @@ final class TranscribeBinding {
         model = TranscribeModel(appName: appName)
         model.actions = TranscribeActions(
             chooseFile: { [weak self] in self?.chooseFile() },
-            dropFile: { [weak self] in self?.take($0) },
+            dropFile: { [weak self] in self?.delivery() ?? { _ in } },
             cancel: { [weak self] in self?.cancel() },
             copy: { [weak self] in self?.copy() },
             save: { [weak self] in self?.save() },
@@ -70,7 +73,7 @@ final class TranscribeBinding {
     /// The menu's Transcribe File…: the window comes forward, opening if it is closed, and shows its file picker
     /// unless a file is being transcribed there.
     func open() {
-        windowIsOpen = true
+        if opening == nil { opening = Opening() }
         ports.show()
         if model.state.takesFiles { chooseFile() }
     }
@@ -78,7 +81,7 @@ final class TranscribeBinding {
     /// A file opened with Sorello from the Finder, or dropped on its Dock icon: the window comes forward and takes
     /// it, unless it is busy with another.
     func open(file: URL) {
-        windowIsOpen = true
+        if opening == nil { opening = Opening() }
         ports.show()
         take(file)
     }
@@ -96,14 +99,24 @@ final class TranscribeBinding {
 
     /// The window was closed: whatever it was doing stops, and its text is forgotten.
     func windowClosed() {
-        windowIsOpen = false
+        opening = nil
         stop()
     }
 
     // MARK: - Actions
 
     private func chooseFile() {
-        ports.chooseFile { [weak self] file in self?.take(file) }
+        ports.chooseFile(delivery())
+    }
+
+    /// Where a file the user is giving the window now goes once it arrives: to `take`, if the window is still in the
+    /// opening it is in now.
+    private func delivery() -> @MainActor @Sendable (URL) -> Void {
+        let opening = self.opening
+        return { [weak self] file in
+            guard let self, let opening, self.opening === opening else { return }
+            self.take(file)
+        }
     }
 
     private func cancel() {
@@ -225,3 +238,6 @@ final class TranscribeBinding {
         }
     }
 }
+
+/// One opening of the Transcribe File window: what a drop or a picker's choice belongs to.
+nonisolated private final class Opening: Sendable {}

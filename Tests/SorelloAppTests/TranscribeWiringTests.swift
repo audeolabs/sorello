@@ -66,7 +66,7 @@ import TextRules
         app.settings.spokenNumbers = false
         app.settings.pressEnterCommand = true
         let macro = try app.macros.add(command: "sign off", text: "Warm regards")
-        harness.windows.transcribe.model.actions.dropFile(talk)
+        harness.windows.transcribe.model.actions.dropFile()(talk)
         await eventually { harness.speech.files.all.count == 1 }
         let expected = TextRuleOptions(macros: [macro], pressEnterCommand: true, spokenNumbers: false,
                                        spokenDelimiters: app.settings.spokenDelimiters,
@@ -80,7 +80,7 @@ import TextRules
         let harness = Harness(directory: directory.url, defaults: suite.defaults)
         let shell = wire(harness)
         let window = harness.windows.transcribe
-        window.model.actions.dropFile(talk)
+        window.model.actions.dropFile()(talk)
         await eventually { harness.speech.files.all.count == 1 }
         harness.speech.files.last?.finish(.success("Invented words."))
         await eventually { window.model.state == .done(file: "harbour talk.m4a", text: "Invented words.") }
@@ -97,7 +97,7 @@ import TextRules
         let harness = Harness(directory: directory.url, defaults: suite.defaults)
         let shell = wire(harness)
         let window = harness.windows.transcribe
-        window.model.actions.dropFile(talk)
+        window.model.actions.dropFile()(talk)
         await eventually { harness.speech.files.all.count == 1 }
         harness.speech.files.last?.finish(.failure(.modelMissing))
         await eventually { window.model.state == .failed(file: "harbour talk.m4a", reason: .modelMissing) }
@@ -122,7 +122,7 @@ import TextRules
         let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
         let harness = Harness(directory: directory.url, defaults: suite.defaults)
         _ = wire(harness)
-        harness.windows.transcribe.model.actions.dropFile(talk)
+        harness.windows.transcribe.model.actions.dropFile()(talk)
         await eventually { harness.speech.files.all.count == 1 }
         harness.windows.stop()
         await eventually { harness.speech.files.last?.wasCancelled == true }
