@@ -17,12 +17,10 @@ nonisolated struct TextRulesSnapshot: TranscriptProcessing, Equatable {
         self.options = options
     }
 
-    /// The rules the settings and macros say now.
+    /// The rules the settings and macros say now, built as a file's transcription builds them.
     @MainActor
     init(settings: SettingsStore, macros: [VoiceMacro]) {
-        options = TextRuleOptions(macros: macros, pressEnterCommand: settings.pressEnterCommand,
-                                  spokenNumbers: settings.spokenNumbers, spokenDelimiters: settings.spokenDelimiters,
-                                  promptTag: settings.promptTag)
+        options = TextRuleOptions(settings: settings, macros: macros)
     }
 
     func process(_ transcript: String, style: DictationStyle, context: InsertionContext?) -> ProcessedDictation {

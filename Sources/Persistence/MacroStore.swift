@@ -90,6 +90,18 @@ public final class MacroStore {
         try save(reordered)
     }
 
+    /// The macros saved in `fileURL`, read without changing anything: no directory is made, and a file that cannot
+    /// be read is neither moved nor replaced. An empty list when there is no file; nil when there is one that cannot
+    /// be opened or read as macros. For the `sorello` command, which only reads the app's files (ARCHITECTURE.md,
+    /// section 10, "The command").
+    public nonisolated static func readWithoutChanging(_ fileURL: URL) -> [VoiceMacro]? {
+        switch StoredFile.readVersioned(File.self, from: fileURL, version: File.currentVersion) {
+        case .value(let file): file.macros
+        case .missing: []
+        case .unreadable, .inaccessible: nil
+        }
+    }
+
     // MARK: - Private
 
     /// A command must be sayable and must not be another macro's: the matcher compares commands by
