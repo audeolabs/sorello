@@ -8,6 +8,8 @@ import SwiftUI
 enum AppWindow: Hashable {
     case setup
     case main
+    /// Transcribe File.
+    case transcribe
     /// A notice's text, one window per notice, named by its title.
     case notice(String)
 }
@@ -72,7 +74,8 @@ extension NSRunningApplication: FrontApp {
     }
 }
 
-/// The app's windows: the main window, setup and the notices' text. Each is made once and kept while the app runs.
+/// The app's windows: the main window, setup, Transcribe File and the notices' text. Each is made once and kept while
+/// the app runs.
 /// The presenter knows which are open, from the first time each is shown until it closes, by whatever means: its
 /// close button, ⌘W or Close in the Window menu, or Done in setup. A minimised window is still open. Sorello is in the
 /// Dock exactly while one is open (ARCHITECTURE.md, section 8, "Windows").
@@ -85,6 +88,8 @@ final class WindowPresenter {
     /// The latest ordinary app other than Sorello to have been in front: the one to hand the front back to.
     private var previous: (any FrontApp)?
     private var observers: [any NSObjectProtocol] = []
+    /// Hears each window close, by whatever means, after the presenter has counted it closed.
+    var onClose: (AppWindow) -> Void = { _ in }
 
     init(dock: any DockPresence) {
         self.dock = dock
@@ -115,6 +120,11 @@ final class WindowPresenter {
 
     func closeSetup() {
         made[.setup]?.close()
+    }
+
+    /// Brings Transcribe File forward, opening it if it is closed.
+    func showTranscribe(_ model: TranscribeModel, title: String) {
+        show(.transcribe) { Self.transcribeWindow(model, title: title) }
     }
 
     /// Shows the full text of a notice, one window per notice.
@@ -197,6 +207,7 @@ final class WindowPresenter {
     private func closed(_ id: AppWindow) {
         guard isOpen(id) else { return }
         open.removeAll { $0 == id }
+        onClose(id)
         guard !isInDock else { return }
         dock.leaveDock()
         guard dock.isActive, let previous, !previous.isTerminated else { return }
@@ -211,6 +222,11 @@ final class WindowPresenter {
     /// Setup's window as the app builds it, not yet on screen.
     static func setupWindow(_ model: SetupModel, title: String) -> NSWindow {
         window(.setup, title: title, content: SetupView(model: model))
+    }
+
+    /// Transcribe File's window as the app builds it, not yet on screen.
+    static func transcribeWindow(_ model: TranscribeModel, title: String) -> NSWindow {
+        window(.transcribe, title: title, content: TranscribeView(model: model))
     }
 
     /// The size a notice's window opens at.

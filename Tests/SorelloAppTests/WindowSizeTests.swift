@@ -123,6 +123,49 @@ import Testing
         }
     }
 
+    // MARK: Transcribe File
+
+    /// One of each kind of state, with a long name and a transcript far longer than the window.
+    private static let transcribeStates: [(String, TranscribeState)] = {
+        let name = "Quillon Bay harbour committee, second reading of the north gate proposal, full session.mov"
+        let text = Array(repeating: "Pack my box with five dozen liquor jugs, then carry it up the hill.", count: 3000)
+            .joined(separator: "\n")
+        return [("empty", .empty), ("preparing", .preparing(file: name)),
+                ("transcribing", .transcribing(file: name, read: 4410, length: 4682)),
+                ("done, long", .done(file: name, text: text)), ("nothing heard", .nothingHeard(file: name)),
+                ("failed, unreadable", .failed(file: name, reason: .unreadable)),
+                ("failed, model missing", .failed(file: name, reason: .modelMissing)),
+                ("empty again", .empty)]
+    }()
+
+    @Test func transcribeFileOpensAtItsSizeAndKeepsItInEveryState() async {
+        let model = TranscribeModel.sample()
+        let window = WindowPresenter.transcribeWindow(model, title: "Transcribe File")
+        defer { window.close() }
+        #expect(window.styleMask.contains(.resizable))
+        expectChrome(window, .transcribe, at: "opening")
+        for (place, state) in Self.transcribeStates {
+            model.state = state
+            await settle(window)
+            expectChrome(window, .transcribe, at: place)
+        }
+    }
+
+    @Test func transcribeFileKeepsTheSizeItIsGivenInEveryState() async {
+        let kind = WindowChrome.Kind.transcribe
+        let model = TranscribeModel.sample()
+        let window = WindowPresenter.transcribeWindow(model, title: "Transcribe File")
+        defer { window.close() }
+        for size in [kind.minimumSize, CGSize(width: 900, height: 760)] {
+            window.setContentSize(size)
+            for (place, state) in Self.transcribeStates {
+                model.state = state
+                await settle(window)
+                expect(window, size: size, minimum: kind.minimumSize, at: "\(place), \(size.width) x \(size.height)")
+            }
+        }
+    }
+
     // MARK: Notices
 
     @Test(arguments: [true, false])
