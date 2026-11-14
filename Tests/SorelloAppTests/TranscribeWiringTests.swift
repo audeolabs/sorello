@@ -22,7 +22,9 @@ import TextRules
         var opened: [MainSection?] = []
     }
 
-    private func wire(_ harness: Harness) -> Shell {
+    /// The shell's navigation, recorded, with Transcribe File open as the menu's row opens it unless `opened` is false.
+    private func wire(_ harness: Harness, opened: Bool = true) -> Shell {
+        defer { if opened { harness.windows.transcribe.open() } }
         let shell = Shell()
         harness.app.navigation.showTranscribe = { shell.shown += 1 }
         harness.app.navigation.chooseAudioFile = { shell.pickers.append($0) }
@@ -37,7 +39,7 @@ import TextRules
         _ = NSApplication.shared
         let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
         let harness = Harness(directory: directory.url, defaults: suite.defaults)
-        let shell = wire(harness)
+        let shell = wire(harness, opened: false)
         let controller = StatusMenuController(model: harness.windows.menu)
         controller.menuNeedsUpdate(controller.menu)
         let row = try #require(controller.menu.items.firstIndex { $0.title == "Transcribe File…" })
