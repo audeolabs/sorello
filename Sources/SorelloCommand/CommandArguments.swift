@@ -21,14 +21,14 @@ enum CommandRequest: Equatable {
         let rest = Array(arguments.dropFirst())
         switch command {
         case "--help", "help":
-            self = rest.isEmpty ? .help : .wrong(reason: String(localized: "\(command) takes no arguments"))
+            self = rest.isEmpty ? .help : .wrong(reason: String(localized: "\(Self.shown(command)) takes no arguments"))
         case "--version":
             self = rest.isEmpty ? .version : .wrong(reason: String(localized: "--version takes no arguments"))
         case "transcribe":
             self = Self.transcribe(rest)
         default:
-            self = .wrong(reason: command.hasPrefix("-") ? String(localized: "unknown option: \(command)")
-                                                         : String(localized: "unknown command: \(command)"))
+            self = .wrong(reason: command.hasPrefix("-") ? String(localized: "unknown option: \(Self.shown(command))")
+                                                         : String(localized: "unknown command: \(Self.shown(command))"))
         }
     }
 
@@ -42,7 +42,7 @@ enum CommandRequest: Equatable {
                 case "--help": return .help
                 case "--no-dictionary": dictionary = false
                 case "--no-rules": rules = false
-                default: return .wrong(reason: String(localized: "unknown option: \(argument)"))
+                default: return .wrong(reason: String(localized: "unknown option: \(Self.shown(argument))"))
                 }
             } else {
                 files.append(argument)
@@ -53,6 +53,27 @@ enum CommandRequest: Equatable {
                                                 : String(localized: "transcribe takes one file"))
         }
         return .transcribe(file: file, dictionary: dictionary, rules: rules)
+    }
+
+    /// `text` as a message may quote it: each message is one line, so line breaks and other control characters are
+    /// written as escapes, and a terminal is never sent one.
+    static func shown(_ text: String) -> String {
+        var shown = ""
+        for scalar in text.unicodeScalars {
+            switch scalar {
+            case "\n": shown += "\\n"
+            case "\r": shown += "\\r"
+            case "\t": shown += "\\t"
+            default:
+                switch scalar.properties.generalCategory {
+                case .control, .lineSeparator, .paragraphSeparator, .format:
+                    shown += "\\u{" + String(scalar.value, radix: 16) + "}"
+                default:
+                    shown.unicodeScalars.append(scalar)
+                }
+            }
+        }
+        return shown
     }
 
     /// How to use the command, for `--help` and after wrong arguments.

@@ -164,9 +164,10 @@ public enum SorelloCommand {
         return FileTranscriber(engine: engine, modelFitsThisMac: model.model.build != nil)
     }
 
-    private static func failure(_ failure: FileTranscriptionFailure, file: String,
+    private static func failure(_ failure: FileTranscriptionFailure, file typed: String,
                                 app: CommandApp) -> (Int32, String) {
-        switch failure {
+        let file = CommandRequest.shown(typed)
+        return switch failure {
         case .cannotOpen:
             (Status.cannotOpen, String(localized: "can't open \(file)"))
         case .unreadable:
