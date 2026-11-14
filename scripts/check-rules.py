@@ -225,7 +225,9 @@ NEUTRAL = {"SpeechEngine": {"AppKit", "SwiftUI", "UIKit", "Cocoa"}, "Persistence
 # Transcribing a file goes through the engine, which reads the file; this module adds rules and progress to it, and
 # imports no framework that draws or decodes (ARCHITECTURE.md, section 5, "Transcribing a file").
 THROUGH_ENGINE = ("FileTranscription",)
-MAY_PRINT = ("SorelloSnapshots", "SorelloTranscribe")
+# The command-line tools write to the person who ran them (ARCHITECTURE.md, section 9, invariant 2): the `sorello`
+# command writes a file's text to standard output and its messages to standard error, and keeps no log.
+MAY_PRINT = ("SorelloSnapshots", "SorelloTranscribe", "SorelloCommand", "SorelloCommandMain")
 
 
 def lint_swift(path, src):
@@ -304,6 +306,9 @@ def self_test():
         ("SorelloApp", "printer.print(page)", []),
         ("SorelloApp", "fingerprint(of: x)", []),
         ("SorelloTranscribe", 'print("x")', []),
+        ("SorelloCommand", 'print("x")', []),
+        ("SorelloCommandMain", 'FileHandle.standardError.write(d); print("x")', []),
+        ("FileTranscription", 'print("x")', ["log"]),
         ("DictationCore", 'print("x")', [], "Diagnostics.swift"),
         ("SorelloApp", "let s = URLSession.shared", ["only"]),
         ("SorelloApp", "// URLSession is forbidden in this application.", []),
