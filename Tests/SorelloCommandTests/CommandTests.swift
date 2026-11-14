@@ -271,6 +271,24 @@ import TextRules
         #expect(output.errorLines.count == 1 && output.standardError.hasPrefix(message))
     }
 
+    /// A message is one line however the file or argument it quotes is named: line breaks and other control
+    /// characters are written as escapes, so none reaches the terminal.
+    @Test func quotedNamesStayOnOneLine() async throws {
+        let helper = try fixture.app()
+        let (status, output, _) = await run(["transcribe", "missing\nsecond\u{1B}[31m.wav"], at: helper,
+                                            transcriber: fake(failure: .cannotOpen))
+        #expect(status == 66)
+        #expect(output.errorLines == ["sorello: can't open missing\\nsecond\\u{1b}[31m.wav"])
+        for arguments in [["--fr\u{1B}[2Job"], ["transcribe", "--x\ny", "a.wav"], ["help\u{2028}x"]] {
+            let (wrong, said, _) = await run(arguments, at: helper)
+            #expect(wrong == 64)
+            let first = try #require(said.errorLines.first)
+            #expect(first.hasPrefix("sorello: unknown "))
+            #expect(!said.standardError.unicodeScalars.contains { $0 == "\u{1B}" || $0 == "\u{2028}" })
+            #expect(said.errorLines.dropFirst().first?.hasPrefix("usage: ") == true, "The reason took one line")
+        }
+    }
+
     /// The shipped transcriber over an app whose model is not on this Mac, as a fresh install is: the file is
     /// checked first, then the model is found missing, or found to have no build for this Mac.
     @Test func theRealTranscriberWithoutAModel() async throws {
