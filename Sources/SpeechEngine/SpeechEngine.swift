@@ -372,8 +372,9 @@ public actor SpeechEngine: SpeechTranscribing {
     }
 
     /// Reads `source` to its end into `work`'s chunker, transcribing each chunk as it fills, and returns the text.
-    /// `afterPiece` runs each time a piece has gone in. The engine gives way after each chunk, and after each chunk's
-    /// worth of audio read, which a long silence before the first speech reads without cutting a chunk.
+    /// `afterPiece` runs each time a piece has gone in. The engine gives way after each chunk, the last two included,
+    /// and after each chunk's worth of audio read, which a long silence before the first speech reads without cutting
+    /// a chunk.
     private func read(_ source: any AudioPieceSource, into work: StreamWork, model: any SpeechModel,
                       check: () throws -> Void, afterPiece: () -> Void) async throws -> String {
         var unbroken = 0
@@ -392,6 +393,14 @@ public actor SpeechEngine: SpeechTranscribing {
                 await giveWay()
             }
         }
+        try check()
+        // What the compactor still holds can complete a chunk before the last partial one.
+        var chunks = 0
+        try work.transcription.endCompaction { window in
+            chunks += 1
+            return try Self.transcribe(window, work: work, model: model, gate: nil, check: check)
+        }
+        if chunks > 0 { await giveWay() }
         try check()
         let text = try work.transcription.finish {
             try Self.transcribe($0, work: work, model: model, gate: nil, check: check)
