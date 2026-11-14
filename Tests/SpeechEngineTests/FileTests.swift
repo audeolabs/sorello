@@ -81,10 +81,12 @@ struct FileTests {
         let log: SourceLog
         let model: ModelLog
         let onPiece: (@Sendable (Int) -> Void)?
+        /// How long each piece takes to read, as decoding a compressed file does.
+        let pieceDelay: TimeInterval
         private var handed = 0
 
         init(_ segments: [Segment], piece: Int = AudioFileSource.pieceSamples, failAt: Int? = nil, log: SourceLog,
-             model: ModelLog, onPiece: (@Sendable (Int) -> Void)? = nil) {
+             model: ModelLog, pieceDelay: TimeInterval = 0, onPiece: (@Sendable (Int) -> Void)? = nil) {
             self.segments = segments
             total = segments.reduce(0) { $0 + $1.samples }
             self.piece = piece
@@ -92,6 +94,7 @@ struct FileTests {
             self.log = log
             self.model = model
             self.onPiece = onPiece
+            self.pieceDelay = pieceDelay
         }
 
         var length: TimeInterval { Double(total) / 16_000 }
@@ -102,6 +105,7 @@ struct FileTests {
             guard handed < total else { return nil }
             let count = min(piece, total - handed)
             let samples = (handed..<(handed + count)).map { FileTests.sample($0, of: segments) }
+            if pieceDelay > 0 { Thread.sleep(forTimeInterval: pieceDelay) }
             handed += count
             log.handedOut(handed, modelReached: Self.reached(model.projected))
             onPiece?(handed)
@@ -276,6 +280,36 @@ struct FileTests {
         let order = log.projected
         let dictationChunk = try #require(order.firstIndex(of: Signals.s(2)))
         #expect(dictationChunk < order.count - 3, "The dictation was transcribed while the file had chunks to go")
+    }
+
+    /// A long silence before a file's first speech cuts no chunk, but a dictation made meanwhile still does not wait
+    /// for the file: the engine gives way after each chunk's worth of audio it reads.
+    @Test func aDictationDuringALongSilenceIsNotHeldUp() async throws {
+        let log = ModelLog()
+        let engine = engine(log)
+        await prepare(engine)
+        let sources = SourceLog()
+        let opened = Mutex(false)
+        let finishedAt = Mutex<Int?>(nil)
+        let total = Signals.s(603)
+        let source: AudioSourceOpener = {
+            SignalSource([.silence(600), .tone(3)], log: sources, model: log, pieceDelay: 0.001, onPiece: { handed in
+                guard handed >= Signals.s(20), !opened.withLock({ state in defer { state = true }; return state }) else {
+                    return
+                }
+                let stream = engine.openStream(SpeechStreamOptions())
+                stream.append(EngineTests.speech(2))
+                Task {
+                    _ = await finish(stream, within: 60)
+                    finishedAt.withLock { $0 = sources.handed }
+                }
+            })
+        }
+        // The silence keeps its last 0.3 s, so the tone is heard from 0.3 s to 3.3 s: four whole seconds.
+        #expect(try #require(await transcribe(engine, within: 120, source)).get() == "W0 w1 w2 w3.")
+        await within { while finishedAt.withLock({ $0 }) == nil { try? await Task.sleep(for: .milliseconds(5)) } }
+        let at = try #require(finishedAt.withLock { $0 })
+        #expect(at < total, "The dictation finished after \(at) of the file's \(total) samples had been read")
     }
 
     // MARK: - Progress
