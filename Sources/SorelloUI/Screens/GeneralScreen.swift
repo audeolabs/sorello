@@ -60,6 +60,9 @@ public final class GeneralModel {
     public var selectedMicrophoneID: String?
     /// The system default's name, shown beside "System default".
     public var defaultMicrophoneName: String?
+    /// The microphone a dictation records from in place of a Bluetooth default, or nil when it records from the one
+    /// the picker shows (ARCHITECTURE.md, section 6, "Audio capture").
+    public var standInMicrophoneName: String?
     /// Each switch's value.
     public var toggles: [GeneralToggle: Bool]
     /// Whether the app can update itself, and so shows the switch for its daily check. A build with no update feed
@@ -86,6 +89,11 @@ public final class GeneralModel {
 
     /// A switch's value. A switch the app layer has not set reads as off.
     public func isOn(_ toggle: GeneralToggle) -> Bool { toggles[toggle] ?? false }
+
+    /// The line under Microphone: the microphone standing in for a Bluetooth default, if one is.
+    public var microphoneDetail: String? {
+        standInMicrophoneName.map { String(localized: "Recording from \($0)") }
+    }
 }
 
 /// General: the model's state, the permissions, the microphone, and the switches that shape the text.
@@ -112,10 +120,11 @@ public struct GeneralScreen: View {
                 }
             }
             CardGroup(String(localized: "Input")) {
-                Card {
-                    SettingRow(String(localized: "Microphone"), symbol: "mic") {
+                Card(dividerInset: Metrics.wordsInset) {
+                    SettingRow(String(localized: "Microphone"), detail: model.microphoneDetail, symbol: "mic") {
                         MicrophonePicker(model: model)
                     }
+                    toggleRow(.avoidBluetoothMicrophone)
                 }
             }
             CardGroup(String(localized: "Text")) {

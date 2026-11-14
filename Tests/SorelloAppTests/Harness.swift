@@ -26,12 +26,17 @@ final class FakeCapture: AudioCapturing {
     }
 
     private let current = Mutex<[Capture]>([])
+    private let asked = Mutex<[CaptureRequest]>([])
 
     func start(_ request: CaptureRequest) async throws -> any AudioCapture {
         let capture = Capture()
         current.withLock { $0.append(capture) }
+        asked.withLock { $0.append(request) }
         return capture
     }
+
+    /// What each start asked for, in order.
+    var requests: [CaptureRequest] { asked.withLock { $0 } }
 
     var starts: Int { current.withLock { $0.count } }
 
@@ -179,7 +184,8 @@ final class FakeLoginItem: LoginItemControlling {
 }
 
 struct FakeMicrophones: MicrophoneListing {
-    let devices = [AudioInputDevice(id: "built-in", name: "Desk Microphone", isDefault: true)]
+    static let desk = [AudioInputDevice(id: "built-in", name: "Desk Microphone", isDefault: true, transport: .builtIn)]
+    var devices = FakeMicrophones.desk
     func current() -> [AudioInputDevice] { devices }
     func changes() -> AsyncStream<[AudioInputDevice]> {
         let devices = self.devices
@@ -253,10 +259,12 @@ final class Harness {
     /// `download`: the model's download, when the app has a pin; `readiness`: the engine's at launch.
     /// `microphone`: the microphone's permission, granted unless a test needs to ask.
     /// `updater`: the app's updater, in a build with an update feed; none otherwise.
+    /// `microphones`: the input devices the platform lists.
     init(directory: URL, defaults: UserDefaults, model: URL? = nil, trusted: Bool = true, fontLicence: URL? = nil,
          thirdPartyNotices: URL? = nil,
          compute: SpeechCompute = .neuralEngine, download: FakeDownload? = nil, readiness: EngineReadiness = .ready,
-         microphone: any MicrophoneAuthorizing = GrantedMicrophone(), updater: FakeUpdater? = nil) {
+         microphone: any MicrophoneAuthorizing = GrantedMicrophone(), updater: FakeUpdater? = nil,
+         microphones: [AudioInputDevice] = FakeMicrophones.desk) {
         speech = FakeSpeech(compute: compute, readiness: readiness)
         let info = AppInfo(name: "Sorello Test", version: "0.0.1", build: "1", modelDirectory: model,
                            modelName: model.flatMap(AppInfo.modelName(in:)), thirdPartyNotices: thirdPartyNotices,
@@ -265,7 +273,7 @@ final class Harness {
         let platform = AppPlatform(
             capture: capture, microphone: microphone, frontmostApp: frontmost, inserter: inserter,
             fieldReader: FakeReader(), accessibility: FakeTrust(trusted), shortcuts: shortcuts, loginItem: login,
-            microphones: FakeMicrophones(), keyboard: { ShortcutFormatter(layout: NoKeys()) }, clock: clock,
+            microphones: FakeMicrophones(devices: microphones), keyboard: { ShortcutFormatter(layout: NoKeys()) }, clock: clock,
             system: SystemActions(open: { system.opened.append($0) }, copy: { system.copied.append($0) },
                                   chooseApp: { nil }, grantAccessibility: { _ in system.grants += 1 },
                                   openMicrophoneSettings: {}))

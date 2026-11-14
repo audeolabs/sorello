@@ -18,6 +18,9 @@ extension WindowModels {
             general.microphones = app.live.microphones.map { MicrophoneOption(id: $0.id, name: $0.name) }
             general.selectedMicrophoneID = app.settings.microphoneID
             general.defaultMicrophoneName = app.live.microphones.first(where: \.isDefault)?.name
+            let choice = MicrophoneChoice.resolve(app.live.microphones, chosenID: app.settings.microphoneID,
+                                                  avoidBluetooth: app.settings.avoidBluetoothMicrophone)
+            general.standInMicrophoneName = choice?.replacing == nil ? nil : choice?.device.name
             var toggles = Self.toggles(app.settings, login: app.platform.loginItem.state)
             if let updater = app.updater { toggles[.checkForUpdates] = updater.checksAutomatically }
             general.toggles = toggles
@@ -41,7 +44,8 @@ extension WindowModels {
          .spokenDelimiters: settings.spokenDelimiters,
          .pressEnter: settings.pressEnterCommand,
          .correctionSuggestions: settings.correctionSuggestions,
-         .keepRunLog: settings.keepRunLog]
+         .keepRunLog: settings.keepRunLog,
+         .avoidBluetoothMicrophone: settings.avoidBluetoothMicrophone]
     }
 
     func setToggle(_ toggle: GeneralToggle, _ on: Bool) {
@@ -62,6 +66,7 @@ extension WindowModels {
         case .pressEnter: settings.pressEnterCommand = on
         case .correctionSuggestions: settings.correctionSuggestions = on
         case .keepRunLog: settings.keepRunLog = on
+        case .avoidBluetoothMicrophone: settings.avoidBluetoothMicrophone = on
         case .checkForUpdates: app.updater?.checksAutomatically = on
         }
     }

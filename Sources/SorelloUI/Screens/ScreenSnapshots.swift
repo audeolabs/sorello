@@ -27,6 +27,12 @@ public enum ScreenSnapshots {
                 window.general.toggles[.checkForUpdates] = true
                 return window
             }),
+            // A Bluetooth default, with the built-in microphone standing in for it.
+            main("general-bluetooth", height: 1120, window(.general) { window in
+                window.general.defaultMicrophoneName = "Sample Headphones"
+                window.general.standInMicrophoneName = "Built-in Microphone"
+                return window
+            }),
             main("general-problems", height: 1100, .sample(section: .general, status: problems)),
             main("general-preparing", height: 640, .sample(section: .general, status: preparing)),
             main("general-cpu", height: 640, window(.general) { $0.generalReplaced(.sample(hardware: .processor)) }),
