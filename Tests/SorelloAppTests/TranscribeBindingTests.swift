@@ -124,9 +124,17 @@ final class TranscribeLog {
 
     private var state: TranscribeState { binding.model.state }
 
-    /// Starts `file` as a drop does, and waits for the transcriber to be asked.
+    /// Opens the window as the menu's row does, and lets its picker go unanswered, as when the user drops a file
+    /// instead.
+    private func openWindow() {
+        guard !binding.windowIsOpen else { return }
+        binding.open()
+    }
+
+    /// Starts `file` as a drop on the open window does, and waits for the transcriber to be asked.
     @discardableResult
     private func drop(_ file: URL) async throws -> FakeFiles.Call {
+        openWindow()
         let before = files.all.count
         binding.model.actions.dropFile(file)
         await eventually { files.all.count > before }
@@ -334,8 +342,26 @@ final class TranscribeLog {
     /// While a file is being transcribed the menu's row only brings the window forward.
     @Test func theMenuRowShowsNoPickerWhileAFileIsUnderWay() async throws {
         try await drop(talk)
+        let shown = log.shown, pickers = log.pickers.count
         binding.open()
-        #expect(log.shown == 1 && log.pickers.isEmpty)
+        #expect(log.shown == shown + 1 && log.pickers.count == pickers)
+    }
+
+    /// A drop's file arrives a moment after the drop. If the window was closed meanwhile, or a picker's choice
+    /// arrives after it closed, nothing is taken: no transcription runs without the window, and it holds no text.
+    @Test func aFileArrivingAfterTheWindowClosedIsNotTaken() async throws {
+        openWindow()
+        let picker = try #require(log.pickers.last)
+        binding.windowClosed()
+        binding.model.actions.dropFile(talk)
+        picker(other)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(files.all.isEmpty)
+        #expect(state == .empty)
+
+        // Opened again, the window takes files as before.
+        binding.open()
+        try await drop(talk)
     }
 
     @Test func chooseFileShowsThePickerAndTakesWhatIsChosen() async throws {
