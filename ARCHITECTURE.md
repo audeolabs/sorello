@@ -534,8 +534,9 @@ same file with the same dictionary and rules gives the same text in both.
   is not downloaded; there is no model for this Mac; the model could not
   be loaded; the transcription failed; or it was cancelled. A failure
   part way through gives no text at all, never the text so far. Audio
-  that ends a little before the length a compressed file states is read
-  to where it ends: that is the end of the file, not damage.
+  that ends less than a quarter of a second before the length a
+  compressed file states is read to where it ends: that is the end of the
+  file, not damage. A file cut off sooner is damaged.
 - **The text.** The text a Run Log retry would give (section 7): the
   engine transcribes with the dictionary words that apply everywhere, and
   the transcript then goes through the user's text rules, in plain style,

@@ -61,6 +61,16 @@ struct AudioFileReaderTests {
         #expect(try source.next() == nil, "And it stays ended")
     }
 
+    /// A file cut off part way is damaged, though its reads end the same way, short and then throwing: half of a
+    /// 2 s MP3 of a tone is not read as a 1 s file.
+    @Test func aFileCutOffPartWayIsDamaged() throws {
+        let url = try #require(Bundle.module.url(forResource: "cut-in-half", withExtension: "mp3", subdirectory: "Fixtures"))
+        let source = try AudioFileSource(contentsOf: url)
+        #expect(throws: AudioFileFailure.unreadable) {
+            while try source.next() != nil {}
+        }
+    }
+
     /// A 16 kHz mono 16-bit file, as `say` writes, reads back as its samples divided by 32768, including the extremes.
     @Test func sixteenBitFilesReadExactly() throws {
         let directory = try scratch()
