@@ -79,7 +79,8 @@ PY
 
 # One build per architecture of the app and of the command, each joined into one executable. Every --arch build writes
 # to the same products directory, so each slice is copied out before the next one is built. SwiftPM puts Sparkle's
-# framework, which is already universal, beside each slice; the first one's is kept.
+# framework, which is already universal, beside each slice; the first one's is kept. The slices' names differ by more
+# than case: on a disk that ignores case, "Sorello-arm64" and "sorello-arm64" are one file.
 SLICES=$(mktemp -d "${TMPDIR:-/tmp}/sorello-slices.XXXXXX")
 trap 'rm -rf "$SLICES"' EXIT
 set --
@@ -89,10 +90,10 @@ for arch in $WANTED; do
   swift build -c release --arch "$arch" --product sorello-command
   PRODUCTS=$(swift build -c release --arch "$arch" --show-bin-path)
   cp "$PRODUCTS/Sorello" "$SLICES/Sorello-$arch"
-  cp "$PRODUCTS/sorello-command" "$SLICES/sorello-$arch"
+  cp "$PRODUCTS/sorello-command" "$SLICES/command-$arch"
   [ -d "$SLICES/Sparkle.framework" ] || ditto "$PRODUCTS/Sparkle.framework" "$SLICES/Sparkle.framework"
   set -- "$@" "$SLICES/Sorello-$arch"
-  COMMANDS+=("$SLICES/sorello-$arch")
+  COMMANDS+=("$SLICES/command-$arch")
 done
 
 rm -rf "$APP"
@@ -108,6 +109,10 @@ if [ ${#COMMANDS[@]} -eq 1 ]; then
   cp "${COMMANDS[0]}" "$COMMAND"
 else
   lipo -create -output "$COMMAND" "${COMMANDS[@]}"
+fi
+if cmp -s "$APP/Contents/MacOS/Sorello" "$COMMAND"; then
+  echo "build-app: the app's executable is the sorello command" >&2
+  exit 1
 fi
 # The executable links Sparkle and finds it in the app's Frameworks directory.
 install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/Sorello"
