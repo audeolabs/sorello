@@ -258,11 +258,14 @@ import TextRules
     @Test func theRealTranscriberWritesNothingInTheAppsData() async throws {
         let tone = try fixture.tone()
         func runReal(at helper: URL) async -> Int32 {
-            await SorelloCommand.run(CommandEnvironment(
+            let output = Output()
+            let status = await SorelloCommand.run(CommandEnvironment(
                 arguments: ["transcribe", tone.path], executablePath: helper.path,
                 applicationSupport: fixture.support, preferences: { _ in nil },
                 makeTranscriber: SorelloCommand.engineTranscriber,
-                sleep: ManualSleep().sleep, standardOutput: { _ in }, standardError: { _ in }))
+                sleep: ManualSleep().sleep, standardOutput: { output.out($0) }, standardError: { output.error($0) }))
+            #expect(output.standardOutput.isEmpty, "No text from a model that is not there")
+            return status
         }
 
         let helper = try fixture.app()
@@ -288,14 +291,14 @@ import TextRules
         try Data(Fixture.manifestDigest.utf8).write(to: stored.appendingPathComponent(".sorello-complete"))
         try Data().write(to: models.appendingPathComponent(".lock"))
         let complete = Fixture.snapshot(fixture.support)
-        #expect(await runReal(at: helper) != 0, "The invented model does not load")
+        #expect(await runReal(at: helper) == 70, "The invented model is found and does not load")
         #expect(Fixture.snapshot(fixture.support) == complete, "A copy that will not load is not removed")
         let carrier = try fixture.app(name: "Sorello Carrier", carries: Fixture.manifest)
-        #expect(await runReal(at: carrier) != 0, "Nor does the app's copy")
+        #expect(await runReal(at: carrier) == 70, "Nor does the app's copy")
         #expect(Fixture.snapshot(fixture.support) == complete, "And nothing is installed over it")
 
         try FileManager.default.removeItem(at: fixture.data())
-        #expect(await runReal(at: carrier) != 0, "The invented model does not load")
+        #expect(await runReal(at: carrier) == 70, "The app's copy is found and does not load")
         #expect(!FileManager.default.fileExists(atPath: fixture.data().path), "The app's copy is not installed")
     }
 

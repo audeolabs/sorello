@@ -536,7 +536,7 @@ same file with the same dictionary and rules gives the same text in both.
   part way through gives no text at all, never the text so far. Audio
   that ends less than a quarter of a second before the length a
   compressed file states is read to where it ends: that is the end of the
-  file, not damage. A file cut off sooner is damaged.
+  file, not damage. A read that fails sooner is.
 - **The text.** The text a Run Log retry would give (section 7): the
   engine transcribes with the dictionary words that apply everywhere, and
   the transcript then goes through the user's text rules, in plain style,
@@ -1239,10 +1239,10 @@ the model the app has downloaded, whether the app is running or not.
   deals with that when it next opens), and it waits while the app holds
   the store's lock, so the two can run at once. It holds the lock only
   while it looks, since the model can take minutes to prepare: if the app
-  replaces the model meanwhile, as after an update that changes it, the
-  command fails as for a model that will not load, and running it again
-  finds the new one. A carried model is loaded where it is. It never
-  downloads. When the model is not there it says
+  removes the model meanwhile, as after an update that changes it, the
+  command may fail as for a model that will not load. The updated app's
+  command then finds the new model. A carried model is loaded where it
+  is. It never downloads. When the model is not there it says
   to open the app and download it there; when no build fits this Mac, it
   says so. Preparing the model can take minutes the first time on a Mac;
   if it has not finished within two seconds the command says, once, on
