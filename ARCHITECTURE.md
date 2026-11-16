@@ -1365,9 +1365,11 @@ the model the app has downloaded, whether the app is running or not.
   ahead of the chunker however long the file, a dictation's stream is
   served between a long file's chunks, progress rises to the file's
   length, and cancelling stops it. Files of each kind in "Transcribing a
-  file" are made by the tests from invented signals, a video with a
-  soundtrack among them, and read back; WebM, a video without sound and
-  a text file are refused.
+  file" are made from invented signals, a video with a soundtrack among
+  them, and read back; WebM, Matroska, a video without sound and a text
+  file are refused. The tests make the kinds the Mac can write; MP3, Ogg,
+  WebM and Matroska, which it cannot, are small files of a tone made with
+  ffmpeg and kept with the tests.
 - `SorelloCommand` is tested through one function that takes the
   arguments, the path it was started by, the user's Application Support
   directory and preferences, and a transcriber, and returns the exit

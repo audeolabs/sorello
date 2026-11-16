@@ -5,10 +5,9 @@ import Foundation
 import Testing
 @testable import SpeechEngine
 
-/// The kinds of file a transcription reads (ARCHITECTURE.md, section 5, "Transcribing a file"), each made here from an
+/// The kinds of file a transcription reads (ARCHITECTURE.md, section 5, "Transcribing a file"), each made from an
 /// invented tone and read back as the model hears it, and the kinds it refuses. The Mac cannot write MP3, Ogg (Vorbis
-/// or Opus), WebM or Matroska, so Opus is made here in CAF, and those files are checked by hand with ffmpeg's from
-/// `say`.
+/// or Opus), WebM or Matroska, so those are small files of the same tone made with ffmpeg, kept in `Fixtures`.
 struct AudioFormatTests {
     /// Two seconds of a 440 Hz tone, mono, at `rate`.
     static let rate = 44_100.0
@@ -88,6 +87,19 @@ struct AudioFormatTests {
                                                               AVNumberOfChannelsKey: 1]), lossless: false)
     }
 
+    /// MP3 and Ogg, with Vorbis or with Opus, from the fixtures.
+    @Test func filesTheMacCannotWriteReadBack() throws {
+        for name in ["tone.mp3", "tone-vorbis.ogg", "tone-opus.ogg"] {
+            try expectTone(try Self.fixture(name), lossless: false)
+        }
+    }
+
+    static func fixture(_ name: String) throws -> URL {
+        let url = URL(fileURLWithPath: name)
+        return try #require(Bundle.module.url(forResource: url.deletingPathExtension().lastPathComponent,
+                                              withExtension: url.pathExtension, subdirectory: "Fixtures"))
+    }
+
     /// A video's soundtrack is read, in an MP4 and in a QuickTime movie; a video without sound is refused.
     @Test func aVideosSoundtrackIsReadAndAVideoWithoutSoundIsRefused() async throws {
         let directory = try scratch()
@@ -109,6 +121,11 @@ struct AudioFormatTests {
     @Test func otherFilesAreRefused() throws {
         let directory = try scratch()
         defer { try? FileManager.default.removeItem(at: directory) }
+        // Whole files with the tone in them, Opus in WebM and AAC in Matroska.
+        for name in ["tone.webm", "tone.mkv"] {
+            let url = try Self.fixture(name)
+            #expect(throws: AudioFileFailure.unreadable) { try AudioFileSource(contentsOf: url) }
+        }
         // The EBML header every WebM and Matroska file starts with, then its document type; nothing on the Mac can
         // write the rest.
         for (name, kind) in [("clip.webm", "webm"), ("clip.mkv", "matroska")] {
