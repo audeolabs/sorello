@@ -70,6 +70,8 @@ public final class AudioFileSource: AudioPieceSource {
     private let input: AVAudioPCMBuffer
     private let output: AVAudioPCMBuffer
     private var ended = false
+    /// Whether the last read gave fewer frames than it asked for, which is where the audio really ends.
+    private var cameUpShort = false
 
     /// How long the audio is, in seconds, as the file says. For a compressed file this may be an estimate, and the
     /// audio read may come out a little longer or shorter.
@@ -102,7 +104,8 @@ public final class AudioFileSource: AudioPieceSource {
     public var position: TimeInterval { Double(file.framePosition) / file.processingFormat.sampleRate }
 
     /// The next piece, or nil once the whole file has been read. Throws `unreadable` when the file turns out to be
-    /// damaged part way through.
+    /// damaged part way through. A compressed file's audio may end a little before the length it states: a read
+    /// comes up short there, and the read after it throws. That throw is the end of the audio, not damage.
     public func next() throws(AudioFileFailure) -> [Float]? {
         guard !ended else { return nil }
         var readFailed = false
@@ -113,17 +116,19 @@ public final class AudioFileSource: AudioPieceSource {
                 inputStatus.pointee = .endOfStream
                 return nil
             }
+            let remaining = AVAudioFrameCount(min(file.length - file.framePosition,
+                                                  AVAudioFramePosition(input.frameCapacity)))
+            let wanted = min(requested, remaining)
             do {
-                let remaining = AVAudioFrameCount(min(file.length - file.framePosition,
-                                                      AVAudioFramePosition(input.frameCapacity)))
-                try file.read(into: input, frameCount: min(requested, remaining))
-                inputStatus.pointee = input.frameLength == 0 ? .endOfStream : .haveData
-                return input.frameLength == 0 ? nil : input
+                try file.read(into: input, frameCount: wanted)
             } catch {
-                readFailed = true
+                readFailed = !self.cameUpShort
                 inputStatus.pointee = .endOfStream
                 return nil
             }
+            self.cameUpShort = input.frameLength < wanted
+            inputStatus.pointee = input.frameLength == 0 ? .endOfStream : .haveData
+            return input.frameLength == 0 ? nil : input
         }
         guard !readFailed, conversionError == nil, status != .error else { throw .unreadable }
         if status == .inputRanDry && output.frameLength == 0 { throw .unreadable }
