@@ -10,8 +10,8 @@ enum CommandRequest: Equatable {
     /// The arguments are wrong: `reason` says how, when one line can, and how to use it follows on standard error.
     case wrong(reason: String?)
 
-    /// `sorello transcribe [--no-dictionary] [--no-rules] <file>`, `sorello --version`, and `sorello --help`,
-    /// `sorello help` or `sorello transcribe --help`. Options may come before or after the file; `--` ends them, so a
+    /// `sorello transcribe [--no-dictionary] [--no-rules] <file>`, `sorello --version`, and `sorello --help` or `-h`,
+    /// `sorello help` or `sorello transcribe --help` or `-h`. Options may come before or after the file; `--` ends them, so a
     /// file whose name starts with a dash can be given after it. A lone `-` is a file's name.
     init(_ arguments: [String]) {
         guard let command = arguments.first else {
@@ -20,7 +20,7 @@ enum CommandRequest: Equatable {
         }
         let rest = Array(arguments.dropFirst())
         switch command {
-        case "--help", "help":
+        case "--help", "-h", "help":
             self = rest.isEmpty ? .help : .wrong(reason: String(localized: "\(Self.shown(command)) takes no arguments"))
         case "--version":
             self = rest.isEmpty ? .version : .wrong(reason: String(localized: "--version takes no arguments"))
@@ -39,7 +39,7 @@ enum CommandRequest: Equatable {
                 options = false
             } else if options && argument.hasPrefix("-") && argument != "-" {
                 switch argument {
-                case "--help": return .help
+                case "--help", "-h": return .help
                 case "--no-dictionary": dictionary = false
                 case "--no-rules": rules = false
                 default: return .wrong(reason: String(localized: "unknown option: \(Self.shown(argument))"))

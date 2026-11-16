@@ -47,8 +47,8 @@ import TextRules
 
     // MARK: - Arguments
 
-    @Test(arguments: [["--help"], ["help"], ["transcribe", "--help"], ["transcribe", "--no-rules", "--help"],
-                      ["transcribe", "talk.m4a", "--help"]])
+    @Test(arguments: [["--help"], ["-h"], ["help"], ["transcribe", "--help"], ["transcribe", "-h"],
+                      ["transcribe", "--no-rules", "--help"], ["transcribe", "talk.m4a", "--help"]])
     func helpGoesToStandardOutput(arguments: [String]) async throws {
         // Help needs no app: here the command is not inside one.
         let (status, output, calls) = await run(arguments, at: fixture.root.appendingPathComponent("sorello"))
@@ -59,7 +59,7 @@ import TextRules
         #expect(calls.models.isEmpty)
     }
 
-    @Test(arguments: [[], ["frobnicate"], ["-h"], ["--frobnicate"], ["transcribe"], ["transcribe", "a.wav", "b.wav"],
+    @Test(arguments: [[], ["frobnicate"], ["-x"], ["--frobnicate"], ["-h", "me"], ["transcribe"], ["transcribe", "a.wav", "b.wav"],
                       ["transcribe", "--loud", "a.wav"], ["--version", "now"], ["help", "me"], ["transcribe", "--"],
                       ["--no-rules", "transcribe", "a.wav"]])
     func wrongArgumentsSayHowToUseIt(arguments: [String]) async throws {

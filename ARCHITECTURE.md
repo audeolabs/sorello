@@ -1245,9 +1245,10 @@ the model the app has downloaded, whether the app is running or not.
 - **Arguments.** `sorello transcribe [--no-dictionary] [--no-rules]
   <file>`, exactly one file; `--` ends the options. `sorello --version`
   prints the app's name, version and build, such as `Sorello Nightly
-  0.0.1 (269)`. `sorello --help`, `sorello help` and `sorello transcribe
-  --help` print how to use it to standard output; anything else, no
-  arguments included, prints it to standard error and exits 64.
+  0.0.1 (269)`. `sorello --help` (or `-h`), `sorello help` and `sorello
+  transcribe --help` (or `-h`) print how to use it to standard output;
+  anything else, no arguments included, prints it to standard error and
+  exits 64.
 - **Output.** Standard output carries the text and nothing else,
   followed by one newline; when no words were heard it carries nothing.
   Everything else goes to standard error: each message is one line
