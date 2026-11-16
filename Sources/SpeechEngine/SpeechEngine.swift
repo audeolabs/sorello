@@ -306,6 +306,9 @@ public actor SpeechEngine: SpeechTranscribing {
                                 progress: @escaping @Sendable (FileSpeechProgress) -> Void)
         async throws(FileSpeechFailure) -> String {
         guard !Task.isCancelled else { throw .cancelled }
+        // The dictionary as it is when the file starts, as the text rules are: an edit made while the model prepares
+        // is not used for this file.
+        let snapshot = dictionary(nil)
         switch preparation.outcome {
         case .ready?:
             break
@@ -316,7 +319,7 @@ public actor SpeechEngine: SpeechTranscribing {
             guard let readiness = await preparationOutcome() else { throw .cancelled }
             if case .failed(let failure) = readiness { throw .engineUnavailable(failure) }
         }
-        return try await pull(open, progress: progress)
+        return try await pull(open, snapshot: snapshot, progress: progress)
     }
 
     /// How the preparation in progress ends, starting the first attempt if none was ever made, or nil as soon as the
@@ -342,11 +345,10 @@ public actor SpeechEngine: SpeechTranscribing {
     /// speech at all is heard unchanged. A file can be any length, so here it holds at most one chunk of that silence
     /// and drops the rest, which changes nothing once speech comes. If none ever does, the file is read a second
     /// time without compaction, which is how a recording with no speech is heard, so the text is still the same.
-    private func pull(_ open: AudioSourceOpener,
+    private func pull(_ open: AudioSourceOpener, snapshot: DictionarySnapshot,
                       progress: @escaping @Sendable (FileSpeechProgress) -> Void) async throws(FileSpeechFailure) -> String {
         // A file waits here only after preparation has succeeded, which sets the model before it resumes anyone.
         guard let model else { throw .failed }
-        let snapshot = dictionary(nil)
         let bias = graphs.graph(for: snapshot) { BiasGraph.build(entries: snapshot.entries, encoder: model.encoder) }
         let check: () throws -> Void = { if Task.isCancelled { throw TranscriptionError.cancelled } }
         do {

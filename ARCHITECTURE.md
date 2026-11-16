@@ -538,12 +538,14 @@ same file with the same dictionary and rules gives the same text in both.
   to where it ends: that is the end of the file, not damage.
 - **The text.** The text a Run Log retry would give (section 7): the
   engine transcribes with the dictionary words that apply everywhere, and
-  the transcript then goes through the user's text rules as they are when
-  the transcription starts, in plain style, with no text around a cursor:
-  spoken numbers, spoken quotes and brackets, voice macros, and the
-  trailing "press enter" removed when that rule is on. The caller may leave out the dictionary,
-  the rules or both, as the command's `--no-dictionary` and `--no-rules`
-  do. Nothing is pasted and no key is pressed.
+  the transcript then goes through the user's text rules, in plain style,
+  with no text around a cursor: spoken numbers, spoken quotes and
+  brackets, voice macros, and the trailing "press enter" removed when that
+  rule is on. Both the dictionary and the rules are taken as they are when
+  the transcription starts, before any wait for the model; an edit made
+  during it applies to the next file. The caller may leave out the
+  dictionary, the rules or both, as the command's `--no-dictionary` and
+  `--no-rules` do. Nothing is pasted and no key is pressed.
 - **Memory.** The engine reads the file itself, on its executor, in
   pieces of at most 8192 samples at 16 kHz, and reads the next piece only
   when the last has gone into the chunker. So however long the file, it

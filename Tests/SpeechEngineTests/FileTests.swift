@@ -214,6 +214,27 @@ struct FileTests {
         #expect(asked.withLock { $0 } == [nil], "The dictionary is asked once, for no app")
     }
 
+    /// The dictionary is the one there was when the file started: a word added while the model is still preparing is
+    /// not used for it, as text rules changed meanwhile are not either.
+    @Test func theDictionaryIsTheOneWhenTheFileStarts() async throws {
+        let log = ModelLog()
+        let release = DispatchSemaphore(value: 0)
+        let words = Mutex<[DictionaryEntry]>([])
+        let engine = engine(log, loader: fakeLoader(log, wait: release), dictionary: { _ in
+            let entries = words.withLock { $0 }
+            return DictionarySnapshot(revision: entries.isEmpty ? 1 : 2, entries: entries)
+        })
+        let progress = ProgressLog()
+        let source: AudioSourceOpener = { SignalSource([.tone(3)], log: SourceLog(), model: log) }
+        let task = Task { await transcribe(engine, progress: progress, source) }
+        let deadline = ContinuousClock.now + .seconds(10)
+        while progress.all.isEmpty && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(progress.all.first == .preparingModel, "The model is still preparing")
+        words.withLock { $0 = [DictionaryEntry(text: "Zorblax", strength: 2)] }
+        release.signal()
+        #expect(try #require(await task.value).get() == "W0 w1 w2.")
+    }
+
     // MARK: - Memory and fairness
 
     /// A long quiet start is not held whole, and the text is still the one the same audio gives as a recording:
