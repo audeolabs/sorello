@@ -279,8 +279,22 @@ import TextRules
         #expect(await runReal(at: helper) == 69, "An incomplete copy is not the model")
         #expect(Fixture.snapshot(fixture.support) == before, "Nothing is collected, made or removed")
 
+        // A complete copy of the pinned model that will not load stays for the app to deal with, with or without an app
+        // copy to fall back on.
         try FileManager.default.removeItem(at: fixture.data())
+        let stored = models.appendingPathComponent(Fixture.manifestDigest, isDirectory: true)
+        try FileManager.default.createDirectory(at: stored, withIntermediateDirectories: true)
+        try Fixture.manifest.write(to: stored.appendingPathComponent("bundle.json"))
+        try Data(Fixture.manifestDigest.utf8).write(to: stored.appendingPathComponent(".sorello-complete"))
+        try Data().write(to: models.appendingPathComponent(".lock"))
+        let complete = Fixture.snapshot(fixture.support)
+        #expect(await runReal(at: helper) != 0, "The invented model does not load")
+        #expect(Fixture.snapshot(fixture.support) == complete, "A copy that will not load is not removed")
         let carrier = try fixture.app(name: "Sorello Carrier", carries: Fixture.manifest)
+        #expect(await runReal(at: carrier) != 0, "Nor does the app's copy")
+        #expect(Fixture.snapshot(fixture.support) == complete, "And nothing is installed over it")
+
+        try FileManager.default.removeItem(at: fixture.data())
         #expect(await runReal(at: carrier) != 0, "The invented model does not load")
         #expect(!FileManager.default.fileExists(atPath: fixture.data().path), "The app's copy is not installed")
     }

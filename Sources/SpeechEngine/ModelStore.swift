@@ -69,9 +69,12 @@ final class ModelStore: Sendable {
     /// `<root>/<identity>` when it holds the complete model `identity`, found without changing the store: nothing is
     /// made, collected or removed there, so the `sorello` command can look in the app's store. When the store has its
     /// lock the check holds it, shared, so it never sees an install or a removal half done; a store without one has
-    /// never been written by an app, which makes the lock before it writes.
+    /// never been written by an app, which makes the lock before it writes. A lock that is there but cannot be opened
+    /// gives nil. The lock is held only while looking: holding it while the model prepares, which can take minutes,
+    /// would stall the app's own install. A copy removed after the look fails to load, as a damaged one does.
     func storedWithoutChanging(_ identity: String) -> URL? {
         let descriptor = Darwin.open(root.appendingPathComponent(Self.lockName).path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+        if descriptor < 0 && errno != ENOENT { return nil }
         // Closing the descriptor releases the lock.
         defer { if descriptor >= 0 { close(descriptor) } }
         if descriptor >= 0 {

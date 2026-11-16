@@ -1237,8 +1237,12 @@ the model the app has downloaded, whether the app is running or not.
   makes. It only reads the store: it never makes, installs, collects or
   removes anything there, not even a copy that will not load (the app
   deals with that when it next opens), and it waits while the app holds
-  the store's lock, so the two can run at once. A carried model is loaded
-  where it is. It never downloads. When the model is not there it says
+  the store's lock, so the two can run at once. It holds the lock only
+  while it looks, since the model can take minutes to prepare: if the app
+  replaces the model meanwhile, as after an update that changes it, the
+  command fails as for a model that will not load, and running it again
+  finds the new one. A carried model is loaded where it is. It never
+  downloads. When the model is not there it says
   to open the app and download it there; when no build fits this Mac, it
   says so. Preparing the model can take minutes the first time on a Mac;
   if it has not finished within two seconds the command says, once, on
