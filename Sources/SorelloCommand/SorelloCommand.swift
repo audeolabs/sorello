@@ -156,11 +156,11 @@ public enum SorelloCommand {
         return Status.ok
     }
 
-    /// The transcriber the shipped command uses: the speech engine, made as the app makes its own, over the app's
-    /// model, with `model.dictionary` for every file.
+    /// The transcriber the shipped command uses: the speech engine over the app's model, with `model.dictionary` for
+    /// every file. It only reads the app's store, so the command changes nothing there.
     public static func engineTranscriber(_ model: CommandModel) -> any FileTranscribing {
         let words = model.dictionary
-        let engine = SpeechEngine(model: model.model, dictionary: { _ in words })
+        let engine = SpeechEngine(readingOnly: model.model, dictionary: { _ in words })
         return FileTranscriber(engine: engine, modelFitsThisMac: model.model.build != nil)
     }
 

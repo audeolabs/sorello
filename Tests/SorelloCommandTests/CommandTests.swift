@@ -253,6 +253,38 @@ import TextRules
                     .mapValues { "\($0)" } == settings.mapValues { "\($0)" })
     }
 
+    /// The shipped transcriber, not a fake, changes nothing in the app's data either: with no data, with a store
+    /// holding other entries but no complete model, and with an app that carries a model the store does not have.
+    @Test func theRealTranscriberWritesNothingInTheAppsData() async throws {
+        let tone = try fixture.tone()
+        func runReal(at helper: URL) async -> Int32 {
+            await SorelloCommand.run(CommandEnvironment(
+                arguments: ["transcribe", tone.path], executablePath: helper.path,
+                applicationSupport: fixture.support, preferences: { _ in nil },
+                makeTranscriber: SorelloCommand.engineTranscriber,
+                sleep: ManualSleep().sleep, standardOutput: { _ in }, standardError: { _ in }))
+        }
+
+        let helper = try fixture.app()
+        #expect(await runReal(at: helper) == 69, "The model is not downloaded")
+        #expect(!FileManager.default.fileExists(atPath: fixture.data().path), "No directory is made")
+
+        let models = fixture.data().appendingPathComponent("Models", isDirectory: true)
+        for name in [".lock", "0000/bundle.json", ".download-0000/part", "\(Fixture.manifestDigest)/bundle.json"] {
+            let file = models.appendingPathComponent(name)
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("invented".utf8).write(to: file)
+        }
+        let before = Fixture.snapshot(fixture.support)
+        #expect(await runReal(at: helper) == 69, "An incomplete copy is not the model")
+        #expect(Fixture.snapshot(fixture.support) == before, "Nothing is collected, made or removed")
+
+        try FileManager.default.removeItem(at: fixture.data())
+        let carrier = try fixture.app(name: "Sorello Carrier", carries: Fixture.manifest)
+        #expect(await runReal(at: carrier) != 0, "The invented model does not load")
+        #expect(!FileManager.default.fileExists(atPath: fixture.data().path), "The app's copy is not installed")
+    }
+
     // MARK: - Failures
 
     @Test(arguments: [

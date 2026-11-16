@@ -1232,9 +1232,12 @@ the model the app has downloaded, whether the app is running or not.
   outside an app, a hard link, or the build tree's
   `.build/…/sorello-command`, finds no app and says so.
 - **Its model.** The app's: the build its pin gives this Mac, in that
-  app's store or carried by it, found as the app's engine finds it, with
-  the same checks and the store's lock, so the command and the app can
-  run at once. It never downloads. When the model is not there it says
+  app's store or carried by it, with the same checks the app's engine
+  makes. It only reads the store: it never makes, installs, collects or
+  removes anything there, not even a copy that will not load (the app
+  deals with that when it next opens), and it waits while the app holds
+  the store's lock, so the two can run at once. A carried model is loaded
+  where it is. It never downloads. When the model is not there it says
   to open the app and download it there; when no build fits this Mac, it
   says so. Preparing the model can take minutes the first time on a Mac;
   if it has not finished within two seconds the command says, once, on

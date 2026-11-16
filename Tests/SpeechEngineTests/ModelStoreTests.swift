@@ -380,6 +380,35 @@ struct ModelStoreTests {
         #expect(stored.standardizedFileURL.path == scratch.root.appendingPathComponent(identity).standardizedFileURL.path)
     }
 
+    /// The `sorello` command's look into the store finds the complete model and changes nothing: other entries stay,
+    /// and a store without its lock is read without making one. An incomplete copy is not the model.
+    @Test func lookingWithoutChangingChangesNothing() throws {
+        let scratch = Scratch(), store = ModelStore(root: scratch.root)
+        let bundle = try scratch.bundle(manifest: "first")
+        let identity = try identity(bundle)
+        #expect(store.install(bundle: bundle, as: identity) != nil)
+        let old = scratch.root.appendingPathComponent("old", isDirectory: true)
+        try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
+        let before = try FileManager.default.contentsOfDirectory(atPath: scratch.root.path).sorted()
+        #expect(store.storedWithoutChanging(identity)?.standardizedFileURL.path
+                    == scratch.root.appendingPathComponent(identity).standardizedFileURL.path)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: scratch.root.path).sorted() == before,
+                "Nothing is collected")
+
+        try FileManager.default.removeItem(at: scratch.root.appendingPathComponent(".lock"))
+        #expect(store.storedWithoutChanging(identity) != nil, "A store without its lock is still read")
+        #expect(!FileManager.default.fileExists(atPath: scratch.root.appendingPathComponent(".lock").path),
+                "And no lock is made")
+
+        try FileManager.default.removeItem(at: scratch.root.appendingPathComponent(identity).appendingPathComponent(".sorello-complete"))
+        #expect(store.storedWithoutChanging(identity) == nil, "An incomplete copy is not the model")
+        #expect(FileManager.default.fileExists(atPath: scratch.root.appendingPathComponent(identity).path),
+                "And it is left where it is")
+        #expect(ModelStore(root: scratch.base.appendingPathComponent("absent")).storedWithoutChanging(identity) == nil)
+        #expect(!FileManager.default.fileExists(atPath: scratch.base.appendingPathComponent("absent").path),
+                "A missing store is not made")
+    }
+
     /// The copy is writable, so a stored model is trusted only if its marker and manifest are both the pinned ones.
     @Test func aTamperedStoredModelIsNotStored() throws {
         let scratch = Scratch(), store = ModelStore(root: scratch.root)

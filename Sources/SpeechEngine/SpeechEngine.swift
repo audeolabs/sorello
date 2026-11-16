@@ -56,6 +56,15 @@ public actor SpeechEngine: SpeechTranscribing {
                   dictionary: dictionary)
     }
 
+    /// An engine for `model` that only reads where it is kept, as the `sorello` command's does (ARCHITECTURE.md,
+    /// section 10, "The command"): the store's complete copy, else the app's own copy loaded in place. It never makes,
+    /// installs, collects or removes anything in the store, not even a copy that will not load.
+    public init(readingOnly model: PinnedModel, compute: SpeechCompute = .forThisMac(),
+                dictionary: @escaping @Sendable (String?) -> DictionarySnapshot) {
+        self.init(locate: Self.readingLocator(model, compute: compute), present: model.isOnThisMac, compute: compute,
+                  dictionary: dictionary)
+    }
+
     /// An engine for a model bundle given directly, as `sorello-transcribe --model` gives one.
     /// - `modelDirectory`: the bundle; nil gives the engine nowhere to look, so it stays `failed(.modelMissing)`.
     /// - `storeDirectory`: where the stable copy of the bundle is kept, so the Neural Engine's compiled model survives
@@ -106,6 +115,28 @@ public actor SpeechEngine: SpeechTranscribing {
                 return storedLoader(installed, store: store, carried: carried, compute: compute)
             }
             return { () throws(EngineFailure) -> any SpeechModel in try load(carried, compute: compute) }
+        }
+    }
+
+    /// Where `model` is, as `locator` finds it but only reading the store: a copy that will not load is left where it
+    /// is, and the app's own copy, when there is one, is loaded in place instead.
+    static func readingLocator(_ model: PinnedModel, compute: SpeechCompute) -> ModelLocator {
+        let store = ModelStore(root: model.storeDirectory)
+        return { () -> ModelLoader? in
+            guard let identity = model.build?.manifestSHA256 else { return nil }
+            let carried = model.carriedDirectory
+            guard let stored = store.storedWithoutChanging(identity) else {
+                guard let carried else { return nil }
+                return { () throws(EngineFailure) -> any SpeechModel in try load(carried, compute: compute) }
+            }
+            return { () throws(EngineFailure) -> any SpeechModel in
+                do throws(EngineFailure) {
+                    return try load(stored, compute: compute)
+                } catch {
+                    guard let carried else { throw error }
+                    return try load(carried, compute: compute)
+                }
+            }
         }
     }
 
