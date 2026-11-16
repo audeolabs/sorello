@@ -56,7 +56,8 @@ one that app has already downloaded into its store. A fresh build without the mo
 form below. The second command draws every window and every setup step as the app wires them, and lists the menu's
 rows.
 `--self-test --cpu` runs the speech model on the processor, as on a Mac without a Neural Engine. `--no-setup` opens
-the app without its setup window.
+the app without its setup window. `--self-test --transcribe talk.m4a` runs the Transcribe File window's own model off
+screen and prints each state it passes through and the text it ends with.
 
 The model's download is proved the same way, without touching the app's own copy of the model. The first command
 makes the packaged app download its model with its own pin into a temporary store, then dictate; the second fetches
