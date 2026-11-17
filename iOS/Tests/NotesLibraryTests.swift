@@ -88,6 +88,7 @@ enum NotesLibraryTests {
             ("aPasscodeSetLaterIsSeen", isolated(testAPasscodeSetLaterIsSeen)),
             ("aDraftThatCannotBeSavedStaysOpen", isolated(testADraftThatCannotBeSavedStaysOpen)),
             ("anEndingNoEditorShowsIsSaid", isolated(testAnEndingNoEditorShowsIsSaid)),
+            ("aLostSecretClosesTheOpenNote", isolated(testALostSecretClosesTheOpenNote)),
         ]
     }
 
@@ -578,6 +579,21 @@ enum NotesLibraryTests {
         h.unlock()
         TestSupport.expectEqual(h.library.openNoteID, nil)
         TestSupport.expectEqual(h.library.message, NoteEndReason.interrupted.message)
+    }
+
+    /// The passcode turned off while a note is open: no Unlock can open it, so Notes shows the way back instead.
+    @MainActor
+    private static func testALostSecretClosesTheOpenNote() {
+        let h = Harness()
+        let id = h.notes.record(["Invented note whose key goes"])
+        h.unlock()
+        h.library.open(id)
+        h.library.lock()
+        TestSupport.expectEqual(h.library.openNoteID, id)
+        h.notes.keyStore.secret = nil
+        h.library.refreshState()
+        TestSupport.expectEqual(h.library.screen, .secretMissing)
+        TestSupport.expectEqual(h.library.openNoteID, nil)
     }
 
     private static func live(_ before: String, _ provisional: String, _ after: String) -> NoteLiveText {

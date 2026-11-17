@@ -1333,7 +1333,7 @@ Notes).
     locking, Lock now) saves the draft, locks the vault and drops all of
     them, the search query and a recovery code on screen with them, and
     keeps only which note is open, so an unlock shows it again with what was
-    recorded meanwhile. A recording goes on through all of it. The unlock
+    recorded meanwhile; with no secret or no vault the note closes. A recording goes on through all of it. The unlock
     runs off the main thread; a lock after it is asked for wins, even one
     before the authentication begins. A recovery code typed and not used is
     cleared when the app leaves the screen. The vault's state is read again

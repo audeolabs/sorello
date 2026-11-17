@@ -348,6 +348,8 @@ final class NotesLibrary {
             reload()
         } else {
             dropText()
+            // Only an unlock opens the note again; with no secret or no vault there is none.
+            if state != .locked { openNoteID = nil }
         }
         if listensForProvisional {
             if host.onNoteProvisional == nil {
