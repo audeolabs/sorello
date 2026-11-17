@@ -42,6 +42,25 @@ struct DiagnosticsView: View {
             .listRowBackground(Theme.cardBackground)
 
             Section {
+                if let note = host.lastNote {
+                    LabeledContent("Pieces transcribed", value: "\(note.piecesTranscribed)")
+                    LabeledContent("While locked", value: "\(note.piecesWhileLocked)")
+                    LabeledContent("In the background", value: "\(note.piecesInBackground)")
+                    LabeledContent("Ended", value: note.ending.map(\.diagnosticsLabel) ?? "Still going")
+                    if let hint = note.hint {
+                        Text(hint.message).font(.caption).foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text("No voice note in this run").foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Last voice note")
+            } footer: {
+                Text("Counts only, never audio or text. A piece counts as locked when iOS had locked the iPhone's files as it arrived. Kept in memory and gone when Sorello quits.")
+            }
+            .listRowBackground(Theme.cardBackground)
+
+            Section {
                 if transcriber.measurements.isEmpty {
                     Text("No dictations in this run").foregroundStyle(.secondary)
                 }
@@ -167,6 +186,26 @@ private struct NeverCorrectSection: View {
 
     private func load() {
         count = Self.store?.load().count ?? 0
+    }
+}
+
+extension NoteEndReason {
+    /// How Diagnostics names the reason. Content-free.
+    var diagnosticsLabel: String {
+        switch self {
+        case .stopped: return "Stopped"
+        case .reachedLimit: return "Reached its limit"
+        case .sessionEnded: return "Session ended"
+        case .interrupted: return "Interrupted"
+        case .captureFailed: return "Microphone failed"
+        case .microphonePermissionDenied: return "Microphone off"
+        case .modelUnavailable: return "No speech model"
+        case .modelFailed: return "Model failed"
+        case .transcriptionFailed: return "Transcription failed"
+        case .storageFailed: return "Could not be saved"
+        case .backgroundTimeExpired: return "Ran out of background time"
+        case .noteGone: return "Note was deleted"
+        }
     }
 }
 

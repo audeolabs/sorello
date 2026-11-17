@@ -25,6 +25,10 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
     @Published private(set) var headphonesNotice: HeadphonesNotice?
     /// Whether "Use iPhone microphone" is in effect; Home shows `microphoneRouting.problem` when it is not.
     @Published private(set) var microphoneRouting = MicrophoneRouting.systemChoice
+    /// The voice note that prepares, records or saves, nil when none (ARCHITECTURE.md, "Voice notes"). Content-free.
+    @Published private(set) var voiceNote: VoiceNoteStatus?
+    /// Content-free measurements of the current or last voice note, in memory only, for Diagnostics.
+    @Published private(set) var lastNote: NoteMeasurement?
     /// The bounce screen: a dictation was admitted while the app was in front (`HostSessionPolicy.showsBounce`).
     @Published var bounceVisible = false
     /// When the app last became active after the background, nil until then (`HostSessionPolicy.showsBounce`).
@@ -38,6 +42,9 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
     let dictionary: DictionaryModel
     /// Nil when the build is misconfigured (missing identifiers or App Group).
     let core: HostSessionCore?
+    /// What `NoteVault` turns a run's pieces into (ARCHITECTURE.md, "Voice notes", Formatting); nil when the build is
+    /// misconfigured.
+    let noteRunFormatter: NoteRunFormatter?
     private let store: SharedDictationStore?
     /// The session's Live Activity (ARCHITECTURE.md, "Live Activity").
     private let activity = SessionActivityDriver(backend: LiveActivityBackend())
@@ -55,6 +62,7 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
         let sharedSettings = configuration.flatMap(SorelloSettings.init(configuration:))
         self.store = store
         settings = SharedSettingsModel(settings: sharedSettings)
+        noteRunFormatter = sharedSettings.map(NoteRunText.formatter(settings:))
         guard let configuration, let store, let sharedSettings else {
             core = nil
             return
@@ -70,9 +78,11 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
         #endif
         // A requested synthetic input that cannot be used never falls back to the microphone.
         let capture = synthetic.capture { MicrophoneCapture(buffer: buffer, deliver: deliver) }
+        // Notes live in the app's own container (ARCHITECTURE.md, "Storage"); without it every note start fails.
+        let noteRecorder = (try? NoteStorage.appDirectory()).map { NoteRecorder(storage: NoteStorage(directory: $0)) }
         let core = HostSessionCore(store: store, settings: sharedSettings, buffer: buffer, capture: capture,
                                    transcriber: transcriber.engine, notifier: DarwinNotifier(configuration: configuration),
-                                   environment: Self.environment)
+                                   environment: Self.environment, noteRecorder: noteRecorder)
         self.core = core
         relay.core = core
         if let microphone = capture as? MicrophoneCapture {
@@ -102,6 +112,8 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
         guard let core, !core.isLaunched else { return }
         // Locked at launch: nothing may be admitted until an unlock.
         if !UIApplication.shared.isProtectedDataAvailable { core.deviceWillLock() }
+        // A voice note's cap reads the power state on the tick.
+        UIDevice.current.isBatteryMonitoringEnabled = true
         // An earlier run's activity goes before this run can start a session.
         activity.launch()
         core.launch()
@@ -226,6 +238,14 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
                                               spokenDelimiters: spokenDelimitersEnabled, promptTag: "")
                 let processed = DictationRules.process(text, options: options, promptStyle: false)
                 return (processed.text, processed.pressEnter)
+            },
+            powerState: {
+                switch UIDevice.current.batteryState {
+                case .charging, .full: return .connected
+                case .unplugged: return .battery
+                case .unknown: return .unknown
+                @unknown default: return .unknown
+                }
             })
     }
 
@@ -255,6 +275,8 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
                                            sessionExpiresAt: core.sessionExpiresAt, dictation: core.current,
                                            model: core.transcriber.modelState),
                       mayStart: mayStart || UIApplication.shared.applicationState == .active, now: Date())
+        // A voice note's cap counts ActivityKit's lifetime from the activity's start.
+        core.sessionActivityStartedAt = activity.startedAt
     }
 
     private func refresh() {
@@ -265,6 +287,8 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
         set(\.dictation, core.current)
         set(\.level, core.level)
         set(\.isDictationInProgress, core.isDictationInProgress)
+        set(\.voiceNote, core.voiceNote)
+        set(\.lastNote, core.lastNote)
         // A request admitted while the app is in front came from the bounce (the keyboard opened the
         // app), unless Start was tapped in the Dictionary editor, where a cover would close its sheet.
         let isForeground = UIApplication.shared.applicationState != .background

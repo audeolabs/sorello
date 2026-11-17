@@ -1301,11 +1301,17 @@ are not built yet.
 ## Host app (App/)
 
 - **`HostSessionController`** (`@MainActor`, `ObservableObject`) is the UIKit
-  adapter around `HostSessionCore`. It builds the store, settings, capture and
-  transcriber; runs the 0.1 s timer; observes `.intent`; forwards URL opens,
-  `willEnterForeground`, `didBecomeActive`, `didEnterBackground`, the
-  protected-data notifications and memory warnings; and mirrors the core's
-  state into SwiftUI. It decides when the bounce screen shows and plays the
+  adapter around `HostSessionCore`. It builds the store, settings, capture,
+  transcriber and the voice notes' `NoteRecorder` over the notes directory
+  (none when that directory is out of reach); runs the 0.1 s timer; observes
+  `.intent`; forwards URL opens, `willEnterForeground`, `didBecomeActive`,
+  `didEnterBackground`, the protected-data notifications and memory warnings;
+  turns on UIKit's battery monitoring at launch and gives the core the power
+  state from it (charging or full is connected, unplugged is battery, anything
+  else unknown); tells the core when the session's Live Activity started after
+  every sync; holds `noteRunFormatter`, the `NoteRunFormatter` for `NoteVault`
+  ([Voice notes](#voice-notes), Formatting); and mirrors the core's state,
+  the voice note's included, into SwiftUI. It decides when the bounce screen shows and plays the
   bounce screen's recording haptic, and it drives the session's Live Activity
   ([Live Activity](#live-activity-activity-activitycore)).
 - **`MicrophoneCapture`** implements `HostCapture` with one `AVAudioEngine`
@@ -1409,10 +1415,11 @@ are not built yet.
     cross-fade or instant, and nothing loops.
   - Diagnostics: the trackpad sensitivity and acceleration sliders, the
     keyboard's measured touch rate, the compute units in use (read-only),
-    "Release model now", the last preparation, and the last dictations'
-    content-free measurements (audio seconds, wait and transcription time,
-    compute units, foreground or background, memory footprint), held in
-    memory only. Its "Autocorrect" section has only "Forget never-correct
+    "Release model now", the last preparation, the last voice note's
+    content-free measurements ([Voice notes](#voice-notes), Diagnostics), and
+    the last dictations' content-free measurements (audio seconds, wait and
+    transcription time, compute units, foreground or background, memory
+    footprint), all held in memory only. Its "Autocorrect" section has only "Forget never-correct
     words (N)" ("Never correct", [Word autocorrect](#word-autocorrect)).
 - **Self-test build** (`-D SORELLO_SELFTEST`, never in normal or App Store
   builds). Environment variables: `SORELLO_SELFTEST_AUDIO`,
