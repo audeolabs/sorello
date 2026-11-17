@@ -129,10 +129,11 @@ MOV video. It can't read WebM or MKV files. The text is what a Run Log retry giv
 apply everywhere, then your rules (numbers, spoken quotes and brackets, macros, "press enter"). Nothing is pasted,
 and neither the file nor its text is kept.
 
-**In Sorello.** Choose Transcribe File… in the menu, then pick a file, or drop one on the Transcribe File window or
-on Sorello's Dock icon. You can also open a file with Sorello from the Finder's Open With. A long file shows how
-far it has got; you can keep dictating meanwhile. When it is done, Copy puts the text on the clipboard and Save…
-writes it to a text file.
+**In Sorello.** Open the Transcribe screen in Settings, or choose Transcribe File… in the menu, and drop a file
+there or pick one with Choose File…. You can also drop a file on Sorello's Dock icon, or open it with Sorello from
+the Finder's Open With. A long file shows how far it has got; you can keep dictating, or look at other screens,
+meanwhile. When it is done, Copy puts the text on the clipboard and Save… writes it to a text file. Closing
+Settings forgets the text.
 
 **In Terminal.** Sorello carries a command, `sorello`. Link it onto your PATH once:
 
@@ -190,7 +191,7 @@ analytics or crash reporting. It makes two kinds of network connection:
   and version. An update is installed only if its signature matches the key in the app.
 
 Your audio and transcripts are kept only in the Run Log, on this Mac. A file you transcribe is read where it is,
-and its text stays in memory until you close the window, unless you save it. To fit the words, Sorello reads up to
+and its text stays in memory until you close Settings, unless you save it. To fit the words, Sorello reads up to
 16 characters either side of the cursor, and to offer a dictionary word it watches what it pasted for up to a
 minute. It never reads a password field, and what it reads stays in memory only while it is needed. What you had
 copied is held in memory for about a second while Sorello pastes.

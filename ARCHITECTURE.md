@@ -45,9 +45,9 @@ two apps share and what keeps them apart.
   word right after a dictation, Sorello can offer to add it.
 - **Run Log.** The last 20 dictations are kept locally with their audio for
   playback and retry.
-- **Transcribe a file.** An audio or video file on the Mac becomes text, in
-  Sorello's Transcribe File window or with the `sorello` command in a
-  terminal. Both give the same text for the same file (section 5,
+- **Transcribe a file.** An audio or video file on the Mac becomes text, on
+  the Transcribe screen of Sorello's main window or with the `sorello`
+  command in a terminal. Both give the same text for the same file (section 5,
   "Transcribing a file").
 - **Stay current.** Once a day Sorello checks whether a newer version is
   out, and Check for Updates… in the menu checks at once. A newer version
@@ -74,7 +74,7 @@ Sendable` without a comment that says which lock or queue makes it safe.
 | `SorelloApp` | macOS | all of the above, and Sparkle | Composition: builds the objects, connects them, owns windows and the menu bar item, and updates the app |
 | `Sorello` | executable | `SorelloApp` | `@main` only |
 | `SorelloSnapshots` | executable | `SorelloUI` | Renders every pill state and screen to PNG files |
-| `FileTranscription` | neutral | `SpeechEngine`, `TextRules`, `DictationCore` | Transcribing one file: reading it, the engine, the text rules, progress. The one path the Transcribe File window and the `sorello` command both take |
+| `FileTranscription` | neutral | `SpeechEngine`, `TextRules`, `DictationCore` | Transcribing one file: reading it, the engine, the text rules, progress. The one path the Transcribe screen and the `sorello` command both take |
 | `SorelloCommand` | macOS | `FileTranscription`, `SpeechEngine`, `Persistence`, `DictionaryKit`, `TextRules`, `DictationCore` | The `sorello` command: its arguments, finding its app and that app's model and saved rules, its output and exit status |
 | `sorello-command` | executable | `SorelloCommand` | `main` only. Shipped in the app as `Contents/Helpers/sorello` (section 10, "The command") |
 | `sorello-transcribe` | executable | `SpeechEngine` | For verification only, never shipped: transcribes files with a model bundle given directly, and downloads the model as the app does |
@@ -517,7 +517,7 @@ The download:
 ### Transcribing a file
 
 `FileTranscriber`, in `FileTranscription`, turns one file into text. The
-Transcribe File window (section 8) and the `sorello` command (section 10,
+main window's Transcribe screen (section 8) and the `sorello` command (section 10,
 "The command") both call it, and nothing else transcribes a file, so the
 same file with the same dictionary and rules gives the same text in both.
 
@@ -565,10 +565,11 @@ same file with the same dictionary and rules gives the same text in both.
 - **Cancelling** the task stops it before the next piece or chunk, and
   gives no text.
 - **What is kept.** Nothing. The file is read where it is. The text is
-  held by the window until it closes or takes another file, or written to
-  standard output by the command; neither puts it in the Run Log or
-  anywhere else on disk. The window writes it to a file only when the
-  user chooses Save and where they choose.
+  held by the Transcribe screen until the main window closes or the
+  screen takes another file, or written to standard output by the
+  command; neither puts it in the Run Log or anywhere else on disk. The
+  screen writes it to a file only when the user chooses Save and where
+  they choose.
 
 ## 6. macOS adapters
 
@@ -977,9 +978,9 @@ which `SorelloSnapshots` writes.
     opens the Shortcuts screen;
   - Copy Last Dictation, which is unavailable until there is a dictation
     to copy;
-  - Transcribe File…, which is always available. It brings the Transcribe
-    File window forward, opening it if it is closed, and shows its file
-    picker unless a file is being transcribed there;
+  - Transcribe File…, which is always available. It brings the main
+    window forward at its Transcribe screen, opening it if it is closed,
+    and shows the file picker unless a file is being transcribed there;
   - Dictionary, Run Log and Settings (⌘,);
   - Check for Updates…, or Update Available… when a check Sorello made
     on its own has found one (section 6, "Updates"). A build with no
@@ -991,10 +992,11 @@ which `SorelloSnapshots` writes.
 
   The menu never shows what was dictated. No row carries a dictation's
   text, and the menu is told only whether there is one to copy. A
-  transcribed file's text appears only in its window. So it is
+  transcribed file's text appears only on the Transcribe screen. So it is
   as wide as its own rows and their keys need, like any other menu.
-- **Main window**: a sidebar (General, Shortcuts, Dictionary, Macros, Run
-  Log, About) over the screen colour, content in cards. A screen's title
+- **Main window**: a sidebar (General, Shortcuts, Dictionary, Macros,
+  Transcribe, Run Log, About, reached with ⌘1 to ⌘7) over the screen
+  colour, content in cards. A screen's title
   has no line under it, and a row's title is not explained: switches,
   shortcuts and granted permissions show their title alone, and no
   footnote says how a control works. A line under a row's title says
@@ -1017,9 +1019,10 @@ which `SorelloSnapshots` writes.
   test says what it is waiting for. At launch, a model that is absent and
   can be downloaded opens setup at its step, as a missing permission
   opens it at that permission's.
-- **Transcribe File**: one window, titled Transcribe File, that turns an
-  audio or video file into text (section 5, "Transcribing a file"). It
-  has these states, each drawn by `SorelloUI` from a value:
+- **Transcribe**: the main window's screen that turns an audio or video
+  file into text (section 5, "Transcribing a file"). There is no window
+  of its own. It has these states, each drawn by `SorelloUI` from a
+  value:
   - *empty*: a drop area that says "Drop an audio or video file", and
     Choose File…;
   - *preparing*: the file's name, an indeterminate bar, "Preparing speech
@@ -1038,20 +1041,25 @@ which `SorelloSnapshots` writes.
     Retry; "Couldn't transcribe this file", with Try Again. Each also has
     Choose File….
 
-  Choose File… shows the system's file picker as a sheet on the window,
-  offering audio and video files. A file dropped on the window, a file
-  chosen, and a file opened with Sorello from the Finder are taken the
-  same way, one at a time: while one is preparing or being transcribed,
-  the window takes no other, and its drop area does not light up. Cancel
-  goes back to *empty*. Closing the window cancels what it is doing and
-  forgets the text. Copy puts the text on the clipboard; Save… writes it
-  as a plain text file, named after the file, where the user chooses. A
-  dictation made meanwhile is unaffected, and the window is never pasted
-  into by Sorello.
+  Choose File… shows the system's file picker as a sheet on the main
+  window, offering audio and video files. A file dropped on the screen,
+  a file chosen, and a file opened with Sorello from the Finder are taken
+  the same way, one at a time: while one is preparing or being
+  transcribed, the screen takes no other, and its drop area does not
+  light up. The screen takes files however the main window was opened:
+  from the menu's row, Settings…, the Dock or a file opened with Sorello.
+  Cancel goes back to *empty*. Going to another section leaves the screen
+  as it is: a transcription goes on, and the text is there on coming
+  back. Closing the main window cancels what the screen is doing and
+  forgets the text. Download… goes to the General screen in the same
+  window. Copy puts the text on the clipboard; Save… writes it as a plain
+  text file, named after the file, where the user chooses. A dictation
+  made meanwhile is unaffected, and the screen is never pasted into by
+  Sorello.
   The app declares that it can view audio and video files, at the rank
   that offers it in the Finder's Open With and lets a file be dropped on
   its Dock icon, but never makes it the default app for any file. A file
-  opened that way opens the window with that file.
+  opened that way opens the main window at Transcribe with that file.
 - **The model's state** is said the same way wherever it shows. Ready,
   preparing and failed to load are as they were. When the model is not on
   the Mac, the menu's state line says "Speech model not downloaded" and
@@ -1064,17 +1072,16 @@ which `SorelloSnapshots` writes.
   nothing. A dictation begun without the model ends in a notice that says
   the model has not been downloaded.
 
-The main window, setup and Transcribe File have the sizes their chrome
-gives them (`WindowChrome`), and what a window shows never changes them:
-a long transcript scrolls. Each opens at its default size. The main
-window and Transcribe File can be resized, down to their minimums and no
-further. Setup cannot be resized: it is one size at every step and
+The main window and setup have the sizes their chrome gives them
+(`WindowChrome`), and what a window shows never changes them: a long
+transcript scrolls. Each opens at its default size. The main window can
+be resized, down to its minimum and no further. Setup cannot be resized: it is one size at every step and
 in every state, so its buttons are always where they were. A notice's
 window opens at one size and can be made no smaller than its own minimum.
 
 Sorello lives in the menu bar. With none of its windows open it has no
-Dock icon and is not in the app switcher. While setup, the main window,
-the Transcribe File window or a notice's window is open, it is an ordinary app: its icon is in the Dock,
+Dock icon and is not in the app switcher. While setup, the main window
+or a notice's window is open, it is an ordinary app: its icon is in the Dock,
 it is in the app switcher, and its menus (its own, Edit and Window) are in
 the menu bar while it is in front. So a window of Sorello's comes back the
 way any app's does: from the Dock, with Command-Tab, and after the system
@@ -1129,7 +1136,7 @@ A reviewer checks every change against these.
    only in its two verification modes, `--self-test` and `--snapshots`,
    which report on synthetic recordings to the person who ran them.
 3. In storage Sorello manages, audio and transcripts exist only in the Run
-   Log. A file transcribed in the Transcribe File window or by the
+   Log. A file transcribed on the Transcribe screen or by the
    command is read where it is, and its text is held in memory only
    (section 5, "Transcribing a file"). Clearing it deletes them and makes the app forget the last
    dictation and any audio kept for a correction suggestion. What a
@@ -1412,13 +1419,14 @@ the model the app has downloaded, whether the app is running or not.
   menus as text too, since they show only while a window is open.
   `Sorello --no-setup` opens the app without its setup window, so a
   packaged build can be launched and quit without touching a permission.
-- `SorelloSnapshots` renders the Transcribe File window in every state,
-  long transcripts and long file names included, and `Sorello
-  --snapshots` renders it as the app wires it and checks its size like
-  the main window's. `Sorello --self-test --transcribe <file>` runs that
-  window's own model and binding, off screen, with the app's engine: it
-  prints each state the window passes through and then the text it
-  shows, so the window's way in is checked against the command's text
+- `SorelloSnapshots` renders the main window's Transcribe screen in
+  every state, long transcripts and long file names included, at the
+  window's default and minimum sizes, and `Sorello --snapshots` renders
+  it as the app wires it and checks that the main window keeps its size
+  in each state. `Sorello --self-test --transcribe <file>` runs that
+  screen's own model and binding, off screen, with the app's engine: it
+  prints each state the screen passes through and then the text it
+  shows, so the screen's way in is checked against the command's text
   for the same file. It needs the model in the app's store, or carried.
 - The updater is tested through `Updating` with a fake: the menu's row,
   the switch in General, and what each does. No test starts Sparkle or
@@ -1462,10 +1470,11 @@ the model the app has downloaded, whether the app is running or not.
   Updates… from the menu, Sparkle's window and Install, the app that
   opens afterwards with its settings, model and permissions; and, once a
   check Sorello made on its own has found a version, the menu's row and
-  that no window arrived by itself. Transcribe File: the menu row, the
-  picker, dropping a file on the window, on the Dock icon and with Open
-  With, Copy and Save…, Cancel and closing the window part way through a
-  long file, and a dictation while it runs. The command from a link on
+  that no window arrived by itself. Transcribe: the menu row, the
+  sidebar's row, the picker, dropping a file on the screen, on the Dock
+  icon and with Open With, Copy and Save…, Cancel, going to another
+  section and back, and closing the main window part way through a long
+  file, and a dictation while it runs. The command from a link on
   the PATH, in a release installed from its disk image, before and after
   the app has been opened once.
 
