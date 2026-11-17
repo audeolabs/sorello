@@ -11,6 +11,7 @@ final class LiveActivityBackend: SessionActivityBackend {
     private var queue: Task<Void, Never>?
     /// Calls queued and not yet finished.
     private var pending = 0
+    var onRemoved: (@MainActor () -> Void)?
 
     var areActivitiesEnabled: Bool { ActivityAuthorizationInfo().areActivitiesEnabled }
 
@@ -57,10 +58,25 @@ final class LiveActivityBackend: SessionActivityBackend {
 
     private func request(_ content: SessionActivityContent) -> Bool {
         do {
-            activity = try Activity.request(attributes: SessionActivityAttributes(), content: Self.content(content))
+            let activity = try Activity.request(attributes: SessionActivityAttributes(), content: Self.content(content))
+            self.activity = activity
+            watch(activity)
             return true
         } catch {
             return false
+        }
+    }
+
+    /// Reports an activity that ends or is dismissed while this run still counts it as its own: the user removed it
+    /// from the Lock Screen, or the system ended it. `end` forgets the activity first, so its own end is not reported.
+    private func watch(_ activity: Activity<SessionActivityAttributes>) {
+        Task { @MainActor [weak self] in
+            for await state in activity.activityStateUpdates where state == .ended || state == .dismissed {
+                guard let self, self.activity?.id == activity.id else { return }
+                self.activity = nil
+                self.onRemoved?()
+                return
+            }
         }
     }
 

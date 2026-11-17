@@ -1599,6 +1599,13 @@ app. Its only buttons start and stop a voice note (Buttons, below).
     forgets it and does not ask again for that session.
   - **End.** The moment the session ends for any reason, or a different
     session is current, with the immediate dismissal policy.
+  - **Removed.** The backend reports an activity that ends or is dismissed
+    other than by the driver's own end: the user removed it from the Lock
+    Screen, or the system ended it. The driver then shows none, does not ask
+    again for that session, and says so (`onRemoved`); the controller stops a
+    voice note in progress, which is saved as the user's stop saves it, so a
+    note does not go on recording once the activity that showed it is gone.
+    The session and a dictation go on, as they do with Live Activities off.
   - **Stale date.** `ready`: `endsAt` plus `staleGrace` (30 s); `recording`:
     `since` plus `maxDictationDuration` plus `staleGrace`; waits and a ready
     state without an expiry: 5 minutes from the update. A voice note has no

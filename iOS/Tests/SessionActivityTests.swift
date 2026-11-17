@@ -20,6 +20,7 @@ enum SessionActivityTests {
             ("newSessionReplacesTheOldActivity", isolated(testNewSessionReplacesTheOldActivity)),
             ("settleReportsWhetherTheActivityShows", isolated(testSettleReportsWhetherTheActivityShows)),
             ("startedAtIsWhenTheActivityStarted", isolated(testStartedAtIsWhenTheActivityStarted)),
+            ("aRemovedActivityIsReportedAndNotAskedAgain", isolated(testARemovedActivityIsReportedAndNotAskedAgain)),
             ("reduceMotionChangesOnlyOpacity", testReduceMotionChangesOnlyOpacity),
             ("countdownSpeaksTheBarsWords", testCountdownSpeaksTheBarsWords),
         ]
@@ -398,6 +399,30 @@ enum SessionActivityTests {
         TestSupport.expectEqual(settled(other), true)
     }
 
+    /// The user removes the activity from the Lock Screen, or the system ends it (ARCHITECTURE.md, "Live Activity",
+    /// Removed): the driver says so once, shows none, and does not ask again for that session; another session may.
+    @MainActor
+    private static func testARemovedActivityIsReportedAndNotAskedAgain() {
+        let backend = FakeActivityBackend()
+        let driver = SessionActivityDriver(backend: backend)
+        var removals = 0
+        driver.onRemoved = { removals += 1 }
+        backend.remove()   // nothing shown: nothing to report
+        TestSupport.expectEqual(removals, 0)
+        driver.sync(input(), mayStart: true, now: now)
+        TestSupport.expectEqual(driver.startedAt, now)
+        backend.remove()
+        TestSupport.expectEqual(removals, 1)
+        TestSupport.expectEqual(driver.startedAt, nil)
+        TestSupport.expectEqual(settled(driver), false)
+        driver.sync(input(dictation: Fixture.dictation(.recording)), mayStart: true, now: now + 1)
+        driver.sync(input(.inactive, expiresAt: nil), mayStart: true, now: now + 2)
+        TestSupport.expectEqual(backend.calls.map(\.kind), [.start])   // not asked again, and nothing left to end
+        driver.sync(input(id: sessionB), mayStart: true, now: now + 3)
+        TestSupport.expectEqual(backend.calls.map(\.kind), [.start, .start])
+        TestSupport.expectEqual(removals, 1)
+    }
+
     /// Runs `settle()` on the main actor and waits for its answer.
     @MainActor
     private static func settled(_ driver: SessionActivityDriver) -> Bool? {
@@ -443,7 +468,15 @@ final class FakeActivityBackend: SessionActivityBackend {
     /// Whether the activity this run started exists, once every call is answered.
     private var exists = false
 
+    var onRemoved: (@MainActor () -> Void)?
+
     var areActivitiesEnabled: Bool { enabled }
+
+    /// The user removes the activity from the Lock Screen, or the system ends it.
+    func remove() {
+        exists = false
+        onRemoved?()
+    }
 
     func endLeftovers() { calls.append(.endLeftovers) }
 

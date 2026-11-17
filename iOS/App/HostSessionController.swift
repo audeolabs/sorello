@@ -134,6 +134,12 @@ final class HostSessionController: ObservableObject, SessionControlHandling, Voi
         // A voice note's cap reads the power state on the tick.
         UIDevice.current.isBatteryMonitoringEnabled = true
         // An earlier run's activity goes before this run can start a session.
+        // A voice note is not left recording once the user has removed the activity that shows it, or the system has
+        // ended it (ARCHITECTURE.md, "Live Activity", Removed).
+        activity.onRemoved = { [weak self] in
+            self?.core?.stopNote()
+            self?.syncActivity()
+        }
         activity.launch()
         core.launch()
         timer = Timer.mainLoop(after: HostSessionPolicy.tickInterval, repeats: true) { [weak self] _ in self?.tick() }

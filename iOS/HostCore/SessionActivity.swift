@@ -60,6 +60,9 @@ protocol SessionActivityBackend: AnyObject {
     func end()
     /// Waits until ActivityKit has answered every call made so far; whether the activity this run started exists.
     func settle() async -> Bool
+    /// Hears that the activity this run started is gone other than by `end`: the user removed it, or the system
+    /// ended it.
+    var onRemoved: (@MainActor () -> Void)? { get set }
 }
 
 /// Which state the activity shows for the host's state, and when that state goes stale. Pure.
@@ -166,8 +169,23 @@ final class SessionActivityDriver {
     /// here; a voice note's cap follows it (ARCHITECTURE.md, "Voice notes", Cap).
     private(set) var startedAt: Date?
 
+    /// Hears that the activity the driver showed was removed by the user or the system (ARCHITECTURE.md, "Live
+    /// Activity", Removed).
+    var onRemoved: (@MainActor () -> Void)?
+
     init(backend: SessionActivityBackend) {
         self.backend = backend
+        backend.onRemoved = { [weak self] in self?.activityRemoved() }
+    }
+
+    /// The activity is gone other than by the driver's own end: it shows none, and does not ask again for that
+    /// session.
+    private func activityRemoved() {
+        guard let current = shown else { return }
+        refusedSessionID = current.sessionID
+        shown = nil
+        startedAt = nil
+        onRemoved?()
     }
 
     /// Once, at launch, before any session can start.
