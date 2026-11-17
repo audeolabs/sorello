@@ -92,7 +92,7 @@ enum NoteVaultTests {
         let calls: [(String, () throws -> Void)] = [
             ("notes", { _ = try fixture.vault.notes() }),
             ("note", { _ = try fixture.vault.note(id) }),
-            ("search", { _ = try fixture.vault.search("shopping") }),
+            ("searchIndex", { _ = try fixture.vault.searchIndex() }),
             ("replaceText", { try fixture.vault.replaceText(of: id, with: "Changed") }),
             ("deleteNote", { try fixture.vault.deleteNote(id) }),
             ("makeRecoveryCode", { _ = try fixture.vault.makeRecoveryCode() }),

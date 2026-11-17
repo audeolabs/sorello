@@ -240,9 +240,9 @@ final class NoteVault: @unchecked Sendable {
         try withUnlocked { $0.unreadable.count }
     }
 
-    /// The notes in which every term of `query` matches, newest first ([NoteSearch]).
-    func search(_ query: String) throws -> [NoteSearchHit] {
-        NoteSearch.search(query, in: try notes())
+    /// Every note, made ready to be searched: one listing, searched as often as the query changes ([NoteSearch]).
+    func searchIndex() throws -> NoteSearch.Index {
+        NoteSearch.Index(try notes())
     }
 
     /// Merges every run that is not recording into its note. Does nothing while the vault is locked.

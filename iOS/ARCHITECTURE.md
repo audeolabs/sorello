@@ -1092,15 +1092,19 @@ the Notes screens are not built yet; they use the interfaces below.
   `replaceText(of:with:)` replaces a note's text (its pending runs count as
   replaced) and sets its modified date; it is refused while the note
   records. `deleteNote(_:)` deletes a note, also refused while it records.
-- `search(_:)` is a linear scan over the notes' texts (`NoteSearch`, pure).
-  The query is split at whitespace into terms; every term must match the
-  start of a word, folded for case, diacritics and width (so "strasse"
+- Search is a linear scan over the notes' texts (`NoteSearch`, pure).
+  `searchIndex()` lists the notes once and folds each text once
+  (`NoteSearch.Index`); a search field then searches that index at every
+  keystroke, which only compares, and takes a new index when the notes
+  change. The query is split at whitespace into terms; every term must match
+  the start of a word, folded for case, diacritics and width (so "strasse"
   matches "Straße"). A word starts at a character after whitespace or at
   the text's start, and at a letter or digit after a character that is
   neither. Results are newest first and carry the matched ranges of the
   text, sorted and joined where they overlap or touch, for a highlighted
-  snippet. A
-  query with no terms matches every note with no ranges.
+  snippet; a hit finds its ranges when it is asked for them, so a list reads
+  them for the rows it shows. A query with no terms matches every note with
+  no ranges.
 
 ## Host app (App/)
 

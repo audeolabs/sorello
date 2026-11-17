@@ -41,37 +41,119 @@ struct NotePendingRun: Equatable {
 /// A note a search matched, with the ranges of its text that matched.
 struct NoteSearchHit: Equatable {
     var note: Note
-    /// Sorted, and joined where they overlap. Empty for a query with no terms.
-    var matches: [Range<String.Index>]
+    /// The matched characters, as offsets into the note's text counted in characters: sorted, and joined where they
+    /// overlap or touch. Empty for a query with no terms.
+    var matchedCharacters: [Range<Int>]
+
+    /// The matched ranges of `note.text`. Found by walking the text, so a list reads them for the rows it shows.
+    var matches: [Range<String.Index>] {
+        let text = note.text
+        var ranges: [Range<String.Index>] = []
+        var index = text.startIndex
+        var offset = 0
+        func advance(to target: Int) -> String.Index {
+            index = text.index(index, offsetBy: target - offset)
+            offset = target
+            return index
+        }
+        for range in matchedCharacters {
+            let lower = advance(to: range.lowerBound)
+            ranges.append(lower ..< advance(to: range.upperBound))
+        }
+        return ranges
+    }
 }
 
 /// Search over notes (ARCHITECTURE.md, "Notes", Library and search). Pure: a linear scan.
 enum NoteSearch {
     /// The notes in which every term of `query` matches the start of a word, newest first.
     static func search(_ query: String, in notes: [Note]) -> [NoteSearchHit] {
-        let terms = query.split(whereSeparator: { $0.isWhitespace }).map { fold(String($0)) }.filter { !$0.isEmpty }
-        return notes.sorted(by: Note.isNewer).compactMap { note in
-            matches(of: terms, in: note.text).map { NoteSearchHit(note: note, matches: $0) }
-        }
+        Index(notes).search(query)
     }
 
-    /// The ranges of `text` the folded `terms` match at word starts, sorted and joined; nil if a term matches none.
-    static func matches(of terms: [[Unicode.Scalar]], in text: String) -> [Range<String.Index>]? {
-        let indices = Array(text.indices)
-        let characters = indices.map { text[$0] }
-        let folded = characters.map { fold(String($0)) }
-        let starts = (0 ..< characters.count).filter { isWordStart($0, in: characters) }
-        var ranges: [Range<String.Index>] = []
-        for term in terms {
-            var matched = false
-            for start in starts {
-                guard let end = matchEnd(of: term, from: start, in: folded) else { continue }
-                ranges.append(indices[start] ..< (end < indices.count ? indices[end] : text.endIndex))
-                matched = true
-            }
-            guard matched else { return nil }
+    /// Notes made ready to be searched many times, as a search field does at every keystroke: each text is folded
+    /// once, here, and a search only compares.
+    struct Index {
+        private struct Entry {
+            var note: Note
+            /// The text's characters folded, one after another.
+            var folded: [Unicode.Scalar]
+            /// Where each character's folding starts in `folded`, and the end of the last.
+            var starts: [Int32]
+            /// The characters a word starts at, ascending.
+            var wordStarts: [Int32]
         }
-        return joined(ranges)
+
+        /// Newest first.
+        private let entries: [Entry]
+
+        init(_ notes: [Note]) {
+            entries = notes.sorted(by: Note.isNewer).map { note in
+                var folded: [Unicode.Scalar] = []
+                var starts: [Int32] = []
+                var wordStarts: [Int32] = []
+                folded.reserveCapacity(note.text.utf8.count)
+                var previous: Character?
+                var count: Int32 = 0
+                for character in note.text {
+                    starts.append(Int32(folded.count))
+                    if isWordStart(character, after: previous) { wordStarts.append(count) }
+                    NoteSearch.appendFolding(of: character, to: &folded)
+                    previous = character
+                    count += 1
+                }
+                starts.append(Int32(folded.count))
+                return Entry(note: note, folded: folded, starts: starts, wordStarts: wordStarts)
+            }
+        }
+
+        /// The notes in which every term of `query` matches the start of a word, newest first.
+        func search(_ query: String) -> [NoteSearchHit] {
+            let terms = query.split(whereSeparator: { $0.isWhitespace }).map { fold(String($0)) }.filter { !$0.isEmpty }
+            return entries.compactMap { entry in
+                Self.matches(of: terms, in: entry).map { NoteSearchHit(note: entry.note, matchedCharacters: $0) }
+            }
+        }
+
+        /// The characters the folded `terms` match at word starts, sorted and joined; nil if a term matches none.
+        private static func matches(of terms: [[Unicode.Scalar]], in entry: Entry) -> [Range<Int>]? {
+            var ranges: [Range<Int>] = []
+            for term in terms {
+                var matched = false
+                for start in entry.wordStarts {
+                    guard let end = matchEnd(of: term, from: Int(start), in: entry) else { continue }
+                    ranges.append(Int(start) ..< end)
+                    matched = true
+                }
+                guard matched else { return nil }
+            }
+            return joined(ranges)
+        }
+
+        /// The character after the last one `term` reaches from character `start`, or nil if it does not match
+        /// there. A term may end inside a character's folding ("s" in "ß"); the match then covers the whole
+        /// character.
+        private static func matchEnd(of term: [Unicode.Scalar], from start: Int, in entry: Entry) -> Int? {
+            let first = Int(entry.starts[start])
+            let last = first + term.count
+            guard last <= entry.folded.count else { return nil }
+            for offset in 0 ..< term.count where entry.folded[first + offset] != term[offset] { return nil }
+            var end = start + 1
+            while Int(entry.starts[end]) < last { end += 1 }
+            return end
+        }
+
+        private static func joined(_ ranges: [Range<Int>]) -> [Range<Int>] {
+            var result: [Range<Int>] = []
+            for range in ranges.sorted(by: { $0.lowerBound < $1.lowerBound }) {
+                if let last = result.last, range.lowerBound <= last.upperBound {
+                    result[result.count - 1] = last.lowerBound ..< max(last.upperBound, range.upperBound)
+                } else {
+                    result.append(range)
+                }
+            }
+            return result
+        }
     }
 
     /// The scalars of `text` folded for case, diacritics and width.
@@ -79,46 +161,28 @@ enum NoteSearch {
         Array(text.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil).unicodeScalars)
     }
 
-    /// The index of the character after the last one `term` reaches from `start`, or nil if it does not match there.
-    /// A term may end inside a character's folding ("s" in "ß"); the match then covers the whole character.
-    private static func matchEnd(of term: [Unicode.Scalar], from start: Int, in folded: [[Unicode.Scalar]]) -> Int? {
-        var position = 0
-        var index = start
-        while position < term.count {
-            guard index < folded.count else { return nil }
-            for scalar in folded[index] where position < term.count {
-                guard scalar == term[position] else { return nil }
-                position += 1
-            }
-            index += 1
+    /// Appends `fold` of one character. A character that is one ASCII scalar folds to itself, or to its lowercase
+    /// letter, which most of any text is, so it skips the general folding.
+    private static func appendFolding(of character: Character, to folded: inout [Unicode.Scalar]) {
+        let scalars = character.unicodeScalars
+        if scalars.count == 1, let scalar = scalars.first, scalar.isASCII {
+            let isUppercase = scalar.value >= 0x41 && scalar.value <= 0x5A
+            folded.append(isUppercase ? Unicode.Scalar(UInt8(scalar.value + 0x20)) : scalar)
+        } else {
+            folded += fold(String(character))
         }
-        return index
     }
 
     /// A word starts at a character other than whitespace that follows whitespace or starts the text, and at a
     /// letter or digit that follows a character that is neither.
-    private static func isWordStart(_ index: Int, in characters: [Character]) -> Bool {
-        let character = characters[index]
+    private static func isWordStart(_ character: Character, after previous: Character?) -> Bool {
         guard !character.isWhitespace else { return false }
-        guard index > 0 else { return true }
-        let previous = characters[index - 1]
+        guard let previous else { return true }
         if previous.isWhitespace { return true }
         return isLetterOrDigit(character) && !isLetterOrDigit(previous)
     }
 
     private static func isLetterOrDigit(_ character: Character) -> Bool {
         character.isLetter || character.isNumber
-    }
-
-    private static func joined(_ ranges: [Range<String.Index>]) -> [Range<String.Index>] {
-        var result: [Range<String.Index>] = []
-        for range in ranges.sorted(by: { $0.lowerBound < $1.lowerBound }) {
-            if let last = result.last, range.lowerBound <= last.upperBound {
-                result[result.count - 1] = last.lowerBound ..< max(last.upperBound, range.upperBound)
-            } else {
-                result.append(range)
-            }
-        }
-        return result
     }
 }

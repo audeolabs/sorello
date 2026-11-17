@@ -95,9 +95,9 @@ enum NoteSearchTests {
         try! fixture.vault.mergePendingRuns()
         let writer = try! fixture.recorder.beginRun(.newNote)
         try! writer.append("An invented soup still recording")
-        TestSupport.expectEqual(try! fixture.vault.search("soup").map(\.note.text).sorted(),
+        TestSupport.expectEqual(try! fixture.vault.searchIndex().search("soup").map(\.note.text).sorted(),
                                 ["An invented soup still recording", "Invented recipe for lentil soup"])
-        TestSupport.expectEqual(try! fixture.vault.search("lentil").map(\.note.text), ["Invented recipe for lentil soup"])
+        TestSupport.expectEqual(try! fixture.vault.searchIndex().search("lentil").map(\.note.text), ["Invented recipe for lentil soup"])
         writer.end()
     }
 }
