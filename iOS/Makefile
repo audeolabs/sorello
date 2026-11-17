@@ -608,7 +608,7 @@ lint:
 	@for script in scripts/*.sh; do sh -n "$$script" || exit 1; done
 
 # The three executables, built for the simulator, name no networking API, and the keyboard and the Live Activity hold
-# nothing of the shared modules they must not reach (scripts/check-binaries.sh).
+# nothing of the shared modules they must not reach, nor of NotesCore (scripts/check-binaries.sh).
 CHECK_BUILD_DIR = build/simulator
 check-binaries:
 	@$(MAKE) --no-print-directory binaries PLATFORM=simulator CHANNEL=dev BUILD_DIR="$(CHECK_BUILD_DIR)"

@@ -3481,8 +3481,7 @@ app reads only the count. The models are fixed.
      undefined symbol or a linked library; the keyboard holds nothing of
      `SpeechEngine`, `DictionaryKit` or `DictationCore`; the Live Activity
      nothing of any shared module; and neither anything of `NotesCore` (no
-     `Note…` type and no HPKE), which the app's own symbols show the check
-     can see.
+     `Note…` type and no HPKE).
 - `make PLATFORM=device binaries` compiles and links without signing. Device
   builds need `CODESIGN_IDENTITY`, `TEAM_ID` and three provisioning profiles:
   `APP_PROFILE` and `KEYBOARD_PROFILE` with the App Group, and
