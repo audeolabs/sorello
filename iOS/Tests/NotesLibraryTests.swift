@@ -570,6 +570,14 @@ enum NotesLibraryTests {
         h.library.resume(at: .end)
         h.host.end(.stopped)
         TestSupport.expectEqual(h.library.message, nil)
+        // Open, locked, and ended before any words: the unlock finds it gone, and Notes says why.
+        h.library.close()
+        h.library.record()
+        h.library.lock()
+        h.host.end(.interrupted)
+        h.unlock()
+        TestSupport.expectEqual(h.library.openNoteID, nil)
+        TestSupport.expectEqual(h.library.message, NoteEndReason.interrupted.message)
     }
 
     private static func live(_ before: String, _ provisional: String, _ after: String) -> NoteLiveText {

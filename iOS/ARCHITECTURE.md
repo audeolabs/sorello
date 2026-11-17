@@ -1350,7 +1350,7 @@ Notes).
     runs at once. An open note that is gone (deleted, erased, or a new one
     that ended without words) closes. A note that ends other than by the
     user's stop says why on its screen when it is open, and on Notes
-    otherwise.
+    otherwise, or once its screen closes because the note is gone.
   - The draft is saved (`replaceText`) at most `draftSaveDelay` (0.75 s)
     after an edit, and at once on leaving the note, before Resume and before
     a lock. Leaving the note or opening another waits for that save: a draft

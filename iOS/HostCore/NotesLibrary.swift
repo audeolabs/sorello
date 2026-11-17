@@ -383,6 +383,9 @@ final class NotesLibrary {
                 draft = note.text
             }
         } catch NoteError.noSuchNote {
+            // Its screen goes, so how it ended is said on Notes.
+            if let sentence = openNoteEnding?.message { message = sentence }
+            openNoteEnding = nil
             openNoteID = nil
             openNote = nil
             draft = nil
