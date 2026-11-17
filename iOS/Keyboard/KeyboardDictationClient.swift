@@ -168,9 +168,19 @@ final class KeyboardDictationClient: ObservableObject {
             default: break
             }
         case .starting, .recording: send(.finish)
+        case .voiceNote: stopNote()
         case .transcribing, .waitingForModel, .needsFullAccess, .configurationError, .incompatible: break
         }
         refresh()
+    }
+
+    /// Stop note: a request of its own, which needs no authentication and binds nothing (ARCHITECTURE.md, "Keyboard
+    /// extension", Stop note).
+    private func stopNote() {
+        guard let store, write(KeyboardIntent(requestID: UUID(), action: .stopNote, keyboardInstanceID: instanceID,
+                                              issuedAt: Date()), to: store) else { return }
+        notifier?.post(.intent)
+        playHaptic(.press)
     }
 
     func cancelTapped() {

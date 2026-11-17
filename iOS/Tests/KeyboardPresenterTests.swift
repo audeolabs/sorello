@@ -25,6 +25,7 @@ enum KeyboardPresenterTests {
             ("modelPreparingOnlyFromALiveHost", testModelPreparingOnlyFromALiveHost),
             ("staleWriterGuard", testStaleWriterGuard),
             ("startWithoutASessionStaysStart", testStartWithoutASessionStaysStart),
+            ("aVoiceNoteShowsInPlaceOfStart", testAVoiceNoteShowsInPlaceOfStart),
         ]
     }
 
@@ -35,6 +36,38 @@ enum KeyboardPresenterTests {
     }
 
     private static var startedAt: Date { Fixture.dictation(.recording).startedAt }
+
+    private static func noting(_ phase: VoiceNoteStatus.Phase, _ session: HostStatus.Session = .active,
+                               dictation: DictationStatus? = nil, heartbeatAt: Date = Fixture.now) -> HostStatus {
+        var status = Fixture.status(session, heartbeatAt: heartbeatAt, dictation: dictation)
+        status.voiceNote = VoiceNoteStatus(phase: phase, startedAt: Fixture.now - 30, endsAt: nil, onPower: true)
+        return status
+    }
+
+    /// A voice note preparing or recording shows in Start's place, from a live host whose session may still be
+    /// starting, whatever the latest intent: a stop, or a record the host refused with `noteRecording`. A saving note
+    /// frees the keyboard, and only then does that refusal show. A dictation the note let go on still shows first.
+    private static func testAVoiceNoteShowsInPlaceOfStart() {
+        let noteAt = Fixture.now - 30
+        TestSupport.expectEqual(mode(noting(.recording), nil), .voiceNote(recording: true, startedAt: noteAt))
+        TestSupport.expectEqual(mode(noting(.preparing), nil), .voiceNote(recording: false, startedAt: noteAt))
+        TestSupport.expectEqual(mode(noting(.preparing, .starting), nil), .voiceNote(recording: false, startedAt: noteAt))
+        TestSupport.expectEqual(mode(noting(.recording), Fixture.intent(.stopNote, Fixture.otherRequestID)),
+                                .voiceNote(recording: true, startedAt: noteAt))
+        let refused = Fixture.dictation(.failed, error: .noteRecording)
+        TestSupport.expectEqual(mode(noting(.recording, dictation: refused), Fixture.intent(.record)),
+                                .voiceNote(recording: true, startedAt: noteAt))
+        TestSupport.expectEqual(mode(noting(.saving, dictation: refused), Fixture.intent(.record)), .error(.noteRecording))
+        TestSupport.expectEqual(mode(noting(.saving), nil), .ready)
+        TestSupport.expectEqual(mode(noting(.recording, dictation: Fixture.dictation(.transcribing)), Fixture.intent(.record)),
+                                .transcribing)
+        // A dead host's last status says nothing of a note.
+        TestSupport.expectEqual(mode(noting(.recording), nil, now: Fixture.now + DictationProtocol.livenessTimeout + 0.001),
+                                .hostUnavailable)
+        // Stop note starts a request of its own, written whatever the intent names.
+        TestSupport.expect(KeyboardPresenter.mayWrite(.stopNote, requestID: Fixture.otherRequestID,
+                                                      currentIntent: .value(Fixture.intent(.record))), "Stop note was guarded")
+    }
 
     private static func testAccessComesFirst() {
         let recording = Fixture.status(dictation: Fixture.dictation(.recording), level: 0.5)

@@ -155,7 +155,8 @@ struct DictationBarView: View {
         let undoShown = state.canUndo && !state.mode.isInProgress
         GeometryReader { geometry in
             let layout = IslandLayout(barWidth: Double(geometry.size.width), controlHeight: Double(height),
-                                      startWidth: startWidth(height: Double(height)), form: form, leftHanded: chrome.leftHanded)
+                                      startWidth: startWidth(height: Double(height), mode: state.mode), form: form,
+                                      leftHanded: chrome.leftHanded)
             // Start's and the recording's widths, whatever the form: the ring opens from one into the other.
             let widths = [IslandForm.compact, .expanded].map {
                 CGFloat(IslandLayout(barWidth: Double(geometry.size.width), controlHeight: Double(height),
@@ -294,12 +295,14 @@ struct DictationBarView: View {
     }
 
     /// Start's width at the bar's text size: its label's width, the mark and the padding (`IslandLayout.startWidth`).
-    private func startWidth(height: Double) -> Double {
+    /// While a voice note holds the microphone the compact island is Stop note, as wide as that label needs.
+    private func startWidth(height: Double, mode: KeyboardMode? = nil) -> Double {
         let size = min(dynamicTypeSize, .xxLarge)
         let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(size))
         let points = UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traits).pointSize
         let font = UIFont.systemFont(ofSize: points, weight: legibilityWeight == .bold ? .bold : .semibold)
-        let label = ceil(("Start" as NSString).size(withAttributes: [.font: font]).width)
+        let text = mode.map(CapsuleContent.init(mode:)) == .stopNote ? KeyboardMessages.stopNote : "Start"
+        let label = ceil((text as NSString).size(withAttributes: [.font: font]).width)
         return IslandLayout.startWidth(labelWidth: Double(label) + 2, controlHeight: height)
     }
 }
@@ -838,6 +841,28 @@ private struct DictationIsland: View {
                 .frame(height: waveHeight)
                 .accessibilityHidden(true)
                 .transition(arrival)
+        case .stopNote:
+            stopNoteRow(ink: ink).transition(arrival)
+        }
+    }
+
+    /// A voice note's Stop: the stop glyph towards the bar's middle and "Stop note", in Start's place and as Start is
+    /// laid out (mirrored left-handed).
+    private func stopNoteRow(ink: Color) -> some View {
+        let glyph = RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+            .fill(ink)
+            .frame(width: 10, height: 10)
+            .frame(width: 19, height: 19)
+            .accessibilityHidden(true)
+        let label = Text(KeyboardMessages.stopNote).font(.subheadline.weight(.semibold)).lineLimit(1).fixedSize()
+        return HStack(spacing: 6) {
+            if leftHanded {
+                label
+                glyph
+            } else {
+                glyph
+                label
+            }
         }
     }
 
@@ -946,6 +971,7 @@ private struct DictationIsland: View {
         switch state.mode {
         case .hostUnavailable: return "Opens Sorello to start a session"
         case .starting, .recording: return "Stops listening and inserts what you said"
+        case .voiceNote: return "Stops the voice note and saves it"
         default: return ""
         }
     }

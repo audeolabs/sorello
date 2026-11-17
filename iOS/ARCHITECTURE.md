@@ -444,22 +444,29 @@ of `fullAccess`, `noFullAccess` or `containerUnavailable`. The modes, in order:
    `transcribing`. The intent, not the keyboard instance, names the request,
    so a new keyboard instance adopts a request another instance started (as
    after the bounce).
-6. `error(code)`: `status.dictation` is R and failed, or cancelled with an
+6. `voiceNote(recording:startedAt:)`: the status is a `.value` of the
+   current schema, its heartbeat fresh within `livenessTimeout` (the session
+   may still be starting), and its `voiceNote` preparing (`recording` false)
+   or recording. A saving note shows nothing: the keyboard is free again. A
+   `record` refused with `noteRecording` therefore shows as the note while it
+   goes on, and as that error ("A voice note is recording") only once it has
+   stopped.
+7. `error(code)`: `status.dictation` is R and failed, or cancelled with an
    error, and its `updatedAt` is fresh within 5 s. A missing code reads as
    `.transcriptionFailed`.
-7. `starting`: the latest intent is a fresh `record(R)` and
+8. `starting`: the latest intent is a fresh `record(R)` and
    `status.dictation` is not R (launch during the bounce).
-8. `preparingModel`: the host is alive, `captureReady`, and `status.model`
+9. `preparingModel`: the host is alive, `captureReady`, and `status.model`
    is `preparing`. A mic tap starts a dictation exactly as from `ready`: it
    records while the model prepares, and the transcript waits for it.
-9. `ready`: the host is alive and `captureReady`, with any other model
+10. `ready`: the host is alive and `captureReady`, with any other model
    state. A model that is `notPrepared` (released after a memory warning)
    starts preparing when the tap is admitted ([Admission](#admission)), so
    the recording already shows it; until then Start's value tells VoiceOver
    "Model loads when you dictate" (`KeyboardMessages.spokenStatus`, with a live
    session). `failed` and `unavailable` are reported by the hint and, on a
    tap, by the request's error.
-10. `hostUnavailable`: everything else. A mic tap bounces.
+11. `hostUnavailable`: everything else. A mic tap bounces.
 
 `KeyboardPresenter.isModelPreparing(status:now:)` is true when the status is
 a `.value` of the current schema, the host is alive (as in 4) and
@@ -469,8 +476,8 @@ caption). A dead host's last status never shows preparation.
 
 **Stale-writer guard.** Right before writing `finish` or `cancel`, the
 keyboard re-reads `intent.json` and writes only if it still names the request
-the keyboard is showing (`KeyboardPresenter.mayWrite`). `record` starts a new
-request and is always written.
+the keyboard is showing (`KeyboardPresenter.mayWrite`). `record` and
+`stopNote` start a new request and are always written.
 
 ### Results (Shared/KeyboardResults.swift, TextInsertionFormatter.swift; pure, tested)
 
@@ -1858,6 +1865,8 @@ Lock Screen.
     bind R to the current field, then post `.intent`.
   - **Cancel** writes `cancel(R)` under the same guard while starting,
     recording, transcribing or waiting for the model.
+  - **Stop note** (the island in `voiceNote`) writes `stopNote(R)` with a new
+    ID, then posts `.intent`. It needs no authentication and binds nothing.
   - "Open Sorello" in the menu uses the same launcher without a request.
 - **`HostAppLauncher`** walks the responder chain to the `UIApplication` object
   and calls `open(_:options:completionHandler:)` through the Objective-C
@@ -2007,6 +2016,15 @@ every other point of the bar
     Core Animation from a display link that runs only while something
     moves; what takes taps is unchanged (`IslandLayout`), Cancel's button
     drawing nothing itself.
+  - **A voice note** (`voiceNote`): the island is Stop note in Start's place,
+    compact and as wide as its label needs: a stop glyph towards the bar's
+    middle and "Stop note" (mirrored left-handed, as Start). The middle says
+    "Voice note recording", or "Voice note starting" while it prepares, in the
+    status line's plain ink; Undo and "Insert last" may still show, in its place.
+    A tap stops the note ([Keyboard extension](#keyboard-extension-keyboard),
+    Stop note) and the bar returns to Start once the host reports the note
+    saving, so a dictation can start. VoiceOver hears "Stop voice note", with
+    "Recording note, 5 minutes" or "Note starting" as its value.
   - What it holds for a mode is `CapsuleContent`, its form `IslandForm`
     (from `CapsuleStyle`). It is never replaced by the candidate strip, the
     chips or a notice. When dictation cannot run here (no Full Access,
@@ -2070,7 +2088,8 @@ every other point of the bar
   Words only where they earn their space.
   - **Words:** what the user must act on (Full Access, a broken install,
     versions, "Open Sorello to start a session" after the launcher
-    failed or the user declined iOS's prompt), an error (why a dictation
+    failed or the user declined iOS's prompt), a voice note holding the
+    microphone, an error (why a dictation
     was lost; the microphone permission), a model that cannot load
     ("Model failed to load", "Model missing"), and a notice. An error or a
     state that keeps dictation from working leads its line with an ember
@@ -2097,6 +2116,7 @@ every other point of the bar
   | Starting | dimmed recording row | "Stop dictation, Starting" |
   | Recording | the wave and time | "Stop dictation, Recording, 5 seconds" (". Model loading") |
   | Transcribing, waiting for the model | the shimmer pill | "Transcribing", "Preparing model" |
+  | Voice note preparing or recording | Stop note; "Voice note starting" or "Voice note recording" | "Stop voice note, Recording note, 5 minutes" |
   | Error | ember triangle and its words | the middle's words |
   | Model failed or missing | Start's dot as above; triangle and words | the middle's words |
   | No Full Access, configuration, versions | Start dimmed, dot still (unlit); triangle and words | the middle's words |
@@ -4123,7 +4143,8 @@ merge (AGENTS.md).
   starts a note (the island reads "Recording note") without opening the app,
   and the next press stops it; on a locked iPhone it asks for Face ID first;
   with no vault, the microphone not yet allowed or Live Activities off it
-  says why in one sentence.
+  says why in one sentence. The keyboard's Stop note in another app, in both
+  hands.
 - **Resources:** background transcription latency and peak memory, Neural
   Engine against CPU (CPU through the self-test); no jetsam in the
   background; battery over 30 minutes, idle session against no session
