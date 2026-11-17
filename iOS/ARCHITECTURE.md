@@ -1040,9 +1040,12 @@ the microphone.
   battery or not, so nothing records without a visible state: ActivityKit ends
   an activity eight hours after it starts ("A Live Activity can be active for
   up to eight hours", Apple's ActivityKit documentation, "Displaying live data
-  with Live Activities"), so the note stops `activityLifetime` (8 hours) after
-  the activity started (`sessionActivityStartedAt`, which the controller sets
-  from the driver), or after the note's start when no activity shows. A clock
+  with Live Activities"), so the note stops `activityMargin` (5 minutes)
+  before that, `activityBound` after the activity started
+  (`sessionActivityStartedAt`, which the controller sets from the driver), or
+  after the note's start when no activity shows. The margin leaves the
+  activity there to show the note was saved and to carry the cap's alert
+  ([Live Activity](#live-activity-activity-activitycore), Alert). A clock
   that jumps back past `clockSkewTolerance` stops it (fail closed).
 - **Status.** While a note prepares, records or saves, `status.json` carries
   `voiceNote` ([Types](#types-normative-shareddictationprotocolswift)): the

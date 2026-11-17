@@ -94,13 +94,18 @@ enum VoiceNotePolicy {
     /// ActivityKit ends a Live Activity this long after it starts ("Displaying live data with Live Activities":
     /// "A Live Activity can be active for up to eight hours").
     static let activityLifetime: TimeInterval = 8 * 60 * 60
+    /// A note stops this long before the activity's lifetime runs out, so the activity is still there to show that
+    /// the note was saved, and to carry the cap's alert.
+    static let activityMargin: TimeInterval = 5 * 60
+    /// How long after the activity started the cap stops a note.
+    static let activityBound = activityLifetime - activityMargin
 
     /// When the cap ends the note under `power`. The session's Live Activity bounds every note, so nothing records
-    /// without a visible state: its lifetime counts from `activityStartedAt`, or from the note's start when no
+    /// without a visible state: `activityBound` counts from `activityStartedAt`, or from the note's start when no
     /// activity shows. On battery, or with the power state unknown, the battery limit counts from the later of the
     /// start and the last unplug.
     static func endsAt(startedAt: Date, lastUnpluggedAt: Date?, power: PowerSource, activityStartedAt: Date?) -> Date {
-        let activityEnd = (activityStartedAt ?? startedAt) + activityLifetime
+        let activityEnd = (activityStartedAt ?? startedAt) + activityBound
         guard power != .connected else { return activityEnd }
         return min(activityEnd, batteryStart(startedAt, lastUnpluggedAt) + batteryDuration)
     }
@@ -108,7 +113,7 @@ enum VoiceNotePolicy {
     /// Whether the cap has ended the note. Fails closed: a clock that jumped back past the tolerance ends it.
     static func hasReachedCap(startedAt: Date, lastUnpluggedAt: Date?, power: PowerSource, activityStartedAt: Date?,
                               now: Date) -> Bool {
-        if !DictationProtocol.isFresh(activityStartedAt ?? startedAt, ttl: activityLifetime, now: now) { return true }
+        if !DictationProtocol.isFresh(activityStartedAt ?? startedAt, ttl: activityBound, now: now) { return true }
         if !DictationProtocol.isFresh(startedAt, ttl: .infinity, now: now) { return true }
         guard power != .connected else { return false }
         return !DictationProtocol.isFresh(batteryStart(startedAt, lastUnpluggedAt), ttl: batteryDuration, now: now)

@@ -7,7 +7,7 @@ enum VoiceNotePolicyTests {
         [
             ("batteryEndsAnHourAfterTheStart", testBatteryEndsAnHourAfterTheStart),
             ("anUnplugRestartsTheHour", testAnUnplugRestartsTheHour),
-            ("powerEndsAtTheActivityLifetime", testPowerEndsAtTheActivityLifetime),
+            ("powerEndsAMarginBeforeTheActivityLifetime", testPowerEndsAMarginBeforeTheActivityLifetime),
             ("theActivityLifetimeBoundsBatteryToo", testTheActivityLifetimeBoundsBatteryToo),
             ("aBackwardClockJumpEndsTheNote", testABackwardClockJumpEndsTheNote),
             ("onlyBatteryPublishesADeadline", testOnlyBatteryPublishesADeadline),
@@ -54,19 +54,22 @@ enum VoiceNotePolicyTests {
         TestSupport.expect(reached(at: unplugged + hour + 0.1, unplugged: unplugged, power: .battery), "ran on")
     }
 
-    /// With power connected nothing counts down; the note ends when the session's Live Activity reaches
-    /// ActivityKit's eight hours, counted from the note's start when no activity shows.
-    private static func testPowerEndsAtTheActivityLifetime() {
+    /// With power connected nothing counts down; the note ends a margin before the session's Live Activity reaches
+    /// ActivityKit's eight hours, counted from the note's start when no activity shows, so the activity is still
+    /// there to show the note was saved.
+    private static func testPowerEndsAMarginBeforeTheActivityLifetime() {
         TestSupport.expectEqual(VoiceNotePolicy.activityLifetime, 8 * hour)
+        TestSupport.expectEqual(VoiceNotePolicy.activityMargin, 5 * 60)
+        let bound = 8 * hour - 5 * 60
         TestSupport.expect(!reached(at: start + 7 * hour, unplugged: start, power: .connected), "power ended at an hour")
-        TestSupport.expectEqual(endsAt(power: .connected), start + 8 * hour)
-        TestSupport.expect(!reached(at: start + 8 * hour, power: .connected), "ended before the lifetime")
-        TestSupport.expect(reached(at: start + 8 * hour + 0.1, power: .connected), "outlived the lifetime")
+        TestSupport.expectEqual(endsAt(power: .connected), start + bound)
+        TestSupport.expect(!reached(at: start + bound, power: .connected), "ended before the bound")
+        TestSupport.expect(reached(at: start + bound + 0.1, power: .connected), "outlived the bound")
         let activity = start - 3 * hour
-        TestSupport.expectEqual(endsAt(power: .connected, activity: activity), activity + 8 * hour)
-        TestSupport.expect(reached(at: activity + 8 * hour + 0.1, power: .connected, activity: activity),
+        TestSupport.expectEqual(endsAt(power: .connected, activity: activity), activity + bound)
+        TestSupport.expect(reached(at: activity + bound + 0.1, power: .connected, activity: activity),
                            "outlived the activity")
-        TestSupport.expect(!reached(at: activity + 8 * hour - 1, power: .connected, activity: activity),
+        TestSupport.expect(!reached(at: activity + bound - 1, power: .connected, activity: activity),
                            "ended before the activity")
     }
 
@@ -74,8 +77,8 @@ enum VoiceNotePolicyTests {
     /// comes first.
     private static func testTheActivityLifetimeBoundsBatteryToo() {
         let activity = start - 7.5 * hour
-        TestSupport.expectEqual(endsAt(power: .battery, activity: activity), activity + 8 * hour)
-        TestSupport.expect(reached(at: start + 0.5 * hour + 0.1, power: .battery, activity: activity), "ran past it")
+        TestSupport.expectEqual(endsAt(power: .battery, activity: activity), activity + 8 * hour - 5 * 60)
+        TestSupport.expect(reached(at: start + 0.5 * hour - 5 * 60 + 0.1, power: .battery, activity: activity), "ran past it")
     }
 
     /// A clock that jumps back past the tolerance ends the note, whatever the power.

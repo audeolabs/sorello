@@ -452,14 +452,14 @@ enum HostSessionNoteTests {
         TestSupport.expectEqual(h.core.lastNote?.ending, .reachedLimit)
     }
 
-    /// With power connected the note ends when the session's Live Activity reaches its lifetime; a clock that jumps
-    /// back ends it too.
+    /// With power connected the note ends a margin before the session's Live Activity reaches its lifetime; a clock
+    /// that jumps back ends it too.
     @MainActor
     private static func testPowerCapFollowsTheActivity() {
         let (h, _) = harness()
         defer { h.cleanup() }
         h.clock.power = .connected
-        h.core.sessionActivityStartedAt = Fixture.now - 7 * 3600
+        h.core.sessionActivityStartedAt = Fixture.now - (VoiceNotePolicy.activityBound - 3600)
         _ = h.core.userStartNote(.newNote)
         TestSupport.expectEqual(h.status?.voiceNote?.endsAt, nil)
         h.clock.now += 3599
