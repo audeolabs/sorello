@@ -80,6 +80,9 @@ final class SessionActivityDriver {
     private var shown: (sessionID: UUID?, content: SessionActivityContent, at: Date)?
     /// A session whose start the system refused: not asked again.
     private var refusedSessionID: UUID?
+    /// When the activity the driver shows was started, nil while it shows none. ActivityKit's lifetime counts from
+    /// here; a voice note's cap follows it (ARCHITECTURE.md, "Voice notes", Cap).
+    private(set) var startedAt: Date?
 
     init(backend: SessionActivityBackend) {
         self.backend = backend
@@ -99,6 +102,7 @@ final class SessionActivityDriver {
         if let current = shown, desired == nil || current.sessionID != input.sessionID {
             backend.end()
             shown = nil
+            startedAt = nil
         }
         guard let desired else { return }
         if let current = shown {
@@ -118,6 +122,7 @@ final class SessionActivityDriver {
         let content = SessionActivityContent(state: desired, staleDate: SessionActivityPolicy.staleDate(for: desired, now: now))
         if backend.start(content) {
             shown = (input.sessionID, content, now)
+            startedAt = now
         } else {
             refusedSessionID = input.sessionID
         }
@@ -133,6 +138,7 @@ final class SessionActivityDriver {
         if !exists {
             refusedSessionID = current.sessionID
             shown = nil
+            startedAt = nil
         }
         return exists
     }

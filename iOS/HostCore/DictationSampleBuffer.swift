@@ -3,6 +3,9 @@ import Foundation
 /// Collects 16 kHz mono samples for the one request that is recording. The audio tap appends from
 /// its own thread for the whole session; anything it delivers while no request is recording is
 /// dropped on the spot and never retained. One lock owns all sample mutation.
+///
+/// A voice note's recording keeps no samples (ARCHITECTURE.md, "Recording"): it feeds its stream, measures the level
+/// and counts, and has no cap, so `finishRecording` hands back only the stream.
 final class DictationSampleBuffer: @unchecked Sendable {
     enum AppendOutcome: Equatable, Sendable {
         case dropped
@@ -22,6 +25,10 @@ final class DictationSampleBuffer: @unchecked Sendable {
     private var requestID: UUID?
     private var currentGeneration: UInt64 = 0
     private var samples: [Float] = []
+    /// Samples accepted for the recording, kept or not.
+    private var count = 0
+    /// False for a voice note's recording: nothing is kept and there is no cap.
+    private var keepsSamples = true
     /// Fed every accepted sample of the recording, in order, under the lock; cancelled whenever the
     /// recording is discarded or replaced, and handed over with the samples by `finishRecording`.
     private var stream: SpeechStream?
@@ -56,24 +63,26 @@ final class DictationSampleBuffer: @unchecked Sendable {
         locked { requestID == nil ? nil : RecordingWindow(token: currentGeneration, begin: beginHostTime, end: endHostTime) }
     }
 
-    var recordedDuration: TimeInterval { locked { Double(samples.count) / Self.sampleRate } }
+    var recordedDuration: TimeInterval { locked { Double(count) / Self.sampleRate } }
 
-    var hasReachedLimit: Bool { locked { requestID != nil && samples.count >= maxSampleCount } }
+    var hasReachedLimit: Bool { locked { requestID != nil && keepsSamples && count >= maxSampleCount } }
 
     /// Normalized input level in 0...1 while recording, otherwise 0.
     var level: Float { locked { requestID == nil ? 0 : meter.level } }
 
     /// Starts accepting samples for `requestID`, discarding anything held for an earlier request. `stream`,
-    /// if given, receives exactly the samples `finishRecording` will return.
+    /// if given, receives exactly the samples `finishRecording` will return. Without `keepsSamples` (a voice note) the
+    /// stream receives every sample and nothing is kept or capped.
     @discardableResult
-    func begin(requestID: UUID, stream: SpeechStream? = nil) -> UInt64 {
+    func begin(requestID: UUID, stream: SpeechStream? = nil, keepsSamples: Bool = true) -> UInt64 {
         locked {
             reset()
             self.requestID = requestID
             self.stream = stream
+            self.keepsSamples = keepsSamples
             currentGeneration += 1
             beginHostTime = hostClock()
-            samples.reserveCapacity(min(maxSampleCount, Int(30 * Self.sampleRate)))
+            if keepsSamples { samples.reserveCapacity(min(maxSampleCount, Int(30 * Self.sampleRate))) }
             return currentGeneration
         }
     }
@@ -141,13 +150,14 @@ final class DictationSampleBuffer: @unchecked Sendable {
     }
 
     private func appendLocked<Samples: Collection>(_ newSamples: Samples) -> AppendOutcome where Samples.Element == Float {
-        guard requestID != nil, samples.count < maxSampleCount, !newSamples.isEmpty else { return .dropped }
-        let isFirst = samples.isEmpty
-        let accepted = newSamples.prefix(maxSampleCount - samples.count)
-        samples.append(contentsOf: accepted)
-        stream?.append(Array(accepted))
+        guard requestID != nil, !newSamples.isEmpty, !keepsSamples || count < maxSampleCount else { return .dropped }
+        let isFirst = count == 0
+        let accepted = Array(keepsSamples ? newSamples.prefix(maxSampleCount - count) : newSamples.prefix(newSamples.count))
+        if keepsSamples { samples.append(contentsOf: accepted) }
+        count += accepted.count
+        stream?.append(accepted)
         meter.update(with: accepted)
-        if samples.count >= maxSampleCount { return .reachedLimit(generation: currentGeneration) }
+        if keepsSamples, count >= maxSampleCount { return .reachedLimit(generation: currentGeneration) }
         return isFirst ? .started(generation: currentGeneration) : .accepted
     }
 
@@ -157,6 +167,8 @@ final class DictationSampleBuffer: @unchecked Sendable {
         requestID = nil
         endHostTime = nil
         samples = []
+        count = 0
+        keepsSamples = true
         meter = LevelMeter()
     }
 

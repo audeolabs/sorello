@@ -228,13 +228,15 @@ enum HostSessionPolicy {
     /// `captureFreshness`; the level is meaningful only while recording.
     static func status(hostRunID: UUID, sessionID: UUID?, session: HostStatus.Session, captureRunning: Bool,
                        lastBufferAt: Date?, idleSince: Date?, sessionDuration: TimeInterval, model: HostStatus.Model,
-                       dictation: DictationStatus?, level: Float, error: HostErrorCode?, now: Date) -> HostStatus {
+                       dictation: DictationStatus?, level: Float, error: HostErrorCode?,
+                       voiceNote: VoiceNoteStatus? = nil, now: Date) -> HostStatus {
         let captureReady = session == .active && captureRunning
             && lastBufferAt.map { DictationProtocol.isFresh($0, ttl: DictationProtocol.captureFreshness, now: now) } == true
         return HostStatus(
             hostRunID: hostRunID, sessionID: session == .inactive ? nil : sessionID, session: session,
             captureReady: captureReady, heartbeatAt: now,
             sessionExpiresAt: sessionExpiresAt(session: session, idleSince: idleSince, duration: sessionDuration),
-            model: model, dictation: dictation, level: dictation?.phase == .recording ? level : 0, error: error)
+            model: model, dictation: dictation, level: dictation?.phase == .recording ? level : 0, error: error,
+            voiceNote: voiceNote)
     }
 }

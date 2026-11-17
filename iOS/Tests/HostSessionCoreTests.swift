@@ -1507,7 +1507,7 @@ enum HostSessionCoreTests {
 // MARK: Harness
 
 @MainActor
-private final class CoreHarness {
+final class CoreHarness {
     @MainActor
     final class Clock {
         var now = Fixture.now
@@ -1517,6 +1517,8 @@ private final class CoreHarness {
         /// iOS is running the session control's `AudioRecordingIntent`, the one place capture may start in the
         /// background.
         var controlRunning = false
+        /// Where the power comes from, read on the tick.
+        var power = PowerSource.unknown
     }
 
     @MainActor
@@ -1537,6 +1539,8 @@ private final class CoreHarness {
     let buffer: DictationSampleBuffer
     let fakeCapture: FakeCapture?
     let transcriber = FakeTranscriber()
+    /// The notes directory the core's voice notes go into, kept as long as the harness.
+    let notes: NoteFixture?
     let core: HostSessionCore
     var published: [HostStatus] = []
 
@@ -1544,9 +1548,10 @@ private final class CoreHarness {
     var capture: FakeCapture { fakeCapture! }
 
     init(launch: Bool = true, maxDuration: TimeInterval = DictationProtocol.maxDictationDuration,
-         capture injected: HostCapture? = nil) {
+         capture injected: HostCapture? = nil, notes: NoteFixture? = nil) {
         let clock = Clock()
         self.clock = clock
+        self.notes = notes
         store = SharedDictationStore(directory: directory)
         settings = SorelloSettings(defaults: UserDefaults(suiteName: suite)!)
         buffer = DictationSampleBuffer(maxDuration: maxDuration)
@@ -1561,10 +1566,11 @@ private final class CoreHarness {
                 background.expirations.append(expiration)
                 return { background.ended += 1 }
             },
-            formatTranscript: { text, pressEnter, _, _ in ("<\(text)>", pressEnter) })
+            formatTranscript: { text, pressEnter, _, _ in ("<\(text)>", pressEnter) },
+            powerState: { clock.power })
         core = HostSessionCore(hostRunID: Fixture.hostRunID, store: store, settings: settings, buffer: buffer,
                                capture: injected ?? fakeCapture!, transcriber: transcriber, notifier: nil,
-                               environment: environment)
+                               environment: environment, noteRecorder: notes?.recorder)
         core.onChange = { [unowned self] in
             if let status = self.store.readStatus().value { self.published.append(status) }
         }
@@ -1573,6 +1579,7 @@ private final class CoreHarness {
 
     func cleanup() {
         transcriber.cancelAll()
+        for stream in transcriber.noteStreams { stream.cancel() }
         _ = TestSupport.waitUntil(timeout: 0.05) { false }
         UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
         try? FileManager.default.removeItem(at: directory)
@@ -1621,6 +1628,16 @@ private final class CoreHarness {
         return core.controlToggleSession()
     }
 
+    /// A press of the "Voice Note" control, an `AudioRecordingIntent` as the session control's.
+    func controlNote(_ target: NoteRunTarget = .newNote) -> NoteStartOutcome {
+        clock.controlRunning = true
+        defer { clock.controlRunning = false }
+        return core.controlToggleNote(target)
+    }
+
+    /// The stream of the latest voice note.
+    var noteStream: FakeSpeechStream { transcriber.noteStreams.last! }
+
     /// Admits `requestID` from the foreground and waits until it is recording.
     func record(_ requestID: UUID) {
         writeIntent(.record, requestID)
@@ -1633,7 +1650,7 @@ private final class CoreHarness {
 
 /// A capture whose buffers arrive whenever it runs, until `stall()`.
 @MainActor
-private final class FakeCapture: HostCapture {
+final class FakeCapture: HostCapture {
     let clock: CoreHarness.Clock
     var permission = CapturePermission.granted
     var failStart = false
@@ -1722,7 +1739,7 @@ private final class FakeCapture: HostCapture {
 /// A model that answers when told to. It honors cancellation like `TranscriptionEngine`, unless a test
 /// simulates a runtime that finishes anyway. It never keeps the audio beyond the call.
 @MainActor
-private final class FakeTranscriber: HostTranscriber {
+final class FakeTranscriber: HostTranscriber {
     var modelState = HostStatus.Model.ready
     var honorsCancellation = true
     var busy = false
@@ -1735,6 +1752,10 @@ private final class FakeTranscriber: HostTranscriber {
     /// Offers a stream to each recording admitted while the model is ready.
     var streams = false
     private(set) var begunStreams: [FakeSpeechStream] = []
+    /// Every voice note's stream, with its progress feed, in order.
+    private(set) var noteStreams: [FakeSpeechStream] = []
+    /// What `failureHint` gives for a failure in the background.
+    var hint: ComputeFailureHint?
     /// The stream handed over with each recording, in order.
     private(set) var receivedStreams: [SpeechStream?] = []
     private var pending: [(id: UUID, continuation: CheckedContinuation<String, Error>)] = []
@@ -1750,11 +1771,23 @@ private final class FakeTranscriber: HostTranscriber {
         if modelState == .notPrepared || (modelState == .failed && !backingOff) { modelState = .preparing }
     }
 
-    func beginStream() -> SpeechStream? {
-        guard streams, modelState == .ready else { return nil }
-        let stream = FakeSpeechStream()
-        begunStreams.append(stream)
-        return stream
+    func beginStream(_ kind: SpeechStreamKind) -> SpeechStream? {
+        guard modelState == .ready else { return nil }
+        switch kind {
+        case .dictation:
+            guard streams else { return nil }
+            let stream = FakeSpeechStream()
+            begunStreams.append(stream)
+            return stream
+        case .note:
+            let stream = FakeSpeechStream(reportsProgress: true)
+            noteStreams.append(stream)
+            return stream
+        }
+    }
+
+    func failureHint(after failure: TranscriptionFailure, inBackground: Bool) -> ComputeFailureHint? {
+        inBackground ? hint : nil
     }
 
     /// Like `TranscriptionEngine`, cancellation also cancels the recording's stream.

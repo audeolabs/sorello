@@ -5,6 +5,7 @@ enum DictationSampleBufferTests {
         [
             ("dropsWhenIdle", testDropsWhenIdle),
             ("collectsOnlyBetweenBeginAndFinish", testCollectsOnlyBetweenBeginAndFinish),
+            ("aNoteRecordingKeepsNoSamplesAndHasNoCap", testANoteRecordingKeepsNoSamplesAndHasNoCap),
             ("finishIsForTheRecordingRequestOnly", testFinishIsForTheRecordingRequestOnly),
             ("beginSupersedesAndAdvancesGeneration", testBeginSupersedesAndAdvancesGeneration),
             ("cancelPaths", testCancelPaths),
@@ -143,6 +144,27 @@ enum DictationSampleBufferTests {
         let plain = buffer.finishRecording(requestID: Fixture.otherRequestID)
         TestSupport.expectEqual(plain?.samples, [0.1])
         TestSupport.expect(plain?.stream == nil, "a stream appeared")
+    }
+
+    /// A voice note's recording feeds its stream every sample, keeps none and has no cap; the next recording keeps
+    /// its samples again.
+    private static func testANoteRecordingKeepsNoSamplesAndHasNoCap() {
+        let buffer = DictationSampleBuffer(maxDuration: 0.01)
+        let stream = FakeSpeechStream()
+        let generation = buffer.begin(requestID: Fixture.requestID, stream: stream, keepsSamples: false)
+        TestSupport.expectEqual(buffer.append([Float](repeating: 0.1, count: 100)), .started(generation: generation))
+        TestSupport.expectEqual(buffer.append([Float](repeating: 0.1, count: 500)), .accepted)
+        TestSupport.expectEqual(stream.samples.count, 600)
+        TestSupport.expect(!buffer.hasReachedLimit, "a note's recording reached the cap")
+        TestSupport.expectEqual(buffer.recordedDuration, 600 / DictationSampleBuffer.sampleRate)
+        TestSupport.expect(buffer.level > 0, "no level while a note records")
+        let audio = buffer.finishRecording(requestID: Fixture.requestID)
+        TestSupport.expectEqual(audio?.samples, [])
+        TestSupport.expect(audio?.stream === stream, "the note's stream was not handed back")
+        TestSupport.expect(!stream.isCancelled, "a drained note's stream was cancelled")
+        let next = buffer.begin(requestID: Fixture.otherRequestID)
+        TestSupport.expectEqual(buffer.append([Float](repeating: 0.1, count: 200)), .reachedLimit(generation: next))
+        TestSupport.expectEqual(buffer.finishRecording(requestID: Fixture.otherRequestID)?.samples.count, 160)
     }
 
     /// Audio converted for an earlier recording is dropped before any stream sees it.

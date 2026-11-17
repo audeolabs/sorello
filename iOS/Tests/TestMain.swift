@@ -78,6 +78,8 @@ struct SorelloIOSTests {
             ("BundleModelLoader", BundleModelLoaderTests.tests),
             ("HostSessionLock", HostSessionLockTests.tests),
             ("HostSessionLockLatch", HostSessionLockLatchTests.tests),
+            ("HostSessionNote", HostSessionNoteTests.tests),
+            ("VoiceNotePolicy", VoiceNotePolicyTests.tests),
             ("NoteSealing", NoteSealingTests.tests),
             ("NoteRecoveryCode", NoteRecoveryCodeTests.tests),
             ("NoteVault", NoteVaultTests.tests),

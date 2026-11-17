@@ -19,6 +19,7 @@ enum SessionActivityTests {
             ("sessionEndEndsAtOnce", isolated(testSessionEndEndsAtOnce)),
             ("newSessionReplacesTheOldActivity", isolated(testNewSessionReplacesTheOldActivity)),
             ("settleReportsWhetherTheActivityShows", isolated(testSettleReportsWhetherTheActivityShows)),
+            ("startedAtIsWhenTheActivityStarted", isolated(testStartedAtIsWhenTheActivityStarted)),
             ("reduceMotionChangesOnlyOpacity", testReduceMotionChangesOnlyOpacity),
             ("countdownSpeaksTheBarsWords", testCountdownSpeaksTheBarsWords),
         ]
@@ -199,6 +200,26 @@ enum SessionActivityTests {
         driver.sync(input(), mayStart: true, now: now + 1)
         driver.sync(input(), mayStart: false, now: now + 2)
         TestSupport.expectEqual(backend.calls, [.start(content)])
+    }
+
+    /// A voice note's cap counts ActivityKit's lifetime from when the activity started: updates keep that moment, and
+    /// with no activity there is none.
+    @MainActor
+    private static func testStartedAtIsWhenTheActivityStarted() {
+        let backend = FakeActivityBackend()
+        let driver = SessionActivityDriver(backend: backend)
+        TestSupport.expectEqual(driver.startedAt, nil)
+        driver.sync(input(), mayStart: false, now: now)
+        TestSupport.expectEqual(driver.startedAt, nil)
+        driver.sync(input(), mayStart: true, now: now + 1)
+        TestSupport.expectEqual(driver.startedAt, now + 1)
+        driver.sync(input(dictation: Fixture.dictation(.recording)), mayStart: true, now: now + 5)
+        TestSupport.expectEqual(driver.startedAt, now + 1)
+        driver.sync(input(.inactive, expiresAt: nil), mayStart: true, now: now + 6)
+        TestSupport.expectEqual(driver.startedAt, nil)
+        backend.refuses = true
+        driver.sync(input(id: sessionB), mayStart: true, now: now + 7)
+        TestSupport.expectEqual(driver.startedAt, nil)
     }
 
     @MainActor

@@ -209,13 +209,21 @@ private final class ParakeetRuntime: SpeechRuntime {
         }
     }
 
-    /// The snapshot is taken now, on the main actor, so it is the one whose revision the stream keeps; `finish` fails,
-    /// so the recording is transcribed as before, if the dictionary changed meanwhile.
-    func beginStream(onEnd: @escaping @Sendable () -> Void) -> SpeechStream? {
+    /// The snapshot is taken now, on the main actor, so it is the one whose revision the stream keeps. A dictation's
+    /// `finish` fails, so the recording is transcribed as before, if the dictionary changed meanwhile. A voice note's
+    /// has no recording to fall back to: it keeps its snapshot to the end, reports its progress and holds only a
+    /// bounded amount of leading silence (ARCHITECTURE.md, "Transcription").
+    func beginStream(_ kind: SpeechStreamKind, onEnd: @escaping @Sendable () -> Void) -> SpeechStream? {
         guard let engine else { return nil }
-        let revision = dictionary.current.revision
-        let stream = engine.openStream(SpeechStreamOptions())
-        return ParakeetStream(stream: stream, engine: engine, revision: revision, dictionary: dictionary, onEnd: onEnd)
+        switch kind {
+        case .dictation:
+            let revision = dictionary.current.revision
+            let stream = engine.openStream(SpeechStreamOptions())
+            return ParakeetStream(stream: stream, engine: engine, revision: revision, dictionary: dictionary, onEnd: onEnd)
+        case .note:
+            let stream = engine.openStream(SpeechStreamOptions(reportsProgress: true, boundsLeadingSilence: true))
+            return ParakeetStream(stream: stream, engine: engine, revision: nil, dictionary: dictionary, onEnd: onEnd)
+        }
     }
 
     /// The app's error for one of the engine's.
@@ -225,28 +233,44 @@ private final class ParakeetRuntime: SpeechRuntime {
 }
 
 /// The engine's stream as a `SpeechStream`. Audio stays in memory. `onEnd` runs once, after `finish` or `cancel`, when
-/// the engine has finished the model work the stream started.
+/// the engine has finished the model work the stream started. The engine's progress feed, when it has one, is passed
+/// through in the app's terms, ending when the engine's ends.
 private final class ParakeetStream: SpeechStream {
+    let progress: AsyncStream<SpeechStreamProgress>?
     private let stream: any SpeechStreaming
     private let engine: SpeechEngine
-    private let revision: UInt64
+    /// The dictionary revision a dictation's stream must still find at `finish`; nil for a voice note's.
+    private let revision: UInt64?
     private let dictionary: DictionarySnapshotBox
     private let onEnd: @Sendable () -> Void
     private let ended = Mutex(false)
 
-    init(stream: any SpeechStreaming, engine: SpeechEngine, revision: UInt64, dictionary: DictionarySnapshotBox,
+    init(stream: any SpeechStreaming, engine: SpeechEngine, revision: UInt64?, dictionary: DictionarySnapshotBox,
          onEnd: @escaping @Sendable () -> Void) {
         self.stream = stream
         self.engine = engine
         self.revision = revision
         self.dictionary = dictionary
         self.onEnd = onEnd
+        if let feed = stream.progress {
+            // Unbounded, as the engine's, so passing a report on never waits for the consumer.
+            let (relay, continuation) = AsyncStream<SpeechStreamProgress>.makeStream(bufferingPolicy: .unbounded)
+            progress = relay
+            Task {
+                for await report in feed {
+                    continuation.yield(SpeechStreamProgress(settled: report.settled, provisional: report.provisional))
+                }
+                continuation.finish()
+            }
+        } else {
+            progress = nil
+        }
     }
 
     func append(_ samples: [Float]) { stream.append(samples) }
 
     func finish() async throws -> String {
-        guard dictionary.current.revision == revision else {
+        if let revision, dictionary.current.revision != revision {
             cancel()
             throw TranscriptionFailure.transcriptionFailed
         }

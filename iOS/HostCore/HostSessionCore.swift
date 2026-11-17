@@ -16,6 +16,8 @@ struct HostEnvironment {
     /// The shared text rules (`DictationRules.process`, from `TextRules`), which only the app links.
     var formatTranscript: @MainActor (_ text: String, _ pressEnterEnabled: Bool, _ spokenDelimitersEnabled: Bool,
                                       _ spokenNumbersEnabled: Bool) -> (text: String, pressEnter: Bool)
+    /// Where the power comes from (UIKit's battery monitoring), for a voice note's cap. Read on the tick.
+    var powerState: @MainActor () -> PowerSource = { .unknown }
 }
 
 /// What a press of the session control did (ARCHITECTURE.md, "Session control").
@@ -48,6 +50,8 @@ final class HostSessionCore {
     let transcriber: HostTranscriber
     private let notifier: DarwinNotifier?
     private let environment: HostEnvironment
+    /// Begins a voice note's runs; nil when the notes directory is out of reach, and every note start then fails.
+    private let noteRecorder: NoteRecorder?
 
     private(set) var isLaunched = false
     private(set) var session: HostStatus.Session = .inactive
@@ -93,10 +97,25 @@ final class HostSessionCore {
     /// delivered. It is drained when the capture reports the tail complete, or after `tailTimeout`.
     private var closing: (ticket: DictationTicket, since: Date)?
 
+    /// The voice note (ARCHITECTURE.md, "Voice notes"): preparing, recording, closing or saving; nil when none.
+    private var note: ActiveNote?
+    private var noteGeneration: UInt64 = 0
+    /// What happened to notes since the last status write, delivered after it.
+    private var noteChanges: [NoteChange] = []
+    /// Content-free measurements of the current or last note, in memory only.
+    private(set) var lastNote: NoteMeasurement?
+    /// When the session's Live Activity started, nil while none shows: the controller sets it after every sync. A
+    /// note's cap counts the activity's lifetime from here.
+    var sessionActivityStartedAt: Date?
+
     /// Runs after every status write, for the UI.
     var onChange: (@MainActor () -> Void)?
     /// Sees every status written, in order.
     var onPublish: (@MainActor (HostStatus) -> Void)?
+    /// Hears, after the status write, that a note started, that a piece was written into it, and that it ended.
+    var onNoteChange: (@MainActor (NoteChange) -> Void)?
+    /// Hears a note's provisional tail as each report arrives. Unset, the tail is dropped; the core keeps no note text.
+    var onNoteProvisional: (@MainActor (_ noteID: UUID, _ provisional: String) -> Void)?
 
     private struct Transcription {
         let ticket: DictationTicket
@@ -106,8 +125,9 @@ final class HostSessionCore {
 
     init(hostRunID: UUID = UUID(), store: SharedDictationStore, settings: SorelloSettings,
          buffer: DictationSampleBuffer, capture: HostCapture, transcriber: HostTranscriber,
-         notifier: DarwinNotifier?, environment: HostEnvironment) {
+         notifier: DarwinNotifier?, environment: HostEnvironment, noteRecorder: NoteRecorder? = nil) {
         self.hostRunID = hostRunID
+        self.noteRecorder = noteRecorder
         self.store = store
         self.settings = settings
         self.buffer = buffer
@@ -126,6 +146,12 @@ final class HostSessionCore {
     var sessionExpiresAt: Date? {
         HostSessionPolicy.sessionExpiresAt(session: session, idleSince: idleSince, duration: settings.sessionDuration)
     }
+    /// The note that prepares, records or saves, as `status.json` publishes it.
+    var voiceNote: VoiceNoteStatus? { note.map(noteStatus) }
+    /// Which note it writes into.
+    var voiceNoteID: UUID? { note?.writer.noteID }
+    /// A note prepares or records: idle expiry waits, and keyboard requests are refused.
+    private var isNoteInProgress: Bool { note?.isInProgress == true }
 
     // MARK: Inputs
 
@@ -171,6 +197,7 @@ final class HostSessionCore {
         if let closing, HostSessionPolicy.isDue(last: closing.since, interval: HostSessionPolicy.tailTimeout, now: now) {
             drainClosing(now)   // the tail never arrived (a stalled engine): transcribe what did
         }
+        superviseNote(now)
         if pendingStart != nil, !slot.isInProgress { endSession(.startFailed(.audioSessionFailed), now) }
         if let requested = controlStartRequestedAt,
            !HostSessionPolicy.isControlStartFresh(requestedAt: requested, now: now) {
@@ -178,7 +205,7 @@ final class HostSessionCore {
         }
         endSessionIfIdleExpired(now)
         releaseModelIfPending()
-        let live = session != .inactive || foreground || slot.isInProgress
+        let live = session != .inactive || foreground || slot.isInProgress || note != nil
         if session != .inactive || foreground,
            HostSessionPolicy.isDue(last: lastReconcileAt, interval: HostSessionPolicy.reconcileInterval, now: now) {
             reconcilePass(.poll, now)
@@ -261,11 +288,7 @@ final class HostSessionCore {
             endSession(.user, now)
             return .ended
         }
-        // iOS authenticated the user before running the intent; a suspended app may have missed the unlock.
-        if isLocked, HostSessionPolicy.controlProvesUnlock(now: now, lockedAt: lockedAt,
-                                                           isProtectedDataAvailable: environment.isProtectedDataAvailable()) {
-            isLocked = false
-        }
+        liftLatchIfIntentProvesUnlock(now)
         if noteForeground(now), !isLocked {
             transcriber.prepare()
             startSession(now)
@@ -298,6 +321,364 @@ final class HostSessionCore {
     private func requestForegroundStart(_ now: Date) -> SessionControlOutcome {
         controlStartRequestedAt = now
         return .needsForeground
+    }
+
+    /// iOS authenticated the user before running an intent; a suspended app may have missed the unlock
+    /// (`HostSessionPolicy.controlProvesUnlock`).
+    private func liftLatchIfIntentProvesUnlock(_ now: Date) {
+        if isLocked, HostSessionPolicy.controlProvesUnlock(now: now, lockedAt: lockedAt,
+                                                           isProtectedDataAvailable: environment.isProtectedDataAvailable()) {
+            isLocked = false
+        }
+    }
+
+    // MARK: Voice notes (ARCHITECTURE.md, "Voice notes")
+
+    /// The app's own Record: the app in front and the latch clear. Starts a session as `userStartSession` does when
+    /// there is none.
+    func userStartNote(_ target: NoteRunTarget) -> NoteStartOutcome {
+        let now = environment.now()
+        defer { flush(now) }
+        guard isLaunched, noteForeground(now) else { return .needsApp(.foreground) }
+        guard note == nil else { return .busy }
+        guard !isLocked else { return .needsApp(.locked) }
+        return startNoteInFront(target, now)
+    }
+
+    /// The Live Activity's start, which iOS runs after authenticating the user. In the background it needs an active
+    /// session, since it may not start capture.
+    func activityStartNote(_ target: NoteRunTarget) -> NoteStartOutcome {
+        let now = environment.now()
+        defer { flush(now) }
+        guard isLaunched else { return .needsApp(.foreground) }
+        guard note == nil else { return .busy }
+        liftLatchIfIntentProvesUnlock(now)
+        guard !isLocked else { return .needsApp(.locked) }
+        if noteForeground(now) { return startNoteInFront(target, now) }
+        guard session == .active else { return .needsApp(.foreground) }
+        return startNote(target, now)
+    }
+
+    /// The "Voice Note" control, which iOS runs as an `AudioRecordingIntent` after authenticating the user: stops the
+    /// note that prepares or records, or starts one, starting a session as `controlToggleSession` does.
+    func controlToggleNote(_ target: NoteRunTarget) -> NoteStartOutcome {
+        let now = environment.now()
+        defer { flush(now) }
+        guard isLaunched else { return .needsApp(.foreground) }
+        if isNoteInProgress {
+            stopNote(.stopped, now)
+            return .stopped
+        }
+        guard note == nil else { return .busy }
+        liftLatchIfIntentProvesUnlock(now)
+        guard !isLocked else { return .needsApp(.locked) }
+        if noteForeground(now) { return startNoteInFront(target, now) }
+        if session != .inactive { return startNote(target, now) }
+        // The prompt and "Microphone off" need the app.
+        guard capture.permission == .granted else { return .needsApp(.microphone) }
+        if let refused = beginNote(target, now) { return refused }
+        let generation = noteGeneration
+        startSession(now, inBackground: true)
+        // A capture start iOS refused ended the session, and the note with it.
+        guard session == .active else { return .needsApp(.foreground) }
+        return noteOutcome(generation, .startedInBackground)
+    }
+
+    /// The background start's Live Activity does not show: the session ends as the user's End, as the session
+    /// control's does, and the note with it, saving what it recorded.
+    @discardableResult
+    func noteNeedsForeground() -> NoteStartOutcome {
+        let now = environment.now()
+        defer { flush(now) }
+        endSession(.user, now)
+        return .needsApp(.liveActivity)
+    }
+
+    /// Stops the note that prepares or records. Never needs anything: not the app, not an unlock. Returns whether
+    /// there was one.
+    @discardableResult
+    func stopNote() -> Bool {
+        let now = environment.now()
+        defer { flush(now) }
+        guard isNoteInProgress else { return false }
+        stopNote(.stopped, now)
+        return true
+    }
+
+    private func startNoteInFront(_ target: NoteRunTarget, _ now: Date) -> NoteStartOutcome {
+        if let refused = beginNote(target, now) { return refused }
+        let generation = noteGeneration
+        if session == .inactive { startSession(now) }
+        return noteOutcome(generation, .started)
+    }
+
+    private func startNote(_ target: NoteRunTarget, _ now: Date) -> NoteStartOutcome {
+        if let refused = beginNote(target, now) { return refused }
+        return noteOutcome(noteGeneration, .started)
+    }
+
+    /// `started`, unless the note has already ended (a session start that failed): then why.
+    private func noteOutcome(_ generation: UInt64, _ started: NoteStartOutcome) -> NoteStartOutcome {
+        if note?.generation == generation { return started }
+        return .failed(lastNote?.ending ?? .captureFailed)
+    }
+
+    /// Begins the run first, so nothing starts for a note that cannot be written, then the note, preparing. Nil when it
+    /// started; otherwise why not.
+    private func beginNote(_ target: NoteRunTarget, _ now: Date) -> NoteStartOutcome? {
+        guard note == nil else { return .busy }
+        guard let noteRecorder else { return .failed(.storageFailed) }
+        let writer: NoteRunWriter
+        do {
+            writer = try noteRecorder.beginRun(target)
+        } catch NoteError.noVault {
+            return .needsApp(.noVault)
+        } catch NoteError.noSuchNote {
+            return .failed(.noteGone)
+        } catch {
+            return .failed(.storageFailed)
+        }
+        // A missing model, or a failed one still backing off, fails the note at once, as admission fails a request.
+        transcriber.prepare()
+        if let reason = VoiceNotePolicy.preparationFailure(model: transcriber.modelState) {
+            writer.end()
+            lastNote = NoteMeasurement(ending: reason)
+            return .failed(reason)
+        }
+        // A dictation that holds the capture gives way: one waiting for its tail is transcribed with what arrived, one
+        // starting or recording is superseded. One transcribing goes on.
+        if closing != nil { drainClosing(now) }
+        if slot.phase == .starting || slot.phase == .recording { endInProgress(.cancelled(.superseded), now) }
+        noteGeneration &+= 1
+        note = ActiveNote(generation: noteGeneration, writer: writer, startedAt: now,
+                          power: environment.powerState())
+        lastNote = NoteMeasurement()
+        idleSince = nil
+        needsPublish = true
+        noteChanges.append(.started(noteID: writer.noteID))
+        advanceNote(now)
+        return nil
+    }
+
+    /// A preparing note starts recording once the session is active and the model ready: the capture feeds a stream
+    /// with progress and keeps no samples. A preparation that fails ends it.
+    private func advanceNote(_ now: Date) {
+        guard let current = note, current.phase == .preparing else { return }
+        if let reason = VoiceNotePolicy.preparationFailure(model: transcriber.modelState) {
+            endNote(reason, now)
+            return
+        }
+        if transcriber.modelState == .notPrepared { transcriber.prepare() }
+        guard session == .active, transcriber.modelState == .ready, let stream = transcriber.beginStream(.note) else { return }
+        let recordingID = UUID()
+        let generation = buffer.begin(requestID: recordingID, stream: stream, keepsSamples: false)
+        capture.recordingBoundary()
+        note?.phase = .recording
+        note?.recordingID = recordingID
+        note?.bufferGeneration = generation
+        note?.stream = stream
+        needsPublish = true
+        consumeProgress(of: stream, current.generation)
+    }
+
+    private func consumeProgress(of stream: SpeechStream, _ generation: UInt64) {
+        guard let feed = stream.progress else {
+            endNote(.transcriptionFailed, environment.now())   // a stream that cannot report cannot write a note
+            return
+        }
+        Task { [weak self] in
+            for await report in feed { self?.noteReported(report, generation) }
+            self?.noteFeedEnded(generation)
+        }
+    }
+
+    /// Each report: the settled text is written at once and not kept; the provisional tail goes to the observer.
+    private func noteReported(_ report: SpeechStreamProgress, _ generation: UInt64) {
+        guard let current = note, current.generation == generation else { return }
+        let now = environment.now()
+        lastNote?.piecesTranscribed += 1
+        // Only iOS's own answer counts as locked: in the lock's first seconds it still reads available.
+        if !environment.isProtectedDataAvailable() { lastNote?.piecesWhileLocked += 1 }
+        if !environment.isForeground() { lastNote?.piecesInBackground += 1 }
+        needsPublish = true
+        let noteID = current.writer.noteID
+        if !report.settled.isEmpty {
+            do {
+                try current.writer.append(report.settled)
+            } catch {
+                endNote(.storageFailed, now)
+                flush(now)
+                return
+            }
+            noteChanges.append(.wrote(noteID: noteID))
+        }
+        flush(now)
+        onNoteProvisional?(noteID, report.provisional)
+    }
+
+    /// The feed ends after the last report when the stream finishes, and early when it fails.
+    private func noteFeedEnded(_ generation: UInt64) {
+        guard note?.generation == generation else { return }
+        let now = environment.now()
+        note?.feedEnded = true
+        if note?.phase == .saving {
+            completeSavedNote(now)
+        } else {
+            endNote(.transcriptionFailed, now)   // the stream failed while it was fed
+        }
+        flush(now)
+    }
+
+    /// Stops a preparing note at once, and a recording one at the current capture time: its tail is drained as a
+    /// dictation's is, then it saves. `reason` is what it ends with once saved.
+    private func stopNote(_ reason: NoteEndReason, _ now: Date) {
+        guard let current = note else { return }
+        switch current.phase {
+        case .preparing:
+            endNote(reason, now)
+        case .recording:
+            guard let recordingID = current.recordingID, buffer.close(requestID: recordingID) else {
+                endNote(.transcriptionFailed, now)
+                return
+            }
+            note?.reason = reason
+            note?.phase = .closing(since: now)
+            // The microphone is no longer the note's: the idle countdown starts now.
+            if session == .active, !slot.isInProgress { idleSince = now }
+            needsPublish = true
+            if !capture.isRunning { drainNote(now) }
+        case .closing, .saving:
+            break
+        }
+    }
+
+    /// The tail has arrived, or will not: the stream finishes, inside a background task, and writes its last piece.
+    private func drainNote(_ now: Date) {
+        guard let current = note, case .closing = current.phase, let recordingID = current.recordingID else { return }
+        guard let stream = buffer.finishRecording(requestID: recordingID)?.stream else {
+            endNote(.transcriptionFailed, now)
+            return
+        }
+        capture.recordingBoundary()
+        note?.phase = .saving
+        note?.recordingID = nil
+        needsPublish = true
+        let generation = current.generation
+        let endBackgroundTask = OnceAction()
+        endBackgroundTask.action = environment.beginBackgroundTask { [weak self] in
+            self?.noteBackgroundTimeExpired(generation)
+            endBackgroundTask.run()
+        }
+        note?.endBackgroundTask = endBackgroundTask
+        Task { [weak self] in
+            let succeeded: Bool
+            do {
+                _ = try await stream.finish()   // the pieces already reported; not kept
+                succeeded = true
+            } catch {
+                succeeded = false
+            }
+            self?.noteFinished(generation, succeeded: succeeded)
+            endBackgroundTask.run()
+        }
+    }
+
+    private func noteFinished(_ generation: UInt64, succeeded: Bool) {
+        guard note?.generation == generation else { return }
+        let now = environment.now()
+        note?.finished = succeeded
+        completeSavedNote(now)
+        flush(now)
+    }
+
+    /// Ends a saving note once its stream has finished and its feed has delivered everything.
+    private func completeSavedNote(_ now: Date) {
+        guard let current = note, current.phase == .saving, current.feedEnded, let finished = current.finished else { return }
+        endNote(finished ? current.reason : .transcriptionFailed, now)
+    }
+
+    private func noteBackgroundTimeExpired(_ generation: UInt64) {
+        guard note?.generation == generation else { return }
+        let now = environment.now()
+        endNote(.backgroundTimeExpired, now)
+        flush(now)
+    }
+
+    /// Ends the note: its stream is cancelled unless it finished, its run ends, and what was written stays.
+    private func endNote(_ reason: NoteEndReason, _ now: Date) {
+        guard let current = note else { return }
+        note = nil
+        if let recordingID = current.recordingID {
+            buffer.cancel(requestID: recordingID)
+            capture.recordingBoundary()
+        }
+        if current.finished == nil { current.stream?.cancel() }
+        current.writer.end()
+        current.endBackgroundTask?.run()
+        lastNote?.ending = reason
+        if reason == .transcriptionFailed || reason == .modelFailed {
+            let inBackground = (lastNote?.piecesInBackground ?? 0) > 0 || !environment.isForeground()
+            lastNote?.hint = transcriber.failureHint(after: reason == .modelFailed ? .modelFailed : .transcriptionFailed,
+                                                     inBackground: inBackground)
+        }
+        if current.isInProgress, session == .active, !slot.isInProgress { idleSince = now }
+        needsPublish = true
+        noteChanges.append(.ended(noteID: current.writer.noteID, reason: reason))
+        releaseModelIfPending()
+    }
+
+    /// On the tick: the power state, the tail's timeout, the cap, and a preparing note's model.
+    private func superviseNote(_ now: Date) {
+        guard let current = note else { return }
+        let power = environment.powerState()
+        if power != current.power {
+            if current.power == .connected { note?.lastUnpluggedAt = now }
+            note?.power = power
+            needsPublish = true
+        }
+        if case .closing(let since) = current.phase,
+           HostSessionPolicy.isDue(last: since, interval: HostSessionPolicy.tailTimeout, now: now) {
+            drainNote(now)   // the tail never arrived (a stalled engine): save what did
+            return
+        }
+        guard let active = note, active.isInProgress else { return }
+        if VoiceNotePolicy.hasReachedCap(startedAt: active.startedAt, lastUnpluggedAt: active.lastUnpluggedAt,
+                                         power: active.power, activityStartedAt: sessionActivityStartedAt, now: now) {
+            stopNote(.reachedLimit, now)
+            return
+        }
+        advanceNote(now)
+    }
+
+    /// What the session's end means for the note: one preparing ends, one recording is saved with what arrived.
+    private func noteSessionEnded(_ reason: SessionEndReason, _ now: Date) {
+        guard let current = note else { return }
+        let noteReason = VoiceNotePolicy.endReason(after: reason)
+        switch current.phase {
+        case .preparing:
+            endNote(noteReason, now)
+        case .recording:
+            stopNote(noteReason, now)
+            drainNote(now)
+        case .closing:
+            drainNote(now)
+        case .saving:
+            break
+        }
+    }
+
+    private func noteStatus(_ current: ActiveNote) -> VoiceNoteStatus {
+        let phase: VoiceNoteStatus.Phase
+        switch current.phase {
+        case .preparing: phase = .preparing
+        case .recording: phase = .recording
+        case .closing, .saving: phase = .saving
+        }
+        let endsAt = phase == .saving ? nil : VoiceNotePolicy.publishedEnd(
+            startedAt: current.startedAt, lastUnpluggedAt: current.lastUnpluggedAt, power: current.power,
+            activityStartedAt: sessionActivityStartedAt)
+        return VoiceNoteStatus(phase: phase, startedAt: current.startedAt, endsAt: endsAt,
+                               onPower: current.power == .connected)
     }
 
     /// The bounce screen's Stop: transcribe what was recorded.
@@ -384,8 +765,10 @@ final class HostSessionCore {
         DispatchQueue.main.async { [weak self] in
             MainActor.assumeIsolated {
                 guard let self else { return }
+                let now = self.environment.now()
                 self.releaseModelIfPending()
-                self.flush(self.environment.now())
+                self.advanceNote(now)   // a preparing note records once the model is ready, or ends if it failed
+                self.flush(now)
             }
         }
     }
@@ -417,6 +800,12 @@ final class HostSessionCore {
         case .none:
             break
         case .start(let requestID):
+            if isNoteInProgress {
+                // The microphone is the note's (ARCHITECTURE.md, "Voice notes").
+                knownRequestIDs.insert(requestID)
+                if slot.reject(requestID, error: .noteRecording, now: now) { needsPublish = true }
+                break
+            }
             if isLocked, let issuedAt = intent.value?.issuedAt,
                HostSessionPolicy.intentProvesUnlock(issuedAt: issuedAt, lockedAt: lockedAt) {
                 // The keyboard wrote it on an unlocked iPhone; the unlock signal was missed or is late.
@@ -439,16 +828,23 @@ final class HostSessionCore {
             if slot.reject(requestID, error: code, now: now) { needsPublish = true }
         case .stopNote(let requestID):
             knownRequestIDs.insert(requestID)
+            // Only a note that started before the keyboard asked: a stop never reaches a later note.
+            if let current = note, current.isInProgress, let issuedAt = intent.value?.issuedAt,
+               issuedAt >= current.startedAt {
+                stopNote(.stopped, now)
+            }
         }
     }
 
     private func admit(_ requestID: UUID, _ now: Date) {
+        // A stopped note still waiting for its tail lets go of the buffer first, saving what arrived.
+        if case .closing? = note?.phase { drainNote(now) }
         // The newest request wins; the old one's outcome is discarded by the fence.
         endInProgress(.cancelled(.superseded), now)
         knownRequestIDs.insert(requestID)
         // With the model ready, the recording is transcribed while it is recorded; the buffer feeds the
         // stream exactly the samples it collects and cancels it with the recording.
-        let generation = buffer.begin(requestID: requestID, stream: transcriber.beginStream())
+        let generation = buffer.begin(requestID: requestID, stream: transcriber.beginStream(.dictation))
         let ticket = slot.admit(requestID, generation: generation, now: now)
         capture.recordingBoundary()
         idleSince = nil
@@ -514,7 +910,7 @@ final class HostSessionCore {
     }
 
     private func dictationEnded(_ now: Date) {
-        idleSince = session == .active ? now : nil
+        idleSince = session == .active && !isNoteInProgress ? now : nil
         recordingProgress = nil
         needsPublish = true
         releaseModelIfPending()
@@ -533,7 +929,13 @@ final class HostSessionCore {
             finish(ticket.requestID, now)
         case .tailComplete(let generation):
             if closing?.ticket.generation == generation { drainClosing(now) }
+            if case .closing? = note?.phase, note?.bufferGeneration == generation { drainNote(now) }
         case .conversionFailed(let generation, let engine):
+            // A note's converter is rebuilt with the engine; the note goes on once input flows again.
+            if engine == capture.engineGeneration, note?.phase == .recording, note?.bufferGeneration == generation {
+                noteCaptureFailure(now)
+                break
+            }
             // A pipeline of an engine since replaced (a live reconfiguration or restart) no longer converts.
             guard engine == capture.engineGeneration, let ticket = slot.ticket, ticket.generation == generation,
                   slot.phase == .starting || slot.phase == .recording else { break }
@@ -688,7 +1090,7 @@ final class HostSessionCore {
     }
 
     private func releaseModelIfPending() {
-        guard pendingModelRelease, !slot.isInProgress else { return }
+        guard pendingModelRelease, !slot.isInProgress, note == nil else { return }
         if transcriber.releaseIfIdle() {
             pendingModelRelease = false
             needsPublish = true
@@ -753,12 +1155,13 @@ final class HostSessionCore {
         captureStartedAt = now
         captureFailingSince = nil
         recoveriesWithoutInput = 0
-        if !slot.isInProgress { idleSince = now }
+        if !slot.isInProgress, !isNoteInProgress { idleSince = now }
         needsPublish = true
+        advanceNote(now)
     }
 
     private func endSessionIfIdleExpired(_ now: Date) {
-        guard session == .active, !slot.isInProgress,
+        guard session == .active, !slot.isInProgress, !isNoteInProgress,
               HostSessionPolicy.isIdleExpired(idleSince: idleSince, duration: settings.sessionDuration, now: now) else { return }
         endSession(.idleExpired, now)
     }
@@ -773,8 +1176,9 @@ final class HostSessionCore {
             endInProgress(outcome, now)
         }
         // A finished recording that survives the session end is transcribed with the tail it has; no more
-        // input will arrive.
+        // input will arrive. So is a note's.
         drainClosing(now)
+        noteSessionEnded(reason, now)
         capture.stop()
         // Anything still held belongs to a request that just ended; a transcription has its own copy.
         buffer.cancelAll()
@@ -808,13 +1212,58 @@ final class HostSessionCore {
         let status = HostSessionPolicy.status(
             hostRunID: hostRunID, sessionID: sessionID, session: session, captureRunning: capture.isRunning,
             lastBufferAt: capture.lastBufferAt, idleSince: idleSince, sessionDuration: settings.sessionDuration,
-            model: transcriber.modelState, dictation: slot.current, level: buffer.level, error: sessionError, now: now)
+            model: transcriber.modelState, dictation: slot.current, level: buffer.level, error: sessionError,
+            voiceNote: voiceNote, now: now)
         lastStatusAt = now
         // A failed write is retried by the next heartbeat; the reader treats a stale one as a dead host.
         if (try? store.writeStatus(status)) != nil { notifier?.post(.status) }
         onPublish?(status)
         onChange?()
+        let changes = noteChanges
+        noteChanges = []
+        for change in changes { onNoteChange?(change) }
     }
+}
+
+/// The voice note as the core holds it (ARCHITECTURE.md, "Voice notes"). It holds no text: the writer seals each
+/// piece the moment it arrives.
+@MainActor
+private struct ActiveNote {
+    enum Phase: Equatable {
+        case preparing
+        case recording
+        /// Stopped; waiting for the tail captured before the stop.
+        case closing(since: Date)
+        /// The stream finishes and writes its last piece.
+        case saving
+    }
+
+    let generation: UInt64
+    let writer: NoteRunWriter
+    let startedAt: Date
+    var power: PowerSource
+    var phase = Phase.preparing
+    var lastUnpluggedAt: Date?
+    /// The sample buffer's recording that feeds the stream, while recording or closing.
+    var recordingID: UUID?
+    var bufferGeneration: UInt64?
+    var stream: SpeechStream?
+    /// What the note ends with once saved.
+    var reason = NoteEndReason.stopped
+    var feedEnded = false
+    /// Whether the stream's finish succeeded, once it returned.
+    var finished: Bool?
+    var endBackgroundTask: OnceAction?
+
+    init(generation: UInt64, writer: NoteRunWriter, startedAt: Date, power: PowerSource) {
+        self.generation = generation
+        self.writer = writer
+        self.startedAt = startedAt
+        self.power = power
+    }
+
+    /// Preparing or recording: the note holds the microphone.
+    var isInProgress: Bool { phase == .preparing || phase == .recording }
 }
 
 /// Runs its action at most once, however many paths reach it.

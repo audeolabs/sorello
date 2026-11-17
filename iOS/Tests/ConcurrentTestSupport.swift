@@ -56,6 +56,8 @@ final class Locked<Value>: @unchecked Sendable {
 /// A `SpeechStream` that records what it is fed and finishes when told to. The sample buffer feeds it
 /// from the capture thread. Like the app's stream, cancelling it ends a waiting `finish`, and `onEnd`
 /// runs once it is finished or cancelled and its model work (`holdsWork`, a running chunk) has drained.
+/// A voice note's has a progress feed the test reports into; completing or cancelling the stream ends it, after
+/// any report made before.
 final class FakeSpeechStream: SpeechStream, @unchecked Sendable {
     private struct State {
         var samples: [Float] = []
@@ -70,9 +72,29 @@ final class FakeSpeechStream: SpeechStream, @unchecked Sendable {
 
     private let state = Locked(State())
     private let onEnd: (@Sendable () -> Void)?
+    let progress: AsyncStream<SpeechStreamProgress>?
+    private let reports: AsyncStream<SpeechStreamProgress>.Continuation?
 
-    init(onEnd: (@Sendable () -> Void)? = nil) {
+    init(onEnd: (@Sendable () -> Void)? = nil, reportsProgress: Bool = false) {
         self.onEnd = onEnd
+        if reportsProgress {
+            let (feed, continuation) = AsyncStream<SpeechStreamProgress>.makeStream(bufferingPolicy: .unbounded)
+            progress = feed
+            reports = continuation
+        } else {
+            progress = nil
+            reports = nil
+        }
+    }
+
+    /// The engine transcribed a chunk.
+    func report(settled: String, provisional: String) {
+        reports?.yield(SpeechStreamProgress(settled: settled, provisional: provisional))
+    }
+
+    /// The feed ends, as when the engine fails.
+    func endFeed() {
+        reports?.finish()
     }
 
     var samples: [Float] { state.current.samples }
@@ -103,8 +125,9 @@ final class FakeSpeechStream: SpeechStream, @unchecked Sendable {
         }
     }
 
-    /// Completes a waiting `finish`, or the next one.
+    /// Completes a waiting `finish`, or the next one; the feed ends first, as the engine's does.
     func complete(_ result: Result<String, Error>) {
+        endFeed()
         let waiting = state.update { state -> CheckedContinuation<String, Error>? in
             state.result = result
             defer { state.waiting = nil }
@@ -114,6 +137,7 @@ final class FakeSpeechStream: SpeechStream, @unchecked Sendable {
     }
 
     func cancel() {
+        endFeed()
         let waiting = state.update { state -> CheckedContinuation<String, Error>? in
             state.cancelled = true
             defer { state.waiting = nil }
