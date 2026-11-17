@@ -86,6 +86,7 @@ struct SorelloIOSTests {
             ("NoteRun", NoteRunTests.tests),
             ("NoteSearch", NoteSearchTests.tests),
             ("NoteScreens", NoteScreensTests.tests),
+            ("NotesLibrary", NotesLibraryTests.tests),
         ]
         var count = 0
         for (suite, tests) in suites {
