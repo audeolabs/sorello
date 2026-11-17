@@ -512,6 +512,35 @@ enum NoteRowText {
     }
 }
 
+/// What swiping a row of the notes list offers: Pin or Unpin on the leading edge, Delete on the trailing edge. A note
+/// that records, or is the core's note, offers neither; one with a run not yet merged offers Delete only, as its pin
+/// waits for the merge.
+struct NoteRowActions: Equatable, Sendable {
+    enum Pin: Equatable, Sendable {
+        case pin, unpin
+
+        var title: String { self == .pin ? "Pin" : "Unpin" }
+        var symbol: String { self == .pin ? "pin" : "pin.slash" }
+        /// Whether the note is pinned once the action is taken.
+        var pins: Bool { self == .pin }
+    }
+
+    /// Nil when the row offers no pin.
+    var pin: Pin?
+    var offersDelete: Bool
+}
+
+extension NoteRowActions {
+    /// `recordingNoteID` is the session core's note; nil when none.
+    init(note: Note, recordingNoteID: UUID?) {
+        guard !note.isRecording, note.id != recordingNoteID else {
+            self.init(pin: nil, offersDelete: false)
+            return
+        }
+        self.init(pin: note.pendingRuns.isEmpty ? (note.isPinned ? .unpin : .pin) : nil, offersDelete: true)
+    }
+}
+
 /// A search result's row: the text around the first match, on one line, with the matches inside it.
 struct NoteSnippet: Equatable, Sendable {
     var text: String

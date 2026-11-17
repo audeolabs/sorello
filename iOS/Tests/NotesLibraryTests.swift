@@ -89,6 +89,8 @@ enum NotesLibraryTests {
             ("aDraftThatCannotBeSavedStaysOpen", isolated(testADraftThatCannotBeSavedStaysOpen)),
             ("anEndingNoEditorShowsIsSaid", isolated(testAnEndingNoEditorShowsIsSaid)),
             ("aLostSecretClosesTheOpenNote", isolated(testALostSecretClosesTheOpenNote)),
+            ("theListPutsPinnedNotesFirst", isolated(testTheListPutsPinnedNotesFirst)),
+            ("aRowIsDeletedOrPinnedButNotWhileItRecords", isolated(testARowIsDeletedOrPinnedButNotWhileItRecords)),
         ]
     }
 
@@ -594,6 +596,70 @@ enum NotesLibraryTests {
         h.library.refreshState()
         TestSupport.expectEqual(h.library.screen, .secretMissing)
         TestSupport.expectEqual(h.library.openNoteID, nil)
+    }
+
+    // MARK: Pin and delete from the list
+
+    @MainActor
+    private static func testTheListPutsPinnedNotesFirst() {
+        let h = Harness()
+        let oldest = h.notes.record(["Oldest invented lighthouse"])
+        h.notes.now += 60
+        let middle = h.notes.record(["Middle invented lighthouse"])
+        h.notes.now += 60
+        let newest = h.notes.record(["Newest invented lighthouse"])
+        h.unlock()
+        TestSupport.expectEqual(h.library.hits.map(\.note.id), [newest, middle, oldest])
+        h.library.setPinned(true, of: oldest)
+        TestSupport.expectEqual(h.library.hits.map(\.note.id), [oldest, newest, middle])
+        h.library.setPinned(true, of: middle)
+        TestSupport.expectEqual(h.library.hits.map(\.note.id), [middle, oldest, newest])
+        TestSupport.expectEqual(h.library.hits.map(\.note.isPinned), [true, true, false])
+        // A search is newest first, pins or not, and still says which are pinned.
+        h.library.search("lighthouse")
+        TestSupport.expectEqual(h.library.hits.map(\.note.id), [newest, middle, oldest])
+        TestSupport.expectEqual(h.library.hits.map(\.note.isPinned), [false, true, true])
+        h.library.search("")
+        // The pins outlive a lock, and an unpin puts the note back by its date.
+        h.library.lock()
+        h.unlock()
+        TestSupport.expectEqual(h.library.hits.map(\.note.id), [middle, oldest, newest])
+        h.library.setPinned(false, of: middle)
+        TestSupport.expectEqual(h.library.hits.map(\.note.id), [oldest, newest, middle])
+        TestSupport.expectEqual(h.library.message, nil)
+    }
+
+    @MainActor
+    private static func testARowIsDeletedOrPinnedButNotWhileItRecords() {
+        let h = Harness()
+        let kept = h.notes.record(["Kept invented note"])
+        h.notes.now += 60
+        let gone = h.notes.record(["Invented note to delete"])
+        h.unlock()
+        h.library.delete(gone)
+        TestSupport.expectEqual(h.library.hits.map(\.note.id), [kept])
+        TestSupport.expectEqual(h.library.message, nil)
+        // A note that records is neither deleted nor pinned.
+        h.library.record()
+        let recording = h.library.openNoteID!
+        h.host.report(settled: "Still recording", provisional: "")
+        h.library.close()
+        h.library.delete(recording)
+        TestSupport.expectEqual(h.library.message, NoteError.noteIsRecording.message)
+        h.library.dismissMessage()
+        h.library.setPinned(true, of: recording)
+        TestSupport.expectEqual(h.library.message, NoteError.noteIsRecording.message)
+        h.library.dismissMessage()
+        TestSupport.expectEqual(Set(h.library.hits.map(\.note.id)), [kept, recording])
+        TestSupport.expect(!h.library.hits.contains { $0.note.isPinned }, "a recording note was pinned")
+        // Once it ends, both work.
+        h.host.end(.stopped)
+        h.library.setPinned(true, of: recording)
+        TestSupport.expectEqual(h.library.hits.map(\.note.id), [recording, kept])
+        TestSupport.expectEqual(h.library.hits.map(\.note.isPinned), [true, false])
+        h.library.delete(recording)
+        TestSupport.expectEqual(h.library.hits.map(\.note.id), [kept])
+        TestSupport.expectEqual(h.library.message, nil)
     }
 
     private static func live(_ before: String, _ provisional: String, _ after: String) -> NoteLiveText {

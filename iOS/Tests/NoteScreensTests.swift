@@ -16,11 +16,35 @@ enum NoteScreensTests {
             ("snippetAroundTheFirstMatch", testSnippetAroundTheFirstMatch),
             ("resumePlaceIsTheCursor", testResumePlaceIsTheCursor),
             ("everyRefusalHasASentence", testEveryRefusalHasASentence),
+            ("aRowOffersPinAndDeleteButNotWhileItRecords", testARowOffersPinAndDeleteButNotWhileItRecords),
         ]
     }
 
     private static let id = UUID(uuidString: "00000000-0000-4000-8000-0000000000E1")!
     private static let other = UUID(uuidString: "00000000-0000-4000-8000-0000000000E2")!
+
+    private static func testARowOffersPinAndDeleteButNotWhileItRecords() {
+        func run(recording: Bool) -> NotePendingRun {
+            NotePendingRun(id: other, place: .end, startedAt: Fixture.now, pieces: ["Invented"], isRecording: recording,
+                           isReadable: true)
+        }
+        func actions(pinned: Bool = false, runs: [NotePendingRun] = [], recordingNoteID: UUID? = nil) -> NoteRowActions {
+            let note = Note(id: id, text: "Invented row", body: "Invented row", created: Fixture.now, modified: Fixture.now,
+                            pendingRuns: runs, isPinned: pinned)
+            return NoteRowActions(note: note, recordingNoteID: recordingNoteID)
+        }
+        TestSupport.expectEqual(actions(), NoteRowActions(pin: .pin, offersDelete: true))
+        TestSupport.expectEqual(actions(pinned: true), NoteRowActions(pin: .unpin, offersDelete: true))
+        TestSupport.expectEqual(actions(recordingNoteID: other), NoteRowActions(pin: .pin, offersDelete: true))
+        // Recording, or the core's note before its run begins: neither.
+        TestSupport.expectEqual(actions(runs: [run(recording: true)]), NoteRowActions(pin: nil, offersDelete: false))
+        TestSupport.expectEqual(actions(pinned: true, runs: [run(recording: true)]), NoteRowActions(pin: nil, offersDelete: false))
+        TestSupport.expectEqual(actions(recordingNoteID: id), NoteRowActions(pin: nil, offersDelete: false))
+        // A run not yet merged: Delete only, until it is.
+        TestSupport.expectEqual(actions(runs: [run(recording: false)]), NoteRowActions(pin: nil, offersDelete: true))
+        TestSupport.expectEqual(NoteRowActions.Pin.pin.title, "Pin")
+        TestSupport.expectEqual(NoteRowActions.Pin.unpin.title, "Unpin")
+    }
 
     private static func testNotesScreenForEachVaultState() {
         TestSupport.expectEqual(NotesScreen(vault: .noVault, canMakeVault: true, offersRecoveryCode: false), .firstUse)

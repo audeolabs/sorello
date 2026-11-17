@@ -27,6 +27,10 @@ enum NoteRunTests {
             ("aRecordingNoteCannotBeEditedOrDeleted", testARecordingNoteCannotBeEditedOrDeleted),
             ("deletingANoteRemovesIt", testDeletingANoteRemovesIt),
             ("notesAreNewestFirst", testNotesAreNewestFirst),
+            ("aPinKeepsTextAndDatesThroughEditsMergesAndLocks", testAPinKeepsTextAndDatesThroughEditsMergesAndLocks),
+            ("aPinWaitsForARecordingAndAnUnreadableRun", testAPinWaitsForARecordingAndAnUnreadableRun),
+            ("aBodyWithoutAPinOpensUnpinned", testABodyWithoutAPinOpensUnpinned),
+            ("aPinnedBodyOpensInAnEarlierBuild", testAPinnedBodyOpensInAnEarlierBuild),
         ]
     }
 
@@ -437,6 +441,113 @@ enum NoteRunTests {
         fixture.now = Fixture.now.addingTimeInterval(40)
         fixture.record(["More."], into: .note(middle, at: .end))
         TestSupport.expectEqual(try! fixture.vault.notes().map(\.id), [middle, old, new])
+    }
+
+    private static func testAPinKeepsTextAndDatesThroughEditsMergesAndLocks() {
+        let fixture = NoteFixture()
+        try! fixture.vault.makeVault()
+        let pinned = note("Invented note to pin.", in: fixture)
+        fixture.now = Fixture.now.addingTimeInterval(10)
+        let newer = note("A newer invented note.", in: fixture)
+        // An ended run not yet merged is merged by the pin, which moves no date.
+        fixture.now = Fixture.now.addingTimeInterval(20)
+        fixture.record(["More."], into: .note(pinned, at: .end))
+        let before = try! fixture.vault.note(pinned)
+        TestSupport.expect(!before.isPinned, "a new note is pinned")
+        fixture.now = Fixture.now.addingTimeInterval(600)
+        try! fixture.vault.setPinned(true, of: pinned)
+        let after = try! fixture.vault.note(pinned)
+        TestSupport.expect(after.isPinned, "the pin did not hold")
+        TestSupport.expectEqual(after.text, "Invented note to pin. More.")
+        TestSupport.expectEqual(after.pendingRuns, [])
+        TestSupport.expectEqual(after.created, before.created)
+        TestSupport.expectEqual(after.modified, before.modified)
+        // An edit, a run merged at unlock, a lock and a new process keep it.
+        try! fixture.vault.replaceText(of: pinned, with: "Invented note, edited.")
+        TestSupport.expect(try! fixture.vault.note(pinned).isPinned, "an edit dropped the pin")
+        fixture.vault.lock()
+        fixture.record(["Recorded while locked."], into: .note(pinned, at: .end))
+        fixture.relaunch()
+        fixture.unlock()
+        let reopened = try! fixture.vault.note(pinned)
+        TestSupport.expect(reopened.isPinned, "a lock or a merge dropped the pin")
+        TestSupport.expectEqual(reopened.text, "Invented note, edited. Recorded while locked.")
+        TestSupport.expect(!(try! fixture.vault.note(newer).isPinned), "the other note was pinned")
+        // Unpinning holds too, and leaves the dates.
+        let modified = reopened.modified
+        try! fixture.vault.setPinned(false, of: pinned)
+        fixture.vault.lock()
+        fixture.unlock()
+        TestSupport.expect(!(try! fixture.vault.note(pinned).isPinned), "the unpin did not hold")
+        TestSupport.expectEqual(try! fixture.vault.note(pinned).modified, modified)
+        TestSupport.expectEqual(Result { try fixture.vault.setPinned(true, of: UUID()) }.noteError, .noSuchNote)
+        fixture.vault.lock()
+        TestSupport.expectEqual(Result { try fixture.vault.setPinned(true, of: pinned) }.noteError, .locked)
+    }
+
+    private static func testAPinWaitsForARecordingAndAnUnreadableRun() {
+        let fixture = NoteFixture()
+        try! fixture.vault.makeVault()
+        let id = note("Invented.", in: fixture)
+        let writer = try! fixture.recorder.beginRun(.note(id, at: .end))
+        TestSupport.expectEqual(Result { try fixture.vault.setPinned(true, of: id) }.noteError, .noteIsRecording)
+        try! writer.append("Spoken.")
+        writer.end()
+        // A run's directory that cannot be listed now waits, and so does the pin.
+        let run = fixture.runDirectories(of: id)[0]
+        try! FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: run.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: run.path) }
+        TestSupport.expectEqual(Result { try fixture.vault.setPinned(true, of: id) }.noteError, .unavailable)
+        TestSupport.expect(!(try! fixture.vault.note(id).isPinned), "a refused pin held")
+        try! FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: run.path)
+        try! fixture.vault.setPinned(true, of: id)
+        let pinned = try! fixture.vault.note(id)
+        TestSupport.expect(pinned.isPinned, "the pin did not hold")
+        TestSupport.expectEqual(pinned.text, "Invented. Spoken.")
+    }
+
+    /// A body as a build before pins wrote it: schema 1, without the field.
+    private static func testABodyWithoutAPinOpensUnpinned() {
+        let fixture = NoteFixture()
+        try! fixture.vault.makeVault()
+        let id = note("Placeholder.", in: fixture)
+        let json = #"{"created":1000,"mergedRuns":[],"modified":2000,"schema":1,"text":"Invented earlier body."}"#
+        let privateKey = NoteVaultKeys.privateKey(for: fixture.keyStore.secret!)!
+        let record = try! NoteSealing.seal(Data(json.utf8), as: .body(id), to: privateKey.publicKey)
+        try! record.write(to: fixture.noteDirectory(id).appendingPathComponent("body"))
+        fixture.relaunch()
+        fixture.unlock()
+        let opened = try! fixture.vault.note(id)
+        TestSupport.expectEqual(opened.text, "Invented earlier body.")
+        TestSupport.expectEqual(opened.modified, Date(timeIntervalSince1970: 2000))
+        TestSupport.expect(!opened.isPinned, "a body without the field opened pinned")
+    }
+
+    /// A build before pins opens a body only with schema 1 and the fields it knows; the pin is one it ignores.
+    private static func testAPinnedBodyOpensInAnEarlierBuild() {
+        struct EarlierBody: Decodable {
+            var schema: Int
+            var text: String
+            var created: Date
+            var modified: Date
+            var mergedRuns: [UUID]
+        }
+        let fixture = NoteFixture()
+        try! fixture.vault.makeVault()
+        let id = note("Invented body to keep on top.", in: fixture)
+        let privateKey = NoteVaultKeys.privateKey(for: fixture.keyStore.secret!)!
+        func plaintext() -> Data {
+            let record = try! Data(contentsOf: fixture.noteDirectory(id).appendingPathComponent("body"))
+            return NoteSealing.open(record, as: .body(id), with: privateKey)!
+        }
+        TestSupport.expect(!noteBytes(plaintext(), contain: "pinned"), "an unpinned body carries the field")
+        try! fixture.vault.setPinned(true, of: id)
+        TestSupport.expect(noteBytes(plaintext(), contain: #""pinned":true"#), "a pinned body lacks the field")
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .secondsSince1970
+        let earlier = try? decoder.decode(EarlierBody.self, from: plaintext())
+        TestSupport.expectEqual(earlier?.schema, 1)
+        TestSupport.expectEqual(earlier?.text, "Invented body to keep on top.")
     }
 
     private static func copy(_ directory: URL, into root: URL) -> URL {

@@ -53,7 +53,7 @@ enum NoteVaultState: Equatable {
     case secretMissing
 }
 
-/// A note's body, sealed in its `body` record. Part of the stored format.
+/// A note's body, sealed in its `body` record. Part of the stored format (ARCHITECTURE.md, "Notes", Body).
 struct NoteBody: Codable, Equatable {
     static let schema = 1
     var schema = NoteBody.schema
@@ -63,6 +63,14 @@ struct NoteBody: Codable, Equatable {
     /// The runs merged into this body whose files may remain, so a crash between the write and their removal
     /// never merges one twice.
     var mergedRuns: [UUID]
+    /// True for a pinned note, and written only for one: absent means not pinned, as in every body written before
+    /// pins, and an earlier build ignores it, so the schema stays 1.
+    var pinned: Bool?
+
+    var isPinned: Bool {
+        get { pinned == true }
+        set { pinned = newValue ? true : nil }
+    }
 }
 
 /// The vault and, while it is unlocked, the library (ARCHITECTURE.md, "Notes", Vault and Library and search).
@@ -263,10 +271,28 @@ final class NoteVault: @unchecked Sendable {
             // One listing decides both: a run that begins after it is not counted as replaced.
             let runs = storage.runs(of: id)
             guard !runs.contains(where: \.isRecording) else { throw NoteError.noteIsRecording }
-            let body = NoteBody(text: text, created: current.created, modified: now(), mergedRuns: runs.map(\.id))
+            let body = NoteBody(text: text, created: current.created, modified: now(), mergedRuns: runs.map(\.id),
+                                pinned: unlocked.bodies[id]?.pinned)
             try write(body, of: id, with: unlocked.privateKey.publicKey)
             unlocked.bodies[id] = body
             for run in runs { storage.removeRun(run.id, order: run.order, of: id) }
+        }
+    }
+
+    /// Pins or unpins a note, rewriting only the pin: its text and dates stay. Its ended runs are merged first; refused
+    /// while it records, or while a run of it cannot be merged now.
+    func setPinned(_ pinned: Bool, of id: UUID) throws {
+        try withUnlockedMutating { unlocked in
+            guard let shown = note(id, in: unlocked) else { throw NoteError.noSuchNote }
+            guard !shown.isRecording else { throw NoteError.noteIsRecording }
+            try merge(id, in: &unlocked)
+            guard let merged = note(id, in: unlocked) else { throw NoteError.noSuchNote }
+            guard !merged.isRecording else { throw NoteError.noteIsRecording }
+            guard merged.pendingRuns.isEmpty, var body = unlocked.bodies[id] else { throw NoteError.unavailable }
+            guard body.isPinned != pinned else { return }
+            body.isPinned = pinned
+            try write(body, of: id, with: unlocked.privateKey.publicKey)
+            unlocked.bodies[id] = body
         }
     }
 
@@ -356,7 +382,8 @@ final class NoteVault: @unchecked Sendable {
         let modified = ([body?.modified].compactMap { $0 } + starts).max() ?? created
         let text = NoteMerge.merge(runs.map { NoteRunContent(place: $0.place, pieces: $0.pieces) },
                                    into: body?.text ?? "", format: format)
-        return Note(id: id, text: text, body: body?.text ?? "", created: created, modified: modified, pendingRuns: runs)
+        return Note(id: id, text: text, body: body?.text ?? "", created: created, modified: modified, pendingRuns: runs,
+                    isPinned: body?.isPinned ?? false)
     }
 
     /// Merges the runs of note `id` that have ended, up to the first that records or has a file that cannot be read,
@@ -379,7 +406,7 @@ final class NoteVault: @unchecked Sendable {
                 let modified = ([body?.modified].compactMap { $0 } + starts).max() ?? created
                 let remaining = stored.map(\.id).filter { alreadyMerged.contains($0) }
                 let merged = NoteBody(text: text, created: created, modified: modified,
-                                      mergedRuns: remaining + pending.map(\.id))
+                                      mergedRuns: remaining + pending.map(\.id), pinned: body?.pinned)
                 try write(merged, of: id, with: unlocked.privateKey.publicKey)
                 unlocked.bodies[id] = merged
             }

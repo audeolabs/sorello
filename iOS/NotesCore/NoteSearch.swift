@@ -12,6 +12,8 @@ struct Note: Equatable {
     var modified: Date
     /// The runs not yet merged into the body, in order.
     var pendingRuns: [NotePendingRun]
+    /// Whether its body is pinned (ARCHITECTURE.md, "Notes", Pin).
+    var isPinned = false
 
     /// Whether a run of this note records now.
     var isRecording: Bool { pendingRuns.contains { $0.isRecording } }
@@ -105,6 +107,12 @@ enum NoteSearch {
                 starts.append(Int32(folded.count))
                 return Entry(note: note, folded: folded, starts: starts, wordStarts: wordStarts)
             }
+        }
+
+        /// Every note as a list shows it without a query: the pinned first, then the rest, each newest first.
+        var listing: [NoteSearchHit] {
+            let all = entries.map { NoteSearchHit(note: $0.note, matchedCharacters: []) }
+            return all.filter(\.note.isPinned) + all.filter { !$0.note.isPinned }
         }
 
         /// The notes in which every term of `query` matches the start of a word, newest first.

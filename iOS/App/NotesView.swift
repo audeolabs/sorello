@@ -187,9 +187,11 @@ private struct RecordPill: View {
     }
 }
 
-/// The unlocked list: newest first, searched at every keystroke (`NotesLibrary.search`).
+/// The unlocked list: pinned first, then newest first, searched at every keystroke (`NotesLibrary.search`). A row swipes
+/// to Pin or Unpin and to Delete (`NoteRowActions`).
 private struct NotesList: View {
     @ObservedObject var model: NotesModel
+    @State private var deleting: UUID?
 
     var body: some View {
         let library = model.library
@@ -205,12 +207,37 @@ private struct NotesList: View {
                         .foregroundStyle(Theme.secondaryInk)
                 }
                 ForEach(library.hits, id: \.note.id) { hit in
+                    let actions = NoteRowActions(note: hit.note, recordingNoteID: library.recordingNoteID)
                     Button {
                         library.open(hit.note.id)
                     } label: {
                         NoteRow(hit: hit, isRecording: hit.note.id == library.recordingNoteID, searching: !library.query.isEmpty)
                     }
                     .buttonStyle(.plain)
+                    .swipeActions(edge: .leading) {
+                        if let pin = actions.pin {
+                            Button {
+                                library.setPinned(pin.pins, of: hit.note.id)
+                            } label: {
+                                Label(pin.title, systemImage: pin.symbol)
+                            }
+                            .tint(Color(.systemGray))
+                        }
+                    }
+                    .swipeActions(edge: .trailing) {
+                        if actions.offersDelete {
+                            // No destructive role: the row stays until the confirmation's Delete.
+                            Button {
+                                deleting = hit.note.id
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            .tint(Theme.coral)
+                        }
+                    }
+                    // On the row, so the dialog points at the note it deletes.
+                    .deleteNoteConfirmation(for: Binding(get: { deleting == hit.note.id ? hit.note.id : nil },
+                                                         set: { deleting = $0 })) { library.delete($0) }
                 }
             } footer: {
                 if let unreadable = NoteRowText.unreadable(library.unreadableCount) {
@@ -267,6 +294,12 @@ private struct NoteRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 6) {
                 if isRecording { StateDot(accent: .coral) }
+                if hit.note.isPinned {
+                    Image(systemName: "pin.fill")
+                        .imageScale(.small)
+                        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                        .accessibilityLabel("Pinned")
+                }
                 date
             }
             .font(.footnote)
@@ -325,7 +358,7 @@ struct NoteView: View {
     @ObservedObject var model: NotesModel
     @EnvironmentObject private var host: HostSessionController
     @State private var selection: TextSelection?
-    @State private var confirmingDelete = false
+    @State private var deleting: UUID?
 
     var body: some View {
         let library = model.library
@@ -346,17 +379,13 @@ struct NoteView: View {
                               phase: host.voiceNote?.phase).isEditing {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        confirmingDelete = true
+                        deleting = id
                     } label: {
                         Image(systemName: "trash")
                     }
                     .accessibilityLabel("Delete note")
                     .accessibilityIdentifier("note.delete")
-                    .confirmationDialog("Delete this note?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-                        Button("Delete", role: .destructive) { library.deleteOpenNote() }
-                    } message: {
-                        Text("It can’t be recovered.")
-                    }
+                    .deleteNoteConfirmation(for: $deleting) { _ in library.deleteOpenNote() }
                 }
             }
         }
@@ -631,6 +660,17 @@ struct NotesSettingsView: View {
 }
 
 private extension View {
+    /// Delete's confirmation, on the note screen and on a list row's swipe: a deleted note is gone for good.
+    func deleteNoteConfirmation(for note: Binding<UUID?>, delete: @escaping (UUID) -> Void) -> some View {
+        confirmationDialog("Delete this note?",
+                           isPresented: Binding(get: { note.wrappedValue != nil }, set: { if !$0 { note.wrappedValue = nil } }),
+                           titleVisibility: .visible, presenting: note.wrappedValue) { id in
+            Button("Delete", role: .destructive) { delete(id) }
+        } message: { _ in
+            Text("It can’t be recovered.")
+        }
+    }
+
     func eraseConfirmation(isPresented: Binding<Bool>, erase: @escaping () -> Void) -> some View {
         confirmationDialog("Erase all notes?", isPresented: isPresented, titleVisibility: .visible) {
             Button("Erase all notes", role: .destructive, action: erase)

@@ -12,12 +12,30 @@ enum NoteSearchTests {
             ("resultsAreNewestFirst", testResultsAreNewestFirst),
             ("aQueryWithNoTermsMatchesEveryNote", testAQueryWithNoTermsMatchesEveryNote),
             ("theVaultSearchesWhatTheNotesShow", testTheVaultSearchesWhatTheNotesShow),
+            ("theListingPutsPinnedNotesFirstAndSearchIgnoresPins", testTheListingPutsPinnedNotesFirstAndSearchIgnoresPins),
         ]
     }
 
-    private static func note(_ text: String, modified seconds: TimeInterval = 0, id: Int = 1) -> Note {
+    private static func note(_ text: String, modified seconds: TimeInterval = 0, id: Int = 1, pinned: Bool = false) -> Note {
         Note(id: UUID(uuidString: String(format: "00000000-0000-4000-8000-%012d", id))!, text: text, body: text,
-             created: Fixture.now, modified: Fixture.now.addingTimeInterval(seconds), pendingRuns: [])
+             created: Fixture.now, modified: Fixture.now.addingTimeInterval(seconds), pendingRuns: [], isPinned: pinned)
+    }
+
+    private static func testTheListingPutsPinnedNotesFirstAndSearchIgnoresPins() {
+        let notes = [
+            note("Oldest invented kite", modified: 0, id: 1, pinned: true),
+            note("Middle invented kite", modified: 10, id: 2),
+            note("Newer invented kite", modified: 20, id: 3, pinned: true),
+            note("Newest invented kite", modified: 30, id: 4),
+        ]
+        let index = NoteSearch.Index(notes.shuffled())
+        TestSupport.expectEqual(index.listing.map(\.note.text),
+                                ["Newer invented kite", "Oldest invented kite", "Newest invented kite", "Middle invented kite"])
+        TestSupport.expect(index.listing.allSatisfy(\.matchedCharacters.isEmpty), "the listing carries matches")
+        let newestFirst = ["Newest invented kite", "Newer invented kite", "Middle invented kite", "Oldest invented kite"]
+        TestSupport.expectEqual(index.search("kite").map(\.note.text), newestFirst)
+        TestSupport.expectEqual(index.search("").map(\.note.text), newestFirst)
+        TestSupport.expectEqual(NoteSearch.Index([]).listing, [])
     }
 
     /// The texts each hit matched, per hit.

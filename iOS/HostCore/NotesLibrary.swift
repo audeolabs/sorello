@@ -38,7 +38,7 @@ final class NotesLibrary {
     /// A recovery code just made, as it shows, until the user is done with it or the vault locks.
     private(set) var recoveryCode: String?
     private(set) var query = ""
-    /// The notes the query matches, newest first; every note for no query. Empty unless unlocked.
+    /// The notes the query matches, newest first; for no query, every note, pinned first. Empty unless unlocked.
     private(set) var hits: [NoteSearchHit] = []
     private(set) var unreadableCount = 0
     /// The note screen's note. Kept through a lock, which drops its text.
@@ -203,8 +203,33 @@ final class NotesLibrary {
     func search(_ query: String) {
         guard state == .unlocked else { return }
         self.query = query
-        hits = index?.search(query) ?? []
+        hits = index.map { listed(in: $0) } ?? []
         onChange?()
+    }
+
+    /// Pins or unpins a note of the list. Refused while it records.
+    func setPinned(_ pinned: Bool, of id: UUID) {
+        guard state == .unlocked else { return }
+        do {
+            guard id != recordingNoteID else { throw NoteError.noteIsRecording }
+            try vault.setPinned(pinned, of: id)
+        } catch {
+            fail(error)
+        }
+        refresh()
+    }
+
+    /// Deletes a note; the open note closes with it. Refused while it records.
+    func delete(_ id: UUID) {
+        guard state == .unlocked else { return }
+        do {
+            guard id != recordingNoteID else { throw NoteError.noteIsRecording }
+            try vault.deleteNote(id)
+            if openNoteID == id { openNoteID = nil }
+        } catch {
+            fail(error)
+        }
+        refresh()
     }
 
     /// Record from the Notes screen: a new note, opened when the vault is unlocked.
@@ -285,14 +310,8 @@ final class NotesLibrary {
 
     /// Deletes the open note and closes it. Refused while it records.
     func deleteOpenNote() {
-        guard state == .unlocked, let id = openNoteID else { return }
-        do {
-            try vault.deleteNote(id)
-            openNoteID = nil
-        } catch {
-            fail(error)
-        }
-        refresh()
+        guard let id = openNoteID else { return }
+        delete(id)
     }
 
     // MARK: The core's note
@@ -366,7 +385,7 @@ final class NotesLibrary {
         do {
             let index = try vault.searchIndex()
             self.index = index
-            hits = index.search(query)
+            hits = listed(in: index)
             unreadableCount = try vault.unreadableNoteCount()
         } catch {
             fail(error)
@@ -395,6 +414,11 @@ final class NotesLibrary {
         } catch {
             fail(error)
         }
+    }
+
+    /// The list: the query's hits, newest first, or with no query every note, pinned first.
+    private func listed(in index: NoteSearch.Index) -> [NoteSearchHit] {
+        query.isEmpty ? index.listing : index.search(query)
     }
 
     private func dropText() {

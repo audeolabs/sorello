@@ -1254,10 +1254,17 @@ Notes).
   - `vault-public-key`, the raw public key;
   - `recovery-wrap`, the sealed secret, when a recovery code was made;
   - `note-<UUID>/` per note: `body`, its sealed body (the text, its created
-    and modified dates, and the runs merged into it whose files remain), and
+    and modified dates, the runs merged into it whose files remain, and
+    whether it is pinned), and
     `run-<order>-<UUID>/` per run not yet merged, with `start` (the run's
     place in the body and its start date) and `segment-<n>`, one per settled
     piece, numbered from 1.
+- **Body.** A body is JSON (`NoteBody`), schema 1. `pinned` is written only
+  for a pinned note, and a body without it is not pinned, so a body written
+  before pins existed opens unpinned and an earlier build opens a body
+  written with one, ignoring the pin. A body with another schema does not
+  open. A new field keeps the schema when its absence means what bodies
+  without it meant.
 - Every file is written through `AtomicRecordFiles` (staged and renamed,
   [Files](#files)), with its staging files in its own directory. Bodies and
   the recovery wrap are class A. Starts and segments are class B
@@ -1310,6 +1317,13 @@ Notes).
   `replaceText(of:with:)` replaces a note's text (its pending runs count as
   replaced) and sets its modified date; it is refused while the note
   records. `deleteNote(_:)` deletes a note, also refused while it records.
+- **Pin.** A note is pinned or not (`Note.isPinned`, from its body).
+  `setPinned(_:of:)` first merges the note's ended runs, as
+  `mergePendingRuns()` does, then rewrites only the pin: never the text or a
+  date, so a pin does not move a note among the others by date. It is
+  refused while the note records (`noteIsRecording`) and while it has a run
+  that cannot be merged now (`unavailable`). An edit, a merge, a lock and an
+  unlock keep the pin.
 - Search is a linear scan over the notes' texts (`NoteSearch`, pure).
   `searchIndex()` lists the notes once and folds each text once
   (`NoteSearch.Index`); a search field then searches that index at every
@@ -1322,7 +1336,9 @@ Notes).
   text, sorted and joined where they overlap or touch, for a highlighted
   snippet; a hit finds its ranges when it is asked for them, so a list reads
   them for the rows it shows. A query with no terms matches every note with
-  no ranges.
+  no ranges. Search ignores pins. The index's `listing` is every note as a
+  list shows it without a query: the pinned notes first, then the rest, each
+  newest first.
 
 ## Host app (App/)
 
@@ -1362,9 +1378,9 @@ Notes).
     when the app becomes active, so a passcode set meanwhile counts.
   - It takes one `searchIndex()` per listing: at unlock and when the notes
     change (a note starts, a piece is written, a note ends, an edit is
-    saved, a note is deleted), never per keystroke. The query searches that
-    index at every keystroke; with no query it lists every note, newest
-    first.
+    saved, a note is pinned or deleted), never per keystroke. The query
+    searches that index at every keystroke; with no query it lists the
+    index's `listing`, pinned notes first.
   - The open note records while it is the core's note. Only then, with the
     vault unlocked, is the core's `onNoteProvisional` set, and the tail kept
     until the next report; each piece written re-reads the note from the
@@ -1379,8 +1395,10 @@ Notes).
     that cannot be saved stays open, with its sentence. Resume saves it,
     then starts a run at the cursor's UTF-16 offset
     (the end of a selection, and the note's end with no cursor). Record
-    starts a new note and, unlocked, opens it. Delete is refused while the
-    note records.
+    starts a new note and, unlocked, opens it. Delete, of the open note or
+    of a row, is refused while the note records or is the core's note, as is
+    a pin ([Library and search](#library-and-search-notevault-notesearch),
+    Pin); deleting the open note closes it.
   - Making a vault leaves the recovery code offered until it is made or
     skipped, in memory only. A code made is shown until the user is done
     with it.
@@ -1488,8 +1506,14 @@ Notes).
     and no note text, title, count or date. Unlocked, a search field and the
     list, each row the start of the note and its date, or while searching a
     snippet around the first match with the matches highlighted
-    (`NoteSnippet`), a sentence when some notes could not be opened, and a
-    link to Notes settings. With notes but no secret (`secretMissing`),
+    (`NoteSnippet`), with a small pin glyph on a pinned note's row, a
+    sentence when some notes could not be opened, and a
+    link to Notes settings. A row's swipe actions (`NoteRowActions`), which
+    VoiceOver offers as the row's actions, are placed as the system's Notes
+    places them: Pin, or Unpin for a pinned note, on the leading edge, and
+    Delete on the trailing edge, which asks for the note screen's Delete
+    confirmation first. A note that records, or is the core's note, offers
+    neither; one with a run not yet merged offers Delete only. With notes but no secret (`secretMissing`),
     entering the recovery code, or Erase all notes. Wherever a note is in
     progress, however it started, Record is Stop, and Saving while it saves.
     Recording never needs an unlock: Record on a locked vault starts a new
@@ -4198,7 +4222,8 @@ merge (AGENTS.md).
   fallback; without a passcode, nothing is made); the recovery code, and
   restoring with it on another iPhone or after the passcode was turned off;
   a note's live text and its provisional tail; Stop, Resume at the cursor,
-  search, Delete and Erase all notes; the vault locking in the background,
+  search, Delete and Erase all notes; swiping a row to pin, unpin and delete
+  it, with VoiceOver too; the vault locking in the background,
   at device lock and on Lock now, with nothing of a note left on screen;
   and the owner's experiment: record a note, lock the iPhone, speak for a
   minute, unlock, and read Diagnostics → Last voice note (pieces while
