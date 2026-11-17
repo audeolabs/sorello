@@ -24,6 +24,8 @@ final class NoteStorage: @unchecked Sendable {
     let directory: URL
     private let lock = NSLock()
     private var recordingRuns: [UUID: UUID] = [:]   // run ID: note ID
+    /// While set, no run begins.
+    private var erasing = false
 
     init(directory: URL) {
         self.directory = directory
@@ -72,16 +74,20 @@ final class NoteStorage: @unchecked Sendable {
         }
     }
 
-    /// Removes the whole directory. Refused while a run records.
-    func removeEverything() throws {
+    /// Erases: runs `deleteSecret`, then removes the whole directory, and no run begins in between. Refused while a
+    /// run records.
+    func erase(deletingSecret deleteSecret: () throws -> Void) throws {
         try locked {
             guard recordingRuns.isEmpty else { throw NoteError.noteIsRecording }
-            guard FileManager.default.fileExists(atPath: directory.path) else { return }
-            do {
-                try FileManager.default.removeItem(at: directory)
-            } catch {
-                throw NoteError.storageFailed
-            }
+            erasing = true
+        }
+        defer { lock.withLock { erasing = false } }
+        try deleteSecret()
+        guard FileManager.default.fileExists(atPath: directory.path) else { return }
+        do {
+            try FileManager.default.removeItem(at: directory)
+        } catch {
+            throw NoteError.storageFailed
         }
     }
 
@@ -179,9 +185,10 @@ final class NoteStorage: @unchecked Sendable {
     // MARK: Runs that record
 
     /// Makes a run's directory, in a new note's directory if `noteID` is nil, and counts the run as recording until
-    /// `endRun`. Fails with `noSuchNote` if the note's directory is gone.
+    /// `endRun`. Fails with `noSuchNote` if the note's directory is gone, and with `noVault` during an erase.
     func beginRun(of existingNoteID: UUID?) throws -> (noteID: UUID, runID: UUID, order: Int) {
         try locked {
+            guard !erasing else { throw NoteError.noVault }
             let noteID = existingNoteID ?? UUID()
             let noteDirectory = noteDirectory(noteID)
             if existingNoteID == nil {
@@ -214,8 +221,6 @@ final class NoteStorage: @unchecked Sendable {
     func endRun(_ runID: UUID) {
         lock.withLock { _ = recordingRuns.removeValue(forKey: runID) }
     }
-
-    var hasRecordingRun: Bool { lock.withLock { !recordingRuns.isEmpty } }
 
     // MARK: Names and files
 

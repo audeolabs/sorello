@@ -943,9 +943,9 @@ repository's `gh-pages` branch, not from `main`; the support page is
 ## Notes (NotesCore/)
 
 Notes are transcripts the app keeps: the one history on the iPhone. The text
-of a note is sealed to a vault's public key, so a note can be written while
-the vault and the iPhone are locked, and read only with the vault's secret,
-which only the user's authentication releases. Audio is never part of a note.
+of a note is sealed to a vault's public key, so a note being recorded goes on
+being written while the vault and the iPhone are locked, and is read only
+with the vault's secret, which only the user's authentication releases. Audio is never part of a note.
 
 `NotesCore/` holds the vault, sealing, storage, merging a recording run into a
 note, the library and search. It imports only Foundation and CryptoKit, so it
@@ -1004,7 +1004,8 @@ the Notes screens are not built yet; they use the interfaces below.
   stored public key, puts the secret back in the key store and leaves the
   vault unlocked. A wrong or malformed code changes nothing.
 - **Erase all notes** deletes the Keychain item and then the notes
-  directory. It is refused while a run records. An erase cut short leaves
+  directory. It is refused while a run records, and no run begins until it
+  is done. An erase cut short leaves
   `secretMissing` or `noVault`, never a vault that opens.
 
 ### Sealing (NoteSealing)
@@ -1044,8 +1045,10 @@ the Notes screens are not built yet; they use the interfaces below.
   [Files](#files)), with its staging files in its own directory. Bodies and
   the recovery wrap are class A. The public key, starts and segments are
   class B (`.completeUnlessOpen`) on devices, so a run can create them while
-  the iPhone is locked; the public key is read when a run begins. The
-  simulator and macOS use class C, as the shared store does.
+  the iPhone is locked. A class B file that is closed cannot be read while
+  the iPhone is locked, so a run begins only while it is unlocked: every way
+  to start a note authenticates. The simulator and macOS use class C, as
+  the shared store does.
 - A note is deleted by renaming its directory to `.deleted-<UUID>`, then
   removing it; leftovers of a delete or a staged write are removed at the
   next unlock. Directories of runs that record are never touched then.
@@ -1055,7 +1058,8 @@ the Notes screens are not built yet; they use the interfaces below.
 - **Recording side.** `NoteRecorder` needs only the storage. `beginRun`
   starts a run for a new note or for an existing one at a place: it reads the
   public key, makes the run's directory and writes its start, and fails with
-  `noVault` without a public key and `noSuchNote` for a note that is gone.
+  `noVault` without a public key or during an erase, `unavailable` if the
+  public key cannot be read, and `noSuchNote` for a note that is gone.
   The `NoteRunWriter` it returns seals each settled piece as the next
   segment the moment it is given (an empty piece writes nothing; a write
   that fails throws and uses no number), and `end` drops the run's key. The
@@ -1070,8 +1074,8 @@ the Notes screens are not built yet; they use the interfaces below.
 - **Reading** a note gives its body, its pending runs in order with their
   pieces in sequence, and its text: the body with the runs merged in
   (`NoteMerge`). A note being recorded shows the pieces written so far.
-- **Merging** writes the runs that are not recording into the body, in
-  order, and then removes their files. It needs the vault unlocked: it runs
+- **Merging** writes the runs that have ended, up to the first that records,
+  into the body, in order, and then removes their files. It needs the vault unlocked: it runs
   at every unlock and on `mergePendingRuns()`, so after a crash at the next
   unlock. The body names the runs merged into it until their files are gone,
   so a crash between any two steps never merges a run twice or loses one. A

@@ -20,6 +20,7 @@ enum NoteVaultTests {
             ("recoveryCodeNeedsTheVaultUnlocked", testRecoveryCodeNeedsTheVaultUnlocked),
             ("eraseRemovesEverything", testEraseRemovesEverything),
             ("eraseIsRefusedWhileARunRecords", testEraseIsRefusedWhileARunRecords),
+            ("noRunBeginsDuringAnErase", testNoRunBeginsDuringAnErase),
             ("notesAreKeptInBackups", testNotesAreKeptInBackups),
         ]
     }
@@ -233,6 +234,17 @@ enum NoteVaultTests {
         writer.end()
         try! fixture.vault.eraseAll()
         TestSupport.expectEqual(fixture.vault.state, .noVault)
+    }
+
+    private static func testNoRunBeginsDuringAnErase() {
+        let fixture = NoteFixture()
+        try! fixture.vault.makeVault()
+        var during: NoteError?
+        fixture.keyStore.whileDeleting = { during = Result { try fixture.recorder.beginRun(.newNote) }.noteError }
+        try! fixture.vault.eraseAll()
+        TestSupport.expectEqual(during, .noVault)
+        TestSupport.expectEqual(fixture.vault.state, .noVault)
+        TestSupport.expect(!FileManager.default.fileExists(atPath: fixture.directory.path), "the notes directory survived")
     }
 
     private static func testNotesAreKeptInBackups() {

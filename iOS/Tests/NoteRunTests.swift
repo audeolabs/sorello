@@ -12,6 +12,7 @@ enum NoteRunTests {
             ("aRunMergesAtItsPlace", testARunMergesAtItsPlace),
             ("placesAreClampedToCharacterBoundaries", testPlacesAreClampedToCharacterBoundaries),
             ("runsMergeInOrder", testRunsMergeInOrder),
+            ("aRunWaitsForTheRecordingRunBeforeIt", testARunWaitsForTheRecordingRunBeforeIt),
             ("aNoteShowsItsRecordingRunAndMergesItOnlyOnceEnded", testANoteShowsItsRecordingRunAndMergesItOnlyOnceEnded),
             ("aMergeSurvivesACrashBetweenAnyTwoSteps", testAMergeSurvivesACrashBetweenAnyTwoSteps),
             ("aRunCutShortByACrashIsMergedAtTheNextUnlock", testARunCutShortByACrashIsMergedAtTheNextUnlock),
@@ -138,6 +139,21 @@ enum NoteRunTests {
         fixture.record(["and a half"], into: .note(id, at: .offset(7)))
         fixture.unlock()
         TestSupport.expectEqual(fixture.noteTexts(), ["One two and a half three"])
+    }
+
+    private static func testARunWaitsForTheRecordingRunBeforeIt() {
+        let fixture = NoteFixture()
+        try! fixture.vault.makeVault()
+        let id = note("Invented.", in: fixture)
+        let first = try! fixture.recorder.beginRun(.note(id, at: .end))
+        try! first.append("First.")
+        fixture.record(["Second."], into: .note(id, at: .end))
+        try! fixture.vault.mergePendingRuns()
+        TestSupport.expectEqual(try! fixture.vault.note(id).body, "Invented.")
+        TestSupport.expectEqual(try! fixture.vault.note(id).text, "Invented. First. Second.")
+        first.end()
+        try! fixture.vault.mergePendingRuns()
+        TestSupport.expectEqual(try! fixture.vault.note(id).body, "Invented. First. Second.")
     }
 
     private static func testANoteShowsItsRecordingRunAndMergesItOnlyOnceEnded() {

@@ -8,6 +8,8 @@ final class FakeNoteKeyStore: NoteKeyStore, @unchecked Sendable {
     var userCancels = false
     /// Runs while the user is asked, before they answer.
     var whileAsking: (() -> Void)?
+    /// Runs as the secret is deleted.
+    var whileDeleting: (() -> Void)?
     private(set) var prompts: [String] = []
 
     func hasSecret() -> Bool { secret != nil }
@@ -22,7 +24,10 @@ final class FakeNoteKeyStore: NoteKeyStore, @unchecked Sendable {
         return secret
     }
 
-    func deleteSecret() throws { secret = nil }
+    func deleteSecret() throws {
+        whileDeleting?()
+        secret = nil
+    }
 }
 
 /// A notes directory in a fresh temporary directory, with its vault and recorder, and a clock the test moves.

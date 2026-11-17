@@ -188,16 +188,17 @@ final class NoteVault: @unchecked Sendable {
         try open(secret: secret, privateKey: privateKey, unlessLockedSince: locks)
     }
 
-    /// Erases every note: deletes the secret, then the notes directory. Refused while a run records.
+    /// Erases every note: deletes the secret, then the notes directory. Refused while a run records, and no run
+    /// begins until it is done.
     func eraseAll() throws {
-        guard !storage.hasRecordingRun else { throw NoteError.noteIsRecording }
-        lock()
-        do {
-            try keyStore.deleteSecret()
-        } catch {
-            throw NoteError.keyStoreFailed
+        try storage.erase {
+            lock()
+            do {
+                try keyStore.deleteSecret()
+            } catch {
+                throw NoteError.keyStoreFailed
+            }
         }
-        try storage.removeEverything()
     }
 
     // MARK: Library
@@ -242,8 +243,9 @@ final class NoteVault: @unchecked Sendable {
     func replaceText(of id: UUID, with text: String) throws {
         try withUnlockedMutating { unlocked in
             guard let current = note(id, in: unlocked) else { throw NoteError.noSuchNote }
-            guard !current.isRecording else { throw NoteError.noteIsRecording }
+            // One listing decides both: a run that begins after it is not counted as replaced.
             let runs = storage.runs(of: id)
+            guard !runs.contains(where: \.isRecording) else { throw NoteError.noteIsRecording }
             let body = NoteBody(text: text, created: current.created, modified: now(), mergedRuns: runs.map(\.id))
             try write(body, of: id, with: unlocked.privateKey.publicKey)
             unlocked.bodies[id] = body
@@ -341,14 +343,15 @@ final class NoteVault: @unchecked Sendable {
         return Note(id: id, text: text, body: body?.text ?? "", created: created, modified: modified, pendingRuns: runs)
     }
 
-    /// Merges the runs of note `id` that are not recording into its body, then removes their files. A run already
-    /// named by the body is only removed. A new note whose runs hold no text is removed.
+    /// Merges the runs of note `id` that have ended, up to the first that records, into its body, then removes their
+    /// files. A run already named by the body is only removed. A new note whose runs hold no text is removed.
     private func merge(_ id: UUID, in unlocked: inout Unlocked) throws {
         guard !unlocked.unreadable.contains(id) else { return }
         let stored = storage.runs(of: id)
         let body = unlocked.bodies[id]
         let alreadyMerged = Set(body?.mergedRuns ?? [])
-        let pending = pendingRuns(of: id, mergedInto: body, with: unlocked.privateKey).filter { !$0.isRecording }
+        // The ended runs before the first that records, so the order of the runs never changes.
+        let pending = Array(pendingRuns(of: id, mergedInto: body, with: unlocked.privateKey).prefix { !$0.isRecording })
         if !pending.isEmpty {
             let text = NoteMerge.merge(pending.map { NoteRunContent(place: $0.place, pieces: $0.pieces) },
                                        into: body?.text ?? "", format: format)
