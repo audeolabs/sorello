@@ -6,11 +6,16 @@ import UIKit
 @MainActor
 final class NotesModel: ObservableObject {
     let library: NotesLibrary
+    /// Hears that a vault was made or erased, or its secret restored or lost: the session's Live Activity offers
+    /// its Note only while there is one to record into.
+    var onVaultChange: (@MainActor () -> Void)?
+    private var vaultState: NoteVaultState
     private var observers: [NSObjectProtocol] = []
 
     init(library: NotesLibrary) {
         self.library = library
-        library.onChange = { [weak self] in self?.objectWillChange.send() }
+        vaultState = library.state
+        library.onChange = { [weak self] in self?.libraryChanged() }
         let center = NotificationCenter.default
         for name in [UIApplication.didEnterBackgroundNotification, UIApplication.protectedDataWillBecomeUnavailableNotification] {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
@@ -22,6 +27,14 @@ final class NotesModel: ObservableObject {
             [weak self] _ in
             MainActor.assumeIsolated { self?.library.refreshState() }
         })
+    }
+
+    private func libraryChanged() {
+        objectWillChange.send()
+        // Locking and unlocking change nothing about whether a vault exists.
+        let hadVault = vaultState != .noVault, state = library.state
+        vaultState = state
+        if hadVault != (state != .noVault) { onVaultChange?() }
     }
 }
 

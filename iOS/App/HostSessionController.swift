@@ -102,6 +102,7 @@ final class HostSessionController: ObservableObject, SessionControlHandling, Voi
             let vault = NoteVault(storage: storage, keyStore: KeychainNoteKeyStore(), formatRun: format)
             return NotesModel(library: NotesLibrary(vault: vault, host: core, format: format))
         }
+        notes?.onVaultChange = { [weak self] in self?.refreshNoteVault() }
         relay.core = core
         if let microphone = capture as? MicrophoneCapture {
             microphone.onInterruption = { [weak core] in core?.captureInterrupted() }
