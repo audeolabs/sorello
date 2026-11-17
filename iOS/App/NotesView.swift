@@ -17,6 +17,11 @@ final class NotesModel: ObservableObject {
                 MainActor.assumeIsolated { self?.library.lock() }
             })
         }
+        // A passcode set in Settings meanwhile lets the vault be made.
+        observers.append(center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) {
+            [weak self] _ in
+            MainActor.assumeIsolated { self?.library.refreshState() }
+        })
     }
 }
 
@@ -513,6 +518,7 @@ private struct SecretMissingScreen: View {
     @State private var code = ""
     @State private var confirmingErase = false
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ScrollView {
@@ -539,6 +545,10 @@ private struct SecretMissingScreen: View {
             .padding(24)
         }
         .eraseConfirmation(isPresented: $confirmingErase) { model.library.eraseAll() }
+        // A code typed and not yet used does not outlive the app leaving the screen.
+        .onChange(of: scenePhase) {
+            if scenePhase == .background { code = "" }
+        }
     }
 }
 

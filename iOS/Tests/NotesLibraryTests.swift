@@ -84,6 +84,10 @@ enum NotesLibraryTests {
             ("theRecoveryCodeRestoresAMissingSecret", isolated(testTheRecoveryCodeRestoresAMissingSecret)),
             ("unreadableNotesAreCounted", isolated(testUnreadableNotesAreCounted)),
             ("refusedStartsSaySo", isolated(testRefusedStartsSaySo)),
+            ("aLockRightAfterUnlockWins", isolated(testALockRightAfterUnlockWins)),
+            ("aPasscodeSetLaterIsSeen", isolated(testAPasscodeSetLaterIsSeen)),
+            ("aDraftThatCannotBeSavedStaysOpen", isolated(testADraftThatCannotBeSavedStaysOpen)),
+            ("anEndingNoEditorShowsIsSaid", isolated(testAnEndingNoEditorShowsIsSaid)),
         ]
     }
 
@@ -486,6 +490,85 @@ enum NotesLibraryTests {
         h.library.record()
         TestSupport.expectEqual(h.library.message, NoteStartOutcome.needsApp(.locked).message)
         h.library.dismissMessage()
+        TestSupport.expectEqual(h.library.message, nil)
+    }
+
+    /// A lock issued before the authentication even begins still wins.
+    @MainActor
+    private static func testALockRightAfterUnlockWins() {
+        let h = Harness()
+        h.notes.record(["Invented note behind the lock"])
+        h.library.unlock()
+        h.library.lock()
+        TestSupport.expect(TestSupport.waitUntil(timeout: 2) { !h.library.isUnlocking }, "the unlock never ended")
+        TestSupport.expectEqual(h.library.state, .locked)
+        TestSupport.expect(h.library.hits.isEmpty, "a lock before the unlock began left notes listed")
+        TestSupport.expectEqual(h.notes.vault.state, .locked)
+    }
+
+    @MainActor
+    private static func testAPasscodeSetLaterIsSeen() {
+        let h = Harness(vault: false)
+        h.notes.keyStore.deviceHasPasscode = false
+        h.relaunch()
+        TestSupport.expectEqual(h.library.screen, .needsPasscode)
+        h.notes.keyStore.deviceHasPasscode = true
+        h.library.refreshState()
+        TestSupport.expectEqual(h.library.screen, .firstUse)
+    }
+
+    @MainActor
+    private static func testADraftThatCannotBeSavedStaysOpen() {
+        let h = Harness()
+        let id = h.notes.record(["Invented text that stays"])
+        let other = h.notes.record(["Another invented note"])
+        h.unlock()
+        h.library.open(id)
+        h.library.edit("Invented text that stays, edited")
+        var changes = 0
+        h.library.onChange = { changes += 1 }
+        let directory = h.notes.noteDirectory(id)
+        try! FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+        h.runScheduled()
+        TestSupport.expectEqual(h.library.message, NoteError.storageFailed.message)
+        TestSupport.expect(changes > 0, "a failed save was not reported")
+        h.library.dismissMessage()
+        h.library.close()
+        h.library.open(other)
+        TestSupport.expectEqual(h.library.openNoteID, id)
+        TestSupport.expectEqual(h.library.draft, "Invented text that stays, edited")
+        TestSupport.expectEqual(h.library.message, NoteError.storageFailed.message)
+        try! FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        h.library.close()
+        TestSupport.expectEqual(h.library.openNoteID, nil)
+        TestSupport.expectEqual(h.storedText(id), "Invented text that stays, edited")
+    }
+
+    @MainActor
+    private static func testAnEndingNoEditorShowsIsSaid() {
+        let h = Harness()
+        // Recorded from the locked screen.
+        h.library.record()
+        h.host.report(settled: "Invented words", provisional: "")
+        h.host.end(.interrupted)
+        TestSupport.expectEqual(h.library.message, NoteEndReason.interrupted.message)
+        h.library.dismissMessage()
+        // Open, but it ends before any words, so the note goes and its editor with it.
+        h.unlock()
+        h.library.record()
+        h.host.end(.captureFailed)
+        TestSupport.expectEqual(h.library.openNoteID, nil)
+        TestSupport.expectEqual(h.library.message, NoteEndReason.captureFailed.message)
+        h.library.dismissMessage()
+        // The open editor says it itself; a stop says nothing.
+        h.library.record()
+        h.host.report(settled: "More invented words", provisional: "")
+        h.host.end(.reachedLimit)
+        TestSupport.expectEqual(h.library.openNoteEnding, .reachedLimit)
+        TestSupport.expectEqual(h.library.message, nil)
+        h.library.resume(at: .end)
+        h.host.end(.stopped)
         TestSupport.expectEqual(h.library.message, nil)
     }
 

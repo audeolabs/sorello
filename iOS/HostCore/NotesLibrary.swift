@@ -58,6 +58,8 @@ final class NotesLibrary {
     var onChange: (@MainActor () -> Void)?
 
     private var index: NoteSearch.Index?
+    /// Counts this library's locks, so an unlock asked for before one ends locked.
+    private var locks = 0
     private var draftNeedsSaving = false
     private var saveScheduled = false
 
@@ -111,7 +113,7 @@ final class NotesLibrary {
         guard state == .locked, !isUnlocking else { return }
         isUnlocking = true
         onChange?()
-        let vault = vault, prompt = Self.unlockPrompt
+        let vault = vault, prompt = Self.unlockPrompt, issued = locks
         Task { [weak self] in
             let failure: Error? = await Task.detached {
                 do {
@@ -121,12 +123,14 @@ final class NotesLibrary {
                     return error
                 }
             }.value
-            self?.unlockEnded(failure)
+            self?.unlockEnded(failure, issued: issued)
         }
     }
 
-    private func unlockEnded(_ failure: Error?) {
+    private func unlockEnded(_ failure: Error?, issued: Int) {
         isUnlocking = false
+        // A lock after the request, even one before the authentication began, wins.
+        if locks != issued { vault.lock() }
         // The user's cancel and a lock that won need no sentence.
         if let failure, failure as? NoteError != .authenticationCancelled, failure as? NoteError != .locked {
             fail(failure)
@@ -137,7 +141,13 @@ final class NotesLibrary {
     /// Saves the draft, locks the vault and drops every note's text. A recording goes on.
     func lock() {
         saveDraft()
+        locks += 1
         vault.lock()
+        refresh()
+    }
+
+    /// Reads the vault's state again, as when the app becomes active: a passcode set in Settings meanwhile counts.
+    func refreshState() {
         refresh()
     }
 
@@ -216,8 +226,9 @@ final class NotesLibrary {
 
     // MARK: Note
 
+    /// Opens a note. The open note's draft is saved first; one that cannot be saved stays open.
     func open(_ id: UUID) {
-        if openNoteID != id { saveDraft() }
+        guard openNoteID == id || saveDraft() else { return }
         openNoteID = id
         openNote = nil
         draft = nil
@@ -226,10 +237,9 @@ final class NotesLibrary {
         refresh()
     }
 
-    /// Leaves the note screen: the draft is saved first.
+    /// Leaves the note screen: the draft is saved first; one that cannot be saved stays open.
     func close() {
-        guard openNoteID != nil else { return }
-        saveDraft()
+        guard openNoteID != nil, saveDraft() else { return }
         openNoteID = nil
         refresh()
     }
@@ -258,6 +268,7 @@ final class NotesLibrary {
             draftNeedsSaving = false
         } catch {
             fail(error)
+            onChange?()
             return false
         }
         refresh()
@@ -308,6 +319,13 @@ final class NotesLibrary {
                     fail(error)
                 }
             }
+            refresh()
+            // The open note's screen says how it ended; otherwise Notes says it.
+            if let sentence = reason.message, openNoteID != id {
+                message = sentence
+                onChange?()
+            }
+            return
         }
         refresh()
     }

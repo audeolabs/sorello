@@ -1334,7 +1334,10 @@ Notes).
     them, the search query and a recovery code on screen with them, and
     keeps only which note is open, so an unlock shows it again with what was
     recorded meanwhile. A recording goes on through all of it. The unlock
-    runs off the main thread; a lock meanwhile wins.
+    runs off the main thread; a lock after it is asked for wins, even one
+    before the authentication begins. A recovery code typed and not used is
+    cleared when the app leaves the screen. The vault's state is read again
+    when the app becomes active, so a passcode set meanwhile counts.
   - It takes one `searchIndex()` per listing: at unlock and when the notes
     change (a note starts, a piece is written, a note ends, an edit is
     saved, a note is deleted), never per keystroke. The query searches that
@@ -1345,10 +1348,14 @@ Notes).
     until the next report; each piece written re-reads the note from the
     vault. When a note ends with the vault unlocked, `mergePendingRuns()`
     runs at once. An open note that is gone (deleted, erased, or a new one
-    that ended without words) closes.
+    that ended without words) closes. A note that ends other than by the
+    user's stop says why on its screen when it is open, and on Notes
+    otherwise.
   - The draft is saved (`replaceText`) at most `draftSaveDelay` (0.75 s)
     after an edit, and at once on leaving the note, before Resume and before
-    a lock. Resume saves it, then starts a run at the cursor's UTF-16 offset
+    a lock. Leaving the note or opening another waits for that save: a draft
+    that cannot be saved stays open, with its sentence. Resume saves it,
+    then starts a run at the cursor's UTF-16 offset
     (the end of a selection, and the note's end with no cursor). Record
     starts a new note and, unlocked, opens it. Delete is refused while the
     note records.
