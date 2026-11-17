@@ -342,6 +342,10 @@ make -C iOS appstore-upload "${STORE[@]}" ASC_KEY_ID=<key id> ASC_ISSUER_ID=<iss
     Domains `applinks:audeolabs.com` on the app only, granted by its
     profile
   - `SorelloUniversalLink` in the app's and the keyboard's Info.plists
+  - the App Intents metadata of the app and the Live Activity: the two
+    controls' audio recording intents and the Live Activity's Note asking for
+    authentication, its Stop never, and every one running in the background
+    only
   - the `.ipa` layout
 - `appstore-validate` and `appstore-upload` send the `.ipa` to Apple. They run
   `appstore-check` first, and nothing else ever runs them.
@@ -461,6 +465,17 @@ Activities off, or before the microphone is allowed, it says to open Sorello,
 and opening the app within 30 seconds starts the session there.
 ARCHITECTURE.md, "Session control", has the rules.
 
+## The Voice Note control
+
+"Voice Note" starts a voice note in a new note without opening Sorello,
+starting a session if none runs, and the next press stops it. It goes where
+"Dictation Session" goes. On a locked iPhone it asks for Face ID first. While a
+note records, the Live Activity reads "Recording note" and has a Stop button,
+which works on a locked iPhone without Face ID; while the session is ready, it
+has a Note button once notes are set up. When a start needs the app (no notes
+yet, the microphone, Live Activities off) it says why in one sentence.
+ARCHITECTURE.md, "Voice Note control", has the rules.
+
 ## Reporting a bug
 
 Open **Report a bug** on the app's home screen, then **Write email** to open a
@@ -488,6 +503,7 @@ Setup and session:
 - [ ] Bounce on iOS 26: the keyboard opens Sorello, "Listening" appears only once audio flows, swipe back, dictation inserts.
 - [ ] Universal-link bounce (TestFlight, or a dev build with `UNIVERSAL_LINK=https://audeolabs.com/sorello-dev/dictate`): Start in another app opens Sorello, never Safari, from a cold launch and from the background; the menu's "Open Sorello" does too. With the association file unreachable or the app not associated (for example a fresh install before iOS fetches it), the keyboard shows "Open Sorello" and nothing else opens. Tapping the link in Notes opens Sorello without recording.
 - [ ] Live Activity (iPhone with a Dynamic Island, and one without, for the Lock Screen and the banner): starting a session shows the mark in the island; Start on the keyboard in another app grows the coral dot and the elapsed time, Stop gives way to the transcribing glyph (preparing first after a restart) and then back to ready, each change quick and calm; long-press shows the expanded view with the timer glyph and the time left, or the recording time; with another app's Live Activity running, the minimal view; the Lock Screen view in dark and light; it goes at End session, idle expiry and a phone call; after force-quitting Sorello the activity reads "Session ended" once its time is past, and the next launch removes it; with Live Activities off, nothing shows and Sorello never asks. No sound or screen wake on any change. Simulator verification (iPhone 17 Pro, iOS 26.4, synthetic microphone, recorded with `simctl io recordVideo`, since screenshots leave out the island) passed on 2026-11-01 for the compact and expanded island, the Lock Screen in dark and light, End session, idle expiry, a killed app's "Session ended" and its removal at the next launch. Not yet checked: the minimal view (no other Live Activity source in the simulator), a phone call, Live Activities turned off, and a device.
+- [ ] Voice notes outside the app (device): the Live Activity while a note starts, records (on battery, in its last five minutes in ember, and on power with the bolt), saves and is saved, on the Lock Screen and in the compact, minimal and expanded island; Note asks for Face ID on a locked iPhone and makes a new note, Stop does not ask; the one alert when the cap ends a note; after force-quitting Sorello during a note, the activity reads "Session ended" within four minutes. The "Voice Note" control on the Action button, in Control Center and on the Lock Screen, with Sorello not running, suspended and in front; its sentence with no notes yet, the microphone not allowed and Live Activities off. Not yet checked.
 - [ ] Dictation Session control (device; Action button, Control Center and Lock Screen): with Sorello not running, suspended, and in front, a press starts a session without opening the app (the island and the microphone indicator appear), Start on the keyboard in another app then dictates without a bounce, and the next press ends the session. iOS shows it as an action, not as opening Sorello. On a locked iPhone it asks for Face ID first; a press within 20 s of locking never starts the microphone on its own. With Live Activities off, or the microphone not yet allowed, it says to open Sorello, and opening it within 30 s starts the session there. Simulator verification (iPhone 17 Pro, iOS 26.4) passed on 2026-11-05 for the registration only: linkd indexed the intent from the app and the extension, and chronod listed the control (then named "Flow Session") with `isLauncher: NO`. The press itself is not yet checked.
 - [ ] Session keep-alive: second dictation without an app switch; the idle countdown resets; the session ends at idle expiry, a call and End session; a lock cancels a dictation in progress but keeps the session.
 - [ ] Model readiness: start a session, then Diagnostics → Release model now; the model stays "Not prepared yet" while idle, and the keyboard's Start keeps its aurora dot (VoiceOver: "Model loads when you dictate"). Swipe to another app and tap Start: the recording island records while preparation runs (VoiceOver: "Model loading"), and after Stop the wait's shimmer pill shows (also with a swipe candidate strip or the Insert last chip showing) until the transcript inserts (brief on a warm model; long after a cold preparation). While the model prepares with the keyboard idle, Start's dot breathes. Release the model again during a dictation: it is released only after the dictation ends.

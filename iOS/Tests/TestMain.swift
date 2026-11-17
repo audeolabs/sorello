@@ -28,6 +28,8 @@ struct SorelloIOSTests {
             ("ComputePolicy", ComputePolicyTests.tests),
             ("HostSessionCore", HostSessionCoreTests.tests),
             ("SessionActivity", SessionActivityTests.tests),
+            ("SessionActivityNote", SessionActivityNoteTests.tests),
+            ("VoiceNoteIntent", VoiceNoteIntentTests.tests),
             ("AppScreens", AppScreensTests.tests),
             ("CapturePipeline", CapturePipelineTests.tests),
             ("CaptureTiming", CaptureTimingTests.tests),

@@ -7,7 +7,7 @@ enum SessionActivityTests {
         [
             ("onlyAnActiveSessionShows", testOnlyAnActiveSessionShows),
             ("phaseForEachDictationPhase", testPhaseForEachDictationPhase),
-            ("contentCarriesOnlyThePhaseAndDates", testContentCarriesOnlyThePhaseAndDates),
+            ("contentCarriesOnlyThePhaseDatesAndFlags", testContentCarriesOnlyThePhaseDatesAndFlags),
             ("staleDates", testStaleDates),
             ("launchEndsLeftovers", isolated(testLaunchEndsLeftovers)),
             ("startsOnceInTheForeground", isolated(testStartsOnceInTheForeground)),
@@ -38,6 +38,11 @@ enum SessionActivityTests {
                               model: HostStatus.Model = .ready) -> SessionActivityInput {
         SessionActivityInput(sessionID: session == .inactive ? nil : id, session: session, sessionExpiresAt: expiresAt,
                              dictation: dictation, model: model)
+    }
+
+    /// What the policy shows for `input` at `now`, with no note's end behind it.
+    private static func policyState(_ input: SessionActivityInput) -> SessionActivityState? {
+        SessionActivityPolicy.state(for: input, now: now)
     }
 
     private static func ready(endsAt: Date? = now + 300) -> SessionActivityState {
@@ -108,22 +113,22 @@ enum SessionActivityTests {
     // MARK: What it shows
 
     private static func testOnlyAnActiveSessionShows() {
-        TestSupport.expectEqual(SessionActivityPolicy.state(for: input(.inactive, expiresAt: nil)), nil)
+        TestSupport.expectEqual(policyState(input(.inactive, expiresAt: nil)), nil)
         // Starting: capture is not running yet, and a failed start never flashes an activity.
-        TestSupport.expectEqual(SessionActivityPolicy.state(for: input(.starting, expiresAt: nil)), nil)
-        TestSupport.expectEqual(SessionActivityPolicy.state(for: input(.starting, expiresAt: nil,
+        TestSupport.expectEqual(policyState(input(.starting, expiresAt: nil)), nil)
+        TestSupport.expectEqual(policyState(input(.starting, expiresAt: nil,
                                                                         dictation: Fixture.dictation(.starting))), nil)
         // A transcription the session's end left running is not a session.
-        TestSupport.expectEqual(SessionActivityPolicy.state(for: input(.inactive, expiresAt: nil,
+        TestSupport.expectEqual(policyState(input(.inactive, expiresAt: nil,
                                                                         dictation: Fixture.dictation(.transcribing))), nil)
-        TestSupport.expectEqual(SessionActivityPolicy.state(for: input()), ready())
+        TestSupport.expectEqual(policyState(input()), ready())
     }
 
     private static func testPhaseForEachDictationPhase() {
         let startedAt = now - 2
         func state(_ phase: DictationStatus.Phase, model: HostStatus.Model = .ready,
                    expiresAt: Date? = nil) -> SessionActivityState? {
-            SessionActivityPolicy.state(for: input(expiresAt: expiresAt, dictation: Fixture.dictation(phase, startedAt: startedAt),
+            policyState(input(expiresAt: expiresAt, dictation: Fixture.dictation(phase, startedAt: startedAt),
                                                    model: model))
         }
         // The timer counts from the admission, so the island turns the moment Start is tapped.
@@ -139,16 +144,23 @@ enum SessionActivityTests {
         }
     }
 
-    private static func testContentCarriesOnlyThePhaseAndDates() {
-        // Every stored property is the phase or a date: no text, no audio, no level.
-        for child in Mirror(reflecting: recording(since: now)).children {
-            TestSupport.expect(child.value is SessionActivityState.Phase || child.value is Date?,
-                               "\(child.label ?? "?") is neither the phase nor a date")
+    /// Every stored property is the phase, a date or a flag: no text, no audio, no level, no note (ARCHITECTURE.md,
+    /// privacy invariant 10). A flag that is false is absent, so a state of an earlier build decodes unchanged.
+    private static func testContentCarriesOnlyThePhaseDatesAndFlags() {
+        let full = SessionActivityState(phase: .noteRecording, endsAt: now, since: now, onPower: true, lastMinutes: true,
+                                        atLimit: true, offersNote: true)
+        for child in Mirror(reflecting: full).children {
+            TestSupport.expect(child.value is SessionActivityState.Phase || child.value is Date? || child.value is Bool?,
+                               "\(child.label ?? "?") is neither the phase, a date nor a flag")
         }
-        TestSupport.expectEqual(Mirror(reflecting: recording(since: now)).children.compactMap(\.label),
-                                ["phase", "endsAt", "since"])
+        TestSupport.expectEqual(Mirror(reflecting: full).children.compactMap(\.label),
+                                ["phase", "endsAt", "since", "onPower", "lastMinutes", "atLimit", "offersNote"])
         TestSupport.expectEqual(SessionActivityState.Phase.allCases.map(\.rawValue),
-                                ["ready", "recording", "transcribing", "preparing"])
+                                ["ready", "recording", "transcribing", "preparing",
+                                 "notePreparing", "noteRecording", "noteSaving", "noteSaved"])
+        let earlier = try! JSONDecoder().decode(SessionActivityState.self, from: Data(#"{"phase":"ready","endsAt":10}"#.utf8))
+        TestSupport.expectEqual(earlier, ready(endsAt: Date(timeIntervalSinceReferenceDate: 10)))
+        TestSupport.expectEqual(try! JSONDecoder().decode(SessionActivityState.self, from: try! JSONEncoder().encode(full)), full)
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
         let json = String(decoding: try! encoder.encode(ready(endsAt: Date(timeIntervalSinceReferenceDate: 10))), as: UTF8.self)
@@ -396,8 +408,9 @@ enum SessionActivityTests {
     }
 }
 
+/// ActivityKit, faked: every call in order, and the alerts its updates carried.
 @MainActor
-private final class FakeActivityBackend: SessionActivityBackend {
+final class FakeActivityBackend: SessionActivityBackend {
     enum Call: Equatable {
         case endLeftovers, start(SessionActivityContent), update(SessionActivityContent), end
 
@@ -421,6 +434,8 @@ private final class FakeActivityBackend: SessionActivityBackend {
     }
 
     var calls: [Call] = []
+    /// Each alert an update carried, with the state it showed.
+    var alerts: [(alert: SessionActivityAlert, state: SessionActivityState)] = []
     var enabled = true
     var refuses = false
     /// `start` accepts the request into the queue, and ActivityKit refuses it there.
@@ -438,7 +453,10 @@ private final class FakeActivityBackend: SessionActivityBackend {
         return !refuses
     }
 
-    func update(_ content: SessionActivityContent) { calls.append(.update(content)) }
+    func update(_ content: SessionActivityContent, alert: SessionActivityAlert?) {
+        calls.append(.update(content))
+        if let alert { alerts.append((alert, content.state)) }
+    }
 
     func end() {
         calls.append(.end)

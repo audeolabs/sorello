@@ -2,8 +2,9 @@ import ActivityKit
 import Foundation
 
 /// ActivityKit for `SessionActivityDriver` (HostCore), which makes every decision (ARCHITECTURE.md, "Live Activity").
-/// Updates carry no alert, so they never sound or wake the screen. ActivityKit's calls are asynchronous; they run one
-/// after another, in the order the driver made them, and each acts on the activity as it is when its turn comes.
+/// Updates carry no alert, so they never sound or wake the screen, but the one the driver asks for (ARCHITECTURE.md,
+/// "Live Activity", Alert). ActivityKit's calls are asynchronous; they run one after another, in the order the driver
+/// made them, and each acts on the activity as it is when its turn comes.
 @MainActor
 final class LiveActivityBackend: SessionActivityBackend {
     private var activity: Activity<SessionActivityAttributes>?
@@ -31,8 +32,11 @@ final class LiveActivityBackend: SessionActivityBackend {
         return true
     }
 
-    func update(_ content: SessionActivityContent) {
-        enqueue { [weak self] in await self?.activity?.update(Self.content(content)) }
+    func update(_ content: SessionActivityContent, alert: SessionActivityAlert?) {
+        let configuration = alert.map {
+            AlertConfiguration(title: "\($0.title)", body: "\($0.body)", sound: .default)
+        }
+        enqueue { [weak self] in await self?.activity?.update(Self.content(content), alertConfiguration: configuration) }
     }
 
     func end() {

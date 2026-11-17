@@ -7,7 +7,7 @@ import UIKit
 /// runtime, the timer, the `.intent` observation and the UIKit lifecycle events. It mirrors the core's
 /// state into SwiftUI and decides when the bounce screen shows.
 @MainActor
-final class HostSessionController: ObservableObject, SessionControlHandling {
+final class HostSessionController: ObservableObject, SessionControlHandling, VoiceNoteIntentHandling {
     static let shared = HostSessionController()
 
     @Published private(set) var session: HostStatus.Session = .inactive
@@ -29,6 +29,9 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
     @Published private(set) var voiceNote: VoiceNoteStatus?
     /// Content-free measurements of the current or last voice note, in memory only, for Diagnostics.
     @Published private(set) var lastNote: NoteMeasurement?
+    /// A vault exists, so the Live Activity offers to start a note (ARCHITECTURE.md, "Live Activity", Buttons). Read
+    /// at launch, on arrival in the foreground, after a start through an intent, and by `refreshNoteVault`.
+    @Published private(set) var noteVaultExists = false
     /// The bounce screen: a dictation was admitted while the app was in front (`HostSessionPolicy.showsBounce`).
     @Published var bounceVisible = false
     /// When the app last became active after the background, nil until then (`HostSessionPolicy.showsBounce`).
@@ -49,6 +52,8 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
     /// misconfigured or the notes directory is out of reach.
     let notes: NotesModel?
     private let store: SharedDictationStore?
+    /// The voice notes' recording side, which the core writes through; it also says whether a vault exists.
+    private let noteRecorder: NoteRecorder?
     /// The session's Live Activity (ARCHITECTURE.md, "Live Activity").
     private let activity = SessionActivityDriver(backend: LiveActivityBackend())
     private var timer: Timer?
@@ -69,6 +74,7 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
         guard let configuration, let store, let sharedSettings else {
             core = nil
             notes = nil
+            noteRecorder = nil
             return
         }
         let buffer = DictationSampleBuffer()
@@ -86,6 +92,7 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
         // One storage for the recorder and the vault: it knows which runs record in this process.
         let noteStorage = (try? NoteStorage.appDirectory()).map { NoteStorage(directory: $0) }
         let noteRecorder = noteStorage.map { NoteRecorder(storage: $0) }
+        self.noteRecorder = noteRecorder
         let core = HostSessionCore(store: store, settings: sharedSettings, buffer: buffer, capture: capture,
                                    transcriber: transcriber.engine, notifier: DarwinNotifier(configuration: configuration),
                                    environment: Self.environment, noteRecorder: noteRecorder)
@@ -133,7 +140,14 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
             self?.core?.reconcile(.intentSignal)
         }
         observeLifecycle()
+        refreshNoteVault()
         refresh()
+    }
+
+    /// Reads again whether a vault exists. The Notes screens call it after they make or erase one.
+    func refreshNoteVault() {
+        set(\.noteVaultExists, noteRecorder?.hasVault == true)
+        syncActivity()
     }
 
     var isConfigured: Bool { core != nil }
@@ -178,6 +192,38 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
             guard core.session == .active, core.sessionID == sessionID else { return .done }
             return core.controlNeedsForeground() == .started ? .done : .needsApp
         }
+    }
+
+    // MARK: Voice note intents (ARCHITECTURE.md, "Voice Note control"; "Live Activity", Buttons)
+
+    /// A press of the "Voice Note" control, run by iOS as `ToggleVoiceNoteIntent`, possibly in a process it has just
+    /// launched in the background. A background start shows its Live Activity before this returns, or ends.
+    func toggleNoteFromControl() async -> VoiceNoteIntentStep {
+        launch()
+        guard let core else { return .unavailable }
+        let step = await VoiceNoteIntentFlow.toggleFromControl(core) { [weak self] in
+            guard let self else { return false }
+            syncActivity(mayStart: true)
+            return await activity.settle()
+        }
+        refreshNoteVault()
+        return step
+    }
+
+    /// The Live Activity's Note, run by iOS as `StartVoiceNoteIntent` after authenticating the user.
+    func startNoteFromActivity() -> VoiceNoteIntentStep {
+        launch()
+        guard let core else { return .unavailable }
+        let step = VoiceNoteIntentFlow.startFromActivity(core)
+        refreshNoteVault()
+        return step
+    }
+
+    /// The Live Activity's Stop, run by iOS as `StopVoiceNoteIntent`.
+    func stopNoteFromActivity() -> VoiceNoteIntentStep {
+        launch()
+        guard let core else { return .unavailable }
+        return VoiceNoteIntentFlow.stopFromActivity(core)
     }
 
     func cancelDictation() {
@@ -278,13 +324,11 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
         syncActivity()   // a change held for `SessionActivityPolicy.minimumWaitDisplay` lands on a tick
     }
 
-    /// Only an active app may start an activity, one that is merely inactive is still on its way, unless the
-    /// session control's intent is running (`mayStart`).
+    /// Only an active app may start an activity, one that is merely inactive is still on its way, unless a control's
+    /// intent is running (`mayStart`).
     private func syncActivity(mayStart: Bool = false) {
         guard let core else { return }
-        activity.sync(SessionActivityInput(sessionID: core.sessionID, session: core.session,
-                                           sessionExpiresAt: core.sessionExpiresAt, dictation: core.current,
-                                           model: core.transcriber.modelState),
+        activity.sync(core.activityInput(noteVault: noteVaultExists),
                       mayStart: mayStart || UIApplication.shared.applicationState == .active, now: Date())
         // A voice note's cap counts ActivityKit's lifetime from the activity's start.
         core.sessionActivityStartedAt = activity.startedAt
@@ -336,7 +380,10 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
                 }
             })
         }
-        on(UIApplication.willEnterForegroundNotification) { $0.core?.appWillEnterForeground() }
+        on(UIApplication.willEnterForegroundNotification) {
+            $0.core?.appWillEnterForeground()
+            $0.refreshNoteVault()
+        }
         // Arriving in the foreground reconciles; that is what admits a request after a URL open. Noted before the
         // core's pass; only the first activation after the background counts, as Control Center or an iOS prompt
         // make the app inactive without leaving.

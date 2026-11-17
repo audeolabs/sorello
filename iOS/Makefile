@@ -128,9 +128,11 @@ KEYBOARD_SWIFT_SOURCES ?= $(call swift_sources,Keyboard)
 ACTIVITY_SWIFT_SOURCES ?= $(call swift_sources,Activity)
 ACTIVITYCORE_SOURCES ?= $(call swift_sources,ActivityCore)
 ACTIVITY_ATTRIBUTES_SOURCES ?= Activity/SessionActivityAttributes.swift
-# The session control's App Intent (ARCHITECTURE.md, "Session control"): the app performs it, the extension's control
-# names it, and both bundles carry its App Intents metadata.
-SESSION_CONTROL_INTENT_SOURCES ?= Activity/SessionControlIntent.swift
+# The App Intents (ARCHITECTURE.md, "Session control", "Voice Note control"; "Live Activity", Buttons): the session
+# control's, and the voice note's three. The app performs them, the extension's controls and Live Activity name them,
+# and both bundles carry their App Intents metadata, which must list every type in INTENT_TYPES.
+INTENT_SOURCES ?= Activity/SessionControlIntent.swift Activity/VoiceNoteIntents.swift
+INTENT_TYPES = ToggleFlowSessionIntent ToggleVoiceNoteIntent StartVoiceNoteIntent StopVoiceNoteIntent
 # The ring mark, drawn as the keyboard draws it; KeyboardLayout has its box type; DotWave the swell the strip shares with
 # the keyboard's wave. All are Foundation only.
 ACTIVITY_KEYBOARDCORE_SOURCES ?= KeyboardCore/RingMark.swift KeyboardCore/KeyboardLayout.swift KeyboardCore/DotWave.swift
@@ -151,7 +153,7 @@ TEST_SOURCES ?= $(call swift_sources,Tests)
 KEYBOARD_TEST_SOURCES ?= Keyboard/SwipeEngine.swift Keyboard/AutocorrectLoader.swift Keyboard/KeyboardMessages.swift \
 	Keyboard/BundleModelLoader.swift
 APP_SOURCES = $(APP_SWIFT_SOURCES) $(SHARED_SOURCES) $(HOSTCORE_SOURCES) $(NOTESCORE_SOURCES) \
-	$(ACTIVITYCORE_SOURCES) $(ACTIVITY_ATTRIBUTES_SOURCES) $(SESSION_CONTROL_INTENT_SOURCES) $(APP_KEYBOARDCORE_SOURCES)
+	$(ACTIVITYCORE_SOURCES) $(ACTIVITY_ATTRIBUTES_SOURCES) $(INTENT_SOURCES) $(APP_KEYBOARDCORE_SOURCES)
 KEYBOARD_SOURCES = $(KEYBOARD_SWIFT_SOURCES) $(SHARED_SOURCES) $(KEYBOARDCORE_SOURCES)
 ACTIVITY_SOURCES = $(ACTIVITY_SWIFT_SOURCES) $(ACTIVITYCORE_SOURCES) $(ACTIVITY_KEYBOARDCORE_SOURCES)
 
@@ -165,7 +167,8 @@ ACTIVITY_BINARY = $(OBJ_DIR)/SorelloActivity
 APP_ENTITLEMENTS = $(OBJ_DIR)/Sorello.xcent
 KEYBOARD_ENTITLEMENTS = $(OBJ_DIR)/SorelloKeyboard.xcent
 ACTIVITY_ENTITLEMENTS = $(OBJ_DIR)/SorelloActivity.xcent
-# Swift const values of the intent's source, from each binary's compile, for its Metadata.appintents.
+# Swift const values of the intents' sources, from each binary's compile, for its Metadata.appintents: one file per
+# source beside this name (`<name>-<source>.swiftconstvalues`).
 APP_CONST_VALUES = $(OBJ_DIR)/appintents/Sorello.swiftconstvalues
 ACTIVITY_CONST_VALUES = $(OBJ_DIR)/appintents/SorelloActivity.swiftconstvalues
 APP_SIGNATURE = $(APP_BUNDLE)/_CodeSignature/CodeResources
@@ -215,27 +218,33 @@ KEYBOARD_LINK_FLAGS = -Xlinker -e -Xlinker _NSExtensionMain
 ACTIVITY_SWIFT_FLAGS = -module-name SorelloActivity -application-extension
 ACTIVITY_LINK_FLAGS = $(KEYBOARD_LINK_FLAGS)
 
-# App Intents metadata, as Xcode makes it (ARCHITECTURE.md, "Build and targets"). The compile emits the intent
-# source's const values through an output file map naming only that file (the other outputs stay temporary), with
+# App Intents metadata, as Xcode makes it (ARCHITECTURE.md, "Build and targets"). The compile emits the intents'
+# sources' const values through an output file map naming only those files (the other outputs stay temporary), with
 # Xcode's protocol list; appintentsmetadataprocessor then writes the bundle's Metadata.appintents.
 APPINTENTS_PROTOCOLS = Config/AppIntentsConstProtocols.json
 TOOLCHAIN_DIR := $(abspath $(dir $(shell xcrun -f swiftc))/../..)
-# $(1): the const values file. Its output file map sits beside it.
+# $(1): the const values name. Its output file map sits beside it.
 const_values_flags = -emit-const-values -output-file-map "$(1).map.json" \
 	-Xfrontend -const-gather-protocols-file -Xfrontend "$(abspath $(APPINTENTS_PROTOCOLS))"
-# $(1): the const values file.
-write_const_values_map = mkdir -p "$(dir $(1))" && rm -f "$(1)" && \
-	printf '{"%s": {"const-values": "%s"}}\n' "$(SESSION_CONTROL_INTENT_SOURCES)" "$(abspath $(1))" > "$(1).map.json"
-# $(1): module, $(2): bundle identifier, $(3): bundle directory, $(4): binary, $(5): const values file.
-appintents_metadata = list="$(5).lists" && printf '%s\n' "$(SESSION_CONTROL_INTENT_SOURCES)" > "$$list.sources" && \
-	printf '%s\n' "$(5)" > "$$list.values" && rm -rf "$(3)/Metadata.appintents" && \
+# $(1): the const values name; each source's file is `$(1)` without its extension, `-`, and the source's stem.
+const_values_files = $(foreach source,$(INTENT_SOURCES),$(basename $(1))-$(basename $(notdir $(source))).swiftconstvalues)
+write_const_values_map = mkdir -p "$(dir $(1))" && rm -f $(call const_values_files,$(1)) && \
+	{ printf '{'; separator=; for source in $(INTENT_SOURCES); do \
+		printf '%s"%s": {"const-values": "%s-%s.swiftconstvalues"}' "$$separator" "$$source" \
+			"$(abspath $(basename $(1)))" "$$(basename "$$source" .swift)"; separator=', '; done; \
+	  printf '}\n'; } > "$(1).map.json"
+# $(1): module, $(2): bundle identifier, $(3): bundle directory, $(4): binary, $(5): const values name.
+appintents_metadata = list="$(5).lists" && printf '%s\n' $(INTENT_SOURCES) > "$$list.sources" && \
+	printf '%s\n' $(call const_values_files,$(5)) > "$$list.values" && rm -rf "$(3)/Metadata.appintents" && \
 	xcrun appintentsmetadataprocessor --toolchain-dir "$(TOOLCHAIN_DIR)" --module-name $(1) --sdk-root "$(SDK_PATH)" \
 		--xcode-version "$(XCODE_BUILD)" --platform-family iOS --deployment-target $(DEPLOYMENT_TARGET) \
 		--bundle-identifier $(2) --output "$(3)" --target-triple $(TARGET) --binary-file "$(4)" \
 		--source-file-list "$$list.sources" --swift-const-vals-list "$$list.values" --compile-time-extraction \
 		--deployment-aware-processing --no-app-shortcuts-localization > "$$list.log" 2>&1 && \
-	[ -f "$(3)/Metadata.appintents/extract.actionsdata" ] && grep -q '"ToggleFlowSessionIntent"' "$(3)/Metadata.appintents/extract.actionsdata" || \
-		{ cat "$$list.log" >&2; echo "No App Intents metadata for $(1)" >&2; exit 1; }
+	[ -f "$(3)/Metadata.appintents/extract.actionsdata" ] && \
+	! for type in $(INTENT_TYPES); do \
+		grep -q "\"$$type\"" "$(3)/Metadata.appintents/extract.actionsdata" || echo "$$type"; done | grep -q . || \
+		{ cat "$$list.log" >&2; echo "No App Intents metadata for $(1), or an intent missing from it" >&2; exit 1; }
 
 ifeq ($(PLATFORM),simulator)
 # The simulator reads entitlements from these sections, as Xcode arranges for

@@ -94,9 +94,10 @@ iOS/
   NotesCore/               notes: the vault, sealing, storage, merging, library and search: app and tests
   App/                     containing app (SwiftUI, AVFoundation, Core ML, UIKit lifecycle)
   Keyboard/                keyboard extension (UIKit key area, SwiftUI top row, Core ML swipe encoder)
-  ActivityCore/            the Live Activity's content state: app, Live Activity extension and tests
+  ActivityCore/            the Live Activity's content state and the voice note intents' outcomes: app, Live
+                           Activity extension and tests
   Activity/                widget extension (WidgetKit, SwiftUI): the Live Activity, its ActivityKit
-                           attributes, and the session control and its App Intent
+                           attributes, the session control, the "Voice Note" control, and their App Intents
   Tests/                   dependency-free executable tests run on the macOS host
   Config/                  Info.plist, entitlements and privacy manifest templates
   scripts/                 build helpers and the App Store bundle checker
@@ -115,8 +116,9 @@ iOS/
   static libraries that SwiftPM builds. This app has no copy of what they
   hold.
 - The app is compiled from `App/`, `Shared/`, `HostCore/`, `NotesCore/`, `ActivityCore/`,
-  `Activity/SessionActivityAttributes.swift` and
-  `Activity/SessionControlIntent.swift`, and links `SorelloSpeech`:
+  `Activity/SessionActivityAttributes.swift`,
+  `Activity/SessionControlIntent.swift` and `Activity/VoiceNoteIntents.swift`,
+  and links `SorelloSpeech`:
   - `SpeechEngine`: the model runtime ([Transcription](#transcription)).
   - `DictionaryKit`: the custom dictionary's entries, validation, tokenizer,
     bias and casing ([Custom dictionary](#custom-dictionary)).
@@ -197,9 +199,12 @@ hardcodes an identifier.
   - `emojiRecents` in the keyboard's own `UserDefaults`, the emoji
     recents (`EmojiPanelView`);
   - the session control's kind `SessionControl` (`SessionControlWidget`),
-    the type name of its App Intent `ToggleFlowSessionIntent`, and the Live
-    Activity's attributes type `SessionActivityAttributes`, which iOS binds
-    a placed control and a running activity to;
+    the type name of its App Intent `ToggleFlowSessionIntent`, the "Voice
+    Note" control's kind `VoiceNoteControl` (`VoiceNoteControlWidget`), the
+    type names of the voice note's App Intents `ToggleVoiceNoteIntent`,
+    `StartVoiceNoteIntent` and `StopVoiceNoteIntent` (`VoiceNoteIntents`),
+    and the Live Activity's attributes type `SessionActivityAttributes`, which
+    iOS binds a placed control, a running activity and its buttons to;
   - the `LF` binary formats and their magic numbers (`LFBinaryFile`), made
     outside this repository ([Swipe typing](#swipe-typing)).
 
@@ -1259,6 +1264,8 @@ Notes).
   public key, makes the run's directory and writes its start, and fails with
   `noVault` without a public key or during an erase, `unavailable` if the
   public key cannot be read, and `noSuchNote` for a note that is gone.
+  `hasVault` says whether the public key can be read, so a run could begin,
+  without beginning one.
   The `NoteRunWriter` it returns seals each settled piece as the next
   segment the moment it is given (an empty piece writes nothing; a write
   that fails throws and uses no number), and `end` drops the run's key. The
@@ -1322,7 +1329,10 @@ Notes).
   ([Voice notes](#voice-notes), Formatting); and mirrors the core's state,
   the voice note's included, into SwiftUI. It decides when the bounce screen shows and plays the
   bounce screen's recording haptic, and it drives the session's Live Activity
-  ([Live Activity](#live-activity-activity-activitycore)).
+  ([Live Activity](#live-activity-activity-activitycore)), with whether a
+  vault exists (`noteVaultExists`, which `refreshNoteVault` reads again). It
+  performs the session control's intent and, through `VoiceNoteIntentFlow`,
+  the voice note's three ([Voice Note control](#voice-note-control-activity-hostcore)).
 - **`NotesLibrary`** (HostCore, `@MainActor`, tested) holds what the Notes
   screens show, between the vault and the session core, which it reaches
   through `NoteRecordingHost` (`HostSessionCore`'s Record, Stop, its note's
@@ -1511,20 +1521,32 @@ Notes).
 
 The dictation session shows as a Live Activity: in the Dynamic Island
 (compact, minimal and expanded) and on the Lock Screen. Tapping it opens the
-app; it has no buttons.
+app. Its only buttons start and stop a voice note (Buttons, below).
 
 - **Content.** `SessionActivityAttributes` (`Activity/`, compiled into the app
   and the extension) has no fixed attributes. Its content state,
-  `SessionActivityState` (`ActivityCore/`), holds only the phase and the dates
-  its timers need, never text, audio or levels:
+  `SessionActivityState` (`ActivityCore/`), holds only the phase, the dates
+  its timers need and four flags, never text, audio or levels:
 
-  | Phase | Host state | Dates |
+  | Phase | Host state | Dates and flags |
   | --- | --- | --- |
-  | `ready` | session `active`, no dictation in progress | `endsAt`: `sessionExpiresAt` |
+  | `ready` | session `active`, nothing below | `endsAt`: `sessionExpiresAt`; `offersNote`: a vault exists |
   | `recording` | dictation `starting` or `recording` | `since`: the dictation's `startedAt` (admission) |
   | `transcribing` | dictation `transcribing`, model not preparing | none |
   | `preparing` | dictation `transcribing` while the model prepares | none |
+  | `notePreparing` | voice note `preparing` | `endsAt`, `onPower`, `lastMinutes` |
+  | `noteRecording` | voice note `recording` | `since`: the note's `startedAt`; `endsAt`, `onPower`, `lastMinutes` |
+  | `noteSaving` | voice note `saving` | `onPower` |
+  | `noteSaved` | the beat after a note ended `stopped` or `reachedLimit` | `atLimit`: it ended `reachedLimit` |
 
+  A note's `endsAt` is the status's `endsAt` (the cap's deadline on battery;
+  nil with power connected), `onPower` the status's flag, and `lastMinutes`
+  says the deadline is `noteWarning` (5 minutes) away or less. The phases are
+  chosen in this order: a note preparing or recording; a dictation starting or
+  recording; a note saving; a dictation's wait; the beat; ready. So a note is
+  never shown as a dictation or as an idle session, and a dictation started
+  while a note saves shows at once. A new state's flags are absent when false,
+  so the content of an earlier build decodes unchanged.
   A `starting` or `inactive` session shows nothing. A transcription that
   outlives its session is not shown.
 - **Decisions** (`HostCore/SessionActivity.swift`; pure, tested with a fake
@@ -1532,21 +1554,33 @@ app; it has no buttons.
   date; `SessionActivityDriver` starts, updates and ends the activity through
   `SessionActivityBackend`, which `LiveActivityBackend` (App) implements with
   ActivityKit and nothing else. The controller calls `sync` after every status
-  change and on every tick.
+  change and on every tick, with the voice note's status, the reason the last
+  note ended (`NoteMeasurement.ending`) and whether a vault exists.
   - **Launch.** Every activity an earlier run left is ended at once, before a
     session can start.
   - **Start.** Only with the app active (ActivityKit's rule) or while the
-    session control's intent runs (`mayStart`), the user's Live Activities
-    switch on, and a session `active`. A start the system refuses
+    session control's or the "Voice Note" control's intent runs (`mayStart`),
+    the user's Live Activities switch on, and a session `active`. A start the
+    system refuses
     is not asked again for that session. The app never prompts or explains
     when Live Activities are off; iOS asks the user itself on the first
     activity.
-  - **Update.** Only when the phase or a date changes: never for levels,
-    heartbeats or the model state while recording. Updates carry no alert, so
-    they never sound or wake the screen. A wait (`transcribing`,
+  - **Update.** Only when the phase, a date or a flag changes: never for
+    levels, heartbeats or the model state while recording. Updates carry no
+    alert, so they never sound or wake the screen, but one (Alert, below). A wait (`transcribing`,
     `preparing`) shows at least `minimumWaitDisplay` (0.5 s) before giving
-    way to anything but `recording`, so a fast transcription reads as a beat
-    rather than a flicker; a new recording and a session's end are never held.
+    way to anything but `recording` or a note in progress, so a fast
+    transcription reads as a beat rather than a flicker; a new recording, a
+    new note and a session's end are never held.
+  - **The beat.** When the driver sees a voice note's status go while the last
+    note's ending is `stopped` or `reachedLimit`, it shows `noteSaved` for
+    `noteSavedDisplay` (3 s) after a stop and `limitSavedDisplay` (30 s) after
+    the cap, then the state below it. A dictation's recording or a new note
+    takes its place at once, as a recording ends a wait's hold. Any other
+    ending shows no beat.
+  - **Alert.** Exactly one update alerts: the first that shows `noteSaved` with
+    `atLimit`, titled "Note saved" with the body "It reached its time limit."
+    and the default sound. No other update, and no start, ever alerts.
   - **Settle.** `settle()` waits until ActivityKit has answered every call
     made so far and reports whether the activity the driver shows exists. A
     request ActivityKit refused once queued counts as refused: the driver
@@ -1555,9 +1589,38 @@ app; it has no buttons.
     session is current, with the immediate dismissal policy.
   - **Stale date.** `ready`: `endsAt` plus `staleGrace` (30 s); `recording`:
     `since` plus `maxDictationDuration` plus `staleGrace`; waits and a ready
-    state without an expiry: 5 minutes from the update. A killed app's
-    activity therefore turns stale soon after its session would have ended,
-    and then reads "Session ended" with no timers; the next launch ends it.
+    state without an expiry: 5 minutes from the update. A voice note has no
+    such bound (with power connected it records for hours), so every note
+    phase goes stale `noteStaleInterval` (4 minutes) after the update, or at
+    `endsAt` plus `staleGrace` if that is sooner, and while a note prepares,
+    records or saves the driver sends the same state again with a new stale
+    date every `noteStaleRefresh` (2 minutes). A killed app's activity
+    therefore turns stale soon after its session would have ended, or within
+    4 minutes of a note's last refresh, and then reads "Session ended" with no
+    timers or buttons; the next launch ends it.
+- **Buttons.** `Button(intent:)` on the Lock Screen and in the expanded island,
+  never in the compact or minimal island, and none on a stale activity: Stop
+  while a note prepares or records, and Note in `ready` with `offersNote`. Their
+  intents (`Activity/VoiceNoteIntents.swift`, compiled into the app and the
+  extension) are `LiveActivityIntent`s, so iOS runs them in the app's process,
+  launching it in the background when it is not running; `supportedModes` is
+  `[.background]` and neither opens the app. They reach the host through
+  `VoiceNoteIntentHost.handler`, which the app sets as it launches; in the
+  extension `perform` throws. The extension still reads no files, settings or
+  App Group: whether a vault exists reaches it as `offersNote`.
+  - **Note** (`StartVoiceNoteIntent`), `authenticationPolicy`
+    `.requiresLocalDeviceAuthentication`: on a locked iPhone iOS asks for Face
+    ID or the passcode first. It always makes a new note
+    (`activityStartNote(.newNote)`, [Voice notes](#voice-notes)). A start that
+    needs the app fails with the sentence of
+    [Voice Note control](#voice-note-control-activity-hostcore).
+  - **Stop** (`StopVoiceNoteIntent`), `.alwaysAllowed`: it stops the note in
+    progress (`stopNote`), on a locked iPhone too, and never fails.
+  - **Whether a vault exists** (`NoteRecorder.hasVault`: the vault's public key
+    can be read, so a run could begin) is read by the controller at launch,
+    when the app arrives in the foreground, after every start through an
+    intent, and when the Notes screens make or erase a vault
+    (`refreshNoteVault`); never on the tick.
 - **Look.** Monochrome, as the keyboard's island: white ink on a near-black
   pill, the ring mark (`RingMark`) with its state dot in the phase's accent
   (aurora ready, coral recording, glacier waiting), a coral recording dot
@@ -1578,12 +1641,32 @@ app; it has no buttons.
     mark, the phase's name, one line of guidance or the countdown, the
     recording time, and the strip on its own dark background, in either
     appearance.
+  - **A voice note** reads as its own state, never as a dictation or an idle
+    session (the microphone indicator is on for the whole session, so this is
+    the only sign that speech is being kept): "Starting note" (glacier, the
+    preparing glint, nothing recorded yet), "Recording note" (coral, the
+    still voice, the elapsed time with hours), "Saving note" (glacier, the
+    middle glint) and "Note saved" (aurora, a calm row; "Stopped at its time
+    limit" under it after the cap). Where a dictation shows the coral dot
+    before its time, a note shows the note glyph (SF Symbol `note.text`): in
+    the compact island before the elapsed time, and coral as the minimal
+    view. On battery the time left stands beside the timer glyph ("52:10
+    left" on the Lock Screen, read by VoiceOver as "Note stops in", then the
+    time), ember (#F5C66B) with its glyph for the last five minutes
+    (`lastMinutes`); with power connected a bolt (SF Symbol `bolt.fill`) and
+    "Charging", read as "Charging, no time limit", and no countdown.
+  - **Buttons** are small pills: white at 14% with white ink, a glyph and one
+    word ("Stop" with `stop.fill`, "Note" with `plus`), read by VoiceOver as
+    "Stop voice note" and "Start a voice note". On the Lock Screen a button
+    stands beside a shorter strip; in the expanded island beside the phase's
+    name under the strip.
 - **Motion.** Every phase change animates with one quick spring
   (`snappy`, 0.28 s, no overshoot): each dot of the strip moves its size,
   brightness and colour, so the row swells and settles back; changed words
   push up and blur in; the trailing side swaps between the strip and the
   timer, growing out of the island's edge; the minimal view's recording dot
-  pops in; the mark's state dot swells a little while recording. With Reduce
+  pops in; the mark's state dot swells a little while recording, a dictation
+  or a note. With Reduce
   Motion every change is opacity only: nothing grows, shrinks or slides,
   the dots keep one size and the strip's shape shows in brightness
   (`SessionActivityMotion`, pure, tested). Timers are live
@@ -1598,7 +1681,9 @@ app; it has no buttons.
   point as Xcode links every extension; no entitlements beyond the signing
   identity's, no App Group, no push, no resources other than its App Intents
   metadata. Its widget bundle also holds the session control
-  ([Session control](#session-control-activity-hostcore)). The app's
+  ([Session control](#session-control-activity-hostcore)) and the "Voice
+  Note" control ([Voice Note control](#voice-note-control-activity-hostcore)).
+  The app's
   Info.plist sets `NSSupportsLiveActivities`.
 
 ## Session control (Activity/, HostCore/)
@@ -1663,6 +1748,59 @@ Control Center or on the Lock Screen.
 - **Metadata.** iOS learns the intent from `Metadata.appintents` in the app
   and in the extension ([Build and targets](#build-and-targets-iosmakefile)).
   The App Store bundle check requires both.
+
+## Voice Note control (Activity/, HostCore/)
+
+The "Voice Note" control starts a voice note in a new note, starting a session
+if none runs, or stops the note recording, without opening the app. It sits
+beside "Dictation Session" on the Action button, in Control Center and on the
+Lock Screen.
+
+- **Control.** `VoiceNoteControl` (`Activity/VoiceNoteControlWidget.swift`, in
+  the extension's widget bundle) is a `ControlWidgetButton` showing the SF
+  Symbol `note.text` and named "Voice Note". It is a button, not a toggle, for
+  the session control's reason; the Live Activity shows whether a note
+  records.
+- **Intent.** `ToggleVoiceNoteIntent` (`Activity/VoiceNoteIntents.swift`) is an
+  `AudioRecordingIntent` and a `LiveActivityIntent` with the session control's
+  policies: `authenticationPolicy` `.requiresLocalDeviceAuthentication`,
+  `supportedModes` `[.background]`, no parameters, no dialog and no result
+  value. It reaches the host through `VoiceNoteIntentHost.handler`, as the Live
+  Activity's buttons do ([Live Activity](#live-activity-activity-activitycore),
+  Buttons).
+- **Toggle** (`VoiceNoteIntentFlow`, HostCore; tested through the core's fakes
+  and a fake ActivityKit backend). It calls `controlToggleNote(.newNote)`
+  ([Voice notes](#voice-notes), Starting) and handles each outcome as the
+  session control handles its own:
+  - `started` (the app in front, or a session already running): the
+    controller lets the Live Activity driver start the activity
+    (`mayStart`) and waits for ActivityKit's answer, as the session control's
+    foreground start does; a refusal leaves the note recording.
+  - `startedInBackground`: the same, and with the activity refused or Live
+    Activities off the note's session ends (`noteNeedsForeground`) unless it
+    already ended meanwhile, and the start needs the app.
+  - `stopped` and `busy` (a note still saving) are done.
+- **Needing the app.** A start that needs the app fails with one sentence
+  that says why (`VoiceNoteIntentStep`, ActivityCore; pure, tested). Unlike the
+  session control's, nothing is remembered for the app's arrival: the user
+  records from the app.
+
+  | Outcome | The sentence |
+  | --- | --- |
+  | `needsApp(.noVault)` | "Open Sorello to set up notes first." |
+  | `needsApp(.microphone)`, `failed(.microphonePermissionDenied)` | "Open Sorello to allow the microphone." |
+  | `needsApp(.locked)` | "Unlock iPhone to start a note." |
+  | `needsApp(.liveActivity)` | "Turn on Live Activities for Sorello, or open it to record." |
+  | `needsApp(.foreground)`, a capture that failed, was interrupted or ended | "Open Sorello to start the note." |
+  | `failed(.modelUnavailable)`, `failed(.modelFailed)` | "The speech model could not load." |
+  | `failed(.storageFailed)`, `failed(.noteGone)` | "The note could not be saved." |
+  | any other failure | "The note could not start." |
+  | no handler (the extension, a misconfigured build) | "Open Sorello to start a note." |
+
+- **Metadata.** iOS learns the control's intent and the Live Activity's two from
+  `Metadata.appintents` in the app and in the extension
+  ([Build and targets](#build-and-targets-iosmakefile)). The App Store bundle
+  check requires all three.
 
 ## Keyboard extension (Keyboard/)
 
@@ -3731,11 +3869,13 @@ app reads only the count. The models are fixed.
   - Simulator builds embed the entitlements in each executable's
     `__TEXT,__entitlements` and `__TEXT,__ents_der` sections. The extensions
     are signed before the app.
-  - The app and the Live Activity also emit the Swift const values of
-    `Activity/SessionControlIntent.swift` (`-emit-const-values` through an
+  - The app and the Live Activity also emit the Swift const values of the
+    intents' sources, `Activity/SessionControlIntent.swift` and
+    `Activity/VoiceNoteIntents.swift` (`-emit-const-values` through an
     output file map, with Xcode's protocol list in
     `Config/AppIntentsConstProtocols.json`), and `appintentsmetadataprocessor`
-    turns them into each bundle's `Metadata.appintents`, as Xcode does.
+    turns them into each bundle's `Metadata.appintents`, as Xcode does. The
+    build stops when a bundle's metadata lacks one of the four intents.
   - Every build compiles the app icon into `Assets.car` with `actool`,
     records Xcode's build metadata (`DTXcode`, `DTSDKBuild` and the rest) in
     every Info.plist, copies each target's privacy manifest, and copies the
@@ -3886,9 +4026,12 @@ app reads only the count. The models are fixed.
    the app reads only their count ("Never correct",
    [Word autocorrect](#word-autocorrect)).
 10. The Live Activity shows on the Lock Screen and in the Dynamic Island, so
-    it carries only the session's phase and its timer dates: never a
-    transcript, audio, a level or anything about the app being dictated into
-    ([Live Activity](#live-activity-activity-activitycore)).
+    it carries only the session's phase, its timer dates and four flags (a
+    voice note's power, its last minutes, its end at the cap, and whether a
+    vault exists): never a transcript, audio, a level, a note or anything
+    about the app being dictated into
+    ([Live Activity](#live-activity-activity-activitycore)). Its buttons start
+    a voice note only after iOS authenticated the user, and stop one without.
 
 ## Testing and verification
 
@@ -3967,11 +4110,20 @@ merge (AGENTS.md).
   Live Activities off, it says to open Sorello, and opening it within 30 s
   starts the session there.
 - **Live Activity:** the compact, minimal and expanded island and the Lock
-  Screen while ready, recording, transcribing and preparing, in dark and
-  light; the morph as recording starts and stops; the activity going at End
+  Screen while ready, recording, transcribing and preparing, and for a voice
+  note starting, recording (on battery, in its last five minutes, and on
+  power), saving and saved, in dark and light; Note and Stop on the Lock
+  Screen and in the expanded island (Note asks for Face ID on a locked
+  iPhone, Stop does not); the one alert when the cap ends a note; the morph as recording starts and stops; the activity going at End
   session, idle expiry and an interruption; none left after a relaunch; a
   killed app's activity turning "Session ended"; nothing shown with Live
   Activities off, and no prompt from the app.
+- **Voice Note control:** on the Action button, in Control Center and on the
+  Lock Screen, with the app not running, suspended and in front: a press
+  starts a note (the island reads "Recording note") without opening the app,
+  and the next press stops it; on a locked iPhone it asks for Face ID first;
+  with no vault, the microphone not yet allowed or Live Activities off it
+  says why in one sentence.
 - **Resources:** background transcription latency and peak memory, Neural
   Engine against CPU (CPU through the self-test); no jetsam in the
   background; battery over 30 minutes, idle session against no session

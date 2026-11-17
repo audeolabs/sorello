@@ -29,6 +29,13 @@ final class NoteRecorder {
         self.now = now
     }
 
+    /// Whether a vault exists to record into: its public key can be read, so a run could begin. Reads one small file
+    /// and begins nothing.
+    var hasVault: Bool {
+        if case .data = storage.readPublicKey() { return true }
+        return false
+    }
+
     /// Begins a run: reads the public key, makes the run's directory and writes its start. Throws `noVault` without
     /// a public key, `unavailable` if it cannot be read, `noSuchNote` for a note that is gone, and `storageFailed`.
     func beginRun(_ target: NoteRunTarget) throws -> NoteRunWriter {
