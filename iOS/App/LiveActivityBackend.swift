@@ -12,6 +12,9 @@ final class LiveActivityBackend: SessionActivityBackend {
     /// Calls queued and not yet finished.
     private var pending = 0
     var onRemoved: (@MainActor () -> Void)?
+    /// The activity whose removal is reported: the one this run started and has not asked to end. `end` clears it at
+    /// once, before its queued call runs, so an activity already on its way out never reports.
+    private var watchedID: String?
 
     var areActivitiesEnabled: Bool { ActivityAuthorizationInfo().areActivitiesEnabled }
 
@@ -41,6 +44,7 @@ final class LiveActivityBackend: SessionActivityBackend {
     }
 
     func end() {
+        watchedID = nil
         enqueue { [weak self] in
             guard let self, let activity = self.activity else { return }
             self.activity = nil
@@ -60,6 +64,7 @@ final class LiveActivityBackend: SessionActivityBackend {
         do {
             let activity = try Activity.request(attributes: SessionActivityAttributes(), content: Self.content(content))
             self.activity = activity
+            watchedID = activity.id
             watch(activity)
             return true
         } catch {
@@ -68,12 +73,14 @@ final class LiveActivityBackend: SessionActivityBackend {
     }
 
     /// Reports an activity that ends or is dismissed while this run still counts it as its own: the user removed it
-    /// from the Lock Screen, or the system ended it. `end` forgets the activity first, so its own end is not reported.
+    /// from the Lock Screen, or the system ended it. One the driver has asked to end is no longer watched, so neither
+    /// its own end nor a removal while that end is queued is reported.
     private func watch(_ activity: Activity<SessionActivityAttributes>) {
         Task { @MainActor [weak self] in
             for await state in activity.activityStateUpdates where state == .ended || state == .dismissed {
-                guard let self, self.activity?.id == activity.id else { return }
-                self.activity = nil
+                guard let self, self.watchedID == activity.id else { return }
+                self.watchedID = nil
+                if self.activity?.id == activity.id { self.activity = nil }
                 self.onRemoved?()
                 return
             }

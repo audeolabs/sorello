@@ -11,6 +11,7 @@ enum VoiceNoteIntentTests {
             ("controlStartsAndStopsInTheBackground", isolated(testControlStartsAndStopsInTheBackground)),
             ("controlNeedsItsLiveActivity", isolated(testControlNeedsItsLiveActivity)),
             ("controlJoiningASessionNeedsItsLiveActivity", isolated(testControlJoiningASessionNeedsItsLiveActivity)),
+            ("controlEndsOnlyTheNoteItsPressStarted", isolated(testControlEndsOnlyTheNoteItsPressStarted)),
             ("controlInFront", isolated(testControlInFront)),
             ("controlRefusals", isolated(testControlRefusals)),
             ("activityNoteAndStop", isolated(testActivityNoteAndStop)),
@@ -188,6 +189,36 @@ enum VoiceNoteIntentTests {
         rig.sync()
         TestSupport.expectEqual(rig.h.core.voiceNote?.phase, .recording)
         TestSupport.expectEqual(rig.backend.calls.last?.state?.phase, .noteRecording)
+    }
+
+    /// ActivityKit answers after the press: a note that replaced the press's own meanwhile is not the one a missing
+    /// activity ends.
+    @MainActor
+    private static func testControlEndsOnlyTheNoteItsPressStarted() {
+        let rig = Rig(foreground: true)
+        defer { rig.cleanup() }
+        rig.backend.enabled = false
+        rig.h.core.userStartSession()
+        rig.h.deliver()
+        rig.h.clock.isForeground = false
+        rig.h.core.foregroundChanged()
+        rig.h.transcriber.modelState = .preparing   // a note stays preparing, and a stop ends it at once
+        var step: VoiceNoteIntentStep?
+        var replacement: UUID?
+        Task { @MainActor in
+            step = await VoiceNoteIntentFlow.toggleFromControl(rig.h.core) {
+                // While ActivityKit is asked, the press's note is stopped and another started.
+                rig.h.core.stopNote()
+                _ = rig.h.core.controlToggleNote(.newNote)
+                replacement = rig.h.core.voiceNoteID
+                return false
+            }
+        }
+        _ = TestSupport.waitUntil(timeout: 2) { step != nil }
+        TestSupport.expectEqual(step, .done)
+        TestSupport.expect(replacement != nil, "no replacement note started")
+        TestSupport.expectEqual(rig.h.core.voiceNoteID, replacement)
+        TestSupport.expectEqual(rig.h.core.voiceNote?.phase, .preparing)
     }
 
     /// In front, the note starts as the app's own Record does, and the activity starts during the intent even with the

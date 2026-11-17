@@ -10,19 +10,24 @@ enum VoiceNoteIntentFlow {
     /// Activity for it. A background start whose activity does not show ends at once.
     static func toggleFromControl(_ core: HostSessionCore, showActivity: () async -> Bool) async -> VoiceNoteIntentStep {
         let outcome = core.controlToggleNote(.newNote)
+        // What this press started: only that is ended when its activity does not show. ActivityKit answers later, and
+        // the note or its session may have been replaced by then.
+        let sessionID = core.sessionID, noteID = core.voiceNoteID
+        func isStillThisPress() -> Bool {
+            core.session == .active && core.sessionID == sessionID && core.voiceNoteID == noteID
+        }
         switch outcome {
         case .started:
             // In front, the app's own screen shows the note: a refusal leaves it recording. Joining a session from
             // the background, the note needs the activity as a background start does: without it the note stops, and
             // the session, which was there before, goes on.
-            if await showActivity() || core.isInFront { return .done }
+            if await showActivity() || core.isInFront || !isStillThisPress() { return .done }
             core.stopNote()
             return .needsApp(.liveActivity)
         case .startedInBackground:
-            let sessionID = core.sessionID
             if await showActivity() { return .done }
             // Ended meanwhile for another reason: nothing is left to end.
-            guard core.session == .active, core.sessionID == sessionID else { return .done }
+            guard isStillThisPress() else { return .done }
             return step(for: core.noteNeedsForeground())
         default:
             return step(for: outcome)
