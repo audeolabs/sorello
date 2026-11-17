@@ -937,8 +937,15 @@ final class HostSessionCore {
             if closing?.ticket.generation == generation { drainClosing(now) }
             if case .closing? = note?.phase, note?.bufferGeneration == generation { drainNote(now) }
         case .conversionFailed(let generation, let engine):
-            // A note's converter is rebuilt with the engine; the note goes on once input flows again.
+            // A note's converter is rebuilt with the engine, and the note goes on once input flows again; input that
+            // keeps failing to convert, with nothing converted between, stops it after as many recoveries as an engine
+            // gets (ARCHITECTURE.md, "Voice notes").
             if engine == capture.engineGeneration, note?.phase == .recording, note?.bufferGeneration == generation {
+                let converted = buffer.recordedDuration
+                let failures = note?.convertedAtLastFailure == converted ? (note?.conversionFailures ?? 0) + 1 : 1
+                note?.conversionFailures = failures
+                note?.convertedAtLastFailure = converted
+                if failures > HostSessionPolicy.maxRecoveriesWithoutInput { stopNote(.captureFailed, now) }
                 noteCaptureFailure(now)
                 break
             }
@@ -1256,6 +1263,9 @@ private struct ActiveNote {
     var stream: SpeechStream?
     /// What the note ends with once saved.
     var reason = NoteEndReason.stopped
+    /// Conversion failures in a row with nothing converted between them, and how much had been converted at the last.
+    var conversionFailures = 0
+    var convertedAtLastFailure: TimeInterval?
     var feedEnded = false
     /// Whether the stream's finish succeeded, once it returned.
     var finished: Bool?

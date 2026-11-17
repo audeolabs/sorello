@@ -371,6 +371,24 @@ enum HostSessionNoteTests {
         TestSupport.expectEqual(h.status?.voiceNote?.phase, .recording)
         TestSupport.expectEqual(stream.samples.count, 4_800)
         TestSupport.expect(!stream.isCancelled, "a recovery cancelled the stream")
+
+        // Input that keeps failing to convert, with nothing converted between, stops the note after as many
+        // recoveries as an engine gets, saving what arrived.
+        for _ in 0..<HostSessionPolicy.maxRecoveriesWithoutInput {
+            h.core.captureDelivered(.conversionFailed(generation: h.buffer.generation, engine: h.capture.engineGeneration))
+            _ = TestSupport.waitUntil(timeout: 0.1) { false }
+            h.clock.now += grace
+            h.core.tick()
+            TestSupport.expectEqual(h.status?.voiceNote?.phase, .recording)
+        }
+        h.core.captureDelivered(.conversionFailed(generation: h.buffer.generation, engine: h.capture.engineGeneration))
+        waitFor("a note whose input never converts went on") { h.status?.voiceNote?.phase == .saving }
+        h.completeTail()
+        waitFor("the stream never finished") { stream.finishCount == 1 }
+        stream.complete(.success(""))
+        waitFor("the note never ended") { h.core.voiceNote == nil }
+        TestSupport.expectEqual(h.core.lastNote?.ending, .captureFailed)
+        TestSupport.expectEqual(h.core.session, .active)
     }
 
     /// Idle expiry waits while a note records; the countdown starts when it stops.

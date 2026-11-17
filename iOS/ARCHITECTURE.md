@@ -993,7 +993,7 @@ the microphone.
   | the cap | saves | `reachedLimit` |
   | the session ends: the user's End | saves what arrived | `sessionEnded` |
   | an interruption | saves what arrived | `interrupted` |
-  | an engine failure, a media-services reset, a failed start | saves what arrived | `captureFailed` |
+  | an engine failure, a media-services reset, a failed start, input that never converts | saves what arrived | `captureFailed` |
   | a session start refused for microphone permission | ends | `microphonePermissionDenied` |
   | a preparation that fails | ends | `modelFailed`, `modelUnavailable` |
   | the stream fails (its feed ends while it is fed, or its finish throws) | ends | `transcriptionFailed` |
@@ -1008,8 +1008,11 @@ the microphone.
   ([Device lock](#device-lock)). A capture recovery or a live reconfiguration,
   as when the audio route changes in a car: the buffer's recording outlives the
   engine, so the same run and stream go on once input flows again; a note's
-  conversion failures only ask for a recovery ([Capture](#capture),
-  Supervision), and a recovery that fails ends the session. Idle expiry, which
+  conversion failures ask for a recovery ([Capture](#capture), Supervision),
+  and a recovery that fails ends the session. Input that keeps failing to
+  convert, with no sample converted between two reports, stops the note
+  (`captureFailed`, saving what arrived) at the report after
+  `maxRecoveriesWithoutInput` such recoveries. Idle expiry, which
   waits while a note is in progress ([Session](#session)). The keyboard's
   presence and the startup timeout, which watch only dictations
   ([Recording](#recording), Watchdog).
