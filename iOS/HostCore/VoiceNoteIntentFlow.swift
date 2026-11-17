@@ -12,9 +12,12 @@ enum VoiceNoteIntentFlow {
         let outcome = core.controlToggleNote(.newNote)
         switch outcome {
         case .started:
-            // In front, or joining a session already running: a refusal leaves the note recording.
-            _ = await showActivity()
-            return .done
+            // In front, the app's own screen shows the note: a refusal leaves it recording. Joining a session from
+            // the background, the note needs the activity as a background start does: without it the note stops, and
+            // the session, which was there before, goes on.
+            if await showActivity() || core.isInFront { return .done }
+            core.stopNote()
+            return .needsApp(.liveActivity)
         case .startedInBackground:
             let sessionID = core.sessionID
             if await showActivity() { return .done }

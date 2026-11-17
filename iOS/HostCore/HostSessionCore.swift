@@ -146,6 +146,8 @@ final class HostSessionCore {
     var sessionExpiresAt: Date? {
         HostSessionPolicy.sessionExpiresAt(session: session, idleSince: idleSince, duration: settings.sessionDuration)
     }
+    /// The app is in front (not in the background), where its own screens show a voice note.
+    var isInFront: Bool { environment.isForeground() }
     /// The note that prepares, records or saves, as `status.json` publishes it.
     var voiceNote: VoiceNoteStatus? { note.map(noteStatus) }
     /// Which note it writes into.

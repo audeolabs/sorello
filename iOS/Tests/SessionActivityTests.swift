@@ -20,7 +20,8 @@ enum SessionActivityTests {
             ("newSessionReplacesTheOldActivity", isolated(testNewSessionReplacesTheOldActivity)),
             ("settleReportsWhetherTheActivityShows", isolated(testSettleReportsWhetherTheActivityShows)),
             ("startedAtIsWhenTheActivityStarted", isolated(testStartedAtIsWhenTheActivityStarted)),
-            ("aRemovedActivityIsReportedAndNotAskedAgain", isolated(testARemovedActivityIsReportedAndNotAskedAgain)),
+            ("aRemovedActivityIsReportedAndShownAgainOnlyWhenItMayStart",
+             isolated(testARemovedActivityIsReportedAndShownAgainOnlyWhenItMayStart)),
             ("reduceMotionChangesOnlyOpacity", testReduceMotionChangesOnlyOpacity),
             ("countdownSpeaksTheBarsWords", testCountdownSpeaksTheBarsWords),
         ]
@@ -400,9 +401,9 @@ enum SessionActivityTests {
     }
 
     /// The user removes the activity from the Lock Screen, or the system ends it (ARCHITECTURE.md, "Live Activity",
-    /// Removed): the driver says so once, shows none, and does not ask again for that session; another session may.
+    /// Removed): the driver says so once and shows none, and nothing brings it back but a sync that may start one.
     @MainActor
-    private static func testARemovedActivityIsReportedAndNotAskedAgain() {
+    private static func testARemovedActivityIsReportedAndShownAgainOnlyWhenItMayStart() {
         let backend = FakeActivityBackend()
         let driver = SessionActivityDriver(backend: backend)
         var removals = 0
@@ -415,11 +416,13 @@ enum SessionActivityTests {
         TestSupport.expectEqual(removals, 1)
         TestSupport.expectEqual(driver.startedAt, nil)
         TestSupport.expectEqual(settled(driver), false)
-        driver.sync(input(dictation: Fixture.dictation(.recording)), mayStart: true, now: now + 1)
-        driver.sync(input(.inactive, expiresAt: nil), mayStart: true, now: now + 2)
-        TestSupport.expectEqual(backend.calls.map(\.kind), [.start])   // not asked again, and nothing left to end
-        driver.sync(input(id: sessionB), mayStart: true, now: now + 3)
+        // In the background nothing can start one, and nothing is left to update or end.
+        driver.sync(input(dictation: Fixture.dictation(.recording)), mayStart: false, now: now + 1)
+        TestSupport.expectEqual(backend.calls.map(\.kind), [.start])
+        // The app active again, or a control's intent: the session shows again, counted from then.
+        driver.sync(input(), mayStart: true, now: now + 2)
         TestSupport.expectEqual(backend.calls.map(\.kind), [.start, .start])
+        TestSupport.expectEqual(driver.startedAt, now + 2)
         TestSupport.expectEqual(removals, 1)
     }
 

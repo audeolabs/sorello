@@ -10,6 +10,7 @@ enum VoiceNoteIntentTests {
             ("eachRefusalSaysWhy", testEachRefusalSaysWhy),
             ("controlStartsAndStopsInTheBackground", isolated(testControlStartsAndStopsInTheBackground)),
             ("controlNeedsItsLiveActivity", isolated(testControlNeedsItsLiveActivity)),
+            ("controlJoiningASessionNeedsItsLiveActivity", isolated(testControlJoiningASessionNeedsItsLiveActivity)),
             ("controlInFront", isolated(testControlInFront)),
             ("controlRefusals", isolated(testControlRefusals)),
             ("activityNoteAndStop", isolated(testActivityNoteAndStop)),
@@ -160,6 +161,33 @@ enum VoiceNoteIntentTests {
             rig.finishSaving()
             TestSupport.expectEqual(rig.h.core.lastNote?.ending, .sessionEnded)
         }
+    }
+
+    /// Joining a session that already runs, from the background, the note needs the activity too: with Live
+    /// Activities off it stops at once and says why, and the session, which was there before, goes on. Once the
+    /// activity may show, as after the user removed it, the same press records.
+    @MainActor
+    private static func testControlJoiningASessionNeedsItsLiveActivity() {
+        let rig = Rig(foreground: true)
+        defer { rig.cleanup() }
+        rig.backend.enabled = false
+        rig.h.core.userStartSession()
+        rig.h.deliver()
+        TestSupport.expectEqual(rig.h.core.session, .active)
+        rig.h.clock.isForeground = false
+        rig.h.core.foregroundChanged()
+        TestSupport.expectEqual(rig.toggle(), .needsApp(.liveActivity))
+        TestSupport.expectEqual(rig.h.core.voiceNote?.phase, .saving)   // stopped, as the user's stop
+        rig.finishSaving()
+        TestSupport.expectEqual(rig.h.core.lastNote?.ending, .stopped)
+        TestSupport.expectEqual(rig.h.core.session, .active)
+        TestSupport.expectEqual(rig.h.capture.isRunning, true)
+        rig.backend.enabled = true
+        TestSupport.expectEqual(rig.toggle(), .done)
+        rig.h.deliver()
+        rig.sync()
+        TestSupport.expectEqual(rig.h.core.voiceNote?.phase, .recording)
+        TestSupport.expectEqual(rig.backend.calls.last?.state?.phase, .noteRecording)
     }
 
     /// In front, the note starts as the app's own Record does, and the activity starts during the intent even with the

@@ -178,11 +178,10 @@ final class SessionActivityDriver {
         backend.onRemoved = { [weak self] in self?.activityRemoved() }
     }
 
-    /// The activity is gone other than by the driver's own end: it shows none, and does not ask again for that
-    /// session.
+    /// The activity is gone other than by the driver's own end: it shows none, until a sync that may start one
+    /// shows the session again.
     private func activityRemoved() {
-        guard let current = shown else { return }
-        refusedSessionID = current.sessionID
+        guard shown != nil else { return }
         shown = nil
         startedAt = nil
         onRemoved?()

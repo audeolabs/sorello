@@ -1601,11 +1601,12 @@ app. Its only buttons start and stop a voice note (Buttons, below).
     session is current, with the immediate dismissal policy.
   - **Removed.** The backend reports an activity that ends or is dismissed
     other than by the driver's own end: the user removed it from the Lock
-    Screen, or the system ended it. The driver then shows none, does not ask
-    again for that session, and says so (`onRemoved`); the controller stops a
-    voice note in progress, which is saved as the user's stop saves it, so a
-    note does not go on recording once the activity that showed it is gone.
-    The session and a dictation go on, as they do with Live Activities off.
+    Screen, or the system ended it. The driver then shows none and says so
+    (`onRemoved`); the controller stops a voice note in progress, which is
+    saved as the user's stop saves it, so a note does not go on recording
+    once the activity that showed it is gone. The session and a dictation go
+    on, as they do with Live Activities off, and the next sync that may start
+    an activity (Start) shows the session again.
   - **Stale date.** `ready`: `endsAt` plus `staleGrace` (30 s); `recording`:
     `since` plus `maxDictationDuration` plus `staleGrace`; waits and a ready
     state without an expiry: 5 minutes from the update. A voice note has no
@@ -1794,7 +1795,11 @@ Lock Screen.
   - `started` (the app in front, or a session already running): the
     controller lets the Live Activity driver start the activity
     (`mayStart`) and waits for ActivityKit's answer, as the session control's
-    foreground start does; a refusal leaves the note recording.
+    foreground start does. In front, where the app's own screen shows the
+    note, a refusal leaves it recording. Joining a session from the
+    background, the note needs the activity as a background start does:
+    without it the note stops, the session goes on, and the start needs the
+    app.
   - `startedInBackground`: the same, and with the activity refused or Live
     Activities off the note's session ends (`noteNeedsForeground`) unless it
     already ended meanwhile, and the start needs the app.
