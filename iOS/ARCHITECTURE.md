@@ -967,7 +967,10 @@ the microphone.
   ready, checked whenever either changes and on every tick; no audio is kept.
   A model that is not prepared is asked to prepare. One that is `failed` (its
   backoff included) or `unavailable` ends the note (`modelFailed`,
-  `modelUnavailable`).
+  `modelUnavailable`). A session start that has to wait for the foreground
+  (`pendingStart`, [Session](#session)) does not wait for a note, which has
+  no startup timeout and would prepare out of sight: it ends as a failed
+  start, and the note with it (`captureFailed`).
 - **Recording.** The capture feeds a stream opened with progress and bounded
   leading silence ([Transcription](#transcription)), through the sample buffer
   in a mode that keeps no samples and has no cap ([Recording](#recording)), so
