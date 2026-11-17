@@ -1882,7 +1882,8 @@ The views are touchable ("Touchable backgrounds",
   below its controls, (bar height − control height) / 2, 9 pt in portrait and
   4 pt in compact height. Such a touch is an ordinary key touch, and its
   nearest key is in the top row. Under the candidate strip the strip takes
-  it instead (below). While the menu panel is open the reach is 0.
+  it instead, and the gap above the top row too (below). While the menu
+  panel is open the reach is 0.
 - **The bar outside its controls.** The key area also takes any touch in the
   bar outside every control's frame
   (`KeyboardMetrics.barPointGoesToKeys(x:y:barHeight:compact:controls:)`, in
@@ -1902,12 +1903,19 @@ The views are touchable ("Touchable backgrounds",
     (`contentShape(Rectangle())`), so every point of the bar is a control's
     or the keys'.
   - **The candidate strip's tap area** is
-    `KeyboardMetrics.candidateTapArea(strip:barHeight:)`: the strip's width
-    and the bar's full height, top to bottom, so a tap just above or below a
-    suggestion picks it rather than typing a top-row key (AJ, 2026-11-04;
-    the keys took the bar above and below the strip's words, 30 pt tall in
-    portrait). The 1 pt dividers stay dead. Beside the strip the keys still
-    take the bar.
+    `KeyboardMetrics.candidateTapArea(strip:barHeight:compact:)`: the strip's
+    width, from the bar's top through the bar and on down through the gap
+    above the top row of keys (`KeyboardMetrics.candidateReachIntoKeys`, the
+    key area's top padding: 8 pt in portrait, 5 pt in compact height), so a
+    tap just above or below a suggestion picks it rather than typing a
+    top-row key (AJ, 2026-11-04; the keys took the bar above and below the
+    strip's words, 30 pt tall in portrait). Under the strip the top-row keys
+    take only their own frames (AJ, 2026-11-16: a tap in that gap typed a
+    letter). The key area leaves a touch in the gap to the bar
+    (`KeyboardMetrics.keyPointGoesToCandidates`), judged against the strip's
+    frame now, never a lingering one. The emoji panel has no top row, and
+    its grid keeps the gap. The 1 pt dividers stay dead. Beside the strip the
+    keys still take the bar and the gap.
   - The island's tap area, and the frame it reports, is
     `KeyboardMetrics.startTapArea(capsule:barHeight:compact:capturing:)`: its
     frame inset by `KeyboardMetrics.startHitInset` (6 pt) at the sides and
