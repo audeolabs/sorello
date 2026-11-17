@@ -20,8 +20,9 @@ Every statement in it describes the code as it is on `main`.
 A Wispr Flow–style iPhone experience that is fully local: a custom keyboard
 with a dictation button, backed by the same speech model and the same speech
 engine the macOS app uses, which the app carries. Audio, transcripts and model
-inference stay on the device. There is no network code, telemetry, analytics
-or logging.
+inference stay on the device. The app keeps one history, notes, sealed in a
+vault that only the user's authentication opens ([Notes](#notes-notescore)).
+There is no network code, telemetry, analytics or logging.
 
 Custom keyboards do not appear everywhere. iOS substitutes the system keyboard
 in secure text fields and phone-pad fields, and apps can reject custom
@@ -90,6 +91,7 @@ iOS/
   Shared/                  protocol, store and settings: app, keyboard and tests
   HostCore/                host logic: app and tests
   KeyboardCore/            keyboard logic: keyboard and tests
+  NotesCore/               notes: the vault, sealing, storage, merging, library and search: app and tests
   App/                     containing app (SwiftUI, AVFoundation, Core ML, UIKit lifecycle)
   Keyboard/                keyboard extension (UIKit key area, SwiftUI top row, Core ML swipe encoder)
   ActivityCore/            the Live Activity's content state: app, Live Activity extension and tests
@@ -100,9 +102,10 @@ iOS/
   scripts/                 build helpers and the App Store bundle checker
 ```
 
-- `Shared/`, `HostCore/`, `ActivityCore/` and `KeyboardCore/` import only Foundation, plus
+- `Shared/`, `HostCore/`, `ActivityCore/`, `KeyboardCore/` and `NotesCore/` import only Foundation, plus
   CoreFoundation for Darwin notifications in `Shared/`, Accelerate for the
-  tap and word models in `KeyboardCore/`, and two of Sorello's shared modules,
+  tap and word models in `KeyboardCore/`, CryptoKit in `KeyboardCore/` (a
+  digest) and `NotesCore/` (sealing), and two of Sorello's shared modules,
   which are Foundation-only too: `TextRules` in `Shared/` and `DictionaryKit`
   in `HostCore/`. So they compile for the macOS test runner. UIKit, SwiftUI,
   AVFoundation and Core ML belong in `App/` and `Keyboard/`.
@@ -110,7 +113,7 @@ iOS/
   ([../ARCHITECTURE.md](../ARCHITECTURE.md), sections 2 and 13), linked as
   static libraries that SwiftPM builds. This app has no copy of what they
   hold.
-- The app is compiled from `App/`, `Shared/`, `HostCore/`, `ActivityCore/`,
+- The app is compiled from `App/`, `Shared/`, `HostCore/`, `NotesCore/`, `ActivityCore/`,
   `Activity/SessionActivityAttributes.swift` and
   `Activity/SessionControlIntent.swift`, and links `SorelloSpeech`:
   - `SpeechEngine`: the model runtime ([Transcription](#transcription)).
@@ -121,7 +124,7 @@ iOS/
   - `DictationCore`: the speech port's types the engine speaks in.
 - The keyboard is compiled from `Keyboard/`, `Shared/` and `KeyboardCore/`
   and links `SorelloText`, which is `TextRules` alone. It never links
-  `SpeechEngine`, `DictionaryKit` or `HostCore`, and it never captures audio.
+  `SpeechEngine`, `DictionaryKit`, `HostCore` or `NotesCore`, and it never captures audio.
 - The Live Activity extension is compiled from `Activity/`, `ActivityCore/`
   and `KeyboardCore/RingMark.swift` with `KeyboardCore/KeyboardLayout.swift`
   (the ring mark and its box) and `KeyboardCore/DotWave.swift` (the strip's
@@ -183,6 +186,13 @@ hardcodes an identifier.
   - `Library/Application Support/SorelloAutocorrect/` in the App Group
     container, the never-correct words ([Word autocorrect](#word-autocorrect);
     `NeverCorrectStore`);
+  - `Library/Application Support/SorelloNotes/` in the app's own container,
+    the notes, with the names of the files and directories in it, and the
+    Keychain item of the vault secret, service `SorelloNotes` and account
+    `vault-secret`, all in `NoteStoredNames`; and the notes' record format:
+    its magic, version, kinds and the labels its keys are derived with
+    (`NoteSealing`, `NoteVaultKeys`, `NoteRecoveryCode`)
+    ([Notes](#notes-notescore));
   - `emojiRecents` in the keyboard's own `UserDefaults`, the emoji
     recents (`EmojiPanelView`);
   - the session control's kind `SessionControl` (`SessionControlWidget`),
@@ -193,7 +203,7 @@ hardcodes an identifier.
     outside this repository ([Swipe typing](#swipe-typing)).
 
   The other `UserDefaults` keys ([Shared settings](#shared-settings-sharedsorellosettingsswift),
-  `AppPreferences`, the dictionary's) and the files inside those two
+  `AppPreferences`, the dictionary's) and the files inside the first two
   directories carry no product name, and keep theirs too. The privacy
   policy's URL and the bug report's address are not stored, so they follow
   the publisher instead (`SupportContact`, [Bug report](#bug-report-hostcorebugreportemailswift)).
@@ -552,7 +562,8 @@ suite. Every boolean but `leftHanded` defaults to on.
 | `leftHanded` | Bool; default off | the dictation controls mirrored to the bar's left ("Left-handed" on Home, [Top row](#top-row)) |
 
 Out-of-range or malformed values read as the default and are not written. No
-transcript history is stored. The words autocorrect must never correct are a
+dictation history is stored; notes are the app's alone
+([Notes](#notes-notescore)). The words autocorrect must never correct are a
 file in the App Group, not a setting ("Never correct",
 [Word autocorrect](#word-autocorrect)).
 
@@ -928,6 +939,161 @@ app shows: `email`, `support@audeolabs.com`, the bug report's recipient, and
 Home's privacy policy link opens. Both pages are published from this
 repository's `gh-pages` branch, not from `main`; the support page is
 `https://audeolabs.github.io/sorello/`.
+
+## Notes (NotesCore/)
+
+Notes are transcripts the app keeps: the one history on the iPhone. The text
+of a note is sealed to a vault's public key, so a note can be written while
+the vault and the iPhone are locked, and read only with the vault's secret,
+which only the user's authentication releases. Audio is never part of a note.
+
+`NotesCore/` holds the vault, sealing, storage, merging a recording run into a
+note, the library and search. It imports only Foundation and CryptoKit, so it
+compiles for the macOS test runner, and it is compiled into the app and the
+host tests only: the keyboard and the Live Activity hold nothing of it
+([Build and targets](#build-and-targets-iosmakefile)). Its one port,
+`NoteKeyStore`, is the Keychain in the app and a fake in the tests. Every type
+in it is named `Note…`, which the binary checks rely on. Recording a note and
+the Notes screens are not built yet; they use the interfaces below.
+
+### Vault (NoteVault)
+
+- **Secret and keys.** The vault secret is 32 random bytes. HKDF-SHA256
+  derives an X25519 key pair from it (`NoteVaultKeys`). The public key is
+  stored in the clear in the notes directory. At every unlock the stored
+  public key is checked against the secret's and rewritten if it differs or
+  is missing.
+- **Key store.** `NoteKeyStore` holds the secret, says whether one exists
+  without authenticating, and says whether the iPhone has a passcode.
+  `KeychainNoteKeyStore` (App/) keeps it in one generic-password Keychain
+  item ([Identifiers](#identifiers)), accessible
+  `WhenPasscodeSetThisDeviceOnly` behind a `SecAccessControl` with
+  `.userPresence`: this iPhone only, in no backup and no iCloud Keychain,
+  removed by iOS if the passcode is turned off, and released only after Face
+  ID, Touch ID or the passcode. Reading it is the authentication. The
+  simulator has no passcode and enforces no protection, so there the adapter
+  reports a passcode and stores the secret `WhenUnlockedThisDeviceOnly`
+  without an access control, as the shared store's files fall back to
+  class C.
+- **States** (`NoteVaultState`):
+  - `noVault`: no secret, and nothing in the notes directory.
+  - `locked`: the key store holds a secret.
+  - `unlocked`: the secret, the private key and every note are in memory.
+  - `secretMissing`: the notes directory holds a vault (its public key, a
+    note or a recovery code) but the key store has no secret, as after a
+    restore onto another iPhone or once the passcode was turned off. The
+    recovery code or erasing are the ways out.
+- **Making one** needs a device passcode (`canMakeVault`); without one a
+  vault cannot be made. It stores a new secret, writes the public key and
+  leaves the vault unlocked with no notes.
+- **Unlock** reads the secret through the port, so the user authenticates. It
+  blocks while they do, so callers run it off the main thread. It checks the
+  public key, removes leftover staging files, opens every note's body into
+  memory and merges the pending runs ([Runs](#runs-noterecorder-notemerge)).
+  A cancelled authentication leaves it locked. A lock while the user
+  authenticates wins: the unlock ends locked.
+- **Lock** drops the secret, the private key and every opened note from
+  memory. Every unlocked-side call on a locked vault throws `locked`.
+- **Recovery code** (`NoteRecoveryCode`): 160 random bits, shown as 32
+  Crockford base32 symbols in eight groups of four. Making one (unlocked)
+  wraps the secret under a key HKDF-SHA256 derives from the code and a
+  random salt, ChaChaPoly-sealed, in one file, and replaces any earlier
+  code, which stops working. Entering it reads letters in either case and
+  ignores spaces and dashes, and reads O as 0 and I and L as 1. In
+  `secretMissing`, a code that opens the file, and whose secret matches the
+  stored public key, puts the secret back in the key store and leaves the
+  vault unlocked. A wrong or malformed code changes nothing.
+- **Erase all notes** deletes the Keychain item and then the notes
+  directory. It is refused while a run records. An erase cut short leaves
+  `secretMissing` or `noVault`, never a vault that opens.
+
+### Sealing (NoteSealing)
+
+- A record is a header (the magic `SRNT`, version 1 and the record's kind),
+  key material and a ChaChaPoly box. The kinds are a note's body, a run's
+  start, a segment and the recovery wrap.
+- The key material of a body, a run's start and a segment is an HPKE
+  encapsulated key (CryptoKit `HPKE`, base mode, X25519, HKDF-SHA256,
+  ChaChaPoly) to the vault's public key, and the box is sealed under the
+  content key the HPKE context exports. A body gets a new encapsulation at
+  every write. A run gets one at its start: its writer holds that content
+  key in memory for its start and its segments, which all carry the same
+  encapsulated key, and drops it when the run ends.
+- The associated data is the header with the note's ID, the run's ID (zero
+  for a body) and the sequence number. None of them is stored in the record:
+  the reader takes them from where the record lies in the notes directory,
+  so a record moved to another note, run or sequence, or read as another
+  kind, does not open.
+- Sealing needs only the public key. Opening needs the private key; a record
+  that does not open is skipped as if absent.
+
+### Storage (NoteStorage)
+
+- The notes directory is `Library/Application Support/SorelloNotes/` in the
+  app's own container, not the App Group, so the keyboard cannot reach it.
+  It and everything in it are included in backups. It holds:
+  - `vault-public-key`, the raw public key;
+  - `recovery-wrap`, the sealed secret, when a recovery code was made;
+  - `note-<UUID>/` per note: `body`, its sealed body (the text, its created
+    and modified dates, and the runs merged into it whose files remain), and
+    `run-<order>-<UUID>/` per run not yet merged, with `start` (the run's
+    place in the body and its start date) and `segment-<n>`, one per settled
+    piece, numbered from 1.
+- Every file is written through `AtomicRecordFiles` (staged and renamed,
+  [Files](#files)), with its staging files in its own directory. Bodies and
+  the recovery wrap are class A. The public key, starts and segments are
+  class B (`.completeUnlessOpen`) on devices, so a run can create them while
+  the iPhone is locked; the public key is read when a run begins. The
+  simulator and macOS use class C, as the shared store does.
+- A note is deleted by renaming its directory to `.deleted-<UUID>`, then
+  removing it; leftovers of a delete or a staged write are removed at the
+  next unlock. Directories of runs that record are never touched then.
+
+### Runs (NoteRecorder, NoteMerge)
+
+- **Recording side.** `NoteRecorder` needs only the storage. `beginRun`
+  starts a run for a new note or for an existing one at a place: it reads the
+  public key, makes the run's directory and writes its start, and fails with
+  `noVault` without a public key and `noSuchNote` for a note that is gone.
+  The `NoteRunWriter` it returns seals each settled piece as the next
+  segment the moment it is given (an empty piece writes nothing; a write
+  that fails throws and uses no number), and `end` drops the run's key. The
+  storage knows which runs record in this process.
+- **Place.** A run goes at the end of the note or at a UTF-16 offset into the
+  note's text as it was shown when the run began (the body with any earlier
+  pending runs merged in), clamped to that text and moved back to a
+  character boundary.
+- **Formatting** is injected: a `NoteRunFormatter` turns a run's pieces, with
+  the text before and after its place, into the text that goes in. NotesCore
+  holds no text rules.
+- **Reading** a note gives its body, its pending runs in order with their
+  pieces in sequence, and its text: the body with the runs merged in
+  (`NoteMerge`). A note being recorded shows the pieces written so far.
+- **Merging** writes the runs that are not recording into the body, in
+  order, and then removes their files. It needs the vault unlocked: it runs
+  at every unlock and on `mergePendingRuns()`, so after a crash at the next
+  unlock. The body names the runs merged into it until their files are gone,
+  so a crash between any two steps never merges a run twice or loses one. A
+  run with no start goes at the end. A new note whose runs hold no text is
+  removed. A note whose body does not open is left as it is: not merged,
+  not listed, never overwritten (`unreadableNoteCount`).
+
+### Library and search (NoteVault, NoteSearch)
+
+- Unlocked, the vault holds every note's body in memory. `notes()` lists
+  them newest first: by modified date, then created date (a note's modified
+  date includes its pending runs' starts). `note(_:)` reads one.
+  `replaceText(of:with:)` replaces a note's text (its pending runs count as
+  replaced) and sets its modified date; it is refused while the note
+  records. `deleteNote(_:)` deletes a note, also refused while it records.
+- `search(_:)` is a linear scan over the notes' texts (`NoteSearch`, pure).
+  The query is split at whitespace into terms; every term must match the
+  start of a word, folded for case, diacritics and width (so "strasse"
+  matches "Straße"). A word starts at a character after whitespace or at
+  the text's start, and at a letter or digit after a character that is
+  neither. Results are newest first and carry the matched ranges of the
+  text, sorted and joined where they overlap, for a highlighted snippet. A
+  query with no terms matches every note with no ranges.
 
 ## Host app (App/)
 
@@ -3311,8 +3477,10 @@ app reads only the count. The models are fixed.
   4. a simulator build of the three executables, and
      `scripts/check-binaries.sh` on them: none names a networking API, as an
      undefined symbol or a linked library; the keyboard holds nothing of
-     `SpeechEngine`, `DictionaryKit` or `DictationCore`; and the Live Activity
-     nothing of any shared module.
+     `SpeechEngine`, `DictionaryKit` or `DictationCore`; the Live Activity
+     nothing of any shared module; and neither anything of `NotesCore` (no
+     `Note…` type and no HPKE), which the app's own symbols show the check
+     can see.
 - `make PLATFORM=device binaries` compiles and links without signing. Device
   builds need `CODESIGN_IDENTITY`, `TEAM_ID` and three provisioning profiles:
   `APP_PROFILE` and `KEYBOARD_PROFILE` with the App Group, and
@@ -3345,7 +3513,8 @@ app reads only the count. The models are fixed.
   templates, the same for every bundle. `BUILD_NUMBER` sets
   `CFBundleVersion` for all three and must grow with each upload.
 - **Metadata.** `ITSAppUsesNonExemptEncryption` is false: the only
-  cryptography is SHA-256 for model verification. Every executable requires
+  cryptography is Apple's own, SHA-256 for model verification and CryptoKit
+  and the Keychain for sealing notes on the iPhone. Every executable requires
   `arm64` in `UIRequiredDeviceCapabilities`.
 - **Icon.** The build flattens the production icon source, a full-bleed
   square in `Resources/` ([Resources/ICON.md](Resources/ICON.md)), and scales
@@ -3376,10 +3545,15 @@ app reads only the count. The models are fixed.
 
 1. Audio is never written to disk. Between dictations, capture buffers are
    dropped in the tap callback. "Find strength" recordings stay in memory.
-2. A transcript exists on disk only as one `result-R.json` (or, for the
-   moment between write and rename, its staging file) in the App Group's
-   `Library/Caches`, excluded from backup, and is deleted on claim, on expiry
-   by either process, or on a run change. There is no history.
+2. A dictation's transcript exists on disk only as one `result-R.json` (or,
+   for the moment between write and rename, its staging file) in the App
+   Group's `Library/Caches`, excluded from backup, and is deleted on claim,
+   on expiry by either process, or on a run change. Notes are the one
+   history: their text is on disk only sealed, in the app's own container,
+   and opens only with the vault secret, which lives in a this-device-only
+   Keychain item that only the user's authentication or the recovery code
+   releases. Locking drops every opened note from memory
+   ([Notes](#notes-notescore)).
 3. There are no network APIs, no telemetry and no logging in any iOS target.
    The only output is the self-test build's content-free `Sorello
    self-test:` lines. The shared modules hold no networking code on iOS (the
@@ -3426,7 +3600,7 @@ app reads only the count. The models are fixed.
 ### Host tests (`make -C iOS test`)
 
 - The host test binary is compiled for macOS 26 from `Shared/`, `HostCore/`,
-  `ActivityCore/`, `KeyboardCore/`, `Keyboard/SwipeEngine.swift` (with a fake encoder),
+  `NotesCore/`, `ActivityCore/`, `KeyboardCore/`, `Keyboard/SwipeEngine.swift` (with a fake encoder),
   `Keyboard/AutocorrectLoader.swift`, `Keyboard/KeyboardMessages.swift`,
   `Keyboard/BundleModelLoader.swift` and `Tests/`, and links the Mac's build of
   `SorelloSpeech`. Every pure rule in this contract has tests there; the shared
