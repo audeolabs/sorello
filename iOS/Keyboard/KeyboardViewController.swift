@@ -26,7 +26,7 @@ final class KeyboardViewController: UIInputViewController, KeyboardTextTarget {
 
     /// Apple's portrait keys are 216 points tall without the predictive bar; the top row takes the
     /// predictive bar's place, a little taller for the Start capsule, as on Wispr Flow's keyboard. The bar's
-    /// hosting view also reaches `stopReach` down behind the top row, for Stop's tap area.
+    /// hosting view also reaches `stopReach` down behind the top row, for Stop's tap area and the candidate strip's.
     private var heights: (bar: CGFloat, keys: CGFloat, stopReach: CGFloat) {
         let compact = traitCollection.verticalSizeClass == .compact
         return (CGFloat(compact ? KeyboardMetrics.compactBarHeight : KeyboardMetrics.barHeight),
@@ -45,14 +45,20 @@ final class KeyboardViewController: UIInputViewController, KeyboardTextTarget {
                                                   controls: barControls.rects)
     }
 
-    /// Whether a touch in the key area (in its coordinates) is the Stop capsule's, through the bar's hosting view
-    /// behind the keys: one in its reach into the top row while dictation is starting or recording
-    /// (ARCHITECTURE.md, "Reach and touch regions"). Only the capsule's frame now counts, never one it left, and for a
-    /// moment after a recording ends its former area.
-    private func startTakesTouch(in point: CGPoint) -> Bool {
+    /// Whether a touch in the key area (in its coordinates) is the bar's, through its hosting view behind the keys
+    /// (ARCHITECTURE.md, "Reach and touch regions"): one in the Stop capsule's reach into the top row while dictation is
+    /// starting or recording, or in the gap above the top row under the candidate strip (not on the emoji panel). Only
+    /// frames now count, never ones a control left, and for a moment after a recording ends Stop's former area.
+    private func barTakesTouch(in point: CGPoint) -> Bool {
         guard !chrome.isMenuOpen, let barView = bar?.view else { return false }
         let inBar = keyArea.convert(point, to: barView)
         let barHeight = shownBarHeight(barView)
+        // The emoji panel has no top row: its grid keeps the gap.
+        if keyArea.keyLayer != .emoji,
+           KeyboardMetrics.keyPointGoesToCandidates(x: Double(inBar.x), y: Double(point.y), barHeight: barHeight,
+                                                    strip: barControls.frame(of: "strip")) {
+            return true
+        }
         // Just after a recording ends Stop's former reach still takes the touch, and nothing there acts on it: a quick
         // second tap on Stop never types (`BarControlRegions.stopGuard`).
         return [barControls.frame(of: "start"), barControls.stopGuard].contains { start in
@@ -136,7 +142,7 @@ final class KeyboardViewController: UIInputViewController, KeyboardTextTarget {
         self.keyAreaTop = keyAreaTop
         self.totalHeight = totalHeight
         keyArea.takesTouchAbove = { [weak self] point in self?.keysTakeTouch(above: point) ?? false }
-        keyArea.yieldsTouch = { [weak self] point in self?.startTakesTouch(in: point) ?? false }
+        keyArea.yieldsTouch = { [weak self] point in self?.barTakesTouch(in: point) ?? false }
         registerForTraitChanges([UITraitVerticalSizeClass.self]) { (controller: KeyboardViewController, _: UITraitCollection) in
             let heights = controller.heights
             controller.barHeight?.constant = heights.bar + heights.stopReach

@@ -96,8 +96,9 @@ final class KeyAreaView: UIView {
     /// away from the bar's controls (`KeyboardMetrics.barPointGoesToKeys`). Such a touch is an ordinary key
     /// touch, on the top row. Never while the menu is open.
     var takesTouchAbove: (CGPoint) -> Bool = { _ in false }
-    /// Whether the view leaves a touch at this point inside it to the bar's Stop capsule below it, whose tap area
-    /// reaches into the top row while dictation is starting or recording (`KeyboardMetrics.keyPointGoesToStart`).
+    /// Whether the view leaves a touch at this point inside it to the bar below it: to the Stop capsule, whose tap area
+    /// reaches into the top row while dictation is starting or recording (`KeyboardMetrics.keyPointGoesToStart`), or to
+    /// the candidate strip, whose tap area reaches through the gap above the top row (`keyPointGoesToCandidates`).
     var yieldsTouch: (CGPoint) -> Bool = { _ in false }
 
     private(set) var keyLayer = KeyboardLayer.letters

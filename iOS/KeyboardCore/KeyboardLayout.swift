@@ -137,18 +137,36 @@ struct KeyboardMetrics: Equatable, Sendable {
         return KeyRect(x: circle.midX - cancelHitSize / 2, y: top, width: cancelHitSize, height: bottom - top)
     }
 
-    /// The candidate strip's tap area, in the bar's coordinates, from its frame there: its width and the bar's full
-    /// height, so a tap just above or below a suggestion never types a top-row letter (AJ, 2026-11-04, narrowing the
-    /// keys' reach into the bar of 2026-10-18). ARCHITECTURE.md, "Reach and touch regions".
-    static func candidateTapArea(strip: KeyRect, barHeight: Double) -> KeyRect {
-        KeyRect(x: strip.x, y: 0, width: strip.width, height: barHeight)
+    /// How far below the key area's top the candidate strip's tap area reaches: through the gap above the top row of
+    /// keys (the key area's top padding), never into a key.
+    static func candidateReachIntoKeys(compact: Bool) -> Double {
+        KeyboardMetrics(width: 1, height: compact ? compactHeight : regularHeight).rowY(0)
+    }
+
+    /// The candidate strip's tap area, in the bar's coordinates, from its frame there: its width, from the bar's top
+    /// through the gap above the top row (`candidateReachIntoKeys`), so a tap just above or below a suggestion never
+    /// types a top-row letter (AJ, 2026-11-04, narrowing the keys' reach into the bar of 2026-10-18; AJ, 2026-11-16,
+    /// taking the gap from the top row). ARCHITECTURE.md, "Reach and touch regions".
+    static func candidateTapArea(strip: KeyRect, barHeight: Double, compact: Bool) -> KeyRect {
+        KeyRect(x: strip.x, y: 0, width: strip.width, height: barHeight + candidateReachIntoKeys(compact: compact))
+    }
+
+    /// Whether a touch at (x, y) in the key area's coordinates is the candidate strip's: inside `strip`, its tap area in
+    /// the bar's coordinates (an edge is the strip's), which reaches through the gap above the top row.
+    static func keyPointGoesToCandidates(x: Double, y: Double, barHeight: Double, strip: KeyRect?) -> Bool {
+        keyPoint(x: x, y: y, barHeight: barHeight, isIn: strip)
     }
 
     /// Whether a touch at (x, y) in the key area's coordinates is the Start capsule's: inside `start`, its tap area
     /// in the bar's coordinates, which reaches into the keys only while capturing (an edge is the capsule's).
     static func keyPointGoesToStart(x: Double, y: Double, barHeight: Double, start: KeyRect?) -> Bool {
-        guard y >= 0, let start else { return false }
-        return start.distanceSquared(toX: x, y: y + barHeight) == 0
+        keyPoint(x: x, y: y, barHeight: barHeight, isIn: start)
+    }
+
+    /// Whether a point in the key area (at or below its top) is inside `area`, given in the bar's coordinates.
+    private static func keyPoint(x: Double, y: Double, barHeight: Double, isIn area: KeyRect?) -> Bool {
+        guard y >= 0, let area else { return false }
+        return area.distanceSquared(toX: x, y: y + barHeight) == 0
     }
 
     init(width: Double, height: Double) {

@@ -13,7 +13,7 @@ enum KeyboardLayoutTests {
             ("reachAboveTheKeysIsTheBarBelowItsControls", testReachAboveTheKeysIsTheBarBelowItsControls),
             ("theSpaceBarGetsTheLeastOfItsGaps", testTheSpaceBarGetsTheLeastOfItsGaps),
             ("theBarOutsideItsControlsGoesToTheKeys", testTheBarOutsideItsControlsGoesToTheKeys),
-            ("theCandidateStripTakesTheBarsFullHeight", testTheCandidateStripTakesTheBarsFullHeight),
+            ("theCandidateStripTakesTheBarAndTheGapBelowIt", testTheCandidateStripTakesTheBarAndTheGapBelowIt),
             ("startReachesUpAndStopReachesIntoTheTopRow", testStartReachesUpAndStopReachesIntoTheTopRow),
             ("theDeleteKeyReachesTowardsM", testTheDeleteKeyReachesTowardsM),
             ("letterPitchIsTheTopRowPitch", testLetterPitchIsTheTopRowPitch),
@@ -230,16 +230,24 @@ enum KeyboardLayoutTests {
                            "landscape strip without frames")
     }
 
-    private static func testTheCandidateStripTakesTheBarsFullHeight() {
-        // ARCHITECTURE.md, "Reach and touch regions" (AJ, 2026-11-04: taps on a suggestion typed a top-row letter): the
-        // candidate strip's tap area is its width and the bar's full height, so no point above or below a suggestion
-        // goes to the keys; beside the strip the keys still take the bar.
-        for compact in [false, true] {
+    private static func testTheCandidateStripTakesTheBarAndTheGapBelowIt() {
+        // ARCHITECTURE.md, "Reach and touch regions" (AJ, 2026-11-04: taps on a suggestion typed a top-row letter; AJ,
+        // 2026-11-16: so did taps in the gap between the bar and the top row): the candidate strip's tap area is its
+        // width, from the bar's top down through the gap above the top row of keys, so no point above or below a
+        // suggestion goes to the keys. Under the strip the top-row keys keep exactly their frames; beside the strip
+        // the keys still take the bar and the gap.
+        for (width, height, compact) in [(402.0, KeyboardMetrics.regularHeight, false), (874, KeyboardMetrics.compactHeight, true)] {
             let bar = compact ? KeyboardMetrics.compactBarHeight : KeyboardMetrics.barHeight
             let words = (compact ? KeyboardMetrics.compactBarControlHeight : KeyboardMetrics.barControlHeight) - 8
+            let metrics = KeyboardMetrics(width: width, height: height)
+            let gap = metrics.rowY(0)
+            TestSupport.expectEqual(KeyboardMetrics.candidateReachIntoKeys(compact: compact), gap)
+            TestSupport.expectEqual(gap, compact ? 5 : 8)
             let strip = KeyRect(x: 54, y: (bar - words) / 2, width: 230, height: words)
-            let area = KeyboardMetrics.candidateTapArea(strip: strip, barHeight: bar)
-            TestSupport.expectEqual(area, KeyRect(x: strip.x, y: 0, width: strip.width, height: bar))
+            let area = KeyboardMetrics.candidateTapArea(strip: strip, barHeight: bar, compact: compact)
+            TestSupport.expectEqual(area, KeyRect(x: strip.x, y: 0, width: strip.width, height: bar + gap))
+
+            // In the bar: every point on the strip, top to bottom, is the strip's.
             let start = KeyboardMetrics.startTapArea(capsule: KeyRect(x: 300, y: (bar - words - 8) / 2, width: 92, height: words + 8),
                                                      barHeight: bar, compact: compact, capturing: false)
             func goes(_ x: Double, _ y: Double) -> Bool {
@@ -252,6 +260,28 @@ enum KeyboardLayoutTests {
             }
             TestSupport.expect(goes(strip.x - 0.5, bar - 1) && goes(strip.maxX + 0.5, bar - 1),
                                "beside the strip the keys lost the bar, compact \(compact)")
+
+            // In the key area (its own coordinates): the gap above the top row under the strip is the strip's, to the
+            // top row's edge; the top-row keys under it keep their whole frames, and beside it the keys keep the gap.
+            func toStrip(_ x: Double, _ y: Double, _ strip: KeyRect? = area) -> Bool {
+                KeyboardMetrics.keyPointGoesToCandidates(x: x, y: y, barHeight: bar, strip: strip)
+            }
+            for x in [strip.x, strip.midX, strip.maxX] {
+                for y in stride(from: 0, through: gap, by: 0.5) {
+                    TestSupport.expect(toStrip(x, y), "(\(x), \(y)) in the gap under the strip types, compact \(compact)")
+                }
+            }
+            let placed = keys(.letters, width: width, height: height)
+            for key in placed where key.frame.x < area.maxX && key.frame.maxX > area.x {
+                let x = min(max(key.frame.midX, area.x), area.maxX)
+                for y in stride(from: key.frame.y + 0.5, through: key.frame.maxY, by: 0.5) {
+                    TestSupport.expect(!toStrip(x, y), "\(key.label) at y \(y) under the strip, compact \(compact)")
+                }
+            }
+            TestSupport.expect(!toStrip(area.x - 0.5, 1) && !toStrip(area.maxX + 0.5, 1),
+                               "beside the strip the keys lost the gap, compact \(compact)")
+            TestSupport.expect(!toStrip(strip.midX, -1), "above the key area, compact \(compact)")
+            TestSupport.expect(!toStrip(strip.midX, 1, nil), "no strip, compact \(compact)")
         }
     }
 

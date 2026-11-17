@@ -200,12 +200,12 @@ struct DictationBarView: View {
                         }
                         .barControl("neverCorrect", in: controls)
                     } else if middle == .candidates, let strip = swipe.strip {
-                        CandidateStrip(strip: strip, height: height - 8, barHeight: barHeight) { index in
+                        CandidateStrip(strip: strip, height: height - 8, barHeight: barHeight, compact: compact) { index in
                             onAction()
                             onCandidate(index)
                         }
                         .barControl("strip", in: controls) {
-                            KeyboardMetrics.candidateTapArea(strip: $0, barHeight: barHeight)
+                            KeyboardMetrics.candidateTapArea(strip: $0, barHeight: barHeight, compact: compact)
                         }
                     } else {
                         // While a dictation runs this is plain text: a notice, or "Open Sorello to start a session".
@@ -442,8 +442,10 @@ private struct Middle: View {
 private struct CandidateStrip: View {
     let strip: SwipeStrip
     let height: CGFloat
-    /// The bar's height: each candidate takes taps from the bar's top to its bottom (`KeyboardMetrics.candidateTapArea`).
+    /// The bar's height: each candidate takes taps from the bar's top, through the bar and the gap above the top row
+    /// of keys (`KeyboardMetrics.candidateTapArea`).
     let barHeight: Double
+    let compact: Bool
     let onCandidate: (Int) -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -480,7 +482,7 @@ private struct CandidateStrip: View {
                         .foregroundStyle(.primary)
                         .padding(.horizontal, CGFloat(CandidateStripLayout.padding))
                         .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
-                        .contentShape(CandidateTapShape(barHeight: barHeight))
+                        .contentShape(CandidateTapShape(barHeight: barHeight, compact: compact))
                 }
                 .buttonStyle(PressableStyle())
                 .accessibilityLabel(quoted ? "Keep \(word)" : word)
@@ -1121,16 +1123,17 @@ private struct StartTapShape: Shape {
     }
 }
 
-/// A candidate's tap area (`KeyboardMetrics.candidateTapArea`) in its own coordinates: its width, the bar's full height.
-/// The strip is centred in the bar; it looks the same.
+/// A candidate's tap area (`KeyboardMetrics.candidateTapArea`) in its own coordinates: its width, from the bar's top
+/// through the gap above the top row of keys. The strip is centred in the bar; it looks the same.
 private struct CandidateTapShape: Shape {
     let barHeight: Double
+    let compact: Bool
 
     func path(in rect: CGRect) -> Path {
         let top = (barHeight - Double(rect.height)) / 2
         let area = KeyboardMetrics.candidateTapArea(
             strip: KeyRect(x: Double(rect.minX), y: Double(rect.minY) + top, width: Double(rect.width), height: Double(rect.height)),
-            barHeight: barHeight)
+            barHeight: barHeight, compact: compact)
         return Path(CGRect(x: area.x, y: area.y - top, width: area.width, height: area.height))
     }
 }
