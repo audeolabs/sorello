@@ -12,9 +12,10 @@ final class LiveActivityBackend: SessionActivityBackend {
     /// Calls queued and not yet finished.
     private var pending = 0
     var onRemoved: (@MainActor () -> Void)?
-    /// The activity whose removal is reported: the one this run started and has not asked to end. `end` clears it at
-    /// once, before its queued call runs, so an activity already on its way out never reports.
-    private var watchedID: String?
+    /// Counts the driver's starts and ends, as they are asked for, not as their queued calls run. An activity reports
+    /// its removal only while the count is still the one its start was asked under: once the driver has asked to end
+    /// it, or started another, it is on its way out and never reports.
+    private var epoch = 0
 
     var areActivitiesEnabled: Bool { ActivityAuthorizationInfo().areActivitiesEnabled }
 
@@ -31,8 +32,10 @@ final class LiveActivityBackend: SessionActivityBackend {
     /// at launch, the previous session's) it waits its turn, so the ended activity no longer counts against the
     /// system's limit; a refusal then only leaves the session without an activity.
     func start(_ content: SessionActivityContent) -> Bool {
-        guard pending > 0 else { return request(content) }
-        enqueue { [weak self] in _ = self?.request(content) }
+        epoch += 1
+        let epoch = epoch
+        guard pending > 0 else { return request(content, epoch) }
+        enqueue { [weak self] in _ = self?.request(content, epoch) }
         return true
     }
 
@@ -44,7 +47,7 @@ final class LiveActivityBackend: SessionActivityBackend {
     }
 
     func end() {
-        watchedID = nil
+        epoch += 1
         enqueue { [weak self] in
             guard let self, let activity = self.activity else { return }
             self.activity = nil
@@ -60,26 +63,25 @@ final class LiveActivityBackend: SessionActivityBackend {
         return activity != nil
     }
 
-    private func request(_ content: SessionActivityContent) -> Bool {
+    private func request(_ content: SessionActivityContent, _ epoch: Int) -> Bool {
         do {
             let activity = try Activity.request(attributes: SessionActivityAttributes(), content: Self.content(content))
             self.activity = activity
-            watchedID = activity.id
-            watch(activity)
+            watch(activity, epoch)
             return true
         } catch {
             return false
         }
     }
 
-    /// Reports an activity that ends or is dismissed while this run still counts it as its own: the user removed it
-    /// from the Lock Screen, or the system ended it. One the driver has asked to end is no longer watched, so neither
-    /// its own end nor a removal while that end is queued is reported.
-    private func watch(_ activity: Activity<SessionActivityAttributes>) {
+    /// Reports an activity that ends or is dismissed while the driver still counts it as shown: the user removed it
+    /// from the Lock Screen, or the system ended it. One the driver has since asked to end, or replaced, is not
+    /// reported, whether its queued end has run yet or not (`epoch`).
+    private func watch(_ activity: Activity<SessionActivityAttributes>, _ epoch: Int) {
         Task { @MainActor [weak self] in
             for await state in activity.activityStateUpdates where state == .ended || state == .dismissed {
-                guard let self, self.watchedID == activity.id else { return }
-                self.watchedID = nil
+                guard let self, self.epoch == epoch else { return }
+                self.epoch += 1
                 if self.activity?.id == activity.id { self.activity = nil }
                 self.onRemoved?()
                 return
