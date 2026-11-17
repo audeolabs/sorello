@@ -493,6 +493,13 @@ enum HostSessionNoteTests {
         TestSupport.expectEqual(h.core.session, .inactive)
         TestSupport.expectEqual(h.capture.startCount, 1)
         TestSupport.expectEqual(h.status?.voiceNote, nil)
+        TestSupport.expectEqual(h.core.lastNote?.hint, nil)
+        // In the background on iOS 27, Diagnostics gets the entitlement hint for it too.
+        h.transcriber.hint = .backgroundNeuralEngineNeedsEntitlement
+        h.clock.isForeground = false
+        h.core.foregroundChanged()
+        TestSupport.expectEqual(h.controlNote(), .failed(.modelFailed))
+        TestSupport.expectEqual(h.core.lastNote?.hint, .backgroundNeuralEngineNeedsEntitlement)
     }
 
     /// Without a vault every start needs the app, and nothing starts; without a notes directory it fails. A note that
@@ -656,15 +663,29 @@ enum HostSessionNoteTests {
         TestSupport.expectEqual(pieces(notes, id), [])
     }
 
-    /// The save runs inside a UIKit background task, which ends with it.
+    /// The save runs inside a UIKit background task, which ends with the note: only once the stream has finished and
+    /// its feed has delivered the last piece, however late that comes.
     @MainActor
     private static func testSaveRunsInABackgroundTask() {
-        let (h, _) = harness()
+        let (h, notes) = harness()
         defer { h.cleanup() }
         _ = h.core.userStartNote(.newNote)
+        let id = h.core.voiceNoteID
         TestSupport.expectEqual(h.background.begun, 0)
-        stopAndSave(h)
+        let stream = h.noteStream
+        TestSupport.expect(h.core.stopNote(), "nothing to stop")
+        h.completeTail()
+        waitFor("the stream never finished") { stream.finishCount == 1 }
         TestSupport.expectEqual(h.background.begun, 1)
+        stream.complete(.success("Invented late piece."), endingFeed: false)
+        _ = TestSupport.waitUntil(timeout: 0.2) { false }
+        TestSupport.expectEqual(h.status?.voiceNote?.phase, .saving)
+        TestSupport.expectEqual(h.background.ended, 0)
+        stream.report(settled: "Invented late piece.", provisional: "")
+        stream.endFeed()
+        waitFor("the note never ended") { h.core.voiceNote == nil }
         TestSupport.expectEqual(h.background.ended, 1)
+        TestSupport.expectEqual(h.core.lastNote?.ending, .stopped)
+        TestSupport.expectEqual(pieces(notes, id), ["Invented late piece."])
     }
 }

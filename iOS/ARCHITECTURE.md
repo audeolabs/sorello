@@ -3764,9 +3764,11 @@ app reads only the count. The models are fixed.
    and opens only with the vault secret, which lives in a this-device-only
    Keychain item that only the user's authentication or the recovery code
    releases. Locking drops every opened note from memory
-   ([Notes](#notes-notescore)). The host keeps no note text: each settled piece
-   is sealed the moment it is reported, and the provisional tail goes only to
-   the app's observer. What it reports and publishes of a note (`NoteChange`,
+   ([Notes](#notes-notescore)). `HostSessionCore` keeps no note text: each
+   settled piece is sealed the moment it is reported, and the provisional tail
+   goes only to the app's observer. The engine holds a recording note's words
+   in memory until its stream ends, as it holds any stream's
+   ([../ARCHITECTURE.md](../ARCHITECTURE.md), section 5, Progress). What it reports and publishes of a note (`NoteChange`,
    `voiceNote`, Diagnostics) is content-free.
 3. There are no network APIs, no telemetry and no logging in any iOS target.
    The only output is the self-test build's content-free `Sorello

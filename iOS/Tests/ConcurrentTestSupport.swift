@@ -125,9 +125,10 @@ final class FakeSpeechStream: SpeechStream, @unchecked Sendable {
         }
     }
 
-    /// Completes a waiting `finish`, or the next one; the feed ends first, as the engine's does.
-    func complete(_ result: Result<String, Error>) {
-        endFeed()
+    /// Completes a waiting `finish`, or the next one; the feed ends first, as the engine's does, unless the test keeps
+    /// it open, as when a relay of the feed lags behind the finish.
+    func complete(_ result: Result<String, Error>, endingFeed: Bool = true) {
+        if endingFeed { endFeed() }
         let waiting = state.update { state -> CheckedContinuation<String, Error>? in
             state.result = result
             defer { state.waiting = nil }

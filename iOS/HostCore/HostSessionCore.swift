@@ -442,7 +442,7 @@ final class HostSessionCore {
         transcriber.prepare()
         if let reason = VoiceNotePolicy.preparationFailure(model: transcriber.modelState) {
             writer.end()
-            lastNote = NoteMeasurement(ending: reason)
+            lastNote = NoteMeasurement(ending: reason, hint: noteFailureHint(reason, inBackground: !environment.isForeground()))
             return .failed(reason)
         }
         // A dictation that holds the capture gives way: one waiting for its tail is transcribed with what arrived, one
@@ -578,8 +578,8 @@ final class HostSessionCore {
             } catch {
                 succeeded = false
             }
+            // The background task ends with the note, once its feed has delivered the last piece too.
             self?.noteFinished(generation, succeeded: succeeded)
-            endBackgroundTask.run()
         }
     }
 
@@ -616,15 +616,21 @@ final class HostSessionCore {
         current.writer.end()
         current.endBackgroundTask?.run()
         lastNote?.ending = reason
-        if reason == .transcriptionFailed || reason == .modelFailed {
-            let inBackground = (lastNote?.piecesInBackground ?? 0) > 0 || !environment.isForeground()
-            lastNote?.hint = transcriber.failureHint(after: reason == .modelFailed ? .modelFailed : .transcriptionFailed,
-                                                     inBackground: inBackground)
-        }
+        let inBackground = (lastNote?.piecesInBackground ?? 0) > 0 || !environment.isForeground()
+        lastNote?.hint = noteFailureHint(reason, inBackground: inBackground)
         if current.isInProgress, session == .active, !slot.isInProgress { idleSince = now }
         needsPublish = true
         noteChanges.append(.ended(noteID: current.writer.noteID, reason: reason))
         releaseModelIfPending()
+    }
+
+    /// The background hint of a stream or a preparation that failed (ARCHITECTURE.md, "Transcription").
+    private func noteFailureHint(_ reason: NoteEndReason, inBackground: Bool) -> ComputeFailureHint? {
+        switch reason {
+        case .modelFailed: return transcriber.failureHint(after: .modelFailed, inBackground: inBackground)
+        case .transcriptionFailed: return transcriber.failureHint(after: .transcriptionFailed, inBackground: inBackground)
+        default: return nil
+        }
     }
 
     /// On the tick: the power state, the tail's timeout, the cap, and a preparing note's model.
