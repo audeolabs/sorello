@@ -268,6 +268,19 @@ enum NoteRunTests {
         try! fixture.vault.mergePendingRuns()
         TestSupport.expectEqual(try! fixture.vault.note(id).body, "Alpha. Beta.")
         TestSupport.expectEqual(fixture.runDirectories(of: id), [])
+
+        // A run's directory that cannot be listed waits too.
+        fixture.vault.lock()
+        fixture.record(["Gamma."], into: .note(id, at: .end))
+        let run = fixture.runDirectories(of: id)[0]
+        try! FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: run.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: run.path) }
+        fixture.unlock()
+        TestSupport.expectEqual(try! fixture.vault.note(id).body, "Alpha. Beta.")
+        TestSupport.expectEqual(fixture.runDirectories(of: id).count, 1)
+        try! FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: run.path)
+        try! fixture.vault.mergePendingRuns()
+        TestSupport.expectEqual(try! fixture.vault.note(id).body, "Alpha. Beta. Gamma.")
     }
 
     private static func testLeftoversAreRemovedAtUnlock() {

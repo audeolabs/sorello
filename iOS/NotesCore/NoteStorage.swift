@@ -119,8 +119,10 @@ final class NoteStorage: @unchecked Sendable {
             let runDirectory = directory.appendingPathComponent(name, isDirectory: true)
             var start: Data?
             var segments: [(sequence: UInt32, record: Data)] = []
-            var isReadable = true
-            for file in names(in: runDirectory) {
+            // A directory that cannot be listed may hold anything.
+            let files = try? FileManager.default.contentsOfDirectory(atPath: runDirectory.path)
+            var isReadable = files != nil
+            for file in files ?? [] {
                 let url = runDirectory.appendingPathComponent(file)
                 if file == NoteStoredNames.runStart {
                     start = try? Data(contentsOf: url)
@@ -153,8 +155,9 @@ final class NoteStorage: @unchecked Sendable {
     func removeNoteIfEmpty(_ noteID: UUID) {
         lock.withLock {
             let directory = noteDirectory(noteID)
-            let left = names(in: directory).filter { !$0.hasPrefix(AtomicRecordFiles.stagingPrefix) }
-            guard left.isEmpty, !recordingRuns.values.contains(noteID) else { return }
+            guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path),
+                  names.allSatisfy({ $0.hasPrefix(AtomicRecordFiles.stagingPrefix) }),
+                  !recordingRuns.values.contains(noteID) else { return }
             try? FileManager.default.removeItem(at: directory)
         }
     }
