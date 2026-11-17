@@ -314,15 +314,17 @@ public actor SpeechEngine: SpeechTranscribing {
     /// result retained is released, because nobody will ever see it.
     func complete(_ stream: SpeechStream) async {
         let outcome: Result<SpeechResult, SpeechFailure>
+        var last: SpeechProgress?
         do throws(SpeechFailure) {
-            outcome = .success(try await finishWork(stream))
+            let finished = try await finishWork(stream)
+            outcome = .success(finished.result)
+            last = finished.last
         } catch {
             outcome = .failure(error)
         }
         work[stream.id] = nil
-        stream.endProgress()
         beforeDelivery?(stream.id)
-        if !stream.deliver(outcome), case .success(let result) = outcome, let id = result.correctionID {
+        if !stream.deliver(outcome, last: last), case .success(let result) = outcome, let id = result.correctionID {
             release(id)
         }
     }
@@ -332,7 +334,9 @@ public actor SpeechEngine: SpeechTranscribing {
         work[id] = nil
     }
 
-    private func finishWork(_ stream: SpeechStream) async throws(SpeechFailure) -> SpeechResult {
+    /// The stream's result, and its last report when the owner asked for progress.
+    private func finishWork(_ stream: SpeechStream) async throws(SpeechFailure)
+        -> (result: SpeechResult, last: SpeechProgress?) {
         if let failure = stream.failure { throw failure }
         let model = try await readyModel()
         guard !stream.isCancelled else { throw .cancelled }
@@ -350,8 +354,8 @@ public actor SpeechEngine: SpeechTranscribing {
             let raw = try work.transcription.finish(transcribe: transcribe, chunked: report)
             try check()
             let text = CasingRestorer.apply(raw, entries: work.snapshot.entries)
-            if let last = work.feed?.last(work.transcription.words) { stream.report(last) }
-            return SpeechResult(text: text, correctionID: retain(work, id: stream.id, model: model, base: text))
+            let last = work.feed?.last(work.transcription.words)
+            return (SpeechResult(text: text, correctionID: retain(work, id: stream.id, model: model, base: text)), last)
         } catch {
             throw Self.failure(error)
         }

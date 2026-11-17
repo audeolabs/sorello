@@ -155,12 +155,20 @@ final class SpeechStream: SpeechStreaming {
         }
     }
 
-    /// Hands the waiting `finish` its outcome. False when nothing waits any more, because the stream was cancelled.
-    func deliver(_ outcome: Result<SpeechResult, SpeechFailure>) -> Bool {
-        guard let waiter = ingress.withLock({ state in
-            defer { state.waiter = nil }
-            return state.waiter
-        }) else { return false }
+    /// Hands the waiting `finish` its outcome, and ends the feed after `last`. False when nothing waits any more,
+    /// because the stream was cancelled; then nothing is reported. Both are decided under one lock, so a cancel
+    /// either wins over the result and the last report together or over neither.
+    func deliver(_ outcome: Result<SpeechResult, SpeechFailure>, last: SpeechProgress? = nil) -> Bool {
+        let (waiter, reports) = ingress.withLock { state in
+            defer {
+                state.waiter = nil
+                state.reports = nil
+            }
+            if state.waiter != nil, let last { state.reports?.yield(last) }
+            return (state.waiter, state.reports)
+        }
+        reports?.finish()
+        guard let waiter else { return false }
         waiter.resume(with: outcome.mapError { $0 })
         return true
     }

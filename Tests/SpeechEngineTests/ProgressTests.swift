@@ -126,6 +126,21 @@ struct ProgressTests {
         #expect(await finish(stream) == .failure(.cancelled))
     }
 
+    /// A cancel that lands after the last piece is made, but before `finish` has its result, wins: the feed ends
+    /// without a last report.
+    @Test func aCancelBeforeDeliveryLeavesNoLastReport() async throws {
+        let streams = Mutex<[UInt64: any SpeechStreaming]>([:])
+        let engine = SpeechEngine(loader: fakeLoader(ModelLog()), dictionary: { _ in .empty }, beforeDelivery: { id in
+            streams.withLock { $0[id] }?.cancel()
+        })
+        let stream = engine.openStream(SpeechStreamOptions(reportsProgress: true))
+        let id = try #require((stream as? SpeechStream)?.id)
+        streams.withLock { $0[id] = stream }
+        stream.append(EngineTests.speech(3))
+        #expect(await finish(stream) == .failure(.cancelled))
+        #expect(await reports(stream) == [])
+    }
+
     /// A stream that fails ends its feed without a last report; what it settled before stays as it was.
     @Test func aFailedStreamKeepsWhatItSettled() async throws {
         let engine = SpeechEngine(loader: fakeLoader(ModelLog()), dictionary: { _ in .empty })
