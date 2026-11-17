@@ -239,7 +239,7 @@ each carries `schema: Int` (currently `1`).
 | --- | --- | --- | --- | --- |
 | `intent.json` | keyboard | host | `KeyboardIntent`: the latest dictation request | class A, `.complete` |
 | `presence.json` | keyboard | host | `KeyboardPresence`: a visible keyboard with Full Access | class C, `.completeUntilFirstUserAuthentication` |
-| `status.json` | host | keyboard | `HostStatus`: run, session, capture, model and dictation state | class C |
+| `status.json` | host | keyboard | `HostStatus`: run, session, capture, model, dictation and voice note state | class C |
 | `result-<UUID>.json` | host | keyboard | `DictationResult`: one finished transcript | class A |
 
 - Class A applies on devices only. The simulator does not enforce data
@@ -301,7 +301,7 @@ enum DictationProtocol {
 }
 
 struct KeyboardIntent: Codable, Equatable, Sendable {
-    enum Action: String, Codable, Sendable { case record, finish, cancel }
+    enum Action: String, Codable, Sendable { case record, finish, cancel, stopNote }
     var schema: Int = DictationProtocol.schema
     var requestID: UUID
     var action: Action
@@ -329,6 +329,15 @@ struct HostStatus: Codable, Equatable, Sendable {
     var dictation: DictationStatus?
     var level: Float = 0           // 0...1, meaningful only while recording
     var error: HostErrorCode?      // content-free, most recent session-level error
+    var voiceNote: VoiceNoteStatus?  // the voice note preparing, recording or saving; absent when none
+}
+
+struct VoiceNoteStatus: Codable, Equatable, Sendable {
+    enum Phase: String, Codable, Sendable { case preparing, recording, saving }
+    var phase: Phase
+    var startedAt: Date            // when the note started (its start, not its first audio)
+    var endsAt: Date?              // when the cap ends it, on battery; nil with power connected
+    var onPower: Bool              // power is connected
 }
 
 struct DictationStatus: Codable, Equatable, Sendable {
@@ -344,7 +353,7 @@ struct DictationStatus: Codable, Equatable, Sendable {
 enum HostErrorCode: String, Codable, Sendable {
     case microphonePermissionDenied, audioSessionFailed, startupTimeout, interrupted, deviceLocked,
          keyboardDismissed, sessionInactive, modelUnavailable, modelFailed, transcriptionFailed,
-         backgroundTimeExpired, notRecording, tooLong, superseded
+         backgroundTimeExpired, notRecording, tooLong, superseded, noteRecording
 }
 
 struct DictationResult: Codable, Equatable, Sendable {
@@ -360,10 +369,28 @@ struct DictationResult: Codable, Equatable, Sendable {
 `writeStatus` clamps `level` to 0...1 and writes 0 for a non-finite level, so
 a heartbeat never fails to encode.
 
+`voiceNote` is what the keyboard's bar and the Live Activity need of a voice
+note, and nothing else: its phase, its dates and the power flag, never its text
+or its note ([Voice notes](#voice-notes)). `stopNote` asks the host to stop the
+voice note; its `requestID` names that one request, as a `record`'s does.
+`noteRecording` is the code of a `record` refused while a voice note prepares
+or records.
+
+**Schema.** These records are still `schema` 1. Each addition is optional or a
+new value, so a reader of this version decodes every older record unchanged
+(an absent `voiceNote` is nil). A record that holds a new value exists only
+while the app and the keyboard of this version are installed, and they ship in
+one bundle and update together; an older reader sees one only after a
+downgrade, where it cannot decode it, reads it as `unreadable` and treats it as
+absent, which fails closed. A new `schema` would instead make every record of
+the version before read as `incompatible`, and show "Update Sorello" for
+records an update itself left behind.
+
 ### Host reconciliation (Shared/HostReconciler.swift; pure, tested)
 
 `HostReconciler.action(intent:current:knownRequestIDs:isForeground:sessionActive:now:)`
-returns `none`, `start(R)`, `finish(R)`, `cancel(R)` or `reject(R, code)`.
+returns `none`, `start(R)`, `finish(R)`, `cancel(R)`, `reject(R, code)` or
+`stopNote(R)`.
 
 - An intent that is not a `.value` of the current schema: `none`.
 - `record(R)`:
@@ -381,6 +408,8 @@ returns `none`, `start(R)`, `finish(R)`, `cancel(R)` or `reject(R, code)`.
 - `cancel(R)`: `cancel(R)` if `current` is R and starting, recording or
   transcribing; otherwise `none`. A keyboard `cancel` is reported as a plain
   cancellation.
+- `stopNote(R)`: `none` if R is known or the intent is not fresh within
+  `pendingRecordTTL`; otherwise `stopNote(R)`, whatever the dictation does.
 
 How the host applies the actions is in [Admission](#admission).
 

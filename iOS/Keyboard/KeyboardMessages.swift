@@ -111,6 +111,7 @@ enum KeyboardMessages {
         case .notRecording: return "Stopped before recording began"
         case .tooLong: return "The dictation was too long"
         case .superseded: return "Replaced by a newer dictation"
+        case .noteRecording: return "A voice note is recording"
         }
     }
 

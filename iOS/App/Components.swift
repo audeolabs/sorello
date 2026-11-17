@@ -638,6 +638,7 @@ extension HostErrorCode {
         case .notRecording: return "Nothing was recorded."
         case .tooLong: return "The dictation was too long."
         case .superseded: return "A newer dictation replaced this one."
+        case .noteRecording: return "A voice note is recording."
         }
     }
 }

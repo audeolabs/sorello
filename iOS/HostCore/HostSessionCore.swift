@@ -437,6 +437,8 @@ final class HostSessionCore {
         case .reject(let requestID, let code):
             knownRequestIDs.insert(requestID)
             if slot.reject(requestID, error: code, now: now) { needsPublish = true }
+        case .stopNote(let requestID):
+            knownRequestIDs.insert(requestID)
         }
     }
 

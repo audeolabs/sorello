@@ -46,7 +46,8 @@ extension StoreRead: Equatable where Value: Equatable {}
 extension StoreRead: Sendable where Value: Sendable {}
 
 struct KeyboardIntent: Codable, Equatable, Sendable {
-    enum Action: String, Codable, Sendable { case record, finish, cancel }
+    /// `stopNote` stops the host's voice note (ARCHITECTURE.md, "Voice notes").
+    enum Action: String, Codable, Sendable { case record, finish, cancel, stopNote }
     var schema: Int = DictationProtocol.schema
     var requestID: UUID
     var action: Action
@@ -74,6 +75,17 @@ struct HostStatus: Codable, Equatable, Sendable {
     var dictation: DictationStatus?
     var level: Float = 0           // 0...1, meaningful only while recording
     var error: HostErrorCode?      // content-free, most recent session-level error
+    var voiceNote: VoiceNoteStatus?  // the voice note preparing, recording or saving; absent when none
+}
+
+/// What the keyboard's bar and the Live Activity need of the host's voice note: phases, dates and a flag, never
+/// its text or which note it is (ARCHITECTURE.md, "Voice notes").
+struct VoiceNoteStatus: Codable, Equatable, Sendable {
+    enum Phase: String, Codable, Sendable { case preparing, recording, saving }
+    var phase: Phase
+    var startedAt: Date            // when the note started (its start, not its first audio)
+    var endsAt: Date?              // when the cap ends it, on battery; nil with power connected
+    var onPower: Bool              // power is connected
 }
 
 struct DictationStatus: Codable, Equatable, Sendable {
@@ -93,7 +105,9 @@ struct DictationStatus: Codable, Equatable, Sendable {
 enum HostErrorCode: String, Codable, Sendable {
     case microphonePermissionDenied, audioSessionFailed, startupTimeout, interrupted, deviceLocked,
          keyboardDismissed, sessionInactive, modelUnavailable, modelFailed, transcriptionFailed,
-         backgroundTimeExpired, notRecording, tooLong, superseded
+         backgroundTimeExpired, notRecording, tooLong, superseded,
+         /// A `record` refused while a voice note prepares or records.
+         noteRecording
 }
 
 struct DictationResult: Codable, Equatable, Sendable {
