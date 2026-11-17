@@ -178,7 +178,8 @@ enum WindowSnapshots {
         _ = try? app.macros.add(command: "my address", text: "14 Larkspur Lane, Northwind")
         if app.dictionary.canEdit, let notes = DictionaryApp(id: "com.example.fieldnotes", name: "Field Notes") {
             try? app.dictionary.register(notes)
-            try? app.dictionary.save(text: "Okonkwo", strength: 2, apps: [], replacing: nil)
+            try? app.dictionary.save(text: "Okonkwo", strength: 2, soundsLike: ["Okonquo", "oh conquer"], apps: [],
+                                     replacing: nil)
             try? app.dictionary.save(text: "Vexlimer", strength: 1.41, apps: [notes.id], replacing: nil)
             try? app.dictionary.save(text: "Quillon Bay", strength: 1, apps: [], replacing: nil)
             try? app.dictionary.ignore(DictionaryKey("okay quo"))

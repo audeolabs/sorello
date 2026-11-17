@@ -8,10 +8,14 @@ public struct DictionaryEntry: Equatable, Sendable {
     public var text: String
     /// A multiplier between 0.25 and 8; 1 is the default.
     public var strength: Float
+    /// The wrong forms the recognizer writes for it, normalized, in the user's order (DESIGN §3.7). Empty for most
+    /// entries, and always on iOS and Linux.
+    public var soundsLike: [String]
 
-    public init(text: String, strength: Float) {
+    public init(text: String, strength: Float, soundsLike: [String] = []) {
         self.text = text
         self.strength = strength
+        self.soundsLike = soundsLike
     }
 
     /// The entry's identity: two entries with the same key are the same entry.
@@ -20,6 +24,8 @@ public struct DictionaryEntry: Equatable, Sendable {
     // Scalar equality: canonically equivalent spellings are different entries.
     public static func == (lhs: DictionaryEntry, rhs: DictionaryEntry) -> Bool {
         DictionaryText.same(lhs.text, rhs.text) && lhs.strength.bitPattern == rhs.strength.bitPattern
+            && lhs.soundsLike.count == rhs.soundsLike.count
+            && zip(lhs.soundsLike, rhs.soundsLike).allSatisfy { DictionaryText.same($0, $1) }
     }
 }
 
@@ -99,6 +105,10 @@ enum DictionaryMutationError: Error, Equatable {
     case full
     /// The identity or ignore key fails pin P6; nothing is changed.
     case invalidKey
+    /// A spelling is another entry's key or spelling (DESIGN §3.7).
+    case spellingTaken
+    /// The entry's key is another entry's spelling.
+    case spellingOfAnotherWord
 }
 
 /// Entries and the ignore list, with the rules of DESIGN §1.1. Changes are made by the dictionary's editor, which
@@ -108,6 +118,10 @@ public struct CustomDictionary: Equatable, Sendable {
     public private(set) var entries: [DictionaryEntry] = []
     /// Keys never offered as suggestions, in the order they were ignored.
     public private(set) var ignore: [DictionaryKey] = []
+    /// Every entry's key, so the rules of §3.7 cost no scan.
+    private var keys: Set<DictionaryKey> = []
+    /// The entry each spelling's key belongs to (DESIGN §3.7).
+    private var spellingOwners: [DictionaryKey: DictionaryKey] = [:]
 
     public init() {}
 
@@ -124,28 +138,48 @@ public struct CustomDictionary: Equatable, Sendable {
         }
     }
 
-    public func contains(_ key: DictionaryKey) -> Bool { entries.contains { $0.key == key } }
+    public func contains(_ key: DictionaryKey) -> Bool { keys.contains(key) }
+
+    /// Every entry's spellings' keys (DESIGN §3.7).
+    public var spellingKeys: Set<DictionaryKey> { Set(spellingOwners.keys) }
 
     public func isIgnored(_ key: DictionaryKey) -> Bool { ignore.contains(key) }
 
-    /// Adds, or replaces the entry with the same identity key.
+    /// Adds, or replaces the entry with the same identity key. A key is one entry's or one spelling's, never both and
+    /// never two (DESIGN §3.7); the entry's spellings are otherwise taken as validated.
     mutating func upsert(_ entry: DictionaryEntry) -> DictionaryMutationError? {
         let key = entry.key
         guard key.isValid else { return .invalidKey }
-        if let index = entries.firstIndex(where: { $0.key == key }) {
-            entries[index] = entry
-            return nil
+        if let owner = spellingOwners[key], owner != key { return .spellingOfAnotherWord }
+        let spellings = entry.soundsLike.map { DictionaryKey($0) }
+        guard Set(spellings).count == spellings.count else { return .spellingTaken }
+        for spelling in spellings {
+            if spelling == key || keys.contains(spelling) { return .spellingTaken }
+            if let owner = spellingOwners[spelling], owner != key { return .spellingTaken }
         }
-        guard entries.count < DictionaryValidation.capacity else { return .full }
-        entries.append(entry)
+        if keys.contains(key), let index = entries.firstIndex(where: { $0.key == key }) {
+            forgetSpellings(of: entries[index])
+            entries[index] = entry
+        } else {
+            guard entries.count < DictionaryValidation.capacity else { return .full }
+            entries.append(entry)
+            keys.insert(key)
+        }
+        for spelling in spellings { spellingOwners[spelling] = key }
         return nil
     }
 
     @discardableResult
     mutating func remove(_ key: DictionaryKey) -> Bool {
-        guard let index = entries.firstIndex(where: { $0.key == key }) else { return false }
+        guard keys.contains(key), let index = entries.firstIndex(where: { $0.key == key }) else { return false }
+        forgetSpellings(of: entries[index])
         entries.remove(at: index)
+        keys.remove(key)
         return true
+    }
+
+    private mutating func forgetSpellings(of entry: DictionaryEntry) {
+        for spelling in entry.soundsLike { spellingOwners[DictionaryKey(spelling)] = nil }
     }
 
     mutating func addIgnore(_ key: DictionaryKey) -> DictionaryMutationError? {

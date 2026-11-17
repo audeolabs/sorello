@@ -879,6 +879,8 @@ correction detection on iOS: entries are added by hand.
   storage is the app's own (`HostCore/DictionaryStorage.swift`, ported from
   the earlier build), because the Mac app keeps its dictionary in a file of
   another shape. The iOS UI shows no ignore list but keeps what is stored.
+  Entries on iPhone have no sounds-like spellings (DESIGN §3.7): the payload
+  has no place for them and the iOS UI offers none.
 - **`DictionaryLibrary`** (HostCore, `@MainActor`, tested) owns loading,
   edits and persistence. Every edit is validated, persisted, then published,
   and raises `revision`. Without a vocabulary nothing can be edited. Saved

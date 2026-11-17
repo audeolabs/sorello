@@ -55,6 +55,20 @@ struct StoreTests {
             fileData(entries: [["text": "Zorbik", "strength": 1, "apps": ["com.example.mail"]]], apps: [app]),
             fileData(entries: [["text": "Zorbik", "strength": 1, "apps": ["com.example.chat", "com.example.chat"]]],
                      apps: [app]),
+            // Spellings (§3.7): absent when there are none, normalized, each once, at most four, never the word, no
+            // comma, and never another entry's word or spelling.
+            fileData(entries: [["text": "Sorello", "strength": 1, "soundsLike": []]]),
+            fileData(entries: [["text": "Sorello", "strength": 1, "soundsLike": "Sarello"]]),
+            fileData(entries: [["text": "Sorello", "strength": 1, "soundsLike": ["so  rello"]]]),
+            fileData(entries: [["text": "Sorello", "strength": 1, "soundsLike": ["Sarello", "sarello"]]]),
+            fileData(entries: [["text": "Sorello", "strength": 1, "soundsLike": ["a", "b", "c", "d", "e"]]]),
+            fileData(entries: [["text": "Sorello", "strength": 1, "soundsLike": ["sorello"]]]),
+            fileData(entries: [["text": "Sorello", "strength": 1, "soundsLike": ["so, rello"]]]),
+            fileData(entries: [["text": "Sorello", "strength": 1, "soundsLike": ["1234"]]]),
+            fileData(entries: [["text": "Sorello", "strength": 1, "soundsLike": ["Sarello"]],
+                               ["text": "sarello", "strength": 1]]),
+            fileData(entries: [["text": "Sorello", "strength": 1, "soundsLike": ["Sarello"]],
+                               ["text": "Plexa", "strength": 1, "soundsLike": ["SARELLO"]]]),
         ]
         for data in corrupt {
             #expect(DictionaryFile.decode(data, encoder: testEncoder) == nil,
@@ -68,6 +82,31 @@ struct StoreTests {
         #expect(DictionaryFile.decode(tooManyApps, encoder: testEncoder) == nil, "More than 32 apps is corrupt")
         #expect(DictionaryFile.decode(Data(count: DictionaryFile.maxBytes + 1), encoder: testEncoder) == nil,
                 "Over the size cap is corrupt")
+    }
+
+    /// What Sorello 0.0.1 wrote: its `fileFormat` test's file, which `DictionaryFile` produced unchanged from that
+    /// tag until spellings. It loads unchanged, without spellings, and is written back byte for byte.
+    @Test func aFileFromSorello001LoadsUnchanged() throws {
+        let written = #"{"apps":[{"id":"com.example.chat","name":"Chat"},{"id":"com.example.mail","name":"Mail"}],"entries":[{"strength":1,"text":"Kubernetes"},{"apps":["com.example.chat","com.example.mail"],"strength":1.5,"text":"Plexa"}],"ignore":["a/b"],"version":1}"#
+        let loaded = try #require(DictionaryFile.decode(Data(written.utf8), encoder: testEncoder))
+        #expect(loaded.dictionary.entries == [entry("Kubernetes"), entry("Plexa", 1.5)])
+        #expect(loaded.dictionary.entries.allSatisfy { $0.soundsLike.isEmpty })
+        #expect(loaded.scopes.apps(for: DictionaryKey("plexa")) == ["com.example.chat", "com.example.mail"])
+        #expect(loaded.dictionary.ignore == [DictionaryKey("a/b")])
+        #expect(String(decoding: DictionaryFile.encode(loaded), as: UTF8.self) == written)
+
+        // Through the store: it opens, and a change that adds no spelling writes no spelling key.
+        let scratch = Scratch()
+        try FileManager.default.createDirectory(at: scratch.file.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try Data(written.utf8).write(to: scratch.file)
+        let store = DictionaryStore(fileURL: scratch.file, encoder: testEncoder)
+        #expect(store.opening == .loaded)
+        #expect(store.dictionary == loaded)
+        try store.save(text: "Kubernetes", strength: 2, replacing: DictionaryKey("kubernetes"))
+        let saved = String(decoding: try Data(contentsOf: scratch.file), as: UTF8.self)
+        #expect(saved == written.replacingOccurrences(of: #"{"strength":1,"text":"Kubernetes"}"#,
+                                                       with: #"{"strength":2,"text":"Kubernetes"}"#))
     }
 
     @Test func fileFormat() throws {
@@ -84,8 +123,23 @@ struct StoreTests {
                 == #"{"apps":[{"id":"com.example.chat","name":"Chat"},{"id":"com.example.mail","name":"Mail"}],"entries":[{"strength":1,"text":"Kubernetes"},{"apps":["com.example.chat","com.example.mail"],"strength":1.5,"text":"Plexa"}],"ignore":["a/b"],"version":1}"#)
     }
 
-    /// Whatever `encode` writes must load again: every entry limited to every app with the longest identifiers, and
-    /// the longest keys and names, of four-byte scalars.
+    /// Spellings sit in the entry, in the user's order, between its apps and its strength (sorted keys).
+    @Test func fileFormatWithSpellings() throws {
+        var scoped = ScopedDictionary()
+        let chat = try #require(DictionaryApp(id: "com.example.chat", name: "Chat"))
+        #expect({ scoped.scopes.register(chat) }() == nil)
+        #expect({ scoped.dictionary.upsert(DictionaryEntry(text: "Sorello", strength: 1,
+                                                          soundsLike: ["so rello", "Sarello"])) }() == nil)
+        #expect({ scoped.scopes.setApps(["com.example.chat"], for: DictionaryKey("sorello")) }() == nil)
+        #expect({ scoped.dictionary.upsert(entry("Plexa", 1.5)) }() == nil)
+        let stored = DictionaryFile.encode(scoped)
+        #expect(String(decoding: stored, as: UTF8.self)
+                == #"{"apps":[{"id":"com.example.chat","name":"Chat"}],"entries":[{"apps":["com.example.chat"],"soundsLike":["so rello","Sarello"],"strength":1,"text":"Sorello"},{"strength":1.5,"text":"Plexa"}],"ignore":[],"version":1}"#)
+        #expect(DictionaryFile.decode(stored, encoder: testEncoder) == scoped, "It round-trips")
+    }
+
+    /// Whatever `encode` writes must load again: every entry limited to every app with the longest identifiers and
+    /// with the most and longest spellings, and the longest keys and names, of four-byte scalars.
     @Test func fullFileLoadsAgain() throws {
         let wide = String(repeating: "\u{20000}", count: DictionaryApp.maxNameScalars)
         let apps = try (0..<DictionaryAppScopes.appCapacity).map { index in
@@ -99,7 +153,11 @@ struct StoreTests {
             // U+20000 and its neighbours are letters (Lo) with no case mapping, four bytes each in UTF-8.
             let text = DictionaryText.string([Unicode.Scalar(0x20000 + index) ?? "a"]
                 + Array(repeating: Unicode.Scalar(0x20000) ?? "a", count: DictionaryValidation.maxScalars - 1))
-            let item = try DictionaryValidation.validate(text: text, strength: 1, encoder: nil).get()
+            var item = try DictionaryValidation.validate(text: text, strength: 1, encoder: nil).get()
+            item.soundsLike = (0..<SoundsLike.maxSpellings).map { spelling in
+                DictionaryText.string([Unicode.Scalar(0x21000 + index * SoundsLike.maxSpellings + spelling) ?? "a"]
+                    + Array(repeating: Unicode.Scalar(0x20000) ?? "a", count: DictionaryValidation.maxScalars - 1))
+            }
             #expect({ scoped.dictionary.upsert(item) }() == nil)
             #expect({ scoped.scopes.setApps(ids, for: item.key) }() == nil)
         }
@@ -109,7 +167,7 @@ struct StoreTests {
             #expect({ scoped.dictionary.addIgnore(key) }() == nil)
         }
         let stored = DictionaryFile.encode(scoped)
-        #expect(stored.count > 4 << 20, "The largest file is several MiB")
+        #expect(stored.count > 7 << 20, "The largest file is several MiB: \(stored.count) bytes")
         #expect(stored.count <= DictionaryFile.maxBytes, "and stays within the load cap")
         #expect(DictionaryFile.decode(stored, encoder: nil) == scoped, "The largest file round-trips")
     }

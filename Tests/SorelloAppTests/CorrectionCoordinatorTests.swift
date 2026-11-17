@@ -276,6 +276,20 @@ final class CorrectionHarness {
         #expect(harness.coordinator.notice == nil)
     }
 
+    /// A word that is already a spelling of another is never offered: adding it would be refused (DESIGN §3.7).
+    @Test func aWordThatIsASpellingIsNotSuggested() async throws {
+        let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
+        let harness = try CorrectionHarness(directory: directory.url, defaults: suite.defaults)
+        try harness.dictionary.save(text: "Plexa", strength: 1, soundsLike: ["okonkwo"], apps: [], replacing: nil)
+        #expect(harness.dictionary.keysNeverSuggested == [DictionaryKey("okonkwo")])
+        #expect(harness.dictionary.ignoredKeys.isEmpty, "The ignore list itself is unchanged")
+        harness.dictate(1)
+        await harness.edit(finding: "Okonkwo")
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(harness.speech.checks == 1)
+        #expect(harness.coordinator.notice == nil)
+    }
+
     @Test func turningSuggestionsOffOrQuittingStopsEverything() async throws {
         let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
         let harness = try CorrectionHarness(directory: directory.url, defaults: suite.defaults)

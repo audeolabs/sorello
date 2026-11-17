@@ -45,14 +45,19 @@ final class DictionaryLibrary {
     /// Whether another word fits.
     var hasRoom: Bool { dictionary.dictionary.entries.count < DictionaryValidation.capacity }
 
-    /// The keys never offered as suggestions.
+    /// The ignore list: "Don't Suggest".
     var ignoredKeys: Set<DictionaryKey> { Set(dictionary.dictionary.ignore) }
 
-    /// Adds a word, or edits the entry `original`, limited to `apps` (none: everywhere).
-    func save(text: String, strength: Float, apps: Set<String>, replacing original: DictionaryKey?)
-    throws(DictionaryChangeError) {
+    /// The keys never offered as suggestions: the ignore list, and every word's spellings, which could not be added
+    /// (DESIGN §3.7).
+    var keysNeverSuggested: Set<DictionaryKey> { ignoredKeys.union(dictionary.dictionary.spellingKeys) }
+
+    /// Adds a word, or edits the entry `original`, limited to `apps` (none: everywhere). `soundsLike` sets its
+    /// spellings; nil keeps those of the entry it replaces.
+    func save(text: String, strength: Float, soundsLike: [String]? = nil, apps: Set<String>,
+              replacing original: DictionaryKey?) throws(DictionaryChangeError) {
         defer { publish() }
-        try store.save(text: text, strength: strength, apps: apps, replacing: original)
+        try store.save(text: text, strength: strength, soundsLike: soundsLike, apps: apps, replacing: original)
     }
 
     /// Removes a word and its app limits.

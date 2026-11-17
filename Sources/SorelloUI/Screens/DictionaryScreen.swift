@@ -4,8 +4,14 @@ import SwiftUI
 public struct DictionaryActions {
     /// Checks what is typed in the add field, as the dictionary would; nil when it can be added.
     public var validate: (String) -> DictionaryProblem?
-    /// Adds a word limited to the given apps (none: everywhere). Returns why it was refused, or nil.
-    public var add: (_ text: String, _ strength: Double, _ apps: [String]) -> DictionaryProblem?
+    /// Checks what is typed under "Sounds like" for a word (its id when it is in the dictionary, nil in the add
+    /// card), as the dictionary would; nil when it can be saved.
+    public var validateSoundsLike: (_ word: String, _ wordID: String?, _ field: String) -> DictionaryProblem?
+    /// Adds a word limited to the given apps (none: everywhere), with the spellings typed under "Sounds like"; a
+    /// blank field keeps those of a word already there. Returns why it was refused, or nil.
+    public var add: (_ text: String, _ strength: Double, _ apps: [String], _ soundsLike: String) -> DictionaryProblem?
+    /// Sets a word's spellings to those typed; a blank field removes them. Returns why it was refused, or nil.
+    public var setSoundsLike: (_ wordID: String, _ field: String) -> DictionaryProblem?
     /// Sets a word's strength to one of the presets.
     public var setStrength: (_ wordID: String, _ strength: Double) -> Void
     /// Sets the apps a word is limited to; empty makes it apply everywhere.
@@ -20,14 +26,18 @@ public struct DictionaryActions {
 
     /// Actions that accept everything and change nothing unless given.
     public init(validate: @escaping (String) -> DictionaryProblem? = { _ in nil },
-                add: @escaping (String, Double, [String]) -> DictionaryProblem? = { _, _, _ in nil },
+                validateSoundsLike: @escaping (String, String?, String) -> DictionaryProblem? = { _, _, _ in nil },
+                add: @escaping (String, Double, [String], String) -> DictionaryProblem? = { _, _, _, _ in nil },
+                setSoundsLike: @escaping (String, String) -> DictionaryProblem? = { _, _ in nil },
                 setStrength: @escaping (String, Double) -> Void = { _, _ in },
                 setApps: @escaping (String, [String]) -> Void = { _, _ in },
                 chooseApp: @escaping (String?) -> Void = { _ in },
                 delete: @escaping (String) -> Void = { _ in },
                 unignore: @escaping (String) -> Void = { _ in }) {
         self.validate = validate
+        self.validateSoundsLike = validateSoundsLike
         self.add = add
+        self.setSoundsLike = setSoundsLike
         self.setStrength = setStrength
         self.setApps = setApps
         self.chooseApp = chooseApp
@@ -44,12 +54,33 @@ public struct DictionaryDraft: Equatable, Sendable {
     public var strength: Double
     /// Bundle identifiers; empty means everywhere.
     public var apps: [String]
+    /// What is typed under "Sounds like": spellings separated by commas.
+    public var soundsLike: String
 
     /// An empty draft at the default strength, everywhere.
-    public init(text: String = "", strength: Double = StrengthPresets.defaultValue, apps: [String] = []) {
+    public init(text: String = "", strength: Double = StrengthPresets.defaultValue, apps: [String] = [],
+                soundsLike: String = "") {
         self.text = text
         self.strength = strength
         self.apps = apps
+        self.soundsLike = soundsLike
+    }
+}
+
+/// A word's spellings open for editing, in place of its row.
+public struct SoundsLikeDraft: Equatable, Sendable {
+    /// The word whose spellings these are.
+    public var wordID: String
+    /// What is typed: spellings separated by commas.
+    public var text: String
+    /// Why the last save was refused, until the text changes.
+    public var refusal: DictionaryProblem?
+
+    /// A word's spellings as typed.
+    public init(wordID: String, text: String, refusal: DictionaryProblem? = nil) {
+        self.wordID = wordID
+        self.text = text
+        self.refusal = refusal
     }
 }
 
@@ -72,26 +103,54 @@ public final class DictionaryModel {
     }
     /// Why the last add was refused, until the draft changes.
     public var refusal: DictionaryProblem?
+    /// The word whose spellings are open for editing, if any. Changing the text clears its refusal.
+    public var editingSoundsLike: SoundsLikeDraft? {
+        didSet {
+            if let new = editingSoundsLike, let old = oldValue, new.wordID == old.wordID, new.text != old.text,
+               new.refusal != nil {
+                editingSoundsLike?.refusal = nil
+            }
+        }
+    }
     /// What the screen asks of the app layer.
     public var actions: DictionaryActions
 
     /// The Dictionary screen's values.
     public init(words: [DictionaryWord], ignored: [IgnoredWord], knownApps: [AppLimit], capacity: Int = 1000,
-                canEdit: Bool = true, draft: DictionaryDraft = DictionaryDraft(), actions: DictionaryActions = DictionaryActions()) {
+                canEdit: Bool = true, draft: DictionaryDraft = DictionaryDraft(),
+                editingSoundsLike: SoundsLikeDraft? = nil, actions: DictionaryActions = DictionaryActions()) {
         self.words = words
         self.ignored = ignored
         self.knownApps = knownApps
         self.capacity = capacity
         self.canEdit = canEdit
         self.draft = draft
+        self.editingSoundsLike = editingSoundsLike
         self.actions = actions
     }
 
-    /// The problem the add field shows: the dictionary as a whole first, then what is typed.
+    /// The problem the add card shows: the dictionary as a whole first, then the word, then its spellings when any
+    /// are typed.
     var draftProblem: DictionaryProblem? {
         if !canEdit { return .needsModel }
         if words.count >= capacity { return .full(capacity: capacity) }
-        return refusal ?? actions.validate(draft.text)
+        if let problem = refusal ?? actions.validate(draft.text) { return problem }
+        guard !draft.soundsLike.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        return actions.validateSoundsLike(draft.text, nil, draft.soundsLike)
+    }
+
+    /// Opens a word's spellings for editing, as they would be typed.
+    public func editSoundsLike(of word: DictionaryWord) {
+        editingSoundsLike = SoundsLikeDraft(wordID: word.id, text: word.soundsLikeField)
+    }
+
+    /// The problem the spellings being edited show.
+    var soundsLikeProblem: DictionaryProblem? {
+        guard let draft = editingSoundsLike else { return nil }
+        if !canEdit { return .needsModel }
+        if let refusal = draft.refusal { return refusal }
+        guard let word = words.first(where: { $0.id == draft.wordID }) else { return nil }
+        return actions.validateSoundsLike(word.text, word.id, draft.text)
     }
 
     func appName(_ id: String) -> String {
@@ -126,7 +185,11 @@ public struct DictionaryScreen: View {
                 } else {
                     Card {
                         ForEach(model.words) { word in
-                            WordRow(word: word, model: model)
+                            if model.editingSoundsLike?.wordID == word.id {
+                                SoundsLikeEditor(word: word, model: model)
+                            } else {
+                                WordRow(word: word, model: model)
+                            }
                         }
                     }
                 }
@@ -172,6 +235,15 @@ private struct AddWordCard: View {
                     .disabled(problem != nil || model.draft.text.isEmpty)
             }
             HStack(spacing: 10) {
+                Text("Sounds like")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.secondaryInk)
+                SorelloTextField(String(localized: "Other spellings, separated by commas"),
+                                 text: $model.draft.soundsLike, onSubmit: add)
+                    .accessibilityLabel(String(localized: "Sounds like"))
+            }
+            .disabled(!model.canEdit)
+            HStack(spacing: 10) {
                 Text("Strength")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.secondaryInk)
@@ -201,7 +273,8 @@ private struct AddWordCard: View {
 
     private func add() {
         guard problem == nil, !model.draft.text.isEmpty else { return }
-        if let refusal = model.actions.add(model.draft.text, model.draft.strength, model.draft.apps) {
+        if let refusal = model.actions.add(model.draft.text, model.draft.strength, model.draft.apps,
+                                           model.draft.soundsLike) {
             model.refusal = refusal
         } else {
             model.draft = DictionaryDraft(strength: model.draft.strength)
@@ -209,7 +282,8 @@ private struct AddWordCard: View {
     }
 }
 
-/// One word: its text and app limits, its strength as a menu of presets, its limits menu, and delete.
+/// One word: its text, spellings and app limits, its strength as a menu of presets, its limits menu, the editor for its
+/// spellings, and delete.
 private struct WordRow: View {
     let word: DictionaryWord
     let model: DictionaryModel
@@ -222,6 +296,13 @@ private struct WordRow: View {
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                if let spellings = word.soundsLikeLabel {
+                    Text(spellings)
+                        .font(.rowDetail)
+                        .foregroundStyle(Theme.secondaryInk)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
                 if !word.apps.isEmpty {
                     FlowLayout(spacing: 4, lineSpacing: 4) {
                         ForEach(word.apps) { app in Chip(app.name) }
@@ -234,6 +315,9 @@ private struct WordRow: View {
             StrengthMenu(strength: word.strength) { model.actions.setStrength(word.id, $0) }
             AppLimitMenu(selected: word.apps.map(\.id), knownApps: model.knownApps, compact: true,
                          set: { model.actions.setApps(word.id, $0) }, chooseOther: { model.actions.chooseApp(word.id) })
+            Button { model.editSoundsLike(of: word) } label: { Image(systemName: "ear") }
+                .buttonStyle(IconButtonStyle())
+                .accessibilityLabel(String(localized: "What \(word.text) sounds like"))
             Button { model.actions.delete(word.id) } label: { Image(systemName: "trash") }
                 .buttonStyle(IconButtonStyle(destructive: true))
                 .accessibilityLabel(String(localized: "Delete \(word.text)"))
@@ -244,6 +328,60 @@ private struct WordRow: View {
         .frame(maxWidth: .infinity, minHeight: Metrics.rowMinHeight, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(word.text)
+    }
+}
+
+/// A word's spellings, in place of its row: the word, the "Sounds like" field, the inline message, Cancel and Save.
+/// Return saves; Escape cancels.
+private struct SoundsLikeEditor: View {
+    let word: DictionaryWord
+    @Bindable var model: DictionaryModel
+    @FocusState private var focused: Bool
+
+    private var problem: DictionaryProblem? { model.soundsLikeProblem }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(word.text)
+                .font(.rowTitle)
+                .foregroundStyle(Theme.ink)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            HStack(spacing: 10) {
+                Text("Sounds like")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.secondaryInk)
+                SorelloTextField(String(localized: "Other spellings, separated by commas"),
+                                 text: Binding(get: { model.editingSoundsLike?.text ?? "" },
+                                               set: { model.editingSoundsLike?.text = $0 }),
+                                 hasProblem: problem != nil, onSubmit: save)
+                    .focused($focused)
+                    .accessibilityLabel(String(localized: "What \(word.text) sounds like"))
+            }
+            HStack(spacing: 8) {
+                if let problem { InlineMessage(problem.message) }
+                Spacer(minLength: 8)
+                Button(String(localized: "Cancel")) { model.editingSoundsLike = nil }
+                    .buttonStyle(QuietButtonStyle())
+                    .keyboardShortcut(.cancelAction)
+                Button(String(localized: "Save"), action: save)
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(problem != nil)
+            }
+        }
+        .disabled(!model.canEdit)
+        .padding(Metrics.rowInset)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear { focused = true }
+    }
+
+    private func save() {
+        guard problem == nil, let draft = model.editingSoundsLike else { return }
+        if let refusal = model.actions.setSoundsLike(draft.wordID, draft.text) {
+            model.editingSoundsLike?.refusal = refusal
+        } else {
+            model.editingSoundsLike = nil
+        }
     }
 }
 

@@ -33,7 +33,7 @@ public enum CasingRestorer {
         scan: while position < input.count {
             if position == 0 || !DictionaryText.isWordCharacter(input[position - 1]) {
                 for pattern in patterns {
-                    if let end = match(pattern.folded, folds: folds, from: position),
+                    if let end = DictionaryText.foldedRun(pattern.folded, folds: folds, from: position),
                        end == input.count || !DictionaryText.isWordCharacter(input[end]) {
                         output += pattern.text
                         position = end
@@ -45,20 +45,5 @@ public enum CasingRestorer {
             position += 1
         }
         return DictionaryText.string(output)
-    }
-
-    /// End of the shortest transcript run starting at `start` whose folded scalars equal `folded` exactly, or nil.
-    private static func match(_ folded: [Unicode.Scalar], folds: [[Unicode.Scalar]], from start: Int) -> Int? {
-        var offset = 0
-        var index = start
-        while offset < folded.count {
-            guard index < folds.count else { return nil }
-            let piece = folds[index]
-            guard offset + piece.count <= folded.count,
-                  folded[offset..<offset + piece.count].elementsEqual(piece) else { return nil }
-            offset += piece.count
-            index += 1
-        }
-        return index
     }
 }

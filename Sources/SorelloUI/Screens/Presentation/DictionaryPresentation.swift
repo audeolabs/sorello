@@ -47,6 +47,22 @@ nonisolated public enum DictionaryProblem: Equatable, Sendable {
     case needsModel
     /// The change could not be written to disk, so it was not made.
     case notSaved
+    /// A spelling under "Sounds like" has too many words (DESIGN §3.7).
+    case spellingTooManyWords(limit: Int)
+    /// A spelling is too long.
+    case spellingTooLong(limit: Int)
+    /// A spelling has no letter.
+    case spellingNoLetter
+    /// The model cannot spell a spelling.
+    case spellingUnencodable
+    /// More spellings than a word can have.
+    case tooManySpellings(limit: Int)
+    /// A spelling is the word itself.
+    case spellingIsTheWord
+    /// A spelling is another word, or another word's spelling.
+    case spellingTaken
+    /// The word is another word's spelling.
+    case wordIsASpelling
 
     /// One sentence that says what to do.
     public var message: String {
@@ -60,13 +76,23 @@ nonisolated public enum DictionaryProblem: Equatable, Sendable {
         case .appsFull(let capacity): String(localized: "Words can be limited to at most \(capacity) apps.")
         case .needsModel: String(localized: "The dictionary can’t be changed until the speech model is available.")
         case .notSaved: String(localized: "The dictionary couldn’t be saved. Nothing was changed.")
+        case .spellingTooManyWords(let limit): String(localized: "Use at most \(limit) words in each spelling.")
+        case .spellingTooLong(let limit): String(localized: "Use at most \(limit) characters in each spelling.")
+        case .spellingNoLetter: String(localized: "Include a letter in each spelling.")
+        case .spellingUnencodable: String(localized: "A spelling has characters the speech model can’t write.")
+        case .tooManySpellings(let limit): String(localized: "Use at most \(limit) spellings.")
+        case .spellingIsTheWord: String(localized: "A spelling can’t be the word itself.")
+        case .spellingTaken: String(localized: "A spelling is already another word or one of its spellings.")
+        case .wordIsASpelling: String(localized: "This is already a spelling of another word.")
         }
     }
 
     /// Whether the problem is about what was typed, rather than about the dictionary as a whole.
     var isAboutDraft: Bool {
         switch self {
-        case .empty, .tooManyWords, .tooLong, .noLetter, .unencodable: true
+        case .empty, .tooManyWords, .tooLong, .noLetter, .unencodable, .spellingTooManyWords, .spellingTooLong,
+             .spellingNoLetter, .spellingUnencodable, .tooManySpellings, .spellingIsTheWord, .spellingTaken,
+             .wordIsASpelling: true
         case .full, .appsFull, .needsModel, .notSaved: false
         }
     }
@@ -114,14 +140,27 @@ nonisolated public struct DictionaryWord: Identifiable, Equatable, Sendable {
     public var strength: Double
     /// Empty when the word applies everywhere.
     public var apps: [AppLimit]
+    /// The spellings it is heard as, in order; usually none.
+    public var soundsLike: [String]
 
     /// A word; with no apps, it applies everywhere.
-    public init(id: String, text: String, strength: Double, apps: [AppLimit] = []) {
+    public init(id: String, text: String, strength: Double, apps: [AppLimit] = [], soundsLike: [String] = []) {
         self.id = id
         self.text = text
         self.strength = strength
         self.apps = apps
+        self.soundsLike = soundsLike
     }
+
+    /// The line under the word, "Sounds like Sarello, so rello", or nil when it has no spellings. Commas separate
+    /// them, as they are typed.
+    public var soundsLikeLabel: String? {
+        guard !soundsLike.isEmpty else { return nil }
+        return String(localized: "Sounds like \(soundsLikeField)")
+    }
+
+    /// The spellings as they are typed into "Sounds like".
+    public var soundsLikeField: String { soundsLike.joined(separator: ", ") }
 }
 
 /// A word that is never suggested.

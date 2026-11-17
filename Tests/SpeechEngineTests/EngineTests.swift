@@ -379,6 +379,21 @@ struct EngineTests {
         #expect(apps.withLock { $0 } == ["com.example.chat", nil], "A retry uses the words for no app")
     }
 
+    /// A word's spellings are boosted with it, and a spelling heard is written as the word (DESIGN §3.7). The fake
+    /// hears "zorblax" for "w1" only when the graph boosts "zorblax" at strength 2 or more.
+    @Test func spellingsAreBoostedAndWrittenAsTheirWord() async throws {
+        let log = ModelLog()
+        func heard(_ strength: Float) async -> Result<String, SpeechFailure>? {
+            let words = DictionarySnapshot(revision: 1, entries: [
+                DictionaryEntry(text: "Quorvex", strength: strength, soundsLike: ["zorblax"]),
+                DictionaryEntry(text: "Plexa", strength: 1, soundsLike: ["w2"]),
+            ])
+            return await transcribe(engine(log, snapshot: words), Self.speech(3))
+        }
+        #expect(await heard(2) == .success("W0 Quorvex Plexa."), "The spelling's path was boosted, then written")
+        #expect(await heard(1) == .success("W0 w1 Plexa."), "A spelling heard without the boost is written too")
+    }
+
     // MARK: - Retention and corrections
 
     private func retained(_ engine: SpeechEngine, seconds: Double = 3, app: String? = nil) async throws -> SpeechResult {
@@ -646,6 +661,23 @@ struct EngineTests {
         let known = self.engine(log, snapshot: DictionarySnapshot(revision: 1, entries: [DictionaryEntry(text: "zorblax", strength: 1)]))
         let knownID = try #require(try await retained(known).correctionID)
         #expect(await suggest(known, knownID) == nil, "A word already in the dictation's dictionary is not offered")
+    }
+
+    /// Re-decodes are written as the dictation was, spellings and all, so a spelling elsewhere in the sentence does
+    /// not stand in the way of a correction (DESIGN §1.6.4, §3.7).
+    @Test func verificationWritesSpellingsAsTheDictationDid() async throws {
+        let log = ModelLog()
+        let words = DictionarySnapshot(revision: 1, entries: [DictionaryEntry(text: "Plexa", strength: 1,
+                                                                             soundsLike: ["w2"])])
+        let engine = engine(log, snapshot: words)
+        let result = try await retained(engine)
+        #expect(result.text == "W0 w1 Plexa.")
+        let id = try #require(result.correctionID)
+        let suggestion = await within {
+            await engine.suggestCorrection(typed: "W0 w1 Plexa.", edited: "W0 zorblax Plexa.", correctionID: id,
+                                           ignore: [], isLast: true, check: engine.beginCorrectionCheck())
+        } ?? nil
+        #expect(suggestion == DictionarySuggestion(word: "zorblax", strength: 2, kind: .replace))
     }
 
     // MARK: - Find strength
