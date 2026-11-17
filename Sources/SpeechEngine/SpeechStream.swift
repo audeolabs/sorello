@@ -12,6 +12,8 @@ final class SpeechStream: SpeechStreaming {
     /// The dictionary as it was when the dictation started.
     let snapshot: DictionarySnapshot
     let retainsAudio: Bool
+    /// Compaction holds a bounded amount of the silence before the first speech (ARCHITECTURE.md, section 5).
+    let boundsLeadingSilence: Bool
     /// Present only when the owner asked for progress (ARCHITECTURE.md, section 5, "Progress").
     let progress: AsyncStream<SpeechProgress>?
     private let engine: SpeechEngine
@@ -30,11 +32,13 @@ final class SpeechStream: SpeechStreaming {
 
     private let ingress: Mutex<Ingress>
 
-    init(id: UInt64, engine: SpeechEngine, snapshot: DictionarySnapshot, retainsAudio: Bool, reportsProgress: Bool) {
+    init(id: UInt64, engine: SpeechEngine, snapshot: DictionarySnapshot, retainsAudio: Bool, reportsProgress: Bool,
+         boundsLeadingSilence: Bool = false) {
         self.id = id
         self.engine = engine
         self.snapshot = snapshot
         self.retainsAudio = retainsAudio
+        self.boundsLeadingSilence = boundsLeadingSilence
         var ingress = Ingress()
         if reportsProgress {
             // Unbounded, so a report never waits for the consumer.

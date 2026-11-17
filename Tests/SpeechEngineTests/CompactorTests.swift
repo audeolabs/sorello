@@ -178,4 +178,38 @@ struct CompactorTests {
             #expect(split.chunks == whole.chunks && split.text == whole.text)
         }
     }
+
+    // MARK: - Bounded leading silence
+
+    /// Whenever speech occurs, a compactor that bounds its leading silence emits exactly what one that does not
+    /// emits, however the samples are split.
+    @Test func boundedLeadingSilenceKeepsTheTextOfSpeech() {
+        let limit = SilenceCompactor.boundedLeadingSilence
+        let first = tone(1, level: -20, frequency: 300), second = tone(1, level: -20, frequency: 500)
+        let room = noise(40, level: -75, seed: 7)
+        for input in [zeros(60) + first + zeros(2), room + first + zeros(3) + second,
+                      zeros(Double(limit) / 16_000) + first, zeros(0.1) + first, first + zeros(30)] {
+            for reads in [[], [4096], [160, 1, 16_000]] {
+                #expect(compact(input, SilenceCompactor(boundsLeadingSilence: true), reads: reads)
+                        == compact(input, reads: reads))
+            }
+        }
+    }
+
+    /// With no speech at all, the bounded compactor emits a suffix of the recording of at least its limit and less
+    /// than its limit and one piece: what it held. A shorter recording is emitted whole, as without the bound.
+    @Test func boundedLeadingSilenceHoldsAtMostItsLimit() {
+        let limit = SilenceCompactor.boundedLeadingSilence
+        #expect(limit == s(15))
+        for input in [zeros(60), noise(47.3, level: -75, seed: 3), zeros(16.5)] {
+            for reads in [[], [4096], [160, 1, 16_000]] {
+                let output = compact(input, SilenceCompactor(boundsLeadingSilence: true), reads: reads)
+                #expect(output.count >= limit && output.count < limit + SilenceCompactor.maxPieceSamples)
+                #expect(output == Array(input.suffix(output.count)), "The last of the silence, unchanged")
+            }
+        }
+        let short = noise(9, level: -75, seed: 5)
+        #expect(compact(short, SilenceCompactor(boundsLeadingSilence: true)) == short)
+        #expect(compact(zeros(60)) == zeros(60), "Without the bound, all of it")
+    }
 }

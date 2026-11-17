@@ -257,7 +257,8 @@ public actor SpeechEngine: SpeechTranscribing {
             Task { await self.dropStaleRetention() }
         }
         return SpeechStream(id: id, engine: self, snapshot: dictionary(options.appBundleID),
-                            retainsAudio: options.retainForCorrection, reportsProgress: options.reportsProgress)
+                            retainsAudio: options.retainForCorrection, reportsProgress: options.reportsProgress,
+                            boundsLeadingSilence: options.boundsLeadingSilence)
     }
 
     /// Returns once the model work running now has ended. A stream cancelled before this is called, and one whose
@@ -368,7 +369,7 @@ public actor SpeechEngine: SpeechTranscribing {
         let snapshot = stream.snapshot
         let bias = graphs.graph(for: snapshot) { BiasGraph.build(entries: snapshot.entries, encoder: model.encoder) }
         let created = StreamWork(id: stream.id, snapshot: snapshot, bias: bias, retainsAudio: stream.retainsAudio,
-                                 reportsProgress: stream.progress != nil)
+                                 reportsProgress: stream.progress != nil, boundsLeadingSilence: stream.boundsLeadingSilence)
         work[stream.id] = created
         return created
     }
@@ -768,14 +769,16 @@ final class StreamWork {
     let id: UInt64
     let snapshot: DictionarySnapshot
     let bias: BiasGraph?
-    var transcription = ChunkedTranscription.recording()
+    var transcription: ChunkedTranscription
     var retained: RetainedAudio?
     var failure: SpeechFailure?
     /// What the owner has been told, when it asked for progress.
     var feed: ProgressFeed?
 
-    init(id: UInt64, snapshot: DictionarySnapshot, bias: BiasGraph?, retainsAudio: Bool, reportsProgress: Bool = false) {
+    init(id: UInt64, snapshot: DictionarySnapshot, bias: BiasGraph?, retainsAudio: Bool, reportsProgress: Bool = false,
+         boundsLeadingSilence: Bool = false) {
         self.id = id
+        transcription = .recording(boundsLeadingSilence: boundsLeadingSilence)
         self.snapshot = snapshot
         self.bias = bias
         retained = retainsAudio ? RetainedAudio() : nil

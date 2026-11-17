@@ -182,6 +182,32 @@ struct EngineTests {
         }
     }
 
+    /// A stream that bounds its leading silence gives the model the last 15 s to 16 s of a recording with no speech,
+    /// and the same text as any other stream once there is speech.
+    @Test func aBoundedStreamHoldsLittleLeadingSilence() async throws {
+        let log = ModelLog()
+        let engine = engine(log)
+        await prepare(engine)
+        let options = SpeechStreamOptions(reportsProgress: true, boundsLeadingSilence: true)
+        // Silence-level noise, which the fake model hears (it skips digital silence).
+        let room = Signals.noise(60, level: -75, seed: 11)
+        let silent = engine.openStream(options)
+        for start in stride(from: 0, to: room.count, by: 16_000) { silent.append(Array(room[start..<start + 16_000])) }
+        _ = try #require(await finish(silent)).get()
+        // At most two chunks: one of 15 s, and what is left with the 2 s they overlap by.
+        let heard = log.projected.reduce(0, +)
+        #expect(log.projected.count <= 2 && heard >= 240_000 && heard < 256_000 + 32_000,
+                "Only the last of the silence reaches the model")
+
+        let recording = Signals.zeros(45) + Self.speech(20)
+        let bounded = engine.openStream(options)
+        bounded.append(recording)
+        let plain = engine.openStream(SpeechStreamOptions())
+        plain.append(recording)
+        let text = try #require(await finish(plain)).get().text
+        #expect(try #require(await finish(bounded)).get().text == text)
+    }
+
     /// Complete chunks are transcribed while the user is still speaking, so finishing waits only for the last one.
     @Test func chunksAreTranscribedWhileRecording() async throws {
         let log = ModelLog()

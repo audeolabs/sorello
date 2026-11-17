@@ -208,9 +208,10 @@ struct ChunkedTranscription {
     }
 
     /// How every dictation is split, whatever its length: silence compacted, then 15 s windows that overlap by 2 s.
-    static func recording() -> ChunkedTranscription {
+    /// `boundsLeadingSilence`: the compactor holds a bounded amount of the silence before the first speech.
+    static func recording(boundsLeadingSilence: Bool = false) -> ChunkedTranscription {
         ChunkedTranscription(size: SpeechCore.chunkSamples, overlap: SpeechCore.chunkOverlapSamples,
-                             compactor: SilenceCompactor())
+                             compactor: SilenceCompactor(boundsLeadingSilence: boundsLeadingSilence))
     }
 
     /// The words so far, joined at their seams.

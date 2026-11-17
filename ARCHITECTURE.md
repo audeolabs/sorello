@@ -414,6 +414,15 @@ tuned there:
 - Audio is cut into 15 s chunks that overlap by 2 s and are joined on a
   word both chunks heard. Long silences are compacted first. The shared
   vectors in `Tests/Vectors` pin this behaviour, as they do on Linux.
+- Compaction holds all of a stream's audio until it first hears speech,
+  because a recording with no speech at all reaches the model unchanged. A
+  stream opened with `boundsLeadingSilence` holds at most 16 s of it: once
+  more has arrived, it keeps only the last 15 s. Speech keeps only a short
+  margin of the silence before it, so whenever speech occurs the text is
+  what it would be without the option; only a recording with no speech at
+  all differs, and the model then hears its last 15 s to 16 s. The Mac app
+  never asks for it; the iPhone app asks for a voice note, which may begin
+  with a long silence (section 13).
 - Preparation starts at launch, and again when a download has put the
   model in the store. The first preparation on a machine can take minutes
   on the Neural Engine, which compiles the model for itself; the fallback

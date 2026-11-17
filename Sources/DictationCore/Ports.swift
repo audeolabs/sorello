@@ -232,11 +232,16 @@ public struct SpeechStreamOptions: Sendable, Equatable {
     public var retainForCorrection: Bool
     /// Give the stream a `progress` feed (ARCHITECTURE.md, section 5, "Progress").
     public var reportsProgress: Bool
+    /// Hold a bounded amount of the silence before the first speech instead of all of it (ARCHITECTURE.md,
+    /// section 5). The text differs only for a recording with no speech at all.
+    public var boundsLeadingSilence: Bool
 
-    public init(appBundleID: String? = nil, retainForCorrection: Bool = false, reportsProgress: Bool = false) {
+    public init(appBundleID: String? = nil, retainForCorrection: Bool = false, reportsProgress: Bool = false,
+                boundsLeadingSilence: Bool = false) {
         self.appBundleID = appBundleID
         self.retainForCorrection = retainForCorrection
         self.reportsProgress = reportsProgress
+        self.boundsLeadingSilence = boundsLeadingSilence
     }
 }
 
