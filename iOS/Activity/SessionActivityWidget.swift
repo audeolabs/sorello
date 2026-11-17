@@ -253,6 +253,12 @@ private struct PhaseTimer: View {
         }
     }
 
+    /// The timer's width: `minutes` for "4:58", or room for the hour a note's time shows. A live timer takes the width
+    /// it is given, so it is given one.
+    static func width(_ state: SessionActivityState, minutes: CGFloat) -> CGFloat {
+        state.phase == .noteRecording ? minutes * 1.45 : minutes
+    }
+
     /// The phases with a live timer.
     static func shows(_ state: SessionActivityState) -> Bool {
         state.phase == .recording || state.phase == .noteRecording || (state.phase == .ready && state.endsAt != nil)
@@ -371,8 +377,8 @@ private struct CompactTrailing: View {
                     PhaseTimer(state: state)
                         .font(.system(size: 14, weight: .semibold, design: .rounded).monospacedDigit())
                         .foregroundStyle(.white)
-                        .fixedSize()
-                        .frame(minWidth: 34, alignment: .trailing)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: PhaseTimer.width(state, minutes: 34), alignment: .trailing)
                 }
                 .modifier(WordsTransition())
             } else {
@@ -448,8 +454,8 @@ private struct ExpandedTrailing: View {
                     }
                     PhaseTimer(state: state)
                         .foregroundStyle(.white)
-                        .fixedSize()
-                        .frame(minWidth: 40, alignment: .trailing)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: PhaseTimer.width(state, minutes: 40), alignment: .trailing)
                 }
                 .accessibilityElement(children: .combine)
                 .font(.system(size: 15, weight: .semibold, design: .rounded).monospacedDigit())
@@ -541,8 +547,8 @@ struct LockScreenView: View {
                         PhaseTimer(state: state)
                             .font(.system(size: 20, weight: .semibold, design: .rounded).monospacedDigit())
                             .foregroundStyle(.white)
-                            .fixedSize()
-                            .frame(minWidth: 52, alignment: .trailing)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: PhaseTimer.width(state, minutes: 52), alignment: .trailing)
                     }
                     .modifier(WordsTransition())
                 }
