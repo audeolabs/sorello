@@ -33,6 +33,9 @@ struct NotePendingRun: Equatable {
     /// The settled pieces written so far, in sequence.
     var pieces: [String]
     var isRecording: Bool
+    /// Whether every file of the run could be read. A run with one that could not shows what could be, and waits
+    /// to be merged until all can.
+    var isReadable: Bool
 }
 
 /// A note a search matched, with the ranges of its text that matched.

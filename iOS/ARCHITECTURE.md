@@ -1075,7 +1075,8 @@ the Notes screens are not built yet; they use the interfaces below.
 - **Reading** a note gives its body, its pending runs in order with their
   pieces in sequence, and its text: the body with the runs merged in
   (`NoteMerge`). A note being recorded shows the pieces written so far.
-- **Merging** writes the runs that have ended, up to the first that records,
+- **Merging** writes the runs that have ended, up to the first that records
+  or has a file that cannot be read now (as while the iPhone is locked),
   into the body, in order, and then removes their files. It needs the vault unlocked: it runs
   at every unlock and on `mergePendingRuns()`, so after a crash at the next
   unlock. The body names the runs merged into it until their files are gone,

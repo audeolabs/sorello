@@ -341,7 +341,7 @@ final class NoteVault: @unchecked Sendable {
                     .map { String(decoding: $0, as: UTF8.self) }
             }
             return NotePendingRun(id: run.id, place: start?.place ?? .end, startedAt: start?.startedAt, pieces: pieces,
-                                  isRecording: run.isRecording)
+                                  isRecording: run.isRecording, isReadable: run.isReadable)
         }
     }
 
@@ -359,15 +359,17 @@ final class NoteVault: @unchecked Sendable {
         return Note(id: id, text: text, body: body?.text ?? "", created: created, modified: modified, pendingRuns: runs)
     }
 
-    /// Merges the runs of note `id` that have ended, up to the first that records, into its body, then removes their
-    /// files. A run already named by the body is only removed. A new note whose runs hold no text is removed.
+    /// Merges the runs of note `id` that have ended, up to the first that records or has a file that cannot be read,
+    /// into its body, then removes their files. A run already named by the body is only removed. A new note whose runs hold no text is removed.
     private func merge(_ id: UUID, in unlocked: inout Unlocked) throws {
         guard !unlocked.unreadable.contains(id) else { return }
         let stored = storage.runs(of: id)
         let body = unlocked.bodies[id]
         let alreadyMerged = Set(body?.mergedRuns ?? [])
-        // The ended runs before the first that records, so the order of the runs never changes.
-        let pending = Array(pendingRuns(of: id, mergedInto: body, with: unlocked.privateKey).prefix { !$0.isRecording })
+        // The ended runs before the first that records or cannot all be read, so the order of the runs never changes
+        // and nothing is merged as missing that is only out of reach for now.
+        let pending = Array(pendingRuns(of: id, mergedInto: body, with: unlocked.privateKey)
+            .prefix { !$0.isRecording && $0.isReadable })
         if !pending.isEmpty {
             let text = NoteMerge.merge(pending.map { NoteRunContent(place: $0.place, pieces: $0.pieces) },
                                        into: body?.text ?? "", format: format)

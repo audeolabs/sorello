@@ -17,6 +17,7 @@ enum NoteRunTests {
             ("aMergeSurvivesACrashBetweenAnyTwoSteps", testAMergeSurvivesACrashBetweenAnyTwoSteps),
             ("aRunCutShortByACrashIsMergedAtTheNextUnlock", testARunCutShortByACrashIsMergedAtTheNextUnlock),
             ("aRunWithoutItsStartGoesAtTheEnd", testARunWithoutItsStartGoesAtTheEnd),
+            ("aRunWithAnUnreadableFileWaits", testARunWithAnUnreadableFileWaits),
             ("leftoversAreRemovedAtUnlock", testLeftoversAreRemovedAtUnlock),
             ("movedRecordsDoNotOpen", testMovedRecordsDoNotOpen),
             ("aNewNoteWithNoTextIsRemoved", testANewNoteWithNoTextIsRemoved),
@@ -250,6 +251,23 @@ enum NoteRunTests {
         try! FileManager.default.removeItem(at: fixture.runDirectories(of: id)[0].appendingPathComponent("start"))
         fixture.unlock()
         TestSupport.expectEqual(fixture.noteTexts(), ["Invented body. Tail."])
+    }
+
+    /// A file that cannot be read now, as a class B file while the iPhone is locked, here made unreadable by its
+    /// permissions.
+    private static func testARunWithAnUnreadableFileWaits() {
+        let fixture = lockedFixture()
+        let id = fixture.record(["Alpha.", "Beta."])
+        let segment = fixture.runDirectories(of: id)[0].appendingPathComponent("segment-1")
+        try! FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: segment.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: segment.path) }
+        fixture.unlock()
+        TestSupport.expectEqual(fixture.noteTexts(), ["Beta."])
+        TestSupport.expectEqual(fixture.runDirectories(of: id).count, 1)
+        try! FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: segment.path)
+        try! fixture.vault.mergePendingRuns()
+        TestSupport.expectEqual(try! fixture.vault.note(id).body, "Alpha. Beta.")
+        TestSupport.expectEqual(fixture.runDirectories(of: id), [])
     }
 
     private static func testLeftoversAreRemovedAtUnlock() {

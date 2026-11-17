@@ -15,6 +15,9 @@ struct NoteStoredRun {
     /// By sequence number, ascending.
     var segments: [(sequence: UInt32, record: Data)]
     var isRecording: Bool
+    /// Whether every file of the run could be read. One that could not (protected while the iPhone is locked, or an
+    /// I/O error) may be readable later.
+    var isReadable: Bool
 }
 
 /// The notes directory (ARCHITECTURE.md, "Notes", Storage): where each file lies, its protection class, staged
@@ -116,18 +119,24 @@ final class NoteStorage: @unchecked Sendable {
             let runDirectory = directory.appendingPathComponent(name, isDirectory: true)
             var start: Data?
             var segments: [(sequence: UInt32, record: Data)] = []
+            var isReadable = true
             for file in names(in: runDirectory) {
                 let url = runDirectory.appendingPathComponent(file)
                 if file == NoteStoredNames.runStart {
                     start = try? Data(contentsOf: url)
+                    isReadable = isReadable && start != nil
                 } else if file.hasPrefix(NoteStoredNames.segmentPrefix),
-                          let sequence = UInt32(file.dropFirst(NoteStoredNames.segmentPrefix.count)), sequence > 0,
-                          let record = try? Data(contentsOf: url) {
-                    segments.append((sequence, record))
+                          let sequence = UInt32(file.dropFirst(NoteStoredNames.segmentPrefix.count)), sequence > 0 {
+                    if let record = try? Data(contentsOf: url) {
+                        segments.append((sequence, record))
+                    } else {
+                        isReadable = false
+                    }
                 }
             }
             segments.sort { $0.sequence < $1.sequence }
-            return NoteStoredRun(id: id, order: order, start: start, segments: segments, isRecording: recording.contains(id))
+            return NoteStoredRun(id: id, order: order, start: start, segments: segments, isRecording: recording.contains(id),
+                                 isReadable: isReadable)
         }
         .sorted { $0.order < $1.order }
     }
