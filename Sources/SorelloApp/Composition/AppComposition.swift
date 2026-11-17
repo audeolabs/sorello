@@ -41,11 +41,9 @@ struct Navigation {
     var openMain: @MainActor (MainSection?) -> Void = { _ in }
     var openSetup: @MainActor () -> Void = {}
     var closeSetup: @MainActor () -> Void = {}
-    /// Brings Transcribe File forward, opening it if it is closed.
-    var showTranscribe: @MainActor () -> Void = {}
-    /// Shows the file picker as a sheet on Transcribe File, and hands over the file chosen, if any.
+    /// Shows the file picker as a sheet on the main window, and hands over the file chosen, if any.
     var chooseAudioFile: @MainActor (_ chosen: @escaping @MainActor (URL) -> Void) -> Void = { _ in }
-    /// Shows the save panel as a sheet on Transcribe File, offering `name`, and writes `text` where the user chooses.
+    /// Shows the save panel as a sheet on the main window, offering `name`, and writes `text` where the user chooses.
     var saveText: @MainActor (_ text: String, _ name: String) -> Void = { _, _ in }
     /// Brings a window that is open in front again, as after the system's microphone prompt; a closed one stays shut.
     var bringBack: @MainActor (AppWindow) -> Void = { _ in }
@@ -67,7 +65,7 @@ final class AppComposition {
     let history: HistoryStore
     let dictionary: DictionaryLibrary
     let speech: any AppSpeech
-    /// Transcribes Transcribe File's files with `speech`.
+    /// Transcribes the Transcribe screen's files with `speech`.
     let files: any FileTranscribing
     /// The model's download, made beside the engine; nil in a copy that has no pin to download from.
     let download: (any ModelDownloading)?

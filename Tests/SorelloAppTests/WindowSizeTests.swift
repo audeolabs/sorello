@@ -123,7 +123,7 @@ import Testing
         }
     }
 
-    // MARK: Transcribe File
+    // MARK: Transcribe
 
     /// One of each kind of state, with a long name and a transcript far longer than the window.
     private static let transcribeStates: [(String, TranscribeState)] = {
@@ -138,28 +138,27 @@ import Testing
                 ("empty again", .empty)]
     }()
 
-    @Test func transcribeFileOpensAtItsSizeAndKeepsItInEveryState() async {
-        let model = TranscribeModel.sample()
-        let window = WindowPresenter.transcribeWindow(model, title: "Transcribe File")
+    @Test func theMainWindowKeepsItsSizeOnTheTranscribeScreenInEveryState() async {
+        let model = MainWindowModel.sample(section: .transcribe)
+        let window = WindowPresenter.mainWindow(model, title: "Sorello")
         defer { window.close() }
-        #expect(window.styleMask.contains(.resizable))
-        expectChrome(window, .transcribe, at: "opening")
+        expectChrome(window, .main, at: "opening")
         for (place, state) in Self.transcribeStates {
-            model.state = state
+            model.transcribe.state = state
             await settle(window)
-            expectChrome(window, .transcribe, at: place)
+            expectChrome(window, .main, at: place)
         }
     }
 
-    @Test func transcribeFileKeepsTheSizeItIsGivenInEveryState() async {
-        let kind = WindowChrome.Kind.transcribe
-        let model = TranscribeModel.sample()
-        let window = WindowPresenter.transcribeWindow(model, title: "Transcribe File")
+    @Test func theMainWindowKeepsTheSizeItIsGivenOnTheTranscribeScreenInEveryState() async {
+        let kind = WindowChrome.Kind.main
+        let model = MainWindowModel.sample(section: .transcribe)
+        let window = WindowPresenter.mainWindow(model, title: "Sorello")
         defer { window.close() }
-        for size in [kind.minimumSize, CGSize(width: 900, height: 760)] {
+        for size in [kind.minimumSize, CGSize(width: 1040, height: 760)] {
             window.setContentSize(size)
             for (place, state) in Self.transcribeStates {
-                model.state = state
+                model.transcribe.state = state
                 await settle(window)
                 expect(window, size: size, minimum: kind.minimumSize, at: "\(place), \(size.width) x \(size.height)")
             }

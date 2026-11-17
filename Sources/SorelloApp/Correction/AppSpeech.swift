@@ -5,7 +5,7 @@ import Foundation
 import SpeechEngine
 
 /// The speech engine as the app uses it: the session's port, Run Log retries, the audio kept for suggestions, files
-/// transcribed in Transcribe File, and where it runs.
+/// transcribed on the Transcribe screen, and where it runs.
 nonisolated protocol AppSpeech: SpeechTranscribing, CorrectionEngine {
     /// Where the encoder runs, chosen when the engine was made; General says it.
     var compute: SpeechCompute { get }

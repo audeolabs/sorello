@@ -11,7 +11,7 @@ nonisolated public enum StatusMenuCommand: Hashable, Sendable {
     case openShortcuts
     /// Put the last dictation on the clipboard.
     case copyLastDictation
-    /// Bring the Transcribe File window forward, opening it if it is closed, with its file picker unless a file is
+    /// Bring the main window forward at Transcribe, opening it if it is closed, with the file picker unless a file is
     /// being transcribed there.
     case transcribeFile
     /// Open the main window at Dictionary.
@@ -40,7 +40,8 @@ nonisolated public enum UpdateRowState: Equatable, Sendable {
 public struct StatusMenuActions {
     /// Put the last dictation on the clipboard.
     public var copyLastDictation: () -> Void
-    /// Bring the Transcribe File window forward, opening it, with its file picker unless a file is being transcribed.
+    /// Bring the main window forward at Transcribe, opening it, with the file picker unless a file is being
+    /// transcribed.
     public var transcribeFile: () -> Void
     /// Load the speech model again after a failure.
     public var retryModel: () -> Void

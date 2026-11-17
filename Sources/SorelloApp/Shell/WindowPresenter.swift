@@ -8,8 +8,6 @@ import SwiftUI
 enum AppWindow: Hashable {
     case setup
     case main
-    /// Transcribe File.
-    case transcribe
     /// A notice's text, one window per notice, named by its title.
     case notice(String)
 }
@@ -74,7 +72,7 @@ extension NSRunningApplication: FrontApp {
     }
 }
 
-/// The app's windows: the main window, setup, Transcribe File and the notices' text. Each is made once and kept while
+/// The app's windows: the main window, setup and the notices' text. Each is made once and kept while
 /// the app runs.
 /// The presenter knows which are open, from the first time each is shown until it closes, by whatever means: its
 /// close button, ⌘W or Close in the Window menu, or Done in setup. A minimised window is still open. Sorello is in the
@@ -88,6 +86,9 @@ final class WindowPresenter {
     /// The latest ordinary app other than Sorello to have been in front: the one to hand the front back to.
     private var previous: (any FrontApp)?
     private var observers: [any NSObjectProtocol] = []
+    /// Hears each window open, as it goes from closed to open, after the presenter has counted it open. A window
+    /// brought forward while it is open is not heard again.
+    var onOpen: (AppWindow) -> Void = { _ in }
     /// Hears each window close, by whatever means, after the presenter has counted it closed.
     var onClose: (AppWindow) -> Void = { _ in }
 
@@ -120,11 +121,6 @@ final class WindowPresenter {
 
     func closeSetup() {
         made[.setup]?.close()
-    }
-
-    /// Brings Transcribe File forward, opening it if it is closed.
-    func showTranscribe(_ model: TranscribeModel, title: String) {
-        show(.transcribe) { Self.transcribeWindow(model, title: title) }
     }
 
     /// Shows the full text of a notice, one window per notice.
@@ -163,10 +159,12 @@ final class WindowPresenter {
     /// way any app's does; every window is then brought forward with the app active.
     private func show(_ id: AppWindow, make: () -> NSWindow) {
         let window = made[id] ?? watch(make(), as: id)
+        let opening = !isOpen(id)
         if !isInDock { dock.enterDock() }
         dock.activate()
         dock.bringForward(window)
         markInFront(id)
+        if opening { onOpen(id) }
     }
 
     private func markInFront(_ id: AppWindow) {
@@ -222,11 +220,6 @@ final class WindowPresenter {
     /// Setup's window as the app builds it, not yet on screen.
     static func setupWindow(_ model: SetupModel, title: String) -> NSWindow {
         window(.setup, title: title, content: SetupView(model: model))
-    }
-
-    /// Transcribe File's window as the app builds it, not yet on screen.
-    static func transcribeWindow(_ model: TranscribeModel, title: String) -> NSWindow {
-        window(.transcribe, title: title, content: TranscribeView(model: model))
     }
 
     /// The size a notice's window opens at.

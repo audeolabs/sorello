@@ -2,23 +2,23 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The Transcribe File window (ARCHITECTURE.md, section 8, "Windows"): one audio or video file turned into text. It
-/// draws `TranscribeModel.state` and reports what the user does through its actions. A file dropped anywhere on the
-/// window is taken only while the window takes files, and only when exactly one file is dragged; the drop area, or
-/// in a window already showing a file the window's edge, lights up while such a file is over it. A long transcript
+/// The main window's Transcribe screen (ARCHITECTURE.md, section 8, "Windows"): one audio or video file turned into
+/// text. It draws `TranscribeModel.state` and reports what the user does through its actions. A file dropped anywhere
+/// on the screen is taken only while the screen takes files, and only when exactly one file is dragged; the drop area,
+/// or on a screen already showing a file the screen's edge, lights up while such a file is over it. A long transcript
 /// scrolls inside its field and never changes the window's size.
-public struct TranscribeView: View {
+public struct TranscribeScreen: View {
     @Bindable private var model: TranscribeModel
     @State private var fileIsOver = false
     /// Holds the drop area lit or unlit, for the snapshots; nil follows the drag.
     private let pinnedFileOver: Bool?
 
-    /// The window drawn from `model`.
+    /// The screen drawn from `model`.
     public init(model: TranscribeModel) {
         self.init(model: model, fileOver: nil)
     }
 
-    /// The window with a file held over it, or not, whatever the pointer does: for the snapshots.
+    /// The screen with a file held over it, or not, whatever the pointer does: for the snapshots.
     init(model: TranscribeModel, fileOver: Bool?) {
         self.model = model
         pinnedFileOver = fileOver
@@ -45,7 +45,7 @@ public struct TranscribeView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.screen)
         .overlay {
-            // A window that already shows a file lights its edge, since it has no drop area to light.
+            // A screen that already shows a file lights its edge, since it has no drop area to light.
             if lit && model.state != .empty {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(Color.white.opacity(0.85), lineWidth: 2)
@@ -172,8 +172,8 @@ private struct FileLine: View {
     }
 }
 
-/// The empty window's drop area: a dashed outline round the words and Choose File…, which lights up while a file the
-/// window would take is over it.
+/// The empty screen's drop area: a dashed outline round the words and Choose File…, which lights up while a file the
+/// screen would take is over it.
 private struct DropArea: View {
     let lit: Bool
     let choose: () -> Void
@@ -313,7 +313,7 @@ private struct TranscriptField: NSViewRepresentable {
     }
 }
 
-/// Takes a file dropped on the window: exactly one file's address, and only while the window takes files. Anything
+/// Takes a file dropped on the screen: exactly one file's address, and only while the screen takes files. Anything
 /// else is refused before it is dropped, so the drop area does not light up for it.
 private struct FileDrop: DropDelegate {
     let model: TranscribeModel
@@ -346,7 +346,7 @@ private struct FileDrop: DropDelegate {
         _ = provider.loadObject(ofClass: URL.self) { url, _ in
             guard let url, url.isFileURL else { return }
             Task { @MainActor in
-                // The window may have taken another file since the drop began.
+                // The screen may have taken another file since the drop began.
                 if model.state.takesFiles { deliver(url) }
             }
         }
@@ -354,9 +354,9 @@ private struct FileDrop: DropDelegate {
     }
 }
 
-/// Which drags the window takes (ARCHITECTURE.md, section 8, "Windows").
+/// Which drags the screen takes (ARCHITECTURE.md, section 8, "Windows").
 nonisolated enum TranscribeDrop {
-    /// True when the drag is exactly one item, that item is a file's address, and the window takes files now.
+    /// True when the drag is exactly one item, that item is a file's address, and the screen takes files now.
     static func accepts(itemCount: Int, fileCount: Int, state: TranscribeState) -> Bool {
         itemCount == 1 && fileCount == 1 && state.takesFiles
     }

@@ -101,8 +101,8 @@ final class TranscribeLog {
     }
 }
 
-/// ARCHITECTURE.md, section 5, "Transcribing a file", and section 8, "Windows", Transcribe File: the window's model,
-/// driven through the actions its view reports, over a transcriber the test controls.
+/// ARCHITECTURE.md, section 5, "Transcribing a file", and section 8, "Windows", Transcribe: the screen's model, driven
+/// through the actions its view reports, over a transcriber the test controls.
 @MainActor
 @Suite struct TranscribeBindingTests {
     let files = FakeFiles()
@@ -394,6 +394,47 @@ final class TranscribeLog {
         pick(other)
         await eventually { files.all.count == 2 }
         #expect(files.last?.file == other)
+    }
+
+    /// The main window opened without the menu's row, from Settings…, the Dock or another section's row: the screen
+    /// takes a dropped file, and a chosen one, and nothing is brought forward for it.
+    @Test func theScreenTakesFilesHoweverTheMainWindowWasOpened() async throws {
+        binding.windowOpened()
+        binding.model.actions.dropFile()(talk)
+        await eventually { files.all.count == 1 }
+        #expect(files.last?.file == talk)
+        files.last?.finish(.success("Invented words."))
+        await eventually { state.takesFiles }
+        binding.model.actions.chooseFile()
+        let pick = try #require(log.pickers.last)
+        pick(other)
+        await eventually { files.all.count == 2 }
+        #expect(files.last?.file == other)
+        #expect(log.shown == 0)
+    }
+
+    /// With the main window closed, the screen takes nothing, however a file reaches it.
+    @Test func nothingIsTakenWhileTheMainWindowIsClosed() async throws {
+        binding.model.actions.dropFile()(talk)
+        binding.model.actions.chooseFile()
+        log.pickers.last?(talk)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(files.all.isEmpty)
+        #expect(state == .empty)
+    }
+
+    /// The main window brought forward while it is open, as the menu's rows do for their sections, is the same
+    /// opening: a file already on its way still arrives, and what the screen shows stays.
+    @Test func theMainWindowBroughtForwardAgainKeepsItsOpening() async throws {
+        binding.windowOpened()
+        let late = binding.model.actions.dropFile()
+        binding.windowOpened()
+        late(talk)
+        await eventually { files.all.count == 1 }
+        binding.windowOpened()
+        binding.open()
+        #expect(state == .transcribing(file: "harbour talk.m4a", read: 0, length: 0))
+        #expect(files.last?.wasCancelled == false)
     }
 
     /// A file opened with Sorello from the Finder brings the window forward and is transcribed.

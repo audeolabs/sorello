@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import SorelloUI
 
-/// ARCHITECTURE.md, section 8, "Windows", Transcribe File: what the window says in each state, which files it takes
-/// and when, and what each failure offers.
+/// ARCHITECTURE.md, section 8, "Windows", Transcribe: what the screen says in each state, which files it takes and
+/// when, and what each failure offers.
 struct TranscribePresentationTests {
     // MARK: Progress
 
@@ -129,15 +129,5 @@ struct TranscribePresentationTests {
         #expect(!TranscribeDrop.accepts(itemCount: 1, fileCount: 1, state: .preparing(file: "a.wav")))
         #expect(!TranscribeDrop.accepts(itemCount: 1, fileCount: 1,
                                         state: .transcribing(file: "a.wav", read: 1, length: 9)))
-    }
-
-    // MARK: Chrome
-
-    /// The window can be made smaller than it opens, down to a minimum, as the main window can.
-    @MainActor
-    @Test func theWindowOpensLargerThanItsMinimum() {
-        let kind = WindowChrome.Kind.transcribe
-        #expect(kind.minimumSize.width < kind.defaultSize.width)
-        #expect(kind.minimumSize.height < kind.defaultSize.height)
     }
 }

@@ -3,15 +3,15 @@ import Foundation
 import SorelloUI
 import TextRules
 
-/// What the Transcribe File window asks of the rest of the app: the window itself, its sheets, the clipboard and the
-/// General screen. The shell gives the real ones; tests record what was asked.
+/// What the Transcribe screen asks of the rest of the app: the main window, its sheets, the clipboard and the General
+/// screen. The shell gives the real ones; tests record what was asked.
 struct TranscribePorts {
-    /// Brings the window forward, opening it if it is closed.
+    /// Brings the main window forward at Transcribe, opening it if it is closed.
     var show: @MainActor () -> Void = {}
-    /// Shows the system's file picker as a sheet on the window, offering audio and video files, and hands over the
-    /// file the user chose. Choosing nothing hands over nothing.
+    /// Shows the system's file picker as a sheet on the main window, offering audio and video files, and hands over
+    /// the file the user chose. Choosing nothing hands over nothing.
     var chooseFile: @MainActor (_ chosen: @escaping @MainActor (URL) -> Void) -> Void = { _ in }
-    /// Shows the system's save panel as a sheet on the window, offering `name`, and writes `text` where the user
+    /// Shows the system's save panel as a sheet on the main window, offering `name`, and writes `text` where the user
     /// chooses, as plain UTF-8 text.
     var save: @MainActor (_ text: String, _ name: String) -> Void = { _, _ in }
     /// Puts `text` on the clipboard.
@@ -22,34 +22,37 @@ struct TranscribePorts {
     var prepareModel: @Sendable () async -> Void = {}
 }
 
-/// The Transcribe File window's model (ARCHITECTURE.md, section 5, "Transcribing a file", and section 8, "Windows").
-/// It runs one transcription at a time through `FileTranscribing`, the path the `sorello` command takes too, in a
-/// task it owns, and turns what that reports into the window's `TranscribeState`.
+/// The Transcribe screen's model (ARCHITECTURE.md, section 5, "Transcribing a file", and section 8, "Windows"). It
+/// runs one transcription at a time through `FileTranscribing`, the path the `sorello` command takes too, in a task it
+/// owns, and turns what that reports into the screen's `TranscribeState`.
 ///
-/// A file dropped on the window, chosen in its picker, or opened with Sorello from the Finder comes in through `take`,
-/// and is refused while another is preparing or being transcribed: the window only comes forward. A drop's file and
-/// a picker's choice arrive a moment after the user acts, and belong to the opening of the window they were made in:
-/// one that arrives once that opening has ended, by the window closing, is not taken, even if the window has opened
-/// again since, so closing the window cancels what was on its way to it. The text rules are
-/// read when a transcription starts and kept for it. Progress, reported on any thread, reaches the window in order on
-/// the main actor. Cancel, closing the window, and taking another file cancel the task and forget the text; a
-/// cancelled transcription changes nothing afterwards.
+/// The screen lives as long as an opening of the main window: from the main window's opening, however it opened, or
+/// the binding bringing it forward, until it closes. Going to another section does not end it. A file dropped on the
+/// screen, chosen in its picker, or opened with Sorello from the Finder comes in through `take`, and is refused while
+/// another is preparing or being transcribed, or while the main window is closed; then the window only comes forward.
+/// A drop's file and a picker's choice arrive a moment after the user acts, and belong to the opening they were made
+/// in: one that arrives once that opening has ended, by the main window closing, is not taken, even if the window has
+/// opened again since, so closing it cancels what was on its way. The text rules are read when a transcription starts
+/// and kept for it. Progress, reported on any thread, reaches the screen in order on the main actor. Cancel, closing
+/// the main window, and taking another file cancel the task and forget the text; a cancelled transcription changes
+/// nothing afterwards.
 @MainActor
 final class TranscribeBinding {
-    /// What the window draws.
+    /// What the screen draws.
     let model: TranscribeModel
     private let transcriber: any FileTranscribing
     private let rules: @MainActor () -> TextRuleOptions
     private let ports: TranscribePorts
-    /// The file the window shows, for Retry and Try Again; nil when it shows none.
+    /// The file the screen shows, for Retry and Try Again; nil when it shows none.
     private var file: URL?
     /// The transcription under way, if any.
     private var running: Task<Void, Never>?
-    /// The window's opening, from the time the binding brings it forward until it closes; nil while it is closed.
+    /// The main window's opening, from the time it opens or the binding brings it forward until it closes; nil while
+    /// it is closed.
     private var opening: Opening?
-    /// Whether the window is open.
+    /// Whether the main window is open.
     var windowIsOpen: Bool { opening != nil }
-    /// Hears every state the window is given, in order. The self-test prints them.
+    /// Hears every state the screen is given, in order. The self-test prints them.
     var stateChanged: (@MainActor (TranscribeState) -> Void)?
 
     /// `rules`: the user's text rules as they are now, read once as each transcription starts.
@@ -70,23 +73,23 @@ final class TranscribeBinding {
             tryAgain: { [weak self] in self?.tryAgain() })
     }
 
-    /// The menu's Transcribe File…: the window comes forward, opening if it is closed, and shows its file picker
-    /// unless a file is being transcribed there.
+    /// The menu's Transcribe File…: the main window comes forward at Transcribe, opening if it is closed, and shows
+    /// the file picker unless a file is being transcribed there.
     func open() {
-        if opening == nil { opening = Opening() }
+        windowOpened()
         ports.show()
         if model.state.takesFiles { chooseFile() }
     }
 
-    /// A file opened with Sorello from the Finder, or dropped on its Dock icon: the window comes forward and takes
-    /// it, unless it is busy with another.
+    /// A file opened with Sorello from the Finder, or dropped on its Dock icon: the main window comes forward at
+    /// Transcribe, and the screen takes it unless it is busy with another.
     func open(file: URL) {
-        if opening == nil { opening = Opening() }
+        windowOpened()
         ports.show()
         take(file)
     }
 
-    /// Takes `file` and transcribes it, unless the window has closed, or another file is preparing or being
+    /// Takes `file` and transcribes it, unless the main window has closed, or another file is preparing or being
     /// transcribed; then the window only comes forward.
     func take(_ file: URL) {
         guard windowIsOpen else { return }
@@ -97,7 +100,13 @@ final class TranscribeBinding {
         begin(file, preparingFirst: false)
     }
 
-    /// The window was closed: whatever it was doing stops, and its text is forgotten.
+    /// The main window has opened, however it was opened: the screen takes files until it closes. Heard while it is
+    /// open, as when the binding opened it, this changes nothing.
+    func windowOpened() {
+        if opening == nil { opening = Opening() }
+    }
+
+    /// The main window was closed: whatever the screen was doing stops, and its text is forgotten.
     func windowClosed() {
         opening = nil
         stop()
@@ -109,8 +118,8 @@ final class TranscribeBinding {
         ports.chooseFile(delivery())
     }
 
-    /// Where a file the user is giving the window now goes once it arrives: to `take`, if the window is still in the
-    /// opening it is in now.
+    /// Where a file the user is giving the screen now goes once it arrives: to `take`, if the main window is still in
+    /// the opening it is in now.
     private func delivery() -> @MainActor @Sendable (URL) -> Void {
         let opening = self.opening
         return { [weak self] file in
@@ -211,7 +220,7 @@ final class TranscribeBinding {
         }
     }
 
-    /// Cancels what is running and empties the window.
+    /// Cancels what is running and empties the screen.
     private func stop() {
         running?.cancel()
         running = nil
@@ -225,7 +234,7 @@ final class TranscribeBinding {
         stateChanged?(state)
     }
 
-    /// The window's words for a failure. A transcription cancelled without the window asking (it never asks without
+    /// The screen's words for a failure. A transcription cancelled without the screen asking (it never asks without
     /// stopping first) is offered again with Try Again.
     nonisolated static func reason(_ failure: FileTranscriptionFailure) -> TranscribeFailure {
         switch failure {
@@ -239,5 +248,5 @@ final class TranscribeBinding {
     }
 }
 
-/// One opening of the Transcribe File window: what a drop or a picker's choice belongs to.
+/// One opening of the main window: what a drop or a picker's choice on the Transcribe screen belongs to.
 nonisolated private final class Opening: Sendable {}

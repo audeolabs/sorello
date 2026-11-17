@@ -11,13 +11,12 @@ import SpeechEngine
 import SwiftUI
 import TextRules
 
-/// `Sorello --snapshots <dir>`: the menu-bar item, every main window section, every setup step and Transcribe File as
+/// `Sorello --snapshots <dir>`: the menu-bar item, every main window section and every setup step as
 /// the app draws them, wired to real stores, rendered to PNG files, and the menu-bar item's menu as the app builds it, listed as
 /// text in `app-menu.txt` (the system draws the menu, so there is no picture of it), with the app's own menus, which
 /// show only while one of its windows is open, in `app-main-menu.txt`. SorelloUI's own snapshots draw
-/// invented models; these draw the models the app builds, so what is reviewed is what ships. It also builds setup, the
-/// main window and Transcribe File as the app shows them, never on screen, and fails if one loses its chrome's size or
-/// minimum.
+/// invented models; these draw the models the app builds, so what is reviewed is what ships. It also builds setup and
+/// the main window as the app shows them, never on screen, and fails if one loses its chrome's size or minimum.
 ///
 /// The stores are real and live in a temporary directory, filled with invented words, macros and Run Log entries,
 /// and one dictation is run through the session so the menu's Copy Last Dictation is available. The engine and the
@@ -98,11 +97,6 @@ enum WindowSnapshots {
                     .preferredColorScheme(.dark))
             })
         }
-        let transcribe = WindowChrome.Kind.transcribe.defaultSize
-        scenes.append(SnapshotScene(name: "app-transcribe", size: transcribe) {
-            NSHostingView(rootView: TranscribeView(model: models.transcribe.model)
-                .frame(width: transcribe.width, height: transcribe.height).preferredColorScheme(.dark))
-        })
         var passed = true
         let menu = StatusMenuController(model: models.menu)
         // The app's own menus show only while a window is open, so they are listed too; nothing here installs them.
@@ -131,10 +125,10 @@ enum WindowSnapshots {
         return passed
     }
 
-    /// Builds setup, the main window and Transcribe File with the functions the app shows them with, never on screen,
-    /// takes setup through every step, the main window through every section and Transcribe File through every kind
-    /// of state, a long transcript and a long file name included, and prints a line naming the window wherever one
-    /// does not have its chrome's size and minimum (ARCHITECTURE.md, section 8, "Windows").
+    /// Builds setup and the main window with the functions the app shows them with, never on screen, takes setup
+    /// through every step, the main window through every section and its Transcribe screen through every kind of
+    /// state, a long transcript and a long file name included, and prints a line naming the window wherever one does
+    /// not have its chrome's size and minimum (ARCHITECTURE.md, section 8, "Windows").
     private static func checkWindowSizes(_ models: WindowModels, title: String) async -> Bool {
         var failures: [String] = []
         let setup = WindowPresenter.setupWindow(models.setup, title: title)
@@ -152,29 +146,27 @@ enum WindowSnapshots {
                 failures.append("window-main at \(slug(section)): \(failure)")
             }
         }
-        main.close()
         let model = models.transcribe.model
         let shown = model.state
-        let transcribe = WindowPresenter.transcribeWindow(model, title: TranscribeWords.title)
+        models.main.section = .transcribe
         for (name, state) in transcribeStates {
             model.state = state
-            if let failure = await sizeFailure(of: transcribe, .transcribe) {
-                failures.append("window-transcribe at \(name): \(failure)")
+            if let failure = await sizeFailure(of: main, .main) {
+                failures.append("window-main at transcribe, \(name): \(failure)")
             }
         }
         model.state = shown
-        transcribe.close()
+        main.close()
         guard failures.isEmpty else {
             failures.forEach { Console.line("FAILED \($0)") }
             return false
         }
         Console.line("window-setup \(describe(.setup)) at every step")
-        Console.line("window-main \(describe(.main)) at every section")
-        Console.line("window-transcribe \(describe(.transcribe)) in every kind of state")
+        Console.line("window-main \(describe(.main)) at every section, and at Transcribe in every kind of state")
         return true
     }
 
-    /// One of each kind of state Transcribe File can be in, with the longest text and name it is likely to show.
+    /// One of each kind of state the Transcribe screen can be in, with the longest text and name it is likely to show.
     private static var transcribeStates: [(String, TranscribeState)] {
         let name = "Quillon Bay harbour committee, second reading of the north gate proposal, full session.mov"
         let text = Array(repeating: "Pack my box with five dozen liquor jugs, then carry it up the hill.", count: 2000)
@@ -253,6 +245,7 @@ enum WindowSnapshots {
         case .shortcuts: "shortcuts"
         case .dictionary: "dictionary"
         case .macros: "macros"
+        case .transcribe: "transcribe"
         case .runLog: "runlog"
         case .about: "about"
         }

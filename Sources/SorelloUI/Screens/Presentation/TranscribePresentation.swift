@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// Why a file's transcription failed, as the Transcribe File window says it (ARCHITECTURE.md, section 8, "Windows").
+/// Why a file's transcription failed, as the Transcribe screen says it (ARCHITECTURE.md, section 8, "Windows").
 /// None of them carries anything the file holds.
 nonisolated public enum TranscribeFailure: Equatable, Sendable, CaseIterable {
     /// The file is in a format Sorello does not read, has no soundtrack, or is damaged.
@@ -17,7 +17,7 @@ nonisolated public enum TranscribeFailure: Equatable, Sendable, CaseIterable {
     /// The transcription itself failed.
     case failed
 
-    /// The one way to mend the failure from the window, besides choosing another file, if there is one.
+    /// The one way to mend the failure from the screen, besides choosing another file, if there is one.
     public var remedy: TranscribeRemedy? {
         switch self {
         case .modelMissing: .download
@@ -40,9 +40,9 @@ nonisolated public enum TranscribeRemedy: Equatable, Sendable {
     /// The button's title.
     public var title: String {
         switch self {
-        case .download: String(localized: "Download…", comment: "Transcribe File: opens General to download the model")
-        case .retry: String(localized: "Retry", comment: "Transcribe File: loads the model again, then the file")
-        case .tryAgain: String(localized: "Try Again", comment: "Transcribe File: transcribes the same file again")
+        case .download: String(localized: "Download…", comment: "Transcribe: opens General to download the model")
+        case .retry: String(localized: "Retry", comment: "Transcribe: loads the model again, then the file")
+        case .tryAgain: String(localized: "Try Again", comment: "Transcribe: transcribes the same file again")
         }
     }
 
@@ -56,8 +56,8 @@ nonisolated public enum TranscribeRemedy: Equatable, Sendable {
     }
 }
 
-/// What the Transcribe File window shows (ARCHITECTURE.md, section 8, "Windows"). Each case names the file by its
-/// name alone, never its folder; only `done` holds text, and only the window shows it.
+/// What the Transcribe screen shows (ARCHITECTURE.md, section 8, "Windows"). Each case names the file by its
+/// name alone, never its folder; only `done` holds text, and only the screen shows it.
 nonisolated public enum TranscribeState: Equatable, Sendable {
     /// No file yet: the drop area and Choose File….
     case empty
@@ -72,7 +72,7 @@ nonisolated public enum TranscribeState: Equatable, Sendable {
     /// The file could not be transcribed.
     case failed(file: String, reason: TranscribeFailure)
 
-    /// Whether the window takes a new file now: not while one is preparing or being transcribed. A drop is accepted,
+    /// Whether the screen takes a new file now: not while one is preparing or being transcribed. A drop is accepted,
     /// and the drop area lights up, only when this is true.
     public var takesFiles: Bool {
         switch self {
@@ -81,7 +81,7 @@ nonisolated public enum TranscribeState: Equatable, Sendable {
         }
     }
 
-    /// The name of the file the window is showing, if any.
+    /// The name of the file the screen is showing, if any.
     public var fileName: String? {
         switch self {
         case .empty: nil
@@ -91,7 +91,7 @@ nonisolated public enum TranscribeState: Equatable, Sendable {
     }
 }
 
-/// The words the Transcribe File window shows for its states, kept apart from the view so they can be checked.
+/// The words the Transcribe screen shows for its states, kept apart from the view so they can be checked.
 nonisolated public enum TranscribeWords {
     /// How much of a file has been read against its length, such as "4:10 of 58:02": minutes and seconds, and hours
     /// for both when the length has them, such as "0:04:10 of 1:18:02". Whole seconds, rounded down, and the amount
@@ -102,7 +102,7 @@ nonisolated public enum TranscribeWords {
         let done = min(wholeSeconds(read), total)
         let hours = total >= 3600
         return String(localized: "\(clock(done, hours: hours)) of \(clock(total, hours: hours))",
-                      comment: "Transcribe File: how much of the file has been read, such as 4:10 of 58:02")
+                      comment: "Transcribe: how much of the file has been read, such as 4:10 of 58:02")
     }
 
     /// How far the bar is filled, from 0 to 1, or nil while the length is not known and the bar travels.
@@ -116,7 +116,7 @@ nonisolated public enum TranscribeWords {
     public static func reason(_ failure: TranscribeFailure, appName: String) -> String {
         switch failure {
         case .unreadable: String(localized: "\(appName) can’t read this file",
-                                 comment: "Transcribe File: a format it does not read; the app's name")
+                                 comment: "Transcribe: a format it does not read; the app's name")
         case .cannotOpen: String(localized: "This file can’t be opened")
         case .modelMissing: String(localized: "Speech model not downloaded")
         case .noModelForThisMac: String(localized: "No speech model for this Mac yet")
@@ -129,17 +129,17 @@ nonisolated public enum TranscribeWords {
     public static func detail(_ failure: TranscribeFailure) -> String? {
         guard failure == .unreadable else { return nil }
         return String(localized: "It reads WAV, AIFF, CAF, FLAC, MP3, M4A and Ogg, and the sound of MP4 and MOV videos.",
-                      comment: "Transcribe File: the formats it reads, under a file it cannot read")
+                      comment: "Transcribe: the formats it reads, under a file it cannot read")
     }
 
     /// The words while the model prepares.
     public static var preparing: String { String(localized: "Preparing speech model") }
-    /// The words in the empty window's drop area.
+    /// The words in the empty screen's drop area.
     public static var dropPrompt: String { String(localized: "Drop an audio or video file") }
     /// The words in place of the text when no words were heard.
     public static var nothingHeard: String { String(localized: "No speech heard") }
-    /// The window's title.
-    public static var title: String { String(localized: "Transcribe File") }
+    /// The screen's title, as its row in the sidebar has it.
+    public static var title: String { String(localized: "Transcribe") }
 
     private static func wholeSeconds(_ value: TimeInterval) -> Int {
         guard value.isFinite, value > 0 else { return 0 }
@@ -153,16 +153,17 @@ nonisolated public enum TranscribeWords {
     }
 }
 
-/// What the Transcribe File window's controls ask of the app layer. The window never reads a file, transcribes,
+/// What the Transcribe screen's controls ask of the app layer. The screen never reads a file, transcribes,
 /// copies or saves itself.
 public struct TranscribeActions {
-    /// Show the system's file picker as a sheet on the window.
+    /// Show the system's file picker as a sheet on the main window.
     public var chooseFile: () -> Void
-    /// A drop was accepted on the window while it takes files. Called at once, as the drop lands; it returns where
+    /// A drop was accepted on the screen while it takes files. Called at once, as the drop lands; it returns where
     /// to deliver the file's address once it has loaded, a moment later. Only a single file's address is ever
-    /// delivered, and the app layer ignores one that arrives after the window has closed, even if it opened again.
+    /// delivered, and the app layer ignores one that arrives after the main window has closed, even if it opened
+    /// again.
     public var dropFile: () -> @MainActor @Sendable (URL) -> Void
-    /// Stop what is running and go back to the empty window.
+    /// Stop what is running and go back to the empty screen.
     public var cancel: () -> Void
     /// Put the text on the clipboard.
     public var copy: () -> Void
@@ -201,17 +202,17 @@ public struct TranscribeActions {
     }
 }
 
-/// The Transcribe File window's values. The app layer keeps `state` current as the file is transcribed.
+/// The Transcribe screen's values. The app layer keeps `state` current as the file is transcribed.
 @Observable
 public final class TranscribeModel {
     /// The app's name as installed, from the bundle, for the line under a file it cannot read.
     public var appName: String
-    /// What the window shows.
+    /// What the screen shows.
     public var state: TranscribeState
-    /// What the window's controls ask of the app layer.
+    /// What the screen's controls ask of the app layer.
     public var actions: TranscribeActions
 
-    /// The window's values.
+    /// The screen's values.
     public init(appName: String, state: TranscribeState = .empty, actions: TranscribeActions = TranscribeActions()) {
         self.appName = appName
         self.state = state

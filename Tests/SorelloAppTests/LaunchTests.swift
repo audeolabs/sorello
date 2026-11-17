@@ -45,7 +45,7 @@ import Testing
         #expect(LaunchMode(arguments: ["--download"]) == .app(showsSetup: true), "The app itself downloads only when asked")
     }
 
-    /// `--transcribe` runs one file through Transcribe File's model, with the model found as the other self-test finds
+    /// `--transcribe` runs one file through the Transcribe screen's model, with the model found as the other self-test finds
     /// it, or the one `--model` gives, and `--cpu` as there.
     @Test func theSelfTestCanTranscribeAFileThroughTheWindow() {
         let file = URL(fileURLWithPath: "talk.m4a"), model = URL(fileURLWithPath: "/m", isDirectory: true)

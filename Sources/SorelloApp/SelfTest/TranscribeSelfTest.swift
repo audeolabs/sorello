@@ -6,17 +6,17 @@ import SorelloUI
 import SpeechEngine
 
 /// `Sorello --self-test --transcribe <file>` (ARCHITECTURE.md, section 11): the assembled app's own composition and
-/// Transcribe File's own model and binding, with the app's engine, off screen. The file is taken the way a file
-/// dropped on the window is. It prints each state the window passes through and then the text the window shows, so
-/// the window's way in can be checked against the `sorello` command's text for the same file, and exits 0 when the
-/// window ends with text.
+/// the Transcribe screen's own model and binding, with the app's engine, off screen. The file is taken the way a file
+/// opened with Sorello is. It prints each state the screen passes through and then the text the screen shows, so the
+/// screen's way in can be checked against the `sorello` command's text for the same file, and exits 0 when the screen
+/// ends with text.
 ///
 /// Like `--self-test`, it needs no permission and keeps nothing: settings, macros, the dictionary and the Run Log
 /// live in a temporary directory, removed at the end, with default settings. The model is the one the app carries,
 /// the one given with `--model`, or the one in the app's store; only its stable copy is kept where the app keeps it.
 @MainActor
 enum TranscribeSelfTest {
-    /// How long the window may take to end: the model's first preparation on a Mac can take minutes, and a long file
+    /// How long the screen may take to end: the model's first preparation on a Mac can take minutes, and a long file
     /// takes a while.
     static let limit: TimeInterval = 1800
 
@@ -60,7 +60,7 @@ private final class TranscribeSelfTestRun {
             Console.error("self-test: no settings domain")
             return false
         }
-        Console.line("\(info.name) \(info.version) (\(info.build)) self-test, Transcribe File, model "
+        Console.line("\(info.name) \(info.version) (\(info.build)) self-test, Transcribe, model "
             + (info.modelName ?? "none"))
         Console.line("settings: defaults; nothing is pasted, kept or saved")
 
@@ -85,28 +85,28 @@ private final class TranscribeSelfTestRun {
             modelFitsThisMac: model.map { $0.build != nil } ?? true, pill: NoPillShown(), levels: LevelFeed())
         app.settings.setupCompleted = true
         let models = WindowModels(app: app)
-        let window = models.transcribe
+        let screen = models.transcribe
         let started = ContinuousClock.now
         var lastLine = ""
-        window.stateChanged = { state in
+        screen.stateChanged = { state in
             let line = Self.describe(state, appName: info.name)
             guard line != lastLine else { return }
             lastLine = line
-            Console.line("window: \(line)  [\(SelfTestTiming.seconds(ContinuousClock.now - started))]")
+            Console.line("screen: \(line)  [\(SelfTestTiming.seconds(ContinuousClock.now - started))]")
         }
 
         app.start()
         Console.line("file: \(file.lastPathComponent)")
-        window.open(file: file)
+        screen.open(file: file)
         let deadline = ContinuousClock.now + .seconds(TranscribeSelfTest.limit)
-        while !window.model.state.takesFiles {
+        while !screen.model.state.takesFiles {
             guard ContinuousClock.now < deadline else {
-                Console.line("window: still busy after \(Int(TranscribeSelfTest.limit)) s")
+                Console.line("screen: still busy after \(Int(TranscribeSelfTest.limit)) s")
                 return await finish(app, models, passed: false)
             }
             try? await Task.sleep(for: .milliseconds(5))
         }
-        guard case .done(_, let text) = window.model.state else {
+        guard case .done(_, let text) = screen.model.state else {
             return await finish(app, models, passed: false)
         }
         Console.line("text:")
@@ -115,7 +115,7 @@ private final class TranscribeSelfTestRun {
     }
 
     private func finish(_ app: AppComposition, _ models: WindowModels, passed: Bool) async -> Bool {
-        // What the window shows as the test lets go of it is not one of its states.
+        // What the screen shows as the test lets go of it is not one of its states.
         models.transcribe.stateChanged = nil
         models.stop()
         await app.shutdown(limit: 1)
@@ -123,7 +123,7 @@ private final class TranscribeSelfTestRun {
         return passed
     }
 
-    /// One state as a line: what it is, the file's name, and the words the window shows with it.
+    /// One state as a line: what it is, the file's name, and the words the screen shows with it.
     static func describe(_ state: TranscribeState, appName: String) -> String {
         switch state {
         case .empty:

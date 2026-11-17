@@ -35,8 +35,8 @@ public enum SorelloMain {
 ///     Sorello --self-test --update <feed>          run the packaged app's updater against `feed`, an http or https
 ///                                                  address, for this run only; install a newer build as it ends
 ///     Sorello --self-test --transcribe [--model <dir>] [--cpu] <file>
-///                                                  transcribe an audio or video file through Transcribe File's own
-///                                                  model, off screen; print each state and the text; exit 0 or 1
+///                                                  transcribe an audio or video file through the Transcribe screen's
+///                                                  own model, off screen; print each state and the text; exit 0 or 1
 ///     Sorello --snapshots <dir>                    render the menu-bar item, windows and setup; list the menu
 ///
 /// The app ignores arguments it does not know, because the system can pass its own when it launches an app.

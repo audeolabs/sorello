@@ -14,7 +14,7 @@ final class WindowModels {
     let menu: StatusMenuModel
     let main: MainWindowModel
     let setup: SetupModel
-    /// Transcribe File's model, which runs its transcriptions.
+    /// The Transcribe screen's model, which runs its transcriptions.
     let transcribe: TranscribeBinding
 
     let app: AppComposition
@@ -31,12 +31,23 @@ final class WindowModels {
                                modelSize: app.download?.size ?? 0, accessibilityTrusted: app.live.accessibilityTrusted,
                                shortcuts: app.platform.shortcuts.status)
         menu = StatusMenuModel(appName: app.info.name, status: status, shortcuts: [:], hasLastDictation: false)
+        let speech = app.speech
+        transcribe = TranscribeBinding(
+            appName: app.info.name, transcriber: app.files,
+            rules: { TextRulesSnapshot(settings: app.settings, macros: app.macros.macros).options },
+            ports: TranscribePorts(show: { app.navigation.openMain(.transcribe) },
+                                   chooseFile: { app.navigation.chooseAudioFile($0) },
+                                   save: { app.navigation.saveText($0, $1) },
+                                   copy: { app.platform.system.copy($0) },
+                                   openGeneral: { app.navigation.openMain(.general) },
+                                   prepareModel: { await speech.prepare() }))
         main = MainWindowModel(
             general: GeneralModel(modelName: "", status: status, microphones: [], selectedMicrophoneID: nil,
                                   defaultMicrophoneName: nil, toggles: [:]),
             shortcuts: ShortcutsModel(recorders: [:], doubleTap: .handsFree, promptTag: ""),
             dictionary: DictionaryModel(words: [], ignored: [], knownApps: []),
             macros: MacrosModel(macros: []),
+            transcribe: transcribe.model,
             runLog: RunLogModel(items: []),
             about: AboutModel(appName: app.info.name, version: app.info.version, build: app.info.build,
                               copyright: app.info.copyright, modelNotice: Self.modelNotice(app.info),
@@ -44,16 +55,6 @@ final class WindowModels {
         setup = SetupModel(appName: app.info.name, microphone: status.microphone, accessibility: status.accessibility,
                            model: status.model, modelSize: app.download?.size ?? 0,
                            holdToTalk: ShortcutRecorderState(keys: .function))
-        let speech = app.speech
-        transcribe = TranscribeBinding(
-            appName: app.info.name, transcriber: app.files,
-            rules: { TextRulesSnapshot(settings: app.settings, macros: app.macros.macros).options },
-            ports: TranscribePorts(show: { app.navigation.showTranscribe() },
-                                   chooseFile: { app.navigation.chooseAudioFile($0) },
-                                   save: { app.navigation.saveText($0, $1) },
-                                   copy: { app.platform.system.copy($0) },
-                                   openGeneral: { app.navigation.openMain(.general) },
-                                   prepareModel: { await speech.prepare() }))
         connectMenu()
         connectGeneral()
         connectShortcuts()
@@ -63,6 +64,16 @@ final class WindowModels {
         connectAbout()
         connectSetup()
         player.onStop = { [weak self] in self?.app.live.playingID = nil }
+    }
+
+    /// A window has opened. The main window's opening lets the Transcribe screen take files.
+    func windowOpened(_ window: AppWindow) {
+        if window == .main { transcribe.windowOpened() }
+    }
+
+    /// A window has closed. The main window's closing stops what the Transcribe screen is doing and forgets its text.
+    func windowClosed(_ window: AppWindow) {
+        if window == .main { transcribe.windowClosed() }
     }
 
     /// Stops keeping the models current, as the app quits, and any file being transcribed.

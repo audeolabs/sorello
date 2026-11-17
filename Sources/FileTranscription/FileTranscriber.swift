@@ -3,8 +3,8 @@ import Foundation
 import SpeechEngine
 import TextRules
 
-// Transcribing one file (ARCHITECTURE.md, section 5, "Transcribing a file"). The Transcribe File window and the
-// `sorello` command both take this one path, so the same file with the same dictionary and rules gives the same text
+// Transcribing one file (ARCHITECTURE.md, section 5, "Transcribing a file"). The main window's Transcribe screen and
+// the `sorello` command both take this one path, so the same file with the same dictionary and rules gives the same text
 // in both.
 
 /// How a file's transcription failed (ARCHITECTURE.md, section 5, "Transcribing a file"). Carries nothing the file

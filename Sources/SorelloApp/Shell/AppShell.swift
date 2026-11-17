@@ -4,11 +4,10 @@ import Persistence
 import SorelloUI
 import SpeechEngine
 
-/// The menu-bar app (ARCHITECTURE.md, section 8, "Windows"): a status item with its menu, the main window, setup and
-/// Transcribe File, one running instance, and a Dock icon only while one of its windows is open. It builds the
-/// composition at launch, starts the model's preparation, takes permission changes made in System Settings without a
-/// relaunch, opens Transcribe File with an audio or video file opened with Sorello from the Finder or dropped on its
-/// Dock icon, and lets go of the microphone and any stream before it quits, whether by Quit, `osascript … quit` or
+/// The menu-bar app (ARCHITECTURE.md, section 8, "Windows"): a status item with its menu, the main window and setup,
+/// one running instance, and a Dock icon only while one of its windows is open. It builds the composition at launch,
+/// starts the model's preparation, takes permission changes made in System Settings without a relaunch, opens the main
+/// window at Transcribe with an audio or video file opened with Sorello from the Finder or dropped on its Dock icon, and lets go of the microphone and any stream before it quits, whether by Quit, `osascript … quit` or
 /// SIGTERM.
 @MainActor
 final class AppShell: NSObject, NSApplicationDelegate {
@@ -90,7 +89,6 @@ final class AppShell: NSObject, NSApplicationDelegate {
             openMain: { [weak self] section in self?.showMain(at: section) },
             openSetup: { [weak self] in self?.showSetup() },
             closeSetup: { [weak self] in self?.windows.closeSetup() },
-            showTranscribe: { [weak self] in self?.showTranscribe() },
             chooseAudioFile: { [weak self] chosen in self?.panels.chooseFile(chosen) },
             saveText: { [weak self] text, name in self?.panels.save(text, name: name) },
             bringBack: { [weak self] window in self?.windows.bringBack(window) },
@@ -103,9 +101,8 @@ final class AppShell: NSObject, NSApplicationDelegate {
                 alert.runModal()
             },
             quit: { [weak self] in self?.quit(nil) })
-        windows.onClose = { [weak models] window in
-            if window == .transcribe { models?.transcribe.windowClosed() }
-        }
+        windows.onOpen = { [weak models] in models?.windowOpened($0) }
+        windows.onClose = { [weak models] in models?.windowClosed($0) }
         statusItem = StatusItemController(model: models.menu, appName: info.name)
         app.start()
         watchActivation(app)
@@ -117,7 +114,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
     }
 
     /// An audio or video file opened with Sorello from the Finder, dropped on its Dock icon, or given to `open`: the
-    /// first one goes to Transcribe File, which takes one file at a time. One that arrives before the launch has
+    /// first one goes to the main window's Transcribe screen, which takes one file at a time. One that arrives before the launch has
     /// finished waits for it.
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let file = filesToOpen.opened(urls) else { return }
@@ -186,14 +183,9 @@ final class AppShell: NSObject, NSApplicationDelegate {
         windows.showMain(models.main, section: section, title: app.info.name)
     }
 
-    private func showTranscribe() {
-        guard let models else { return }
-        windows.showTranscribe(models.transcribe.model, title: TranscribeWords.title)
-    }
-
-    /// The open and save panels, as sheets on Transcribe File.
+    /// The open and save panels, as sheets on the main window, where the Transcribe screen is.
     private var panels: TranscribePanels {
-        TranscribePanels(window: { [weak self] in self?.windows.window(.transcribe) })
+        TranscribePanels(window: { [weak self] in self?.windows.window(.main) })
     }
 
     private func showSetup() {
@@ -249,8 +241,8 @@ final class AppShell: NSObject, NSApplicationDelegate {
 
 /// Files opened with Sorello, held until the app has finished launching (ARCHITECTURE.md, section 8, "Windows").
 /// AppKit hands over the file whose opening launched the app before the launch has finished, when there is no window
-/// to show it in yet; the app's ordinary launch runs first and the file goes to Transcribe File after it. Only the
-/// first file of each opening counts, since the window takes one file at a time.
+/// to show it in yet; the app's ordinary launch runs first and the file goes to the Transcribe screen after it. Only
+/// the first file of each opening counts, since the screen takes one file at a time.
 nonisolated struct OpenedFiles {
     private var waiting: URL?
     private var hasLaunched = false

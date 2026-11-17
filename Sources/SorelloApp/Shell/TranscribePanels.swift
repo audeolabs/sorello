@@ -1,11 +1,11 @@
 import AppKit
 import UniformTypeIdentifiers
 
-/// The system's open and save panels for Transcribe File, each shown as a sheet on that window (ARCHITECTURE.md,
-/// section 8, "Windows"). A window that already has a sheet gets no second one.
+/// The system's open and save panels for the Transcribe screen, each shown as a sheet on the main window
+/// (ARCHITECTURE.md, section 8, "Windows"). A window that already has a sheet gets no second one.
 @MainActor
 struct TranscribePanels {
-    /// The Transcribe File window, once it has been made.
+    /// The main window, once it has been made.
     let window: () -> NSWindow?
 
     /// The file picker, offering audio and video files, one at a time. `chosen` hears the file, if one is chosen.
