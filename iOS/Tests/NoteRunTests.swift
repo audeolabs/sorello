@@ -22,6 +22,7 @@ enum NoteRunTests {
             ("movedRecordsDoNotOpen", testMovedRecordsDoNotOpen),
             ("aNewNoteWithNoTextIsRemoved", testANewNoteWithNoTextIsRemoved),
             ("anUnreadableBodyIsLeftAlone", testAnUnreadableBodyIsLeftAlone),
+            ("aNoteOutOfReachIsLeftAlone", testANoteOutOfReachIsLeftAlone),
             ("replacingTextReplacesPendingRuns", testReplacingTextReplacesPendingRuns),
             ("aRecordingNoteCannotBeEditedOrDeleted", testARecordingNoteCannotBeEditedOrDeleted),
             ("deletingANoteRemovesIt", testDeletingANoteRemovesIt),
@@ -353,6 +354,26 @@ enum NoteRunTests {
         try! fixture.vault.mergePendingRuns()
         TestSupport.expectEqual(try! Data(contentsOf: body), damaged)
         TestSupport.expectEqual(fixture.runDirectories(of: id).count, 1)
+    }
+
+    /// A note's directory that cannot be read, here by its permissions, hides its body without it being gone.
+    private static func testANoteOutOfReachIsLeftAlone() {
+        let fixture = NoteFixture()
+        try! fixture.vault.makeVault()
+        let id = note("Invented body.", in: fixture)
+        fixture.vault.lock()
+        fixture.record(["More."], into: .note(id, at: .end))
+        let directory = fixture.noteDirectory(id)
+        try! FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) }
+        fixture.unlock()
+        TestSupport.expectEqual(try! fixture.vault.notes(), [])
+        TestSupport.expectEqual(try! fixture.vault.unreadableNoteCount(), 1)
+        try! FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+        try! fixture.vault.mergePendingRuns()
+        fixture.vault.lock()
+        fixture.unlock()
+        TestSupport.expectEqual(fixture.noteTexts(), ["Invented body. More."])
     }
 
     private static func testReplacingTextReplacesPendingRuns() {

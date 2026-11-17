@@ -275,10 +275,16 @@ final class NoteStorage: @unchecked Sendable {
         AtomicRecordFiles(directory: directory, stagingSuffix: NoteStoredNames.stagingSuffix, excludedFromBackup: false)
     }
 
+    /// Absent only when the file is known not to exist: a directory that cannot be searched hides a file without
+    /// it being gone.
     private func read(_ url: URL) -> NoteStoredFile {
-        guard FileManager.default.fileExists(atPath: url.path) else { return .absent }
-        guard let data = try? Data(contentsOf: url) else { return .unreadable }
-        return .data(data)
+        do {
+            return .data(try Data(contentsOf: url))
+        } catch CocoaError.fileReadNoSuchFile, CocoaError.fileNoSuchFile {
+            return .absent
+        } catch {
+            return .unreadable
+        }
     }
 
     private func write(_ data: Data, to url: URL, protection: Data.WritingOptions) throws {
