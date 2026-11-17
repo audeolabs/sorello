@@ -6,6 +6,7 @@ public enum MainSection: CaseIterable, Hashable, Sendable {
     case shortcuts
     case dictionary
     case macros
+    case transcribe
     case runLog
     case about
 
@@ -16,6 +17,7 @@ public enum MainSection: CaseIterable, Hashable, Sendable {
         case .shortcuts: String(localized: "Shortcuts")
         case .dictionary: String(localized: "Dictionary")
         case .macros: String(localized: "Macros")
+        case .transcribe: String(localized: "Transcribe")
         case .runLog: String(localized: "Run Log")
         case .about: String(localized: "About")
         }
@@ -27,12 +29,13 @@ public enum MainSection: CaseIterable, Hashable, Sendable {
         case .shortcuts: "command"
         case .dictionary: "character.book.closed"
         case .macros: "text.bubble"
+        case .transcribe: "waveform"
         case .runLog: "clock.arrow.circlepath"
         case .about: "info.circle"
         }
     }
 
-    /// ⌘1 to ⌘6.
+    /// ⌘1 to ⌘7.
     var keyEquivalent: KeyEquivalent {
         KeyEquivalent(Character(String((MainSection.allCases.firstIndex(of: self) ?? 0) + 1)))
     }
@@ -51,6 +54,8 @@ public final class MainWindowModel {
     public let dictionary: DictionaryModel
     /// Macros' values.
     public let macros: MacrosModel
+    /// Transcribe's values.
+    public let transcribe: TranscribeModel
     /// The Run Log's values.
     public let runLog: RunLogModel
     /// About's values.
@@ -58,12 +63,14 @@ public final class MainWindowModel {
 
     /// The main window's values, opening at `section`.
     public init(section: MainSection = .general, general: GeneralModel, shortcuts: ShortcutsModel,
-                dictionary: DictionaryModel, macros: MacrosModel, runLog: RunLogModel, about: AboutModel) {
+                dictionary: DictionaryModel, macros: MacrosModel, transcribe: TranscribeModel, runLog: RunLogModel,
+                about: AboutModel) {
         self.section = section
         self.general = general
         self.shortcuts = shortcuts
         self.dictionary = dictionary
         self.macros = macros
+        self.transcribe = transcribe
         self.runLog = runLog
         self.about = about
     }
@@ -73,10 +80,18 @@ public final class MainWindowModel {
 /// carries the state line, so a problem is visible from every section.
 public struct MainWindowView: View {
     @Bindable private var model: MainWindowModel
+    /// Holds Transcribe's drop area lit or unlit, for the snapshots; nil follows the drag.
+    private let transcribeFileOver: Bool?
 
     /// The main window drawn from `model`.
     public init(model: MainWindowModel) {
+        self.init(model: model, transcribeFileOver: nil)
+    }
+
+    /// The main window with a file held over Transcribe, or not, whatever the pointer does: for the snapshots.
+    init(model: MainWindowModel, transcribeFileOver: Bool?) {
         self.model = model
+        self.transcribeFileOver = transcribeFileOver
     }
 
     public var body: some View {
@@ -99,13 +114,14 @@ public struct MainWindowView: View {
         case .shortcuts: ShortcutsScreen(model: model.shortcuts)
         case .dictionary: DictionaryScreen(model: model.dictionary)
         case .macros: MacrosScreen(model: model.macros)
+        case .transcribe: TranscribeScreen(model: model.transcribe, fileOver: transcribeFileOver)
         case .runLog: RunLogScreen(model: model.runLog)
         case .about: AboutScreen(model: model.about)
         }
     }
 }
 
-/// The sections as a list: arrow keys move through them, ⌘1 to ⌘6 jump to one, VoiceOver hears which is selected.
+/// The sections as a list: arrow keys move through them, ⌘1 to ⌘7 jump to one, VoiceOver hears which is selected.
 private struct Sidebar: View {
     @Bindable var model: MainWindowModel
     @FocusState private var focused: Bool

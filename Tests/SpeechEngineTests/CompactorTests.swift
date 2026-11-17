@@ -42,6 +42,36 @@ struct CompactorTests {
         }
     }
 
+    /// A reader that can read its input again may have the compactor drop the silence it holds before any speech:
+    /// what it holds stays bounded, and once speech comes the output is the same as without dropping. With no speech
+    /// at all, dropping is reported, and `finish` says no speech was heard, so the caller knows to read again.
+    @Test func droppingLeadingSilenceChangesNothingOnceSpeechComes() {
+        let limit = s(15), piece = 8192
+        let ragged = Array(tone(0.01, level: -20).prefix(37))
+        for (input, hasSpeech) in [(noise(40, level: -50, seed: 3) + tone(5, level: -20) + zeros(3), true),
+                                   (zeros(31) + tone(2, level: -20), true),
+                                   (noise(20, level: -50, seed: 4) + ragged, true),
+                                   (noise(40, level: -50, seed: 5), false)] {
+            var compactor = SilenceCompactor(), output: [Float] = [], dropped = false, most = 0, start = 0
+            while start < input.count {
+                let end = min(start + piece, input.count)
+                compactor.append(Array(input[start..<end])) { output += $0 }
+                dropped = compactor.dropLeadingSilence(beyond: limit) || dropped
+                most = max(most, compactor.heldSamples)
+                start = end
+            }
+            let heard = compactor.finish { output += $0 }
+            #expect(dropped, "The silence before speech outgrew the limit")
+            #expect(most <= limit + piece + SilenceCompactor.frameSamples, "Held \(most) samples")
+            #expect(heard == hasSpeech)
+            if hasSpeech { #expect(output == compact(input), "The same output as without dropping") }
+        }
+        var speaking = SilenceCompactor()
+        speaking.append(tone(1, level: -20) + zeros(30)) { _ in }
+        let droppedAfterSpeech = speaking.dropLeadingSilence(beyond: limit)
+        #expect(!droppedAfterSpeech, "After speech nothing is dropped")
+    }
+
     /// Leading silence keeps its last margin, trailing silence its first, and a partial final frame of speech is kept.
     @Test func edges() {
         let speech = tone(1, level: -20)
@@ -177,39 +207,5 @@ struct CompactorTests {
             let split = transcribe(reads)
             #expect(split.chunks == whole.chunks && split.text == whole.text)
         }
-    }
-
-    // MARK: - Bounded leading silence
-
-    /// Whenever speech occurs, a compactor that bounds its leading silence emits exactly what one that does not
-    /// emits, however the samples are split.
-    @Test func boundedLeadingSilenceKeepsTheTextOfSpeech() {
-        let limit = SilenceCompactor.boundedLeadingSilence
-        let first = tone(1, level: -20, frequency: 300), second = tone(1, level: -20, frequency: 500)
-        let room = noise(40, level: -75, seed: 7)
-        for input in [zeros(60) + first + zeros(2), room + first + zeros(3) + second,
-                      zeros(Double(limit) / 16_000) + first, zeros(0.1) + first, first + zeros(30)] {
-            for reads in [[], [4096], [160, 1, 16_000]] {
-                #expect(compact(input, SilenceCompactor(boundsLeadingSilence: true), reads: reads)
-                        == compact(input, reads: reads))
-            }
-        }
-    }
-
-    /// With no speech at all, the bounded compactor emits a suffix of the recording of at least its limit and less
-    /// than its limit and one piece: what it held. A shorter recording is emitted whole, as without the bound.
-    @Test func boundedLeadingSilenceHoldsAtMostItsLimit() {
-        let limit = SilenceCompactor.boundedLeadingSilence
-        #expect(limit == s(15))
-        for input in [zeros(60), noise(47.3, level: -75, seed: 3), zeros(16.5)] {
-            for reads in [[], [4096], [160, 1, 16_000]] {
-                let output = compact(input, SilenceCompactor(boundsLeadingSilence: true), reads: reads)
-                #expect(output.count >= limit && output.count < limit + SilenceCompactor.maxPieceSamples)
-                #expect(output == Array(input.suffix(output.count)), "The last of the silence, unchanged")
-            }
-        }
-        let short = noise(9, level: -75, seed: 5)
-        #expect(compact(short, SilenceCompactor(boundsLeadingSilence: true)) == short)
-        #expect(compact(zeros(60)) == zeros(60), "Without the bound, all of it")
     }
 }

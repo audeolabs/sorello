@@ -1,5 +1,6 @@
 import DictationCore
 import DictionaryKit
+import FileTranscription
 import Foundation
 import SpeechEngine
 import Synchronization
@@ -59,9 +60,19 @@ final class ManualClock: SessionClock {
     var sleeperCount: Int { state.withLock { $0.sleepers.count } }
 }
 
-/// An engine that is ready at once, on `compute`, and hears what the test says it heard.
+/// An engine that is ready at once, on `compute`, and hears what the test says it heard. Its files are transcribed
+/// by `files`, which the test drives.
 final class FakeSpeech: AppSpeech {
     let compute: SpeechCompute
+    let files = FakeFiles()
+    /// What the app said, when it asked for the file transcriber, about whether a model fits this Mac.
+    private let fits = Mutex<[Bool]>([])
+    var fileTranscribersMade: [Bool] { fits.withLock { $0 } }
+
+    func fileTranscriber(modelFitsThisMac: Bool) -> any FileTranscribing {
+        fits.withLock { $0.append(modelFitsThisMac) }
+        return files
+    }
 
     init(compute: SpeechCompute = .neuralEngine, readiness: EngineReadiness = .ready) {
         self.compute = compute

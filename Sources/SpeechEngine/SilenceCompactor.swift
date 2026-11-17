@@ -7,11 +7,6 @@ import Foundation
 /// resampling, gain or fades. A stream with no speech is emitted unchanged by `finish`, so audio is held until speech
 /// starts; after that at most `interiorPause` is held. The output depends only on the samples, not on how they are
 /// split across calls.
-///
-/// A compactor that bounds its leading silence (ARCHITECTURE.md, section 5) holds less than
-/// `boundedLeadingSilence` and one piece before speech starts: once that much is held, it keeps the last
-/// `boundedLeadingSilence`. Speech keeps only `margin` of what is held, so its output differs only when no speech
-/// comes at all.
 struct SilenceCompactor {
     static let defaultMargin = 4800  // 0.3 s
     /// A pause between speech, such as searching for a word, keeps up to 0.8 s; chosen on synthetic hesitations.
@@ -21,8 +16,6 @@ struct SilenceCompactor {
     static let maxPieceSamples = 16_000
     /// 10 ms, the front end's hop. Speech is decided per frame.
     static let frameSamples = 160
-    /// The leading silence a bounding compactor keeps: 15 s, one chunk.
-    static let boundedLeadingSilence = 240_000
     // Levels are a frame's mean square in dB relative to full scale. The noise floor follows the quietest recent
     // frames: it drops at once and, outside speech, rises 3 dB/s, so steady noise is learned within seconds while
     // speech, however long, is not. It stays within -70...-40 dB, so speech never starts below -60 dB, and frames
@@ -34,8 +27,6 @@ struct SilenceCompactor {
 
     let margin: Int
     let interiorPause: Int
-    /// Nil: all leading silence is held.
-    let leadingSilenceLimit: Int?
     private var floor = floorRange.upperBound
     private var speaking = false
     private var heardSpeech = false
@@ -43,13 +34,11 @@ struct SilenceCompactor {
     // Before speech, everything so far; in a later pause, its first and last half of `interiorPause`.
     private var held: [Float] = []
 
-    init(margin: Int = defaultMargin, interiorPause: Int = defaultInteriorPause, boundsLeadingSilence: Bool = false) {
+    init(margin: Int = defaultMargin, interiorPause: Int = defaultInteriorPause) {
         // Trailing silence keeps its first margin from the pause's first half.
         precondition(margin >= 0 && interiorPause >= 2 * margin, "A kept pause must hold both edge margins")
-        precondition(!boundsLeadingSilence || Self.boundedLeadingSilence >= margin, "Speech must find its margin")
         self.margin = margin
         self.interiorPause = interiorPause
-        leadingSilenceLimit = boundsLeadingSilence ? Self.boundedLeadingSilence : nil
     }
 
     mutating func append(_ samples: [Float], emit: ([Float]) throws -> Void) rethrows {
@@ -72,15 +61,33 @@ struct SilenceCompactor {
         try Self.flush(&output, whole: true, emit: emit)
     }
 
-    mutating func finish(emit: ([Float]) throws -> Void) rethrows {
+    /// Emits what is held and starts again. Returns whether any speech was heard: without any, the input was emitted
+    /// unchanged.
+    @discardableResult
+    mutating func finish(emit: ([Float]) throws -> Void) rethrows -> Bool {
         var output: [Float] = []
         if !frame.isEmpty { process(frame[...], into: &output) }
+        let heard = heardSpeech
         // Trailing silence keeps its first margin. With no speech at all, the model hears the recording unchanged;
         // output is empty then, so the held recording moves rather than copies.
         if heardSpeech { output += held.prefix(margin) } else { swap(&output, &held) }
-        self = Self(margin: margin, interiorPause: interiorPause, boundsLeadingSilence: leadingSilenceLimit != nil)
+        self = Self(margin: margin, interiorPause: interiorPause)
         try Self.flush(&output, whole: true, emit: emit)
+        return heard
     }
+
+    /// Before any speech, once more than `limit` samples are held, keeps only the last `margin` of them: all that
+    /// speech starting would emit, so the output is the same if speech comes. Should none come, the input would have
+    /// been emitted unchanged, and what was dropped is gone: only a caller that can read its input again uses this,
+    /// and does so then. Returns whether anything was dropped. Does nothing once speech has been heard.
+    mutating func dropLeadingSilence(beyond limit: Int) -> Bool {
+        guard !heardSpeech, held.count > max(limit, margin) else { return false }
+        held.removeFirst(held.count - margin)
+        return true
+    }
+
+    /// Samples held back now, for tests of what the compactor keeps.
+    var heldSamples: Int { held.count + frame.count }
 
     /// Emits full pieces of `output`, and with `whole` the rest too, keeping order.
     private static func flush(_ output: inout [Float], whole: Bool, emit: ([Float]) throws -> Void) rethrows {
@@ -105,10 +112,6 @@ struct SilenceCompactor {
             // last half of the kept pause.
             let head = interiorPause / 2, tail = interiorPause - head
             if heardSpeech, held.count > interiorPause { held.removeSubrange(head..<(held.count - tail)) }
-            // Before speech, a bounding compactor drops the oldest silence a piece at a time, so the copy is rare.
-            if !heardSpeech, let limit = leadingSilenceLimit, held.count >= limit + Self.maxPieceSamples {
-                held.removeFirst(held.count - limit)
-            }
         }
     }
 

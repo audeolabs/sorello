@@ -45,6 +45,7 @@ struct StatusMenuRowsTests {
         "command openShortcuts | Paste Again | Not set",
         "separator",
         "command copyLastDictation | Copy Last Dictation",
+        "command transcribeFile | Transcribe File…",
         "separator",
         "command openDictionary | Dictionary",
         "command openRunLog | Run Log",
@@ -142,13 +143,33 @@ struct StatusMenuRowsTests {
         }
     }
 
-    /// Copy Last Dictation is a group of its own, between the shortcuts and the ways into the app.
-    @Test func copyIsAGroupOfItsOwn() throws {
+    /// Copy Last Dictation and Transcribe File… are a group of their own, between the shortcuts and the ways into
+    /// the app, with Transcribe File… right after Copy.
+    @Test func copyAndTranscribeAreAGroupOfTheirOwn() throws {
         for status in Self.statuses {
             let rows = Self.rows(status)
             let copy = try #require(rows.firstIndex { $0.command == .copyLastDictation })
-            #expect(rows[copy - 1].kind == .separator && rows[copy + 1].kind == .separator)
-            #expect(rows[copy - 2].command == .openShortcuts && rows[copy + 2].command == .openDictionary)
+            #expect(rows[copy - 1].kind == .separator && rows[copy + 1].command == .transcribeFile)
+            #expect(rows[copy + 2].kind == .separator)
+            #expect(rows[copy - 2].command == .openShortcuts && rows[copy + 3].command == .openDictionary)
+        }
+    }
+
+    /// Transcribe File… can always be chosen: whatever the model, the permissions or the last dictation, it opens the
+    /// window, which says what is wrong if a file cannot be transcribed now.
+    @Test func transcribeFileIsAlwaysAvailable() throws {
+        let statuses = Self.statuses + [
+            AppStatus(model: .notDownloaded(.notStarted(size: 9)), microphone: .denied, accessibility: .missing),
+            AppStatus(model: .notDownloaded(.unavailable), microphone: .granted, accessibility: .granted),
+        ]
+        for status in statuses {
+            for hasLastDictation in [true, false] {
+                let rows = Self.rows(status, hasLastDictation: hasLastDictation)
+                let row = try #require(rows.first { $0.id == .transcribeFile })
+                #expect(row.isEnabled && row.title == "Transcribe File…" && row.keyEquivalent == nil)
+                #expect(row.image == .symbol("waveform"))
+                #expect(row.help == "Turns an audio or video file into text")
+            }
         }
     }
 
@@ -184,8 +205,8 @@ struct StatusMenuRowsTests {
     @Test func theWaysIntoTheAppKeepTheirGlyphs() {
         let rows = Self.rows(.sampleReady)
         let images = rows.filter { $0.command != nil && $0.command != .openShortcuts }.map(\.image)
-        #expect(images == [.symbol("doc.on.doc"), .symbol("character.book.closed"), .symbol("clock.arrow.circlepath"),
-                           .symbol("gearshape"), .symbol("power")])
+        #expect(images == [.symbol("doc.on.doc"), .symbol("waveform"), .symbol("character.book.closed"),
+                           .symbol("clock.arrow.circlepath"), .symbol("gearshape"), .symbol("power")])
     }
 
     /// Each row keeps its identity whatever the state, so an open menu can change in place.
@@ -208,14 +229,16 @@ struct StatusMenuRowsTests {
     @Test func eachCommandReachesItsAction() {
         var reported: [String] = []
         let actions = StatusMenuActions(
-            copyLastDictation: { reported.append("copy") }, retryModel: { reported.append("retry") },
+            copyLastDictation: { reported.append("copy") }, transcribeFile: { reported.append("transcribe") },
+            retryModel: { reported.append("retry") },
             openGeneral: { reported.append("general") }, openShortcuts: { reported.append("shortcuts") },
             openDictionary: { reported.append("dictionary") }, openRunLog: { reported.append("runlog") },
             openSettings: { reported.append("settings") }, quit: { reported.append("quit") })
-        for command in [StatusMenuCommand.copyLastDictation, .retryModel, .openGeneral, .openShortcuts,
+        for command in [StatusMenuCommand.copyLastDictation, .transcribeFile, .retryModel, .openGeneral, .openShortcuts,
                         .openDictionary, .openRunLog, .openSettings, .quit] {
             actions.perform(command)
         }
-        #expect(reported == ["copy", "retry", "general", "shortcuts", "dictionary", "runlog", "settings", "quit"])
+        #expect(reported == ["copy", "transcribe", "retry", "general", "shortcuts", "dictionary", "runlog", "settings",
+                             "quit"])
     }
 }

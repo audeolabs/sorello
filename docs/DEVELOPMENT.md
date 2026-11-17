@@ -56,7 +56,8 @@ one that app has already downloaded into its store. A fresh build without the mo
 form below. The second command draws every window and every setup step as the app wires them, and lists the menu's
 rows.
 `--self-test --cpu` runs the speech model on the processor, as on a Mac without a Neural Engine. `--no-setup` opens
-the app without its setup window.
+the app without its setup window. `--self-test --transcribe talk.m4a` runs the Transcribe screen's own model off
+screen and prints each state it passes through and the text it ends with.
 
 The model's download is proved the same way, without touching the app's own copy of the model. The first command
 makes the packaged app download its model with its own pin into a temporary store, then dictate; the second fetches
@@ -81,6 +82,17 @@ installs it over the copy as the command ends, without opening it.
 
 `swift run SorelloSnapshots --demo` shows the real pill on the real screen for 20 seconds, cycling through its
 states, to check it against the hardware by eye.
+
+The `sorello` command is in every app at `Contents/Helpers/sorello`. It transcribes a file with the model, dictionary
+and text rules of the app it is in, so to try a build's, link it onto your PATH under a name of its own:
+
+```sh
+ln -s "$PWD/build/Sorello Dev.app/Contents/Helpers/sorello" ~/bin/sorello-dev
+sorello-dev transcribe hello.wav
+```
+
+It finds its app by following the link, so `swift run sorello-command`, or a copy outside an app, finds none and says
+so. `sorello-transcribe` stays the developer's tool: it takes a model bundle directly, and no app carries it.
 
 ## Channels
 
@@ -114,7 +126,8 @@ GitHub Actions runs four workflows, in `.github/workflows`:
 
 - **Check** runs `make check` on every pull request and every push to `main`.
 - **Package** is what Nightly and Release share. It builds a commit of `main` whose check passed, signs and
-  notarizes it, and proves the app from the DMG with `--snapshots` and `--self-test --download`.
+  notarizes it, and proves the app from the DMG with `--snapshots` and `--self-test --download`, then its `sorello`
+  command with `--version` and a `transcribe` that must find no model.
 - **Nightly** runs every night, and when it is started by hand. If `main` has not moved since the last nightly it
   does nothing. Otherwise it builds "Sorello Nightly" and publishes it in the `nightly` prerelease, in place of the
   night before's: `Sorello-Nightly.dmg`, the same image under a name of its own build, and `appcast.xml`. The feed

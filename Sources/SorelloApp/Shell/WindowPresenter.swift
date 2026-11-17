@@ -72,7 +72,8 @@ extension NSRunningApplication: FrontApp {
     }
 }
 
-/// The app's windows: the main window, setup and the notices' text. Each is made once and kept while the app runs.
+/// The app's windows: the main window, setup and the notices' text. Each is made once and kept while
+/// the app runs.
 /// The presenter knows which are open, from the first time each is shown until it closes, by whatever means: its
 /// close button, ⌘W or Close in the Window menu, or Done in setup. A minimised window is still open. Sorello is in the
 /// Dock exactly while one is open (ARCHITECTURE.md, section 8, "Windows").
@@ -85,6 +86,11 @@ final class WindowPresenter {
     /// The latest ordinary app other than Sorello to have been in front: the one to hand the front back to.
     private var previous: (any FrontApp)?
     private var observers: [any NSObjectProtocol] = []
+    /// Hears each window open, as it goes from closed to open, after the presenter has counted it open. A window
+    /// brought forward while it is open is not heard again.
+    var onOpen: (AppWindow) -> Void = { _ in }
+    /// Hears each window close, by whatever means, after the presenter has counted it closed.
+    var onClose: (AppWindow) -> Void = { _ in }
 
     init(dock: any DockPresence) {
         self.dock = dock
@@ -153,10 +159,12 @@ final class WindowPresenter {
     /// way any app's does; every window is then brought forward with the app active.
     private func show(_ id: AppWindow, make: () -> NSWindow) {
         let window = made[id] ?? watch(make(), as: id)
+        let opening = !isOpen(id)
         if !isInDock { dock.enterDock() }
         dock.activate()
         dock.bringForward(window)
         markInFront(id)
+        if opening { onOpen(id) }
     }
 
     private func markInFront(_ id: AppWindow) {
@@ -197,6 +205,7 @@ final class WindowPresenter {
     private func closed(_ id: AppWindow) {
         guard isOpen(id) else { return }
         open.removeAll { $0 == id }
+        onClose(id)
         guard !isInDock else { return }
         dock.leaveDock()
         guard dock.isActive, let previous, !previous.isTerminated else { return }

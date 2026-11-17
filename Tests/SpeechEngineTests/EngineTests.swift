@@ -182,8 +182,8 @@ struct EngineTests {
         }
     }
 
-    /// A stream that bounds its leading silence gives the model the last 15 s to 16 s of a recording with no speech,
-    /// and the same text as any other stream once there is speech.
+    /// A stream that bounds its leading silence gives the model at most the last chunk's worth of a recording with no
+    /// speech, and the same text as any other stream once there is speech.
     @Test func aBoundedStreamHoldsLittleLeadingSilence() async throws {
         let log = ModelLog()
         let engine = engine(log)
@@ -194,10 +194,9 @@ struct EngineTests {
         let silent = engine.openStream(options)
         for start in stride(from: 0, to: room.count, by: 16_000) { silent.append(Array(room[start..<start + 16_000])) }
         _ = try #require(await finish(silent)).get()
-        // At most two chunks: one of 15 s, and what is left with the 2 s they overlap by.
+        // The silence is let go whenever more than a chunk of it is held, so less than a minute's worth is heard.
         let heard = log.projected.reduce(0, +)
-        #expect(log.projected.count <= 2 && heard >= 240_000 && heard < 256_000 + 32_000,
-                "Only the last of the silence reaches the model")
+        #expect(log.projected.count <= 1 && heard <= SpeechCore.chunkSamples, "Only the last of the silence reaches the model")
 
         let recording = Signals.zeros(45) + Self.speech(20)
         let bounded = engine.openStream(options)

@@ -172,11 +172,13 @@ public extension AboutModel {
     }
 }
 
-/// A sample main window at `section`.
+/// A sample main window at `section`, with Transcribe in `transcribe`.
 public extension MainWindowModel {
-    static func sample(section: MainSection = .general, status: AppStatus = .sampleReady) -> MainWindowModel {
+    static func sample(section: MainSection = .general, status: AppStatus = .sampleReady,
+                       transcribe: TranscribeState = .empty) -> MainWindowModel {
         MainWindowModel(section: section, general: .sample(status: status), shortcuts: .sample(),
-                        dictionary: .sample(), macros: .sample(), runLog: .sample(), about: .sample())
+                        dictionary: .sample(), macros: .sample(), transcribe: .sample(transcribe), runLog: .sample(),
+                        about: .sample())
     }
 }
 
@@ -191,4 +193,23 @@ public extension SetupModel {
                    modelSize: model == .sampleNoBuild ? 0 : sampleModelSize,
                    holdToTalk: ShortcutRecorderState(keys: .function), testText: testText)
     }
+}
+
+/// Sample Transcribe screens, with invented file names and text.
+public extension TranscribeModel {
+    static func sample(_ state: TranscribeState = .empty) -> TranscribeModel {
+        TranscribeModel(appName: "Sorello", state: state)
+    }
+
+    /// A short invented transcript.
+    static let sampleShortText = "Meet Okonkwo by the north gate at nine. Bring the 23 crates of pears, and the map."
+
+    /// An invented transcript far longer than the screen, so the field scrolls.
+    static let sampleLongText = (1...60).map { paragraph in
+        ["The quick brown fox jumps over the lazy dog near the Quillon Bay ferry.",
+         "Pack my box with five dozen liquor jugs, then carry it up the hill to the north gate.",
+         "Sphinx of black quartz, judge my vow, said the keeper of the lighthouse at \(paragraph) o’clock.",
+         "How vexingly quick daft zebras jump when the wind turns over the long field."]
+            .joined(separator: " ")
+    }.joined(separator: "\n\n")
 }
