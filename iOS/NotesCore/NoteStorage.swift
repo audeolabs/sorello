@@ -44,7 +44,10 @@ final class NoteStorage: @unchecked Sendable {
     /// Bodies and the recovery wrap: class A on devices, as `AtomicRecordFiles.completeProtection`.
     static var lockedAwayProtection: Data.WritingOptions { AtomicRecordFiles.completeProtection }
 
-    /// The public key, run starts and segments, which a run creates while the iPhone may be locked: class B
+    /// The public key, which a run reads as it begins, while the iPhone may be locked: class C. It is no secret.
+    static var publicKeyProtection: Data.WritingOptions { .completeFileProtectionUntilFirstUserAuthentication }
+
+    /// Run starts and segments, which a run creates while the iPhone may be locked: class B
     /// (`.completeUnlessOpen`) on devices. macOS and the simulator use class C, as the shared store does.
     static var writableWhileLockedProtection: Data.WritingOptions {
         #if os(iOS) && !targetEnvironment(simulator)
@@ -60,7 +63,7 @@ final class NoteStorage: @unchecked Sendable {
 
     func writePublicKey(_ data: Data) throws {
         try write(data, to: directory.appendingPathComponent(NoteStoredNames.publicKey),
-                  protection: Self.writableWhileLockedProtection)
+                  protection: Self.publicKeyProtection)
     }
 
     func readRecoveryWrap() -> NoteStoredFile { read(directory.appendingPathComponent(NoteStoredNames.recoveryWrap)) }

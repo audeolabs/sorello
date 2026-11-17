@@ -1044,12 +1044,11 @@ the Notes screens are not built yet; they use the interfaces below.
     piece, numbered from 1.
 - Every file is written through `AtomicRecordFiles` (staged and renamed,
   [Files](#files)), with its staging files in its own directory. Bodies and
-  the recovery wrap are class A. The public key, starts and segments are
-  class B (`.completeUnlessOpen`) on devices, so a run can create them while
-  the iPhone is locked. A class B file that is closed cannot be read while
-  the iPhone is locked, so a run begins only while it is unlocked: every way
-  to start a note authenticates. The simulator and macOS use class C, as
-  the shared store does.
+  the recovery wrap are class A. Starts and segments are class B
+  (`.completeUnlessOpen`) on devices, so a run can create them while the
+  iPhone is locked. The public key, which a run reads as it begins and which
+  is no secret, is class C, so a run can begin then too. The simulator and
+  macOS use class C throughout, as the shared store does.
 - A note is deleted by renaming its directory to `.deleted-<UUID>`, then
   removing it; leftovers of a delete or a staged write are removed at the
   next unlock. Directories of runs that record are never touched then.
