@@ -97,9 +97,7 @@ final class NoteVault: @unchecked Sendable {
     // MARK: State
 
     var state: NoteVaultState {
-        if mutex.withLock({ unlocked != nil }) { return .unlocked }
-        if keyStore.hasSecret() { return .locked }
-        return storage.holdsVault ? .secretMissing : .noVault
+        mutex.withLock { currentState() }
     }
 
     /// Whether a vault can be made: there is none, and the iPhone has a passcode.
@@ -107,21 +105,23 @@ final class NoteVault: @unchecked Sendable {
 
     /// Makes a vault: stores a new secret, writes the public key, and leaves the vault unlocked with no notes.
     func makeVault() throws {
-        guard keyStore.deviceHasPasscode else { throw NoteError.noPasscode }
-        guard state == .noVault else { throw NoteError.vaultExists }
-        let secret = NoteVaultKeys.makeSecret()
-        guard let privateKey = NoteVaultKeys.privateKey(for: secret) else { throw NoteError.keyStoreFailed }
-        do {
-            try keyStore.storeSecret(secret)
-        } catch {
-            throw NoteError.keyStoreFailed
+        try mutex.withLock {
+            guard keyStore.deviceHasPasscode else { throw NoteError.noPasscode }
+            guard currentState() == .noVault else { throw NoteError.vaultExists }
+            let secret = NoteVaultKeys.makeSecret()
+            guard let privateKey = NoteVaultKeys.privateKey(for: secret) else { throw NoteError.keyStoreFailed }
+            do {
+                try keyStore.storeSecret(secret)
+            } catch {
+                throw NoteError.keyStoreFailed
+            }
+            try storage.writePublicKey(privateKey.publicKey.rawRepresentation)
+            unlocked = Unlocked(privateKey: privateKey, secret: secret, bodies: [:], unreadable: [])
         }
-        try storage.writePublicKey(privateKey.publicKey.rawRepresentation)
-        mutex.withLock { unlocked = Unlocked(privateKey: privateKey, secret: secret, bodies: [:], unreadable: []) }
     }
 
     /// Unlocks: reads the secret through the key store, so the user authenticates, then opens the notes and merges
-    /// the pending runs. A lock while the user authenticates wins.
+    /// the pending runs. A lock, or an erase, while the user authenticates wins.
     func unlock(prompt: String) throws {
         let locks = mutex.withLock { unlocked == nil ? lockCount : nil }
         guard let locks else { return }
@@ -136,15 +136,15 @@ final class NoteVault: @unchecked Sendable {
             throw NoteError.keyStoreFailed
         }
         guard let privateKey = NoteVaultKeys.privateKey(for: secret) else { throw NoteError.keyStoreFailed }
-        try open(secret: secret, privateKey: privateKey, unlessLockedSince: locks)
+        try mutex.withLock {
+            guard lockCount == locks else { throw NoteError.locked }
+            try open(secret: secret, privateKey: privateKey)
+        }
     }
 
     /// Locks: drops the secret, the private key and every opened note.
     func lock() {
-        mutex.withLock {
-            unlocked = nil
-            lockCount += 1
-        }
+        mutex.withLock { lockHeld() }
     }
 
     // MARK: Recovery code
@@ -164,41 +164,58 @@ final class NoteVault: @unchecked Sendable {
     /// Restores the secret from a recovery code when the key store has none, and leaves the vault unlocked. A wrong
     /// or malformed code changes nothing.
     func restore(recoveryCode text: String) throws {
-        guard state == .secretMissing else { throw state == .noVault ? NoteError.noVault : NoteError.vaultExists }
-        guard let code = NoteRecoveryCode(text) else { throw NoteError.malformedRecoveryCode }
-        let wrap: Data
-        switch storage.readRecoveryWrap() {
-        case .absent: throw NoteError.noRecoveryCode
-        case .unreadable: throw NoteError.unavailable
-        case .data(let data): wrap = data
-        }
-        guard let secret = code.unwrap(wrap), let privateKey = NoteVaultKeys.privateKey(for: secret) else {
-            throw NoteError.wrongRecoveryCode
-        }
-        if case .data(let stored) = storage.readPublicKey(), stored != privateKey.publicKey.rawRepresentation {
-            throw NoteError.wrongRecoveryCode
-        }
-        guard keyStore.deviceHasPasscode else { throw NoteError.noPasscode }
-        do {
-            try keyStore.storeSecret(secret)
-        } catch {
-            throw NoteError.keyStoreFailed
-        }
-        let locks = mutex.withLock { lockCount }
-        try open(secret: secret, privateKey: privateKey, unlessLockedSince: locks)
-    }
-
-    /// Erases every note: deletes the secret, then the notes directory. Refused while a run records, and no run
-    /// begins until it is done.
-    func eraseAll() throws {
-        try storage.erase {
-            lock()
+        try mutex.withLock {
+            let state = currentState()
+            guard state == .secretMissing else { throw state == .noVault ? NoteError.noVault : NoteError.vaultExists }
+            guard let code = NoteRecoveryCode(text) else { throw NoteError.malformedRecoveryCode }
+            let wrap: Data
+            switch storage.readRecoveryWrap() {
+            case .absent: throw NoteError.noRecoveryCode
+            case .unreadable: throw NoteError.unavailable
+            case .data(let data): wrap = data
+            }
+            guard let secret = code.unwrap(wrap), let privateKey = NoteVaultKeys.privateKey(for: secret) else {
+                throw NoteError.wrongRecoveryCode
+            }
+            if case .data(let stored) = storage.readPublicKey(), stored != privateKey.publicKey.rawRepresentation {
+                throw NoteError.wrongRecoveryCode
+            }
+            guard keyStore.deviceHasPasscode else { throw NoteError.noPasscode }
             do {
-                try keyStore.deleteSecret()
+                try keyStore.storeSecret(secret)
             } catch {
                 throw NoteError.keyStoreFailed
             }
+            try open(secret: secret, privateKey: privateKey)
         }
+    }
+
+    /// Erases every note: deletes the secret, then the notes directory. Refused while a run records, and no run
+    /// begins, and nothing else happens to the vault, until it is done.
+    func eraseAll() throws {
+        try mutex.withLock {
+            try storage.erase {
+                lockHeld()
+                do {
+                    try keyStore.deleteSecret()
+                } catch {
+                    throw NoteError.keyStoreFailed
+                }
+            }
+        }
+    }
+
+    /// The state, with the mutex held. Making, unlocking, restoring and erasing hold it throughout, so each sees the
+    /// vault the others left.
+    private func currentState() -> NoteVaultState {
+        if unlocked != nil { return .unlocked }
+        if keyStore.hasSecret() { return .locked }
+        return storage.holdsVault ? .secretMissing : .noVault
+    }
+
+    private func lockHeld() {
+        unlocked = nil
+        lockCount += 1
     }
 
     // MARK: Library
@@ -264,15 +281,14 @@ final class NoteVault: @unchecked Sendable {
 
     // MARK: Opening
 
-    private func open(secret: Data, privateKey: Curve25519.KeyAgreement.PrivateKey, unlessLockedSince locks: Int) throws {
+    /// Opens the vault with `secret`, with the mutex held: rewrites the public key if it differs, removes leftovers,
+    /// opens every body and merges the pending runs.
+    private func open(secret: Data, privateKey: Curve25519.KeyAgreement.PrivateKey) throws {
+        guard unlocked == nil else { return }
         let publicKey = privateKey.publicKey.rawRepresentation
         if storage.readPublicKey() != .data(publicKey) {
             try storage.writePublicKey(publicKey)
         }
-        mutex.lock()
-        defer { mutex.unlock() }
-        guard lockCount == locks else { throw NoteError.locked }
-        guard unlocked == nil else { return }
         storage.removeLeftovers()
         var opened = Unlocked(privateKey: privateKey, secret: secret, bodies: [:], unreadable: [])
         for id in storage.noteIDs() {

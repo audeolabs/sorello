@@ -32,45 +32,27 @@ final class NoteRecorder {
     /// Begins a run: reads the public key, makes the run's directory and writes its start. Throws `noVault` without
     /// a public key, `unavailable` if it cannot be read, `noSuchNote` for a note that is gone, and `storageFailed`.
     func beginRun(_ target: NoteRunTarget) throws -> NoteRunWriter {
-        let publicKey: Data
-        switch storage.readPublicKey() {
-        case .absent: throw NoteError.noVault
-        case .unreadable: throw NoteError.unavailable
-        case .data(let data): publicKey = data
-        }
-        guard let key = NoteVaultKeys.publicKey(publicKey) else { throw NoteError.noVault }
-        let sealer: NoteRunSealer
-        do {
-            sealer = try NoteRunSealer(publicKey: key)
-        } catch {
-            throw NoteError.storageFailed
-        }
-        let start: NoteRunStart
         let existing: UUID?
+        var start = NoteRunStart(offset: nil, startedAt: now())
         switch target {
         case .newNote:
             existing = nil
-            start = NoteRunStart(offset: nil, startedAt: now())
         case .note(let id, let place):
             existing = id
-            if case .offset(let offset) = place {
-                start = NoteRunStart(offset: max(0, offset), startedAt: now())
-            } else {
-                start = NoteRunStart(offset: nil, startedAt: now())
-            }
+            if case .offset(let offset) = place { start.offset = max(0, offset) }
         }
         let run = try storage.beginRun(of: existing)
-        let writer = NoteRunWriter(storage: storage, noteID: run.noteID, runID: run.runID, order: run.order,
-                                   sealer: sealer)
         do {
+            guard let publicKey = NoteVaultKeys.publicKey(run.publicKey) else { throw NoteError.noVault }
+            let sealer = try NoteRunSealer(publicKey: publicKey)
             let record = try sealer.seal(try NoteCoding.encode(start), as: .runStart(run.noteID, run: run.runID))
             try storage.writeRunFile(record, named: NoteStoredNames.runStart, run: run.runID, order: run.order,
                                      of: run.noteID)
+            return NoteRunWriter(storage: storage, noteID: run.noteID, runID: run.runID, order: run.order, sealer: sealer)
         } catch {
-            writer.end()
-            throw NoteError.storageFailed
+            storage.endRun(run.runID)
+            throw error as? NoteError ?? NoteError.storageFailed
         }
-        return writer
     }
 }
 

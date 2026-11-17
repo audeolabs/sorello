@@ -990,8 +990,9 @@ the Notes screens are not built yet; they use the interfaces below.
   blocks while they do, so callers run it off the main thread. It checks the
   public key, removes leftover staging files, opens every note's body into
   memory and merges the pending runs ([Runs](#runs-noterecorder-notemerge)).
-  A cancelled authentication leaves it locked. A lock while the user
-  authenticates wins: the unlock ends locked.
+  A cancelled authentication leaves it locked. A lock or an erase while the
+  user authenticates wins: the unlock ends locked and writes nothing.
+  Making, unlocking, restoring and erasing never interleave.
 - **Lock** drops the secret, the private key and every opened note from
   memory. Every unlocked-side call on a locked vault throws `locked`.
 - **Recovery code** (`NoteRecoveryCode`): 160 random bits, shown as 32

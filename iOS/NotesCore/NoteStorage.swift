@@ -109,8 +109,9 @@ final class NoteStorage: @unchecked Sendable {
     /// The note's runs that have a directory, by order.
     func runs(of noteID: UUID) -> [NoteStoredRun] {
         let directory = noteDirectory(noteID)
-        let recording = lock.withLock { Set(recordingRuns.keys) }
-        return names(in: directory).compactMap { name -> NoteStoredRun? in
+        // Runs begin under the lock, so a run listed here is never one that records but shows as ended.
+        let (listed, recording) = lock.withLock { (names(in: directory), Set(recordingRuns.keys)) }
+        return listed.compactMap { name -> NoteStoredRun? in
             guard let (order, id) = run(fromDirectory: name) else { return nil }
             let runDirectory = directory.appendingPathComponent(name, isDirectory: true)
             var start: Data?
@@ -184,11 +185,19 @@ final class NoteStorage: @unchecked Sendable {
 
     // MARK: Runs that record
 
-    /// Makes a run's directory, in a new note's directory if `noteID` is nil, and counts the run as recording until
-    /// `endRun`. Fails with `noSuchNote` if the note's directory is gone, and with `noVault` during an erase.
-    func beginRun(of existingNoteID: UUID?) throws -> (noteID: UUID, runID: UUID, order: Int) {
+    /// Reads the public key, makes a run's directory, in a new note's directory if `noteID` is nil, and counts the
+    /// run as recording until `endRun`, all in one step that an erase cannot come between. Fails with `noVault`
+    /// without a public key or during an erase, `unavailable` if it cannot be read, and `noSuchNote` if the note's
+    /// directory is gone.
+    func beginRun(of existingNoteID: UUID?) throws -> (noteID: UUID, runID: UUID, order: Int, publicKey: Data) {
         try locked {
             guard !erasing else { throw NoteError.noVault }
+            let publicKey: Data
+            switch readPublicKey() {
+            case .absent: throw NoteError.noVault
+            case .unreadable: throw NoteError.unavailable
+            case .data(let data): publicKey = data
+            }
             let noteID = existingNoteID ?? UUID()
             let noteDirectory = noteDirectory(noteID)
             if existingNoteID == nil {
@@ -209,7 +218,7 @@ final class NoteStorage: @unchecked Sendable {
                 throw NoteError.storageFailed
             }
             recordingRuns[runID] = noteID
-            return (noteID, runID, order)
+            return (noteID, runID, order, publicKey)
         }
     }
 
