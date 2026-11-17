@@ -11,12 +11,14 @@ nonisolated public struct StatusMenuRow: Equatable, Sendable {
         case shortcutsHeading
         case shortcut(ShortcutKind)
         case copyLastDictation
+        case transcribeFile
         case dictionary
         case runLog
         case settings
         case updates
         case quit
-        /// The separator after the given group: 1 after the state, 2 after the shortcuts, 3 after Copy Last Dictation.
+        /// The separator after the given group: 1 after the state, 2 after the shortcuts, 3 after Copy Last Dictation
+        /// and Transcribe File.
         case separator(Int)
     }
 
@@ -75,9 +77,10 @@ nonisolated public struct StatusMenuRow: Equatable, Sendable {
         if case .command(let command) = kind { command } else { nil }
     }
 
-    /// The menu's rows from the top: the state and its remedy, the shortcuts, Copy Last Dictation, then the ways into
-    /// the app, the update row when there is one, and Quit, with separators between the four groups. No row carries a
-    /// dictation's text; Copy can be used when `hasLastDictation` is true.
+    /// The menu's rows from the top: the state and its remedy, the shortcuts, Copy Last Dictation and Transcribe File,
+    /// then the ways into the app, the update row when there is one, and Quit, with separators between the four
+    /// groups. No row carries a dictation's text, or a transcribed file's; Copy can be used when `hasLastDictation` is
+    /// true, and Transcribe File always.
     public static func rows(appName: String, status: AppStatus, shortcuts: [ShortcutKind: KeyCombo],
                             hasLastDictation: Bool, updates: UpdateRowState? = nil) -> [StatusMenuRow] {
         let line = status.line
@@ -105,6 +108,10 @@ nonisolated public struct StatusMenuRow: Equatable, Sendable {
         rows.append(StatusMenuRow(id: .copyLastDictation, kind: .command(.copyLastDictation),
                                   title: String(localized: "Copy Last Dictation"), image: .symbol("doc.on.doc"),
                                   isEnabled: hasLastDictation))
+        rows.append(StatusMenuRow(id: .transcribeFile, kind: .command(.transcribeFile),
+                                  title: String(localized: "Transcribe File…"), image: .symbol("waveform"),
+                                  help: String(localized: "Turns an audio or video file into text",
+                                               comment: "Menu: what Transcribe File does")))
 
         rows.append(StatusMenuRow(id: .separator(3), kind: .separator))
         rows.append(StatusMenuRow(id: .dictionary, kind: .command(.openDictionary),

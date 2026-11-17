@@ -29,8 +29,8 @@ public enum WindowChrome {
         }
     }
 
-    /// Gives `window` the chrome its screens are drawn for. Setup cannot be resized and can be dragged by its
-    /// background, as a setup assistant can.
+    /// Gives `window` the chrome its screens are drawn for. The main window can be resized down to its minimum; setup
+    /// cannot be resized and can be dragged by its background, as a setup assistant can.
     public static func apply(to window: NSWindow, kind: Kind) {
         window.styleMask.insert([.titled, .closable, .miniaturizable, .fullSizeContentView])
         window.titlebarAppearsTransparent = true

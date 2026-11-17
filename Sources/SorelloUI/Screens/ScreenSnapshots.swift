@@ -2,7 +2,8 @@ import DesignCore
 import SwiftUI
 
 /// The windows' scenes for the snapshot tool: every section of the main window with invented data and its empty and
-/// error states, and each setup step. The menu is the system's to draw; `StatusMenuSnapshots` lists its states as text. Main window sections are drawn tall enough to
+/// error states, the Transcribe screen in every state, and each setup step. The menu is the system's to draw;
+/// `StatusMenuSnapshots` lists its states as text. Main window sections are drawn tall enough to
 /// show all their content, and again at the window's minimum size, where nothing may be clipped. Clock-driven
 /// animations are held at `frozenPhase`, so every render of a scene is the same picture.
 public enum ScreenSnapshots {
@@ -11,7 +12,7 @@ public enum ScreenSnapshots {
 
     /// Every window scene, in the order the tool writes them.
     public static var scenes: [SnapshotScene] {
-        mainWindow + setup
+        mainWindow + transcribe + setup
     }
 
     // MARK: Main window
@@ -133,6 +134,66 @@ public enum ScreenSnapshots {
     }
 }
 
+extension ScreenSnapshots {
+    // MARK: Transcribe
+
+    /// Every state of the Transcribe screen in the main window at its default size, with a file held over the empty
+    /// screen, long and short files, short and very long text, a long file name and each failure; then the states with
+    /// the most in them again at the window's minimum size, where nothing may be clipped.
+    static var transcribe: [SnapshotScene] {
+        let file = "harbour-meeting.m4a"
+        let longName = "Quillon Bay harbour committee, second reading of the north gate proposal, full session.mov"
+        var scenes: [(String, TranscribeState, Bool)] = [
+            ("empty", .empty, false),
+            ("empty-file-over", .empty, true),
+            ("preparing", .preparing(file: file), false),
+            ("transcribing", .transcribing(file: file, read: 250, length: 3482), false),
+            ("transcribing-hours-early", .transcribing(file: file, read: 250, length: 4682), false),
+            ("transcribing-hours-late", .transcribing(file: file, read: 4410, length: 4682), false),
+            ("transcribing-starting", .transcribing(file: file, read: 0, length: 0), false),
+            ("done", .done(file: file, text: TranscribeModel.sampleShortText), false),
+            ("done-file-over", .done(file: file, text: TranscribeModel.sampleShortText), true),
+            ("done-long", .done(file: file, text: TranscribeModel.sampleLongText), false),
+            ("long-name", .transcribing(file: longName, read: 250, length: 3482), false),
+            ("done-long-name", .done(file: longName, text: TranscribeModel.sampleShortText), false),
+            ("nothing-heard", .nothingHeard(file: file), false),
+        ]
+        for reason in TranscribeFailure.allCases {
+            scenes.append(("failed-\(slug(reason))", .failed(file: file, reason: reason), false))
+        }
+        var all = scenes.map { name, state, fileOver in
+            SnapshotScene(name: "main-transcribe-\(name)", size: WindowChrome.Kind.main.defaultSize) {
+                MainWindowView(model: .sample(section: .transcribe, transcribe: state), transcribeFileOver: fileOver)
+                    .environment(\.frozenAnimationPhase, frozenPhase)
+            }
+        }
+        let crowded: [(String, TranscribeState)] = [
+            ("transcribing", .transcribing(file: longName, read: 4410, length: 4682)),
+            ("done", .done(file: longName, text: TranscribeModel.sampleLongText)),
+            ("failed-unreadable", .failed(file: longName, reason: .unreadable)),
+            ("failed-model-missing", .failed(file: longName, reason: .modelMissing)),
+        ]
+        all += crowded.map { name, state in
+            SnapshotScene(name: "main-minimum-transcribe-\(name)", size: WindowChrome.Kind.main.minimumSize) {
+                MainWindowView(model: .sample(section: .transcribe, transcribe: state), transcribeFileOver: false)
+                    .environment(\.frozenAnimationPhase, frozenPhase)
+            }
+        }
+        return all
+    }
+
+    private static func slug(_ reason: TranscribeFailure) -> String {
+        switch reason {
+        case .unreadable: "unreadable"
+        case .cannotOpen: "cannot-open"
+        case .modelMissing: "model-missing"
+        case .noModelForThisMac: "no-model"
+        case .modelUnavailable: "model-unavailable"
+        case .failed: "failed"
+        }
+    }
+}
+
 /// More dictation than setup's test field shows at once, so it scrolls.
 private let fullTestField = Array(repeating: "Pack my box with five dozen liquor jugs, then carry it up the hill.",
                                   count: 8).joined(separator: " ")
@@ -154,6 +215,7 @@ private extension MainSection {
         case .shortcuts: "shortcuts"
         case .dictionary: "dictionary"
         case .macros: "macros"
+        case .transcribe: "transcribe"
         case .runLog: "runlog"
         case .about: "about"
         }
@@ -163,26 +225,26 @@ private extension MainSection {
 private extension MainWindowModel {
     func generalReplaced(_ general: GeneralModel) -> MainWindowModel {
         MainWindowModel(section: section, general: general, shortcuts: shortcuts, dictionary: dictionary,
-                        macros: macros, runLog: runLog, about: about)
+                        macros: macros, transcribe: transcribe, runLog: runLog, about: about)
     }
 
     func shortcutsReplaced(_ shortcuts: ShortcutsModel) -> MainWindowModel {
         MainWindowModel(section: section, general: general, shortcuts: shortcuts, dictionary: dictionary,
-                        macros: macros, runLog: runLog, about: about)
+                        macros: macros, transcribe: transcribe, runLog: runLog, about: about)
     }
 
     func dictionaryReplaced(_ dictionary: DictionaryModel) -> MainWindowModel {
         MainWindowModel(section: section, general: general, shortcuts: shortcuts, dictionary: dictionary,
-                        macros: macros, runLog: runLog, about: about)
+                        macros: macros, transcribe: transcribe, runLog: runLog, about: about)
     }
 
     func macrosReplaced(_ macros: MacrosModel) -> MainWindowModel {
         MainWindowModel(section: section, general: general, shortcuts: shortcuts, dictionary: dictionary,
-                        macros: macros, runLog: runLog, about: about)
+                        macros: macros, transcribe: transcribe, runLog: runLog, about: about)
     }
 
     func runLogReplaced(_ runLog: RunLogModel) -> MainWindowModel {
         MainWindowModel(section: section, general: general, shortcuts: shortcuts, dictionary: dictionary,
-                        macros: macros, runLog: runLog, about: about)
+                        macros: macros, transcribe: transcribe, runLog: runLog, about: about)
     }
 }

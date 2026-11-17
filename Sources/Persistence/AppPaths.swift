@@ -15,13 +15,20 @@ public struct AppPaths: Sendable, Equatable {
     /// Resolves `Application Support/<bundleIdentifier>` for the current user. The identifier must be a single
     /// path component, so a malformed one cannot point the app's data somewhere else.
     public init(bundleIdentifier: String) throws(AppPathsError) {
+        guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        else { throw .noApplicationSupport }
+        try self.init(bundleIdentifier: bundleIdentifier, applicationSupport: support)
+    }
+
+    /// `<applicationSupport>/<bundleIdentifier>`, with the identifier checked as `init(bundleIdentifier:)` checks it.
+    /// For a process that finds an app's data from outside the app, as the `sorello` command does, with the user's
+    /// Application Support directory passed in so tests can point it elsewhere.
+    public init(bundleIdentifier: String, applicationSupport: URL) throws(AppPathsError) {
         guard !bundleIdentifier.isEmpty, bundleIdentifier != ".", bundleIdentifier != "..",
               !bundleIdentifier.contains("/"), !bundleIdentifier.contains("\0") else {
             throw .invalidBundleIdentifier
         }
-        guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-        else { throw .noApplicationSupport }
-        self.init(root: support.appendingPathComponent(bundleIdentifier, isDirectory: true))
+        self.init(root: applicationSupport.appendingPathComponent(bundleIdentifier, isDirectory: true))
     }
 
     /// The custom dictionary, owned by `DictionaryKit`.

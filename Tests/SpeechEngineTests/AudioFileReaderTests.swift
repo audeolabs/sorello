@@ -42,6 +42,35 @@ struct AudioFileReaderTests {
         }
     }
 
+    /// A compressed file whose audio ends a little before the length it states reads to its end. The fixture is a
+    /// 0.77 s tone in Ogg Vorbis from ffmpeg's own encoder: AVAudioFile's reads come up short of its length, and
+    /// reading on throws.
+    @Test func audioEndingBeforeItsStatedLengthReadsToItsEnd() throws {
+        let url = try #require(Bundle.module.url(forResource: "short-end", withExtension: "ogg", subdirectory: "Fixtures"))
+        let file = try AVAudioFile(forReading: url)
+        let whole = try #require(AVAudioPCMBuffer(pcmFormat: file.processingFormat,
+                                                  frameCapacity: AVAudioFrameCount(file.length)))
+        try file.read(into: whole)
+        #expect(AVAudioFramePosition(whole.frameLength) < file.length, "The fixture's audio ends before its length")
+
+        let source = try AudioFileSource(contentsOf: url)
+        var samples = 0
+        while let piece = try source.next() { samples += piece.count }
+        let heard = Int(Double(whole.frameLength) * 16000 / file.processingFormat.sampleRate)
+        #expect(abs(samples - heard) <= 1, "Every frame there is reaches the model")
+        #expect(try source.next() == nil, "And it stays ended")
+    }
+
+    /// A file cut off part way is damaged, though its reads end the same way, short and then throwing: half of a
+    /// 2 s MP3 of a tone is not read as a 1 s file.
+    @Test func aFileCutOffPartWayIsDamaged() throws {
+        let url = try #require(Bundle.module.url(forResource: "cut-in-half", withExtension: "mp3", subdirectory: "Fixtures"))
+        let source = try AudioFileSource(contentsOf: url)
+        #expect(throws: AudioFileFailure.unreadable) {
+            while try source.next() != nil {}
+        }
+    }
+
     /// A 16 kHz mono 16-bit file, as `say` writes, reads back as its samples divided by 32768, including the extremes.
     @Test func sixteenBitFilesReadExactly() throws {
         let directory = try scratch()

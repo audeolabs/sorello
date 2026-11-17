@@ -193,6 +193,28 @@ final class FakeApp: FrontApp {
         #expect(dock.take() == ["enter Dock", "activate", "front setup"])
     }
 
+    // MARK: Openings and closings
+
+    /// Each window's opening is heard once, as it opens, however it is opened: shown, or opened again from the Dock.
+    /// Brought forward while it is open, it is not heard again. Its closing is heard, however it closes, so the
+    /// Transcribe screen can begin and end with the main window.
+    @Test func eachWindowsOpeningAndClosingIsHeardOnce() throws {
+        var heard: [String] = []
+        presenter.onOpen = { heard.append("open \(Self.describe($0))") }
+        presenter.onClose = { heard.append("close \(Self.describe($0))") }
+        showMain()
+        presenter.showMain(main, section: .transcribe, title: "Sorello Test")
+        showSetup()
+        presenter.reopen(main: main, title: "Sorello Test")
+        #expect(heard == ["open main", "open setup"])
+
+        try clickClose(.main)
+        presenter.closeSetup()
+        #expect(heard == ["open main", "open setup", "close main", "close setup"])
+        presenter.reopen(main: main, title: "Sorello Test")
+        #expect(heard.last == "open main")
+    }
+
     // MARK: Who gets the front back
 
     /// The front goes back to the latest ordinary app that had it, not to Sorello itself, nor to an agent such as the

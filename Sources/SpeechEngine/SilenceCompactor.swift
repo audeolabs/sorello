@@ -61,15 +61,33 @@ struct SilenceCompactor {
         try Self.flush(&output, whole: true, emit: emit)
     }
 
-    mutating func finish(emit: ([Float]) throws -> Void) rethrows {
+    /// Emits what is held and starts again. Returns whether any speech was heard: without any, the input was emitted
+    /// unchanged.
+    @discardableResult
+    mutating func finish(emit: ([Float]) throws -> Void) rethrows -> Bool {
         var output: [Float] = []
         if !frame.isEmpty { process(frame[...], into: &output) }
+        let heard = heardSpeech
         // Trailing silence keeps its first margin. With no speech at all, the model hears the recording unchanged;
         // output is empty then, so the held recording moves rather than copies.
         if heardSpeech { output += held.prefix(margin) } else { swap(&output, &held) }
         self = Self(margin: margin, interiorPause: interiorPause)
         try Self.flush(&output, whole: true, emit: emit)
+        return heard
     }
+
+    /// Before any speech, once more than `limit` samples are held, keeps only the last `margin` of them: all that
+    /// speech starting would emit, so the output is the same if speech comes. Should none come, the input would have
+    /// been emitted unchanged, and what was dropped is gone: only a caller that can read its input again uses this,
+    /// and does so then. Returns whether anything was dropped. Does nothing once speech has been heard.
+    mutating func dropLeadingSilence(beyond limit: Int) -> Bool {
+        guard !heardSpeech, held.count > max(limit, margin) else { return false }
+        held.removeFirst(held.count - margin)
+        return true
+    }
+
+    /// Samples held back now, for tests of what the compactor keeps.
+    var heldSamples: Int { held.count + frame.count }
 
     /// Emits full pieces of `output`, and with `whole` the rest too, keeping order.
     private static func flush(_ output: inout [Float], whole: Bool, emit: ([Float]) throws -> Void) rethrows {

@@ -1,8 +1,10 @@
 import DictationCore
+import FileTranscription
 import Foundation
 import MacPlatform
 import Persistence
 import SorelloUI
+import TextRules
 
 /// Every window's model, connected to the stores and the session (ARCHITECTURE.md, section 8, "Windows"). SorelloUI
 /// draws plain values and reports actions through closures; this fills the values from the app's state, keeps them
@@ -12,6 +14,8 @@ final class WindowModels {
     let menu: StatusMenuModel
     let main: MainWindowModel
     let setup: SetupModel
+    /// The Transcribe screen's model, which runs its transcriptions.
+    let transcribe: TranscribeBinding
 
     let app: AppComposition
     let player = RunLogPlayer()
@@ -27,12 +31,23 @@ final class WindowModels {
                                modelSize: app.download?.size ?? 0, accessibilityTrusted: app.live.accessibilityTrusted,
                                shortcuts: app.platform.shortcuts.status)
         menu = StatusMenuModel(appName: app.info.name, status: status, shortcuts: [:], hasLastDictation: false)
+        let speech = app.speech
+        transcribe = TranscribeBinding(
+            appName: app.info.name, transcriber: app.files,
+            rules: { TextRulesSnapshot(settings: app.settings, macros: app.macros.macros).options },
+            ports: TranscribePorts(show: { app.navigation.openMain(.transcribe) },
+                                   chooseFile: { app.navigation.chooseAudioFile($0) },
+                                   save: { app.navigation.saveText($0, $1) },
+                                   copy: { app.platform.system.copy($0) },
+                                   openGeneral: { app.navigation.openMain(.general) },
+                                   prepareModel: { await speech.prepare() }))
         main = MainWindowModel(
             general: GeneralModel(modelName: "", status: status, microphones: [], selectedMicrophoneID: nil,
                                   defaultMicrophoneName: nil, toggles: [:]),
             shortcuts: ShortcutsModel(recorders: [:], doubleTap: .handsFree, promptTag: ""),
             dictionary: DictionaryModel(words: [], ignored: [], knownApps: []),
             macros: MacrosModel(macros: []),
+            transcribe: transcribe.model,
             runLog: RunLogModel(items: []),
             about: AboutModel(appName: app.info.name, version: app.info.version, build: app.info.build,
                               copyright: app.info.copyright, modelNotice: Self.modelNotice(app.info),
@@ -51,8 +66,19 @@ final class WindowModels {
         player.onStop = { [weak self] in self?.app.live.playingID = nil }
     }
 
-    /// Stops keeping the models current, as the app quits.
+    /// A window has opened. The main window's opening lets the Transcribe screen take files.
+    func windowOpened(_ window: AppWindow) {
+        if window == .main { transcribe.windowOpened() }
+    }
+
+    /// A window has closed. The main window's closing stops what the Transcribe screen is doing and forgets its text.
+    func windowClosed(_ window: AppWindow) {
+        if window == .main { transcribe.windowClosed() }
+    }
+
+    /// Stops keeping the models current, as the app quits, and any file being transcribed.
     func stop() {
+        transcribe.windowClosed()
         for loop in following { loop.stop() }
         following = []
         player.stop()
@@ -77,7 +103,7 @@ final class WindowModels {
     // MARK: - Menu
 
     private func connectMenu() {
-        let menu = self.menu, app = self.app
+        let menu = self.menu, app = self.app, transcribe = self.transcribe
         follow { [unowned self] in
             menu.status = status
             menu.shortcuts = KeyCombo.all(app.settings.shortcutBindings, formatter: formatter)
@@ -86,6 +112,7 @@ final class WindowModels {
         }
         menu.actions = StatusMenuActions(
             copyLastDictation: { if let text = app.runtime.state.lastText { app.platform.system.copy(text) } },
+            transcribeFile: { transcribe.open() },
             retryModel: { app.runtime.retryPreparation() },
             openGeneral: { app.navigation.openMain(.general) },
             openShortcuts: { app.navigation.openMain(.shortcuts) },
