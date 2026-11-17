@@ -73,10 +73,18 @@ final class NoteStorage: @unchecked Sendable {
                   protection: Self.lockedAwayProtection)
     }
 
-    /// Whether the directory holds anything of a vault: its public key, its recovery wrap or a note.
+    /// Whether the directory holds anything of a vault: its public key, its recovery wrap or a note. A directory
+    /// that is there but cannot be listed may hold one, so it counts: no vault is made over notes that are only out
+    /// of reach.
     var holdsVault: Bool {
-        names(in: directory).contains { name in
-            name == NoteStoredNames.publicKey || name == NoteStoredNames.recoveryWrap || noteID(fromDirectory: name) != nil
+        do {
+            return try FileManager.default.contentsOfDirectory(atPath: directory.path).contains { name in
+                name == NoteStoredNames.publicKey || name == NoteStoredNames.recoveryWrap || noteID(fromDirectory: name) != nil
+            }
+        } catch CocoaError.fileReadNoSuchFile, CocoaError.fileNoSuchFile {
+            return false
+        } catch {
+            return true
         }
     }
 

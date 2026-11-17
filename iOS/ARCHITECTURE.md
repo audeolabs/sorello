@@ -1196,7 +1196,9 @@ Notes).
   - `secretMissing`: the notes directory holds a vault (its public key, a
     note or a recovery code) but the key store has no secret, as after a
     restore onto another iPhone or once the passcode was turned off. The
-    recovery code or erasing are the ways out.
+    recovery code or erasing are the ways out. A notes directory that is
+    there but cannot be listed counts as holding a vault, so no vault is
+    made over notes that are only out of reach.
 - **Making one** needs a device passcode (`canMakeVault`); without one a
   vault cannot be made. It stores a new secret, writes the public key and
   leaves the vault unlocked with no notes.

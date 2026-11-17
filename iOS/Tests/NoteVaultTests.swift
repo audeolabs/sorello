@@ -15,6 +15,7 @@ enum NoteVaultTests {
             ("aLockWhileTheUserAuthenticatesWins", testALockWhileTheUserAuthenticatesWins),
             ("unlockRewritesAWrongPublicKey", testUnlockRewritesAWrongPublicKey),
             ("notesWithoutTheSecretAreSecretMissing", testNotesWithoutTheSecretAreSecretMissing),
+            ("notesOutOfReachAreNotTakenForNoVault", testNotesOutOfReachAreNotTakenForNoVault),
             ("recoveryCodeRestoresTheSecret", testRecoveryCodeRestoresTheSecret),
             ("aNewRecoveryCodeReplacesTheOld", testANewRecoveryCodeReplacesTheOld),
             ("recoveryCodeNeedsTheVaultUnlocked", testRecoveryCodeNeedsTheVaultUnlocked),
@@ -147,6 +148,22 @@ enum NoteVaultTests {
         for (name, data) in fixture.files() {
             TestSupport.expect(!noteBytes(data, contain: "invented reminder"), "\(name) holds the note's text")
         }
+    }
+
+    /// A notes directory that is there but cannot be listed may hold a vault: with no secret it is `secretMissing`,
+    /// never `noVault`, so no new vault is made over notes that are only out of reach.
+    private static func testNotesOutOfReachAreNotTakenForNoVault() {
+        let fixture = NoteFixture()
+        try! fixture.vault.makeVault()
+        fixture.record(["An invented reminder"])
+        fixture.keyStore.secret = nil
+        fixture.relaunch()
+        try! FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: fixture.directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fixture.directory.path) }
+        TestSupport.expectEqual(fixture.vault.state, .secretMissing)
+        TestSupport.expect(!fixture.vault.canMakeVault, "a vault can be made over notes that cannot be listed")
+        TestSupport.expectEqual(Result { try fixture.vault.makeVault() }.noteError, .vaultExists)
+        TestSupport.expect(fixture.keyStore.secret == nil, "a new secret was stored over notes that cannot be listed")
     }
 
     private static func testRecoveryCodeRestoresTheSecret() {
