@@ -91,6 +91,9 @@ enum NotesLibraryTests {
             ("aLostSecretClosesTheOpenNote", isolated(testALostSecretClosesTheOpenNote)),
             ("theListPutsPinnedNotesFirst", isolated(testTheListPutsPinnedNotesFirst)),
             ("aRowIsDeletedOrPinnedButNotWhileItRecords", isolated(testARowIsDeletedOrPinnedButNotWhileItRecords)),
+            ("enteringNotesAsksForTheUnlockOncePerEntry", isolated(testEnteringNotesAsksForTheUnlockOncePerEntry)),
+            ("aCancelledUnlockOnEntryIsNotAskedAgain", isolated(testACancelledUnlockOnEntryIsNotAskedAgain)),
+            ("enteringWithoutALockedVaultAsksForNothing", isolated(testEnteringWithoutALockedVaultAsksForNothing)),
         ]
     }
 
@@ -128,6 +131,12 @@ enum NotesLibraryTests {
 
         func unlock() {
             library.unlock()
+            TestSupport.expect(TestSupport.waitUntil(timeout: 2) { !library.isUnlocking }, "the unlock never ended")
+        }
+
+        /// The Notes screen shows itself for `entry`, and any unlock it asked for ends.
+        func appear(_ entry: UUID) {
+            library.appeared(entry: entry)
             TestSupport.expect(TestSupport.waitUntil(timeout: 2) { !library.isUnlocking }, "the unlock never ended")
         }
 
@@ -660,6 +669,88 @@ enum NotesLibraryTests {
         h.library.delete(recording)
         TestSupport.expectEqual(h.library.hits.map(\.note.id), [kept])
         TestSupport.expectEqual(h.library.message, nil)
+    }
+
+    // MARK: Unlock on entry
+
+    @MainActor
+    private static func testEnteringNotesAsksForTheUnlockOncePerEntry() {
+        let h = Harness()
+        let id = h.notes.record(["Invented note behind the lock"])
+        let entry = UUID()
+        h.appear(entry)
+        TestSupport.expectEqual(h.notes.keyStore.prompts.count, 1)
+        TestSupport.expectEqual(h.library.screen, .unlocked)
+        // Back from a note, or from Notes settings after Lock now: the same entry asks for nothing.
+        h.library.open(id)
+        h.library.close()
+        h.appear(entry)
+        h.library.lock()
+        h.appear(entry)
+        TestSupport.expectEqual(h.library.screen, .locked)
+        // The app back from the background with Notes showing: the same entry again.
+        h.appear(entry)
+        TestSupport.expectEqual(h.library.screen, .locked)
+        TestSupport.expectEqual(h.notes.keyStore.prompts.count, 1)
+        // Unlock is the way in meanwhile.
+        h.unlock()
+        TestSupport.expectEqual(h.library.screen, .unlocked)
+        TestSupport.expectEqual(h.notes.keyStore.prompts.count, 2)
+        // Entered from Home again: it asks once more.
+        h.library.lock()
+        let next = UUID()
+        h.appear(next)
+        TestSupport.expectEqual(h.library.screen, .unlocked)
+        TestSupport.expectEqual(h.notes.keyStore.prompts.count, 3)
+        h.library.lock()
+        h.appear(next)
+        TestSupport.expectEqual(h.notes.keyStore.prompts.count, 3)
+        // An entry first shown unlocked asks for nothing later either.
+        h.unlock()
+        let unlockedEntry = UUID()
+        h.appear(unlockedEntry)
+        h.library.lock()
+        h.appear(unlockedEntry)
+        TestSupport.expectEqual(h.library.screen, .locked)
+        TestSupport.expectEqual(h.notes.keyStore.prompts.count, 4)
+    }
+
+    @MainActor
+    private static func testACancelledUnlockOnEntryIsNotAskedAgain() {
+        let h = Harness()
+        h.notes.keyStore.userCancels = true
+        let entry = UUID()
+        h.appear(entry)
+        TestSupport.expectEqual(h.library.screen, .locked)
+        TestSupport.expectEqual(h.library.message, nil)
+        h.appear(entry)
+        TestSupport.expectEqual(h.notes.keyStore.prompts.count, 1)
+        TestSupport.expectEqual(h.library.screen, .locked)
+        h.notes.keyStore.userCancels = false
+        h.unlock()
+        TestSupport.expectEqual(h.library.screen, .unlocked)
+    }
+
+    @MainActor
+    private static func testEnteringWithoutALockedVaultAsksForNothing() {
+        let first = Harness(vault: false)
+        first.appear(UUID())
+        TestSupport.expectEqual(first.library.screen, .firstUse)
+        let noPasscode = Harness(vault: false)
+        noPasscode.notes.keyStore.deviceHasPasscode = false
+        noPasscode.relaunch()
+        noPasscode.appear(UUID())
+        TestSupport.expectEqual(noPasscode.library.screen, .needsPasscode)
+        let missing = Harness()
+        missing.notes.record(["Invented note without its key"])
+        missing.notes.keyStore.secret = nil
+        missing.relaunch()
+        missing.appear(UUID())
+        TestSupport.expectEqual(missing.library.screen, .secretMissing)
+        for h in [first, noPasscode, missing] {
+            TestSupport.expectEqual(h.notes.keyStore.prompts, [])
+            TestSupport.expectEqual(h.library.message, nil)
+        }
     }
 
     private static func live(_ before: String, _ provisional: String, _ after: String) -> NoteLiveText {

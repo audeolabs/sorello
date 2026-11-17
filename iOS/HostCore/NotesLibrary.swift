@@ -62,6 +62,8 @@ final class NotesLibrary {
     private var locks = 0
     private var draftNeedsSaving = false
     private var saveScheduled = false
+    /// The entry of the Notes screen that showed last, so only an entry's first showing asks for the unlock.
+    private var lastEntry: UUID?
 
     /// `after` runs work on the main actor once a delay has passed.
     init(vault: NoteVault, host: NoteRecordingHost, format: @escaping NoteRunFormatter,
@@ -136,6 +138,14 @@ final class NotesLibrary {
             fail(failure)
         }
         refresh()
+    }
+
+    /// The Notes screen shows itself. `entry` is new each time it is entered from Home and the same at every showing
+    /// until the user goes back there; an entry's first showing asks for the unlock when the vault is locked.
+    func appeared(entry: UUID) {
+        guard entry != lastEntry else { return }
+        lastEntry = entry
+        unlock()
     }
 
     /// Saves the draft, locks the vault and drops every note's text. A recording goes on.

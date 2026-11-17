@@ -1399,6 +1399,16 @@ Notes).
     of a row, is refused while the note records or is the core's note, as is
     a pin ([Library and search](#library-and-search-notevault-notesearch),
     Pin); deleting the open note closes it.
+  - **Unlock on entry.** Each time the Notes screen is entered from Home it
+    shows itself with a new entry token, and with the same token every time
+    it shows again until the user goes back to Home (back from a note or
+    from Notes settings, after Lock now, after a cover such as the bounce
+    screen, or with the app back from the background).
+    `appeared(entry:)` asks for the unlock, as Unlock does, only for an
+    entry's first showing and only with the vault locked; any later showing
+    of that entry asks for nothing, whatever the state, so a cancelled or
+    failed prompt, or a lock, leaves the Unlock pill as the way in. No vault,
+    no passcode and a missing secret are left as they are.
   - Making a vault leaves the recovery code offered until it is made or
     skipped, in memory only. A code made is shown until the user is done
     with it.
@@ -1503,7 +1513,8 @@ Notes).
     vault, a few words on what it is and Make vault, or, without a device
     passcode, that one is needed, and nothing to make; then the offer of a
     recovery code, which Not now skips. Locked, the Unlock pill and Record,
-    and no note text, title, count or date. Unlocked, a search field and the
+    and no note text, title, count or date; entering from Home asks for the
+    unlock by itself (`NotesLibrary`, Unlock on entry). Unlocked, a search field and the
     list, each row the start of the note and its date, or while searching a
     snippet around the first match with the matches highlighted
     (`NoteSnippet`), with a small pin glyph on a pinned note's row, a
@@ -4223,7 +4234,9 @@ merge (AGENTS.md).
   restoring with it on another iPhone or after the passcode was turned off;
   a note's live text and its provisional tail; Stop, Resume at the cursor,
   search, Delete and Erase all notes; swiping a row to pin, unpin and delete
-  it, with VoiceOver too; the vault locking in the background,
+  it, with VoiceOver too; Face ID asked for at once on entering Notes from
+  Home, and not back from a note, after Lock now or back from the
+  background; the vault locking in the background,
   at device lock and on Lock now, with nothing of a note left on screen;
   and the owner's experiment: record a note, lock the iPhone, speak for a
   minute, unlock, and read Diagnostics → Last voice note (pieces while

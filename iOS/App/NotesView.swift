@@ -44,6 +44,8 @@ struct NotesView: View {
     @ObservedObject var model: NotesModel
     @EnvironmentObject private var host: HostSessionController
     @State private var showsSettings = false
+    /// New each time Home pushes this screen, kept while it stays in the stack (`NotesLibrary.appeared`).
+    @State private var entry = UUID()
 
     var body: some View {
         let library = model.library
@@ -85,6 +87,7 @@ struct NotesView: View {
         }
         .notesAlert(model)
         .tint(.white)
+        .onAppear { library.appeared(entry: entry) }
     }
 
     /// The screen's own actions, then Record or Stop, pinned under what scrolls.
