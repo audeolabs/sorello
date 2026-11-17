@@ -45,6 +45,9 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
     /// What `NoteVault` turns a run's pieces into (ARCHITECTURE.md, "Voice notes", Formatting); nil when the build is
     /// misconfigured.
     let noteRunFormatter: NoteRunFormatter?
+    /// The Notes screens' state, over the vault (ARCHITECTURE.md, "Host app", `NotesLibrary`); nil when the build is
+    /// misconfigured or the notes directory is out of reach.
+    let notes: NotesModel?
     private let store: SharedDictationStore?
     /// The session's Live Activity (ARCHITECTURE.md, "Live Activity").
     private let activity = SessionActivityDriver(backend: LiveActivityBackend())
@@ -65,6 +68,7 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
         noteRunFormatter = sharedSettings.map(NoteRunText.formatter(settings:))
         guard let configuration, let store, let sharedSettings else {
             core = nil
+            notes = nil
             return
         }
         let buffer = DictationSampleBuffer()
@@ -79,11 +83,18 @@ final class HostSessionController: ObservableObject, SessionControlHandling {
         // A requested synthetic input that cannot be used never falls back to the microphone.
         let capture = synthetic.capture { MicrophoneCapture(buffer: buffer, deliver: deliver) }
         // Notes live in the app's own container (ARCHITECTURE.md, "Storage"); without it every note start fails.
-        let noteRecorder = (try? NoteStorage.appDirectory()).map { NoteRecorder(storage: NoteStorage(directory: $0)) }
+        // One storage for the recorder and the vault: it knows which runs record in this process.
+        let noteStorage = (try? NoteStorage.appDirectory()).map { NoteStorage(directory: $0) }
+        let noteRecorder = noteStorage.map { NoteRecorder(storage: $0) }
         let core = HostSessionCore(store: store, settings: sharedSettings, buffer: buffer, capture: capture,
                                    transcriber: transcriber.engine, notifier: DarwinNotifier(configuration: configuration),
                                    environment: Self.environment, noteRecorder: noteRecorder)
         self.core = core
+        let format = NoteRunText.formatter(settings: sharedSettings)
+        notes = noteStorage.map { storage in
+            let vault = NoteVault(storage: storage, keyStore: KeychainNoteKeyStore(), formatRun: format)
+            return NotesModel(library: NotesLibrary(vault: vault, host: core, format: format))
+        }
         relay.core = core
         if let microphone = capture as? MicrophoneCapture {
             microphone.onInterruption = { [weak core] in core?.captureInterrupted() }
