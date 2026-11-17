@@ -78,6 +78,11 @@ struct SorelloIOSTests {
             ("BundleModelLoader", BundleModelLoaderTests.tests),
             ("HostSessionLock", HostSessionLockTests.tests),
             ("HostSessionLockLatch", HostSessionLockLatchTests.tests),
+            ("NoteSealing", NoteSealingTests.tests),
+            ("NoteRecoveryCode", NoteRecoveryCodeTests.tests),
+            ("NoteVault", NoteVaultTests.tests),
+            ("NoteRun", NoteRunTests.tests),
+            ("NoteSearch", NoteSearchTests.tests),
         ]
         var count = 0
         for (suite, tests) in suites {

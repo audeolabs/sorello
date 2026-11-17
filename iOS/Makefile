@@ -141,13 +141,16 @@ APP_FONTS ?= ../Resources/Fonts/Urbanist-Medium.ttf ../Resources/Fonts/Urbanist-
 SHARED_SOURCES ?= $(call swift_sources,Shared)
 HOSTCORE_SOURCES ?= $(call swift_sources,HostCore)
 KEYBOARDCORE_SOURCES ?= $(call swift_sources,KeyboardCore)
+# Notes (ARCHITECTURE.md, "Notes"): Foundation and CryptoKit only, compiled into the app and the host tests and
+# never into the keyboard or the Live Activity (scripts/check-binaries.sh).
+NOTESCORE_SOURCES ?= $(call swift_sources,NotesCore)
 TEST_SOURCES ?= $(call swift_sources,Tests)
 # The swipe engine is Foundation and Core ML only; the host tests drive it with a fake encoder. The
 # autocorrect loader is Foundation only; the host tests load invented bundles with it. The keyboard's
 # messages and model loader are Foundation only.
 KEYBOARD_TEST_SOURCES ?= Keyboard/SwipeEngine.swift Keyboard/AutocorrectLoader.swift Keyboard/KeyboardMessages.swift \
 	Keyboard/BundleModelLoader.swift
-APP_SOURCES = $(APP_SWIFT_SOURCES) $(SHARED_SOURCES) $(HOSTCORE_SOURCES) \
+APP_SOURCES = $(APP_SWIFT_SOURCES) $(SHARED_SOURCES) $(HOSTCORE_SOURCES) $(NOTESCORE_SOURCES) \
 	$(ACTIVITYCORE_SOURCES) $(ACTIVITY_ATTRIBUTES_SOURCES) $(SESSION_CONTROL_INTENT_SOURCES) $(APP_KEYBOARDCORE_SOURCES)
 KEYBOARD_SOURCES = $(KEYBOARD_SWIFT_SOURCES) $(SHARED_SOURCES) $(KEYBOARDCORE_SOURCES)
 ACTIVITY_SOURCES = $(ACTIVITY_SWIFT_SOURCES) $(ACTIVITYCORE_SOURCES) $(ACTIVITY_KEYBOARDCORE_SOURCES)
@@ -585,7 +588,8 @@ typecheck: $(SIMULATOR_PACKAGE)
 	echo "Type-checking the Live Activity"; \
 	xcrun --sdk iphonesimulator swiftc $$flags $(ACTIVITY_SWIFT_FLAGS) $(ACTIVITY_SOURCES)
 
-# Shared, HostCore, ActivityCore and KeyboardCore are Foundation-only, and so are the shared modules, so their tests run
+# Shared, HostCore, NotesCore, ActivityCore and KeyboardCore are Foundation-only (NotesCore and KeyboardCore with
+# CryptoKit), and so are the shared modules, so their tests run
 # on the Mac, against the Mac's build of SorelloSpeech.
 test: $(HOST_PACKAGE)
 ifeq ($(strip $(TEST_SOURCES)),)
@@ -595,7 +599,7 @@ else
 	xcrun --sdk macosx swiftc -swift-version 5 -parse-as-library -warnings-as-errors $(SWIFT_PARALLEL_FLAGS) \
 		-sdk "$$(xcrun --sdk macosx --show-sdk-path)" -target $(HOST_TARGET) -module-name SorelloiOSTests \
 		$(call package_library,$(HOST_PACKAGE),SorelloSpeech) \
-		-o "$(HOST_BUILD_DIR)/SorelloiOSTests" $(SHARED_SOURCES) $(HOSTCORE_SOURCES) $(ACTIVITYCORE_SOURCES) $(KEYBOARDCORE_SOURCES) $(KEYBOARD_TEST_SOURCES) $(TEST_SOURCES)
+		-o "$(HOST_BUILD_DIR)/SorelloiOSTests" $(SHARED_SOURCES) $(HOSTCORE_SOURCES) $(NOTESCORE_SOURCES) $(ACTIVITYCORE_SOURCES) $(KEYBOARDCORE_SOURCES) $(KEYBOARD_TEST_SOURCES) $(TEST_SOURCES)
 	@"$(HOST_BUILD_DIR)/SorelloiOSTests"
 endif
 

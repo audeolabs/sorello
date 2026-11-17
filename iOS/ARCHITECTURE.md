@@ -1024,8 +1024,9 @@ the Notes screens are not built yet; they use the interfaces below.
   the reader takes them from where the record lies in the notes directory,
   so a record moved to another note, run or sequence, or read as another
   kind, does not open.
-- Sealing needs only the public key. Opening needs the private key; a record
-  that does not open is skipped as if absent.
+- Sealing needs only the public key. Opening needs the private key. A start
+  or a segment that does not open is skipped as if absent; a body that does
+  not open leaves its note unreadable ([Runs](#runs-noterecorder-notemerge)).
 
 ### Storage (NoteStorage)
 
@@ -1092,7 +1093,8 @@ the Notes screens are not built yet; they use the interfaces below.
   matches "Straße"). A word starts at a character after whitespace or at
   the text's start, and at a letter or digit after a character that is
   neither. Results are newest first and carry the matched ranges of the
-  text, sorted and joined where they overlap, for a highlighted snippet. A
+  text, sorted and joined where they overlap or touch, for a highlighted
+  snippet. A
   query with no terms matches every note with no ranges.
 
 ## Host app (App/)
