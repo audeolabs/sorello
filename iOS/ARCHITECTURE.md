@@ -1151,8 +1151,9 @@ host tests only: the keyboard and the Live Activity hold nothing of it
 ([Build and targets](#build-and-targets-iosmakefile)). Its one port,
 `NoteKeyStore`, is the Keychain in the app and a fake in the tests. Every type
 in it is named `Note…`, which the binary checks rely on. The host records a
-note through these interfaces ([Voice notes](#voice-notes)); the Notes screens
-are not built yet.
+note through these interfaces ([Voice notes](#voice-notes)); the app's Notes
+screens read, search and edit notes through them ([Host app](#host-app-app),
+Notes).
 
 ### Vault (NoteVault)
 
@@ -1308,8 +1309,10 @@ are not built yet.
 
 - **`HostSessionController`** (`@MainActor`, `ObservableObject`) is the UIKit
   adapter around `HostSessionCore`. It builds the store, settings, capture,
-  transcriber and the voice notes' `NoteRecorder` over the notes directory
-  (none when that directory is out of reach); runs the 0.1 s timer; observes
+  transcriber, and the voice notes' `NoteRecorder` and the Notes screens'
+  `NoteVault` (with `KeychainNoteKeyStore`) over one `NoteStorage`, which
+  knows which runs record in this process (neither when the notes directory
+  is out of reach); runs the 0.1 s timer; observes
   `.intent`; forwards URL opens, `willEnterForeground`, `didBecomeActive`,
   `didEnterBackground`, the protected-data notifications and memory warnings;
   turns on UIKit's battery monitoring at launch and gives the core the power
@@ -1320,6 +1323,38 @@ are not built yet.
   the voice note's included, into SwiftUI. It decides when the bounce screen shows and plays the
   bounce screen's recording haptic, and it drives the session's Live Activity
   ([Live Activity](#live-activity-activity-activitycore)).
+- **`NotesLibrary`** (HostCore, `@MainActor`, tested) holds what the Notes
+  screens show, between the vault and the session core, which it reaches
+  through `NoteRecordingHost` (`HostSessionCore`'s Record, Stop, its note's
+  ID and its two note observers).
+  - It holds note text only while the vault is unlocked: the listing, the
+    open note, the draft being edited and the provisional tail of the note
+    being recorded. A lock (the app entering the background, the iPhone
+    locking, Lock now) saves the draft, locks the vault and drops all of
+    them, the search query and a recovery code on screen with them, and
+    keeps only which note is open, so an unlock shows it again with what was
+    recorded meanwhile. A recording goes on through all of it. The unlock
+    runs off the main thread; a lock meanwhile wins.
+  - It takes one `searchIndex()` per listing: at unlock and when the notes
+    change (a note starts, a piece is written, a note ends, an edit is
+    saved, a note is deleted), never per keystroke. The query searches that
+    index at every keystroke; with no query it lists every note, newest
+    first.
+  - The open note records while it is the core's note. Only then, with the
+    vault unlocked, is the core's `onNoteProvisional` set, and the tail kept
+    until the next report; each piece written re-reads the note from the
+    vault. When a note ends with the vault unlocked, `mergePendingRuns()`
+    runs at once. An open note that is gone (deleted, erased, or a new one
+    that ended without words) closes.
+  - The draft is saved (`replaceText`) at most `draftSaveDelay` (0.75 s)
+    after an edit, and at once on leaving the note, before Resume and before
+    a lock. Resume saves it, then starts a run at the cursor's UTF-16 offset
+    (the end of a selection, and the note's end with no cursor). Record
+    starts a new note and, unlocked, opens it. Delete is refused while the
+    note records.
+  - Making a vault leaves the recovery code offered until it is made or
+    skipped, in memory only. A code made is shown until the user is done
+    with it.
 - **`MicrophoneCapture`** implements `HostCapture` with one `AVAudioEngine`
   input tap for the whole session ([Capture](#capture)).
   - It requests a 0.2 s (else 0.1 s) I/O buffer, a 16 kHz sample rate, mono
@@ -1376,8 +1411,8 @@ are not built yet.
     words get the full width, and a pill's glyph gives way where its words
     would not fit on one line), the speech model
     with a state dot or a check once ready and its preparation progress
-    inside the row, links to keyboard setup and
-    Dictionary, session length, the dictation settings, "Use iPhone
+    inside the row, links to keyboard setup,
+    Dictionary and Notes, session length, the dictation settings, "Use iPhone
     microphone", a "Keyboard" section with "Autocorrect", "Soft key edges"
     and "Typing haptics" (a lock marks those that need Full Access, at the
     end of the title's text so it wraps with the words, and in the section's
@@ -1400,7 +1435,7 @@ are not built yet.
     opaque from its first frame. While the app is in the background, its
     empty surface with the mark where the island sits covers the app
     (`BackgroundCover`), so the snapshot iOS zooms after the keyboard's Start
-    (and the app switcher's card) never shows Home; only the background
+    (and the app switcher's card) never shows Home or Notes; only the background
     raises it, not the inactive state of iOS's own prompts. A sheet left
     open (Add word, Edit word, Find strength) shows the same surface, without
     the mark, and closes at once, without animation, when the screen is
@@ -1411,12 +1446,38 @@ are not built yet.
     arrives; it scrolls when it does not fit (large text on a small iPhone)
     while the buttons and the cue stay on screen. It stays up after the swipe back only while its dictation is in
     progress, so a later return to Sorello shows Home, not an old outcome.
-    It is not shown for a Start tapped in the app's own field (the
-    Dictionary editor), where it would close the editor and lose its draft;
+    It is not shown for a Start tapped in the app's own fields (the
+    Dictionary editor, a note), where it would cover the editor;
     a Start in another app shows it even with the editor left on screen:
     a request issued before the app was last active came from another
     app, and one whose issue time is unknown shows it
     (`HostSessionPolicy.showsBounce`).
+  - Notes (`NotesScreen`, `NoteScreenMode`, `NoteRecordButton`): with no
+    vault, a few words on what it is and Make vault, or, without a device
+    passcode, that one is needed, and nothing to make; then the offer of a
+    recovery code, which Not now skips. Locked, the Unlock pill and Record,
+    and no note text, title, count or date. Unlocked, a search field and the
+    list, each row the start of the note and its date, or while searching a
+    snippet around the first match with the matches highlighted
+    (`NoteSnippet`), a sentence when some notes could not be opened, and a
+    link to Notes settings. With notes but no secret (`secretMissing`),
+    entering the recovery code, or Erase all notes. Wherever a note is in
+    progress, however it started, Record is Stop, and Saving while it saves.
+    Recording never needs an unlock: Record on a locked vault starts a new
+    note.
+  - The note screen is in one of two modes. Recording: the text read-only and
+    live, the vault's text with the provisional tail dimmed at the run's
+    place (`NoteLiveText`), under a line that says it records, with the
+    coral dot and the time, and Stop; while the model prepares that line
+    says nothing is recorded yet, and while the note saves, Saving, and Stop
+    is gone.
+    Editing: an ordinary text field, with Resume and Delete (after a
+    confirmation). Locked, it shows Unlock, and Stop while it records.
+    Notes settings: make or replace the recovery code (shown once, with the
+    sentence that it is the only way back on a new iPhone and that Sorello
+    cannot recover it), Lock now, and Erase all notes after a confirmation.
+    Every refusal of the vault or of a start, and every way a note ends but
+    the user's stop, has a short content-free sentence.
   - Motion is quick (short springs); with Reduce Motion every change is a
     cross-fade or instant, and nothing loops.
   - Diagnostics: the trackpad sensitivity and acceleration sliders, the
@@ -3769,8 +3830,9 @@ app reads only the count. The models are fixed.
    history: their text is on disk only sealed, in the app's own container,
    and opens only with the vault secret, which lives in a this-device-only
    Keychain item that only the user's authentication or the recovery code
-   releases. Locking drops every opened note from memory
-   ([Notes](#notes-notescore)). `HostSessionCore` keeps no note text: each
+   releases. Locking drops every opened note from memory, the Notes
+   screens' text and the provisional tail included
+   ([Notes](#notes-notescore); [Host app](#host-app-app), `NotesLibrary`). `HostSessionCore` keeps no note text: each
    settled piece is sealed the moment it is reported, and the provisional tail
    goes only to the app's observer. The engine holds a recording note's words
    in memory until its stream ends, as it holds any stream's
@@ -3935,6 +3997,15 @@ merge (AGENTS.md).
   Notes, Messages, Safari and a WebKit field with a lagging proxy.
 - **App:** privacy policy link; Report a bug draft and its no-email-app
   fallback; dictionary edits and "Find strength".
+- **Voice notes:** making the vault (Face ID or the passcode as the
+  fallback; without a passcode, nothing is made); the recovery code, and
+  restoring with it on another iPhone or after the passcode was turned off;
+  a note's live text and its provisional tail; Stop, Resume at the cursor,
+  search, Delete and Erase all notes; the vault locking in the background,
+  at device lock and on Lock now, with nothing of a note left on screen;
+  and the owner's experiment: record a note, lock the iPhone, speak for a
+  minute, unlock, and read Diagnostics → Last voice note (pieces while
+  locked), then the note.
 
 ### Reference measurements
 
