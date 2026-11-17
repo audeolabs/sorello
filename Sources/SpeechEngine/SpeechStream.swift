@@ -12,6 +12,8 @@ final class SpeechStream: SpeechStreaming {
     /// The dictionary as it was when the dictation started.
     let snapshot: DictionarySnapshot
     let retainsAudio: Bool
+    /// Present only when the owner asked for progress (ARCHITECTURE.md, section 5, "Progress").
+    let progress: AsyncStream<SpeechProgress>?
     private let engine: SpeechEngine
 
     private struct Ingress {
@@ -22,15 +24,31 @@ final class SpeechStream: SpeechStreaming {
         /// Audio was dropped because the model could not be had; the stream can only fail now.
         var failure: SpeechFailure?
         var waiter: CheckedContinuation<SpeechResult, any Error>?
+        /// Feeds `progress` until the stream ends. Reports are yielded under the lock, so none follows a cancel.
+        var reports: AsyncStream<SpeechProgress>.Continuation?
     }
 
-    private let ingress = Mutex(Ingress())
+    private let ingress: Mutex<Ingress>
 
-    init(id: UInt64, engine: SpeechEngine, snapshot: DictionarySnapshot, retainsAudio: Bool) {
+    init(id: UInt64, engine: SpeechEngine, snapshot: DictionarySnapshot, retainsAudio: Bool, reportsProgress: Bool) {
         self.id = id
         self.engine = engine
         self.snapshot = snapshot
         self.retainsAudio = retainsAudio
+        var ingress = Ingress()
+        if reportsProgress {
+            // Unbounded, so a report never waits for the consumer.
+            let (stream, continuation) = AsyncStream<SpeechProgress>.makeStream(bufferingPolicy: .unbounded)
+            progress = stream
+            ingress.reports = continuation
+        } else {
+            progress = nil
+        }
+        self.ingress = Mutex(ingress)
+    }
+
+    deinit {
+        ingress.withLock { $0.reports }?.finish()
     }
 
     func append(_ samples: [Float]) {
@@ -72,13 +90,17 @@ final class SpeechStream: SpeechStreaming {
     }
 
     func cancel() {
-        let (first, waiter) = ingress.withLock { state in
+        let (first, waiter, reports) = ingress.withLock { state in
             let first = !state.cancelled
             state.cancelled = true
             state.inbox = []
-            defer { state.waiter = nil }
-            return (first, state.waiter)
+            defer {
+                state.waiter = nil
+                state.reports = nil
+            }
+            return (first, state.waiter, state.reports)
         }
+        reports?.finish()
         waiter?.resume(throwing: SpeechFailure.cancelled)
         if first { Task { await engine.forget(id) } }
     }
@@ -100,7 +122,21 @@ final class SpeechStream: SpeechStreaming {
             defer { state.waiter = nil }
             return (state.failure ?? failure, state.waiter)
         }
+        endProgress()
         waiter?.resume(throwing: latched)
+    }
+
+    /// Hands the owner a report, unless the feed has ended (as a cancel ends it).
+    func report(_ progress: SpeechProgress) {
+        ingress.withLock { _ = $0.reports?.yield(progress) }
+    }
+
+    /// Ends the feed: the stream will report nothing more.
+    func endProgress() {
+        ingress.withLock { state in
+            defer { state.reports = nil }
+            return state.reports
+        }?.finish()
     }
 
     /// Throws once the stream is cancelled; the engine calls it between model calls and decoder steps.

@@ -323,7 +323,7 @@ test.
 | Port | Implemented by | Purpose |
 |---|---|---|
 | `AudioCapturing`, `AudioCapture` | `MacPlatform` | Start a capture; deliver 16 kHz mono `Float` chunks to one consumer, in order and without dropping; stop or abort |
-| `SpeechTranscribing`, `SpeechStreaming` | `SpeechEngine` | Prepare the model, report readiness, open a stream, append samples, finish with text, cancel |
+| `SpeechTranscribing`, `SpeechStreaming` | `SpeechEngine` | Prepare the model, report readiness, open a stream, append samples, report progress when asked, finish with text, cancel |
 | `TranscriptProcessing` | `SorelloApp` over `TextRules` | An immutable snapshot of the user's text rules: transcript, style and insertion context in; text to insert out |
 | `TextInserting` | `MacPlatform` | Run one insertion: find the destination, read the text around the cursor, ask the caller to compose the text for it, paste; report the outcome |
 | `MicrophoneAuthorizing` | `MacPlatform` | Current access, and a request |
@@ -429,6 +429,38 @@ tuned there:
   A late result from an older dictation never replaces a newer one's.
   Starting a new recording, clearing the Run Log, or the watch ending
   releases it.
+
+### Progress
+
+A stream opened with `reportsProgress` also tells its owner what it has
+heard while the audio is still arriving, through its `progress` feed, for
+one consumer. A stream opened without it has no feed and does no work
+for one. The Mac app never asks for progress.
+
+- **Settled and provisional.** Each full chunk transcribed brings one
+  report: the text that has newly become *settled*, and the
+  *provisional* tail, which is everything else heard so far. No later
+  chunk can change settled text, and each settled word is reported once,
+  in order. A word settles once it starts before the next chunk does,
+  less the alignment tolerance: a seam only replaces words from there
+  on. Either part of a report may be empty.
+- **Casing.** Settled text has the dictionary's casing, as `finish`'s
+  text has. A word that an entry of several words could still join to
+  words not yet settled stays in the provisional tail until it cannot.
+  The provisional tail has the casing its own words give it, and may
+  change.
+- **The last piece.** `finish` sends the last report before it returns:
+  every word not reported as settled yet, with those of the shorter
+  chunk the end of the audio leaves, and an empty provisional tail. Then
+  the feed ends. The settled text of every report, empty ones left out,
+  joined by single spaces, is exactly the text `finish` returns, however
+  the audio was split into appends.
+- **Endings.** A failed or cancelled stream ends its feed without a last
+  report, and nothing is reported once `cancel` has returned. Settled
+  text reported before a failure stays as it was.
+- **Never waiting.** The feed keeps every report its consumer has not
+  read yet, so reporting never waits for the consumer, and the model
+  goes on to the next chunk at once. `append` never waits for either.
 
 ### Getting the model
 
