@@ -13,6 +13,9 @@ struct AtomicRecordFiles: Sendable {
     let directory: URL
     /// Ends every staging name, and a staging file is swept only if its name ends with it. Empty for none.
     let stagingSuffix: String
+    /// Whether a directory this creates is marked excluded from backup. The App Group stores' files are
+    /// transient and are; the notes, which a backup must keep, are not (ARCHITECTURE.md, "Notes", Storage).
+    var excludedFromBackup = true
 
     /// Class A (`.complete`) on devices. macOS, where the host tests run, refuses class A to
     /// unentitled processes, and the simulator does not enforce data protection, so both use class C.
@@ -58,10 +61,11 @@ struct AtomicRecordFiles: Sendable {
         }
     }
 
-    /// Creates `directory`, excluded from backup, unless it exists.
+    /// Creates `directory` unless it exists, excluded from backup if `excludedFromBackup`.
     private func createDirectoryIfNeeded() throws {
         guard !FileManager.default.fileExists(atPath: directory.path) else { return }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        guard excludedFromBackup else { return }
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
         var url = directory
