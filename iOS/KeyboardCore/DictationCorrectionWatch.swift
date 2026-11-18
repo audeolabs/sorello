@@ -23,7 +23,7 @@ struct DictationCorrectionOffer: Equatable, Sendable {
 ///   `quietPeriod` has passed since the last, and not again until the next activity.
 /// - **The watch ends** at `lifetime` after the insertion, and when its owner ends it.
 struct DictationCorrectionWatch: Equatable, Sendable {
-    static let quietPeriod: TimeInterval = 1.5
+    static let quietPeriod: TimeInterval = 0.75
     static let lifetime: TimeInterval = 60
     static let anchorLength = UndoTracker.anchorLength
     /// The most words the dictation as edited may have, with what was typed around it, to be checked at all: the

@@ -25,7 +25,7 @@ enum DictationCorrectionTests {
     private static let field = Fixture.documentA
 
     private static func testConstantsMatchContract() {
-        TestSupport.expectEqual(DictationCorrectionWatch.quietPeriod, 1.5)
+        TestSupport.expectEqual(DictationCorrectionWatch.quietPeriod, 0.75)
         TestSupport.expectEqual(DictationCorrectionWatch.lifetime, 60)
         TestSupport.expectEqual(DictationCorrectionWatch.anchorLength, 24)
     }
@@ -78,10 +78,10 @@ enum DictationCorrectionTests {
         w.check(documentID: field, before: "call Xylo now", after: "", hasSelection: false, now: 20)
         TestSupport.expectEqual(w.offer, nil)
         w.activity(at: 21)
-        TestSupport.expectEqual(w.checkDue, 22.5)
-        w.check(documentID: field, before: "call Xylo now", after: "", hasSelection: false, now: 22.49)
+        TestSupport.expectEqual(w.checkDue, 21.75)
+        w.check(documentID: field, before: "call Xylo now", after: "", hasSelection: false, now: 21.74)
         TestSupport.expectEqual(w.offer, nil)
-        w.check(documentID: field, before: "call Xylo now", after: "", hasSelection: false, now: 22.5)
+        w.check(documentID: field, before: "call Xylo now", after: "", hasSelection: false, now: 21.75)
         TestSupport.expectEqual(w.offer, DictationCorrectionOffer(requestID: R, word: "Xylo", replacedWords: 1..<2))
         TestSupport.expectEqual(w.checkDue, nil)
         // Activity ends the offer; the next quiet check may offer another word.
@@ -183,9 +183,9 @@ enum DictationCorrectionTests {
         let (core, document) = core("Earlier synthetic note. ")
         core.insertDictation("Call zylo tomorrow.", now: 10, watching: R)
         fix(core, document, "zylo", with: "Xylo", at: 12)
-        core.serviceCorrection(now: 13.6)
+        core.serviceCorrection(now: 12.94)
         TestSupport.expectEqual(core.correction.offer, nil)
-        core.serviceCorrection(now: 13.7)
+        core.serviceCorrection(now: 12.95)
         TestSupport.expectEqual(core.correction.offer, DictationCorrectionOffer(requestID: R, word: "Xylo", replacedWords: 1..<2))
         // A casing fix counts; a sentence's first capital does not.
         let (casing, casingDocument) = self.core("")
@@ -283,9 +283,9 @@ enum DictationCorrectionTests {
         // The letters go in as the shift has them.
         let typed = String(document.text.dropFirst(5).prefix(4))
         TestSupport.expectEqual(typed.lowercased(), "xylo")
-        editor.serviceCorrection(now: 12.9)
+        editor.serviceCorrection(now: 12.2)
         TestSupport.expectEqual(editor.correctionOffer, nil)
-        editor.serviceCorrection(now: 13.0)
+        editor.serviceCorrection(now: 12.3)
         TestSupport.expectEqual(editor.correctionOffer?.word, typed)
         TestSupport.expectEqual(reports, 1)
         editor.press(.shift, field: document.documentID, at: 13.1, now: 13.1)

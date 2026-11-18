@@ -3030,8 +3030,9 @@ dictation hears it (`DictationCorrectionWatch`, pure, tested; owned by
   such block in text order is the offer: its word and the range of the
   dictation's words it replaces. A casing fix ("iphone" to "iPhone") counts;
   a change of a sentence's first capital does not.
-- **When.** The edit is checked once the text has been quiet for 1.5 s
-  (`DictationCorrectionWatch.quietPeriod`, as the Mac's quiet period): every
+- **When.** The edit is checked once the text has been quiet for 0.75 s
+  (`DictationCorrectionWatch.quietPeriod`, half the Mac's: the keyboard sees
+  each key as it is typed, so the offer can follow the fix sooner): every
   key, strip choice, swipe, trackpad movement and text or selection callback
   restarts the wait. Nothing is checked while the dictation is unchanged, or
   while the dictation as edited holds more than 1000 words as DictionaryKit

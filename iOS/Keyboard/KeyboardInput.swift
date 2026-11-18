@@ -399,7 +399,7 @@ final class KeyboardInput: KeyAreaViewDelegate {
         updateCorrectionTimer()
     }
 
-    /// A tenth of a second is fine enough for a 1.5 s quiet period, and the timer runs only while a dictation is
+    /// A tenth of a second is fine enough for a 0.75 s quiet period, and the timer runs only while a dictation is
     /// watched (at most a minute after it went in).
     private static let correctionTick: TimeInterval = 0.1
 
