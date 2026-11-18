@@ -30,6 +30,7 @@ enum DarwinNotifierTests {
         TestSupport.expectEqual(DarwinNotifier.Signal.allCases.map(notifier.name(for:)), [
             "group.example.synthetic.intent", "group.example.synthetic.presence",
             "group.example.synthetic.status", "group.example.synthetic.result",
+            "group.example.synthetic.addedWord",
         ])
     }
 

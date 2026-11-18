@@ -37,6 +37,10 @@ struct SharedDictationStore: Sendable {
         return outcome
     }
 
+    /// `added-word.json` where it lies: the keyboard's view of the file it alone writes. The host never reads it there:
+    /// it takes it first (`takeAddedWord`).
+    func readAddedWord() -> StoreRead<AddedWord> { read(at: addedWordURL) }
+
     /// The request IDs of every result file present, whether or not it is readable.
     func resultRequestIDs() -> [UUID] {
         resultFiles().map(\.requestID)
@@ -76,6 +80,11 @@ struct SharedDictationStore: Sendable {
 
     func writeResult(_ result: DictationResult) throws {
         try write(result, to: resultURL(for: result.requestID), protection: Self.completeProtection)
+    }
+
+    /// The keyboard's write, over any word not yet claimed (ARCHITECTURE.md, "Files", One added word).
+    func writeAddedWord(_ word: AddedWord) throws {
+        try write(word, to: addedWordURL, protection: Self.completeProtection)
     }
 
     // MARK: Deletes
@@ -127,11 +136,73 @@ struct SharedDictationStore: Sendable {
         files.sweepStagingFiles { DictationProtocol.isFresh($0, ttl: age, now: now) }
     }
 
+    // MARK: The added word (ARCHITECTURE.md, "Files", One added word)
+
+    /// A copy of `added-word.json` the host has taken: renamed to a private staging name, so it alone holds it and
+    /// what it judges is the version it took, never one the keyboard wrote over it since.
+    struct TakenAddedWord: Equatable, Sendable {
+        let url: URL
+    }
+
+    /// The host takes `added-word.json`: one rename to a private staging name, which only one caller can win. Nil
+    /// when there is none (or the rename failed; a later take tries again).
+    func takeAddedWord() -> TakenAddedWord? {
+        let taken = files.makeStagingURL()
+        guard rename(addedWordURL.path, taken.path) == 0 else { return nil }
+        return TakenAddedWord(url: taken)
+    }
+
+    /// The taken copy's record; `.absent` once it is gone (removed, or swept as an abandoned staging file).
+    func readTaken(_ taken: TakenAddedWord) -> StoreRead<AddedWord> { read(at: taken.url) }
+
+    /// The taken copy's modification date: the keyboard's write, which a rename keeps.
+    func modificationDate(of taken: TakenAddedWord) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: taken.url.path))?[.modificationDate] as? Date
+    }
+
+    func removeTaken(_ taken: TakenAddedWord) {
+        _ = unlink(taken.url.path)
+    }
+
+    enum AddedWordPurge: Equatable, Sendable {
+        /// There is no `added-word.json`, or the host took it before it could be removed.
+        case absent
+        /// Still fresh: judged again at `deadline`.
+        case kept(deadline: Date)
+        /// Expired, and removed.
+        case removed
+        /// Expired, but the removal failed; try again later.
+        case failed
+    }
+
+    /// The keyboard's purge: judges `added-word.json` where it lies, by `issuedAt` or, unreadable, by its modification
+    /// date, and removes it by name only once it is not fresh within `addedWordTTL`. Only the keyboard writes the
+    /// file, on its main thread, as it purges, so this never meets its own write; a name found gone was taken by the
+    /// host.
+    @discardableResult
+    func purgeExpiredAddedWord(now: Date) -> AddedWordPurge {
+        let stamp: Date?
+        switch readAddedWord() {
+        case .absent:
+            return .absent
+        case .value(let word):
+            stamp = word.issuedAt
+        case .unreadable, .incompatible:
+            stamp = (try? FileManager.default.attributesOfItem(atPath: addedWordURL.path))?[.modificationDate] as? Date
+        }
+        if let stamp, DictationProtocol.isFresh(stamp, ttl: DictationProtocol.addedWordTTL, now: now) {
+            return .kept(deadline: stamp + DictationProtocol.addedWordTTL)
+        }
+        if unlink(addedWordURL.path) == 0 { return .removed }
+        return errno == ENOENT ? .absent : .failed
+    }
+
     // MARK: Files
 
     var intentURL: URL { directory.appendingPathComponent("intent.json", isDirectory: false) }
     var presenceURL: URL { directory.appendingPathComponent("presence.json", isDirectory: false) }
     var statusURL: URL { directory.appendingPathComponent("status.json", isDirectory: false) }
+    var addedWordURL: URL { directory.appendingPathComponent("added-word.json", isDirectory: false) }
 
     func resultURL(for requestID: UUID) -> URL {
         directory.appendingPathComponent("result-\(requestID.uuidString).json", isDirectory: false)
