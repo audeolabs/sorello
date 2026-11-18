@@ -1,3 +1,4 @@
+import DictionaryKit
 import Foundation
 
 /// The short, content-free text the keyboard shows for a mode, an error or the host status. Pure and
@@ -19,6 +20,30 @@ enum KeyboardMessages {
     /// VoiceOver's words for Start with no session (the bar shows Start's dot, still, instead of these words).
     static let noSessionSpoken = "No session. Start opens Sorello"
     static let storeWriteFailed = "Couldn't reach Sorello"
+
+    // Dictation corrections (ARCHITECTURE.md, "Dictation corrections"): the chip, and the notices of a word sent to the
+    // app. The word is the user's own, held in memory only while it is offered or on its way.
+
+    /// The top row's offer.
+    static func addToDictionary(_ word: String) -> String { "Add \u{201C}\(word)\u{201D} to dictionary" }
+
+    /// The notice while the app decides.
+    static func addingWord(_ word: String) -> String { "Adding \u{201C}\(word)\u{201D}\u{2026}" }
+
+    /// The notice for the app's outcome; `strength` is the one saved, with `.added`.
+    static func addedWord(_ word: String, outcome: AddedWordStatus.Outcome, strength: Float?) -> String {
+        switch outcome {
+        case .added:
+            return "Added \u{201C}\(word)\u{201D} \u{00B7} "
+                + DictionaryValidation.label(strength ?? DictionaryValidation.defaultStrength)
+        case .alreadyInDictionary: return "Already in your dictionary"
+        case .notHeard: return "\u{201C}\(word)\u{201D} wasn't heard in that recording"
+        case .notAdded: return couldNotAdd(word)
+        }
+    }
+
+    /// The app saved nothing, or the word could not be handed to it.
+    static func couldNotAdd(_ word: String) -> String { "Couldn't add \u{201C}\(word)\u{201D}" }
     /// A voice note holds the microphone (ARCHITECTURE.md, "Top row"): the island's label, and the middle's words.
     static let stopNote = "Stop note"
     static let noteRecording = "Voice note recording"

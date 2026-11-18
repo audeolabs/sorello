@@ -17,7 +17,25 @@ enum KeyboardMessagesTests {
             ("theLargestTextSizesPutTheMenusActionsFirst", testTheLargestTextSizesPutTheMenusActionsFirst),
             ("theWidthTipSaysWhatLandsOnTheWrongLine", testTheWidthTipSaysWhatLandsOnTheWrongLine),
             ("aVoiceNoteReadsAsANote", testAVoiceNoteReadsAsANote),
+            ("anAddedWordSaysWhatHappened", testAnAddedWordSaysWhatHappened),
         ]
+    }
+
+    /// ARCHITECTURE.md, "Dictation corrections": the chip and the four outcomes, word for word.
+    private static func testAnAddedWordSaysWhatHappened() {
+        TestSupport.expectEqual(KeyboardMessages.addToDictionary("Xylo"), "Add \u{201C}Xylo\u{201D} to dictionary")
+        TestSupport.expectEqual(KeyboardMessages.addingWord("Xylo"), "Adding \u{201C}Xylo\u{201D}\u{2026}")
+        TestSupport.expectEqual(KeyboardMessages.addedWord("Xylo", outcome: .added, strength: 2),
+                                "Added \u{201C}Xylo\u{201D} \u{00B7} \u{00D7}2")
+        TestSupport.expectEqual(KeyboardMessages.addedWord("Xylo", outcome: .added, strength: 2.83),
+                                "Added \u{201C}Xylo\u{201D} \u{00B7} \u{00D7}2.83")
+        TestSupport.expectEqual(KeyboardMessages.addedWord("Xylo", outcome: .alreadyInDictionary, strength: nil),
+                                "Already in your dictionary")
+        TestSupport.expectEqual(KeyboardMessages.addedWord("Xylo", outcome: .notHeard, strength: nil),
+                                "\u{201C}Xylo\u{201D} wasn't heard in that recording")
+        TestSupport.expectEqual(KeyboardMessages.addedWord("Xylo", outcome: .notAdded, strength: nil),
+                                "Couldn't add \u{201C}Xylo\u{201D}")
+        TestSupport.expectEqual(KeyboardMessages.couldNotAdd("Xylo"), "Couldn't add \u{201C}Xylo\u{201D}")
     }
 
     /// With a voice note holding the microphone the island is Stop note, compact, in Start's place; the middle says a

@@ -16,6 +16,7 @@ final class KeyboardViewController: UIInputViewController, KeyboardTextTarget {
     private let chrome = KeyboardChrome()
     private let swipeStrip = SwipeStripModel()
     private let neverCorrect = NeverCorrectPromptModel()
+    private let dictionaryOffer = DictionaryOfferModel()
     private let barControls = BarControlFrames()
     private var bar: UIHostingController<DictationBarView>?
     private var menuPanel: UIHostingController<MenuPanelView>?
@@ -98,16 +99,26 @@ final class KeyboardViewController: UIInputViewController, KeyboardTextTarget {
             guard let self else { return }
             neverCorrect.show(input.neverCorrectOffer)
         }
+        input.onCorrectionOfferChanged = { [weak self] in
+            guard let self else { return }
+            // Only with Full Access, which the watch needed to start (ARCHITECTURE.md, "Dictation corrections").
+            dictionaryOffer.show(hasFullAccess ? input.correctionOffer : nil)
+        }
         input.onTextMayHaveChanged = { [weak self] in self?.updateReturnKey() }
         // Swipe typing comes on once its bundle has loaded off the main thread.
         input.loadSwipeEngine()
 
         let bar = UIHostingController(rootView: DictationBarView(
-            client: client, chrome: chrome, swipe: swipeStrip, neverCorrect: neverCorrect, controls: barControls,
+            client: client, chrome: chrome, swipe: swipeStrip, neverCorrect: neverCorrect, dictionaryOffer: dictionaryOffer,
+            controls: barControls,
             onMenu: { [weak self] in self?.setMenu(visible: self?.chrome.isMenuOpen != true) },
             onAction: { [weak self] in self?.setMenu(visible: false) },
             onCandidate: { [weak self] index in self?.input.chooseSwipeCandidate(at: index) },
-            onNeverCorrect: { [weak self] in self?.input.acceptNeverCorrect() }))
+            onNeverCorrect: { [weak self] in self?.input.acceptNeverCorrect() },
+            onAddToDictionary: { [weak self] in
+                guard let self, let offer = input.acceptCorrectionOffer() else { return }
+                client.addToDictionary(offer)
+            }))
         // The bar draws its own touchable background (`DictationBarView`): its hosting view reaches behind the keys.
         bar.view.backgroundColor = .clear
         bar.safeAreaRegions = []
@@ -402,8 +413,12 @@ final class KeyboardViewController: UIInputViewController, KeyboardTextTarget {
 
     var feedbackView: UIView? { viewIfLoaded }
 
-    func insert(_ text: String) {
-        input.insertDictation(text)
+    func insert(_ text: String, watching requestID: UUID?) {
+        input.insertDictation(text, watching: hasFullAccess ? requestID : nil)
+    }
+
+    func dictationStarting() {
+        input.endCorrectionWatch()
     }
 
     var isEditingBusy: Bool { input.isBusy }

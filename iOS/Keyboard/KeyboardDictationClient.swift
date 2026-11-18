@@ -10,7 +10,11 @@ protocol KeyboardTextTarget: AnyObject {
     var contextAfterInput: String? { get }
     /// The view haptics attach to; nil before it loads.
     var feedbackView: UIView? { get }
-    func insert(_ text: String)
+    /// Inserts a dictation's text; with `watching`, its request, the editing side watches it for a correction
+    /// (ARCHITECTURE.md, "Dictation corrections").
+    func insert(_ text: String, watching requestID: UUID?)
+    /// A dictation is starting: the watch of the last one ends.
+    func dictationStarting()
     /// The editing side is busy (a trackpad gesture is running or settling): results stay in the
     /// shared files until it is done, rather than waiting in memory.
     var isEditingBusy: Bool { get }
@@ -45,6 +49,8 @@ struct KeyboardViewState: Equatable {
     /// becomes Undo only when they are the same (`IslandBud.target`). Random identifiers, in memory only.
     var dictationRequestID: UUID?
     var lastInsertedRequestID: UUID?
+    /// The host is alive (`KeyboardPresenter.isHostAlive`): the "Add to dictionary" offer may show.
+    var hostAlive = false
 }
 
 /// The keyboard side of the protocol in ARCHITECTURE.md. While visible it polls and observes the
@@ -83,10 +89,19 @@ final class KeyboardDictationClient: ObservableObject {
     /// (`KeyboardPresenter.shownMode`).
     private var bouncedRequestID: UUID?
     private var notice: (text: String, until: Date)?
+    /// The notice up names a word sent to the dictionary: hiding forgets it with the word.
+    private var noticeNamesWord = false
     private var levels: [Float] = []
     private var levelSerial = 0
     private var lastInsertedRequestID: UUID?
     private var levelSampledAt: Date?
+    /// The word handed to the app and the record's id, until its outcome arrives or the keyboard hides
+    /// (ARCHITECTURE.md, "Dictation corrections", Accepting). In memory only.
+    private var pendingWord: (id: UUID, word: String)?
+    /// When the keyboard next judges `added-word.json` while visible ("Files", One added word).
+    private var addedWordPurge: Timer?
+    /// How long "Adding “word”…" may show while the app decides; its outcome replaces it sooner.
+    private static let addingNoticeDuration: TimeInterval = 10
 
     private var notifier: DarwinNotifier? { configuration.map(DarwinNotifier.init(configuration:)) }
 
@@ -126,6 +141,8 @@ final class KeyboardDictationClient: ObservableObject {
             }
             timers = [poll, presence]
             writePresence()
+            // The keyboard deletes an expired added word when it appears ("Files", One added word).
+            purgeAddedWord()
         }
         refresh()
     }
@@ -140,6 +157,16 @@ final class KeyboardDictationClient: ObservableObject {
         levels = []
         levelSerial = 0
         levelSampledAt = nil
+        // Hiding forgets the word on its way, and every notice that names it; an outcome that arrives later shows
+        // nothing.
+        pendingWord = nil
+        if noticeNamesWord {
+            notice = nil
+            noticeNamesWord = false
+            state.notice = nil
+        }
+        addedWordPurge?.invalidate()
+        addedWordPurge = nil
         // No field identity outlives the keyboard being visible: a request bound to a field is never
         // auto-inserted after hiding (it stays available as "Insert last dictation").
         ledger.forgetFieldBindings()
@@ -227,6 +254,60 @@ final class KeyboardDictationClient: ObservableObject {
         state.canUndo = canUndo
     }
 
+    /// The user tapped "Add “word” to dictionary" (ARCHITECTURE.md, "Dictation corrections", Accepting): the word, its
+    /// dictation and range go to the app in `added-word.json`, `.addedWord` wakes it, and the word waits in memory
+    /// for the app's outcome. A failed write says so.
+    func addToDictionary(_ offer: DictationCorrectionOffer) {
+        guard access == .fullAccess, let store else { return }
+        let word = AddedWord(id: UUID(), requestID: offer.requestID, word: offer.word,
+                             replacedStart: offer.replacedWords.lowerBound, replacedEnd: offer.replacedWords.upperBound,
+                             issuedAt: Date())
+        do {
+            try store.writeAddedWord(word)
+        } catch {
+            pendingWord = nil
+            show(KeyboardMessages.couldNotAdd(offer.word), namesWord: true)
+            playHaptic(.failure)
+            refresh()
+            return
+        }
+        notifier?.post(.addedWord)
+        pendingWord = (word.id, offer.word)
+        show(KeyboardMessages.addingWord(offer.word), for: Self.addingNoticeDuration, namesWord: true)
+        playHaptic(.press)
+        scheduleAddedWordPurge(at: word.issuedAt + DictationProtocol.addedWordTTL)
+        refresh()
+    }
+
+    /// Judges `added-word.json` where it lies and removes it only once it has expired; while visible, again at its
+    /// deadline, or `cleanupRetryInterval` after a failed removal, until it is gone.
+    private func purgeAddedWord() {
+        addedWordPurge?.invalidate()
+        addedWordPurge = nil
+        guard isVisible, access == .fullAccess, let store else { return }
+        switch store.purgeExpiredAddedWord(now: Date()) {
+        case .absent, .removed: break
+        case .kept(let deadline): scheduleAddedWordPurge(at: deadline)
+        case .failed: scheduleAddedWordPurge(at: Date() + KeyboardResultInbox.cleanupRetryInterval)
+        }
+    }
+
+    private func scheduleAddedWordPurge(at date: Date) {
+        addedWordPurge?.invalidate()
+        // Just past the deadline, so the file is no longer fresh when it is judged.
+        addedWordPurge = Timer.mainLoop(after: max(date.timeIntervalSinceNow, 0) + 0.05) { [weak self] _ in
+            self?.purgeAddedWord()
+        }
+    }
+
+    /// The app's outcome for the word on its way, once the status names it.
+    private func showAddedWordOutcome(_ status: StoreRead<HostStatus>) {
+        guard let pending = pendingWord, let outcome = status.value?.addedWord, outcome.id == pending.id else { return }
+        pendingWord = nil
+        show(KeyboardMessages.addedWord(pending.word, outcome: outcome.outcome, strength: outcome.strength), namesWord: true)
+        playHaptic(outcome.outcome == .added ? .success : .failure)
+    }
+
     /// "Open Sorello" in the menu: the same launcher as the bounce, without a dictation request.
     func openSorello() {
         notice = nil
@@ -248,6 +329,8 @@ final class KeyboardDictationClient: ObservableObject {
 
     private func startDictation(openingHost: Bool) {
         guard let store else { return }
+        // Another dictation's start ends the watch of the last one.
+        target?.dictationStarting()
         let requestID = UUID()
         guard write(KeyboardIntent(requestID: requestID, action: .record, keyboardInstanceID: instanceID,
                                    issuedAt: Date()), to: store) else { return }
@@ -337,6 +420,7 @@ final class KeyboardDictationClient: ObservableObject {
         if access == .fullAccess { deliverResults(status: status, documentID: documentID, now: now) }
         shownIntent = intent
         shownStatus = status
+        showAddedWordOutcome(status)
         sampleLevel(of: mode, status: status)
         publish(mode, intent: intent, status: status, now: now)
     }
@@ -372,7 +456,8 @@ final class KeyboardDictationClient: ObservableObject {
             show(KeyboardMessages.noSpeech)
             return
         }
-        target.insert(text)
+        // A result that presses Return is not watched for a correction.
+        target.insert(text, watching: result.pressEnter ? nil : result.requestID)
         lastInsertedRequestID = result.requestID
         // The proxy may not reflect the insertion yet, and a following result's spacing needs it.
         context = (context ?? "") + text
@@ -412,7 +497,8 @@ final class KeyboardDictationClient: ObservableObject {
                                      spokenStatus: KeyboardMessages.spokenStatus(mode: mode, status: status.value,
                                                                                  launcherFailed: launcherFailed, now: now),
                                      levels: levels, levelSerial: levelSerial, dictationRequestID: intent.value?.requestID,
-                                     lastInsertedRequestID: lastInsertedRequestID)
+                                     lastInsertedRequestID: lastInsertedRequestID,
+                                     hostAlive: KeyboardPresenter.isHostAlive(status: status, now: now))
         guard next != state else { return }
         if mode.phase != state.mode.phase {
             if case .recording = mode { playHaptic(.listening) }
@@ -428,8 +514,9 @@ final class KeyboardDictationClient: ObservableObject {
         state = next
     }
 
-    private func show(_ text: String) {
-        notice = (text, Date().addingTimeInterval(Self.noticeDuration))
+    private func show(_ text: String, for duration: TimeInterval? = nil, namesWord: Bool = false) {
+        notice = (text, Date().addingTimeInterval(duration ?? Self.noticeDuration))
+        noticeNamesWord = namesWord
     }
 
     // MARK: Haptics

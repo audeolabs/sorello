@@ -99,6 +99,13 @@ enum KeyboardPresenter {
         return isAlive(status, now: now) && status.model == .preparing
     }
 
+    /// The host is alive (rule 4): a status of this schema, an active session, a heartbeat fresh within
+    /// `livenessTimeout`. The "Add to dictionary" offer shows only then (ARCHITECTURE.md, "Dictation corrections").
+    static func isHostAlive(status: StoreRead<HostStatus>, now: Date) -> Bool {
+        guard let status = status.value, status.schema == DictationProtocol.schema else { return false }
+        return isAlive(status, now: now)
+    }
+
     /// An active session with a heartbeat fresh within `livenessTimeout`.
     private static func isAlive(_ status: HostStatus, now: Date) -> Bool {
         status.session == .active && DictationProtocol.isFresh(status.heartbeatAt, ttl: DictationProtocol.livenessTimeout, now: now)

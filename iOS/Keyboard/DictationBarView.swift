@@ -35,6 +35,17 @@ final class NeverCorrectPromptModel: ObservableObject {
     }
 }
 
+/// The offer to add a word fixed in a dictation to the dictionary (ARCHITECTURE.md, "Dictation corrections"), published
+/// only when it appears, changes or goes. Its word stays in memory and goes with the offer.
+@MainActor
+final class DictionaryOfferModel: ObservableObject {
+    @Published private(set) var offer: DictationCorrectionOffer?
+
+    func show(_ offer: DictationCorrectionOffer?) {
+        if self.offer != offer { self.offer = offer }
+    }
+}
+
 /// Where the bar's controls are, in the bar's coordinates (`DictationBarView` reports them as they lay out and
 /// forgets them as they go), so the key area can take every other touch in the bar (ARCHITECTURE.md, "Reach
 /// and touch regions", The bar outside its controls). Read on touches; never published, so it re-renders nothing.
@@ -93,6 +104,7 @@ struct DictationBarView: View {
     @ObservedObject var chrome: KeyboardChrome
     @ObservedObject var swipe: SwipeStripModel
     @ObservedObject var neverCorrect: NeverCorrectPromptModel
+    @ObservedObject var dictionaryOffer: DictionaryOfferModel
     /// Where its controls are, for the key area.
     let controls: BarControlFrames
     var onMenu: () -> Void
@@ -102,6 +114,8 @@ struct DictationBarView: View {
     var onCandidate: (Int) -> Void
     /// The "Never correct" offer was tapped.
     var onNeverCorrect: () -> Void
+    /// The "Add to dictionary" offer was tapped.
+    var onAddToDictionary: () -> Void
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -145,7 +159,10 @@ struct DictationBarView: View {
         let capturing = form == .expanded
         // Under the open menu the bar's controls fade as the keys do, and its middle goes: the card says the same.
         let menuOpen = chrome.isMenuOpen
-        let middle = BarMiddleContent.resolve(neverCorrectOffer: neverCorrect.offer != nil, candidates: swipe.strip != nil,
+        // The dictionary offer shows only while the host is alive (ARCHITECTURE.md, "Dictation corrections").
+        let middle = BarMiddleContent.resolve(neverCorrectOffer: neverCorrect.offer != nil,
+                                              dictionaryOffer: dictionaryOffer.offer != nil && state.hostAlive,
+                                              candidates: swipe.strip != nil,
                                               dictationInProgress: state.mode.isInProgress, notice: state.notice != nil,
                                               dictationUndoShown: state.canUndo && !state.mode.isInProgress)
         let palette = BrandPalette(colorScheme: colorScheme, contrast: contrast)
@@ -200,6 +217,12 @@ struct DictationBarView: View {
                             onNeverCorrect()
                         }
                         .barControl("neverCorrect", in: controls)
+                    } else if middle == .addToDictionary, let offer = dictionaryOffer.offer {
+                        AddToDictionaryChip(word: offer.word, height: height - 8) {
+                            onAction()
+                            onAddToDictionary()
+                        }
+                        .barControl("addToDictionary", in: controls)
                     } else if middle == .candidates, let strip = swipe.strip {
                         CandidateStrip(strip: strip, height: height - 8, barHeight: barHeight, compact: compact) { index in
                             onAction()
@@ -565,6 +588,27 @@ private struct NeverCorrectChip: View {
         .accessibilityLabel("Never correct \(word)")
         .accessibilityHint("Autocorrect leaves this word alone from now on")
         .accessibilityIdentifier("sorello.neverCorrect")
+    }
+}
+
+/// "Add “word” to dictionary": a word fixed in a dictation, drawn as the "Never correct" chip is, shortened in the middle
+/// where it does not fit.
+private struct AddToDictionaryChip: View {
+    let word: String
+    let height: CGFloat
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ChipLabel(title: KeyboardMessages.addToDictionary(word), symbol: "character.book.closed", height: height,
+                      look: .key)
+                .truncationMode(.middle)
+                .minimumScaleFactor(0.8)
+        }
+        .buttonStyle(PressableStyle())
+        .accessibilityLabel("Add \(word) to dictionary")
+        .accessibilityHint("Sorello checks the word against your dictation and adds it to your custom dictionary")
+        .accessibilityIdentifier("sorello.addToDictionary")
     }
 }
 

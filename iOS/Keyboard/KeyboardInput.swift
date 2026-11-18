@@ -52,6 +52,9 @@ final class KeyboardInput: KeyAreaViewDelegate {
     private var undoTimer: Timer?
     private var undoExpiry: (timer: Timer, insertedAt: TimeInterval)?
     private var tailExpiry: Timer?
+    /// While a dictation is watched for a correction: its lifetime and the quiet check (ARCHITECTURE.md, "Dictation
+    /// corrections").
+    private var correctionTimer: Timer?
     /// Trackpad mode started (true) or ended (false), to dim the dictation bar and play a haptic.
     var onTrackpadChange: ((Bool) -> Void)?
     /// Whether Undo can be offered may have changed. Only state is read in response; never results.
@@ -67,6 +70,8 @@ final class KeyboardInput: KeyAreaViewDelegate {
     var onSwipeStripChanged: (() -> Void)?
     /// The offer to never correct a reverted word appeared, changed or went (`neverCorrectOffer`).
     var onNeverCorrectOfferChanged: (() -> Void)?
+    /// The offer to add a word fixed in a dictation appeared, changed or went (`correctionOffer`).
+    var onCorrectionOfferChanged: (() -> Void)?
     /// An own edit, or a frame while the proxy may only now show one: whether the field has text may have changed
     /// (`fieldHasText`).
     var onTextMayHaveChanged: (() -> Void)?
@@ -104,6 +109,7 @@ final class KeyboardInput: KeyAreaViewDelegate {
         editor.onFieldChanged = { [weak self] field in self?.fieldChanged(to: field) }
         editor.onSwipeStripChanged = { [weak self] in self?.onSwipeStripChanged?() }
         editor.onNeverCorrectOfferChanged = { [weak self] in self?.onNeverCorrectOfferChanged?() }
+        editor.onCorrectionOfferChanged = { [weak self] in self?.onCorrectionOfferChanged?() }
         editor.autocorrect = { [weak self] in self?.autocorrectSetup() }
         editor.emojiSearch = { [weak self] in self?.emojiSearchSetup() }
         editor.onEmojiChosen = { [weak keyArea] emoji in keyArea?.emojiRecents.use(emoji) }
@@ -166,6 +172,7 @@ final class KeyboardInput: KeyAreaViewDelegate {
         tailExpiry = nil
         serviceTimer?.invalidate()
         serviceTimer = nil
+        updateCorrectionTimer()
         tapPrior?.clear()
         autocorrect?.corrector.forgetContext()
     }
@@ -361,14 +368,53 @@ final class KeyboardInput: KeyAreaViewDelegate {
 
     private func trackpadFinished() {
         if let measured = trackpad.measuredTouchRate { onTouchRateMeasured?(measured.rate, measured.scale) }
+        // The caret moved: a dictation's correction waits again.
+        editor.noteCorrectionActivity(now: now)
         onUndoAvailabilityChanged?()
     }
 
     // MARK: Dictation and undo
 
-    /// Inserts dictated text and makes it undoable, after the trackpad settles on the spot.
-    func insertDictation(_ text: String) {
-        editor.insertDictation(text, now: now)
+    /// Inserts dictated text and makes it undoable, after the trackpad settles on the spot; with `watching`, its
+    /// request, it is watched for a correction (ARCHITECTURE.md, "Dictation corrections").
+    func insertDictation(_ text: String, watching requestID: UUID? = nil) {
+        editor.insertDictation(text, now: now, watching: requestID)
+        updateCorrectionTimer()
+    }
+
+    // MARK: Dictation corrections
+
+    /// The offer to add a word fixed in the watched dictation, nil when none.
+    var correctionOffer: DictationCorrectionOffer? { editor.correctionOffer }
+
+    /// The user tapped the offer: it is handed back, and the watch ends.
+    func acceptCorrectionOffer() -> DictationCorrectionOffer? {
+        defer { updateCorrectionTimer() }
+        return editor.acceptCorrectionOffer()
+    }
+
+    /// Another dictation starts: the watch ends.
+    func endCorrectionWatch() {
+        editor.endCorrectionWatch()
+        updateCorrectionTimer()
+    }
+
+    /// A tenth of a second is fine enough for a 1.5 s quiet period, and the timer runs only while a dictation is
+    /// watched (at most a minute after it went in).
+    private static let correctionTick: TimeInterval = 0.1
+
+    private func updateCorrectionTimer() {
+        guard editor.isWatchingCorrection else {
+            correctionTimer?.invalidate()
+            correctionTimer = nil
+            return
+        }
+        guard correctionTimer == nil else { return }
+        correctionTimer = Timer.mainLoop(after: Self.correctionTick, repeats: true, tolerance: 0.05) { [weak self] timer in
+            guard let self else { return timer.invalidate() }
+            self.editor.serviceCorrection(now: self.now)
+            if !self.editor.isWatchingCorrection { self.updateCorrectionTimer() }
+        }
     }
 
     var canUndoLastDictation: Bool { editor.canUndo(now: now) }
@@ -377,6 +423,7 @@ final class KeyboardInput: KeyAreaViewDelegate {
     func undoLastDictation() {
         guard undoTimer == nil else { return }
         handle(editor.beginUndo(now: now))
+        updateCorrectionTimer()
     }
 
     private func handle(_ step: UndoTracker.Step) {
@@ -533,11 +580,14 @@ final class KeyboardInput: KeyAreaViewDelegate {
            editor.beginTrackpad(layout: profile.layout, linePitch: profile.linePitch, layoutWidth: profile.width) {
             driver.run()
         }
+        // Trackpad movement restarts a dictation correction's wait and ends its offer.
+        editor.noteCorrectionActivity(now: now)
         onTrackpadChange?(true)
     }
 
     func keyArea(_ keyArea: KeyAreaView, movedTrackpadBy dx: Double, dy: Double, timestamp: TimeInterval) {
         trackpad.move(dx: dx, dy: dy, timestamp: timestamp)
+        editor.noteCorrectionActivity(now: now)
     }
 
     func keyAreaEndedTrackpad(_ keyArea: KeyAreaView, timestamp: TimeInterval, cancelled: Bool) {
