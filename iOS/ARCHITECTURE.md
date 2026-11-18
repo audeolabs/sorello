@@ -277,10 +277,14 @@ each carries `schema: Int` (currently `1`).
   read): the keyboard when it appears, on every result read, and, while it
   is visible with Full Access after writing one, at that file's deadline and
   every `cleanupRetryInterval` after a failed removal until it is gone; the
-  host at launch, on every heartbeat while live, and at session end. A purge
-  takes the file as the host's claim does (rename, then judge the private
-  copy). The keyboard is the file's only writer and writes and purges on its
-  main thread, so its own purge never meets its own write. The file can
+  host at launch, on every heartbeat while live, and at session end. The
+  host's purge is its claim: it takes the file (rename, then judge the
+  private copy), deletes a copy that is stale or malformed and decides a
+  fresh one, so it never sets a fresh word aside. The keyboard, the file's
+  only writer, writes and purges on its main thread, so its purge never
+  meets its own write: it judges the file where it lies and removes it by
+  name only when that reading is past `addedWordTTL`. A removal that finds
+  the name gone (the host took it meanwhile) has nothing left to do. The file can
   outlive `addedWordTTL` only while neither process runs, as a result file
   can.
 - **Staging sweeps.** `purgeExpiredResults` also deletes staging files older
@@ -1210,8 +1214,10 @@ word's strength from that dictation's audio before it saves it.
     so what is decided, purged or kept is always the version that was
     claimed, never one the keyboard wrote over it meanwhile. A copy that is
     not fresh within `addedWordTTL`, of another schema, or malformed (a word
-    that is empty, or a range that is not 0 ≤ start < end with at most three
-    words) is deleted and ignored. A copy that cannot be read yet (the device
+    that is empty, or a range that is not 0 ≤ start < end) is deleted and
+    ignored. How many of the dictation's words the range holds (one to three
+    that are not punctuation alone, DESIGN §1.5.2) is checked against the
+    kept text in 3 only, since indices count punctuation-only pieces too. A copy that cannot be read yet (the device
     is locked) stays under its private name and is read again at the next
     take, until `addedWordTTL` after its modification date, when it is
     deleted unread. A copy that was read is deleted before the word is
@@ -1225,7 +1231,8 @@ word's strength from that dictation's audio before it saves it.
     2. Its key is already in the dictionary: `alreadyInDictionary`. Nothing
        changes.
     3. The request id is the dictation whose audio and text are kept, and the
-       range lies within that text's words: the edited text is rebuilt from
+       range lies within that text's words and holds one to three of them:
+       the edited text is rebuilt from
        the text the host wrote, with the words in the range replaced by the
        word, and the engine checks it as the Mac checks a correction
        (`SpeechEngine.verifyCorrection`; DESIGN §1.5, §1.6 and §4.2), with
@@ -3002,9 +3009,12 @@ dictation hears it (`DictationCorrectionWatch`, pure, tested; owned by
     off places nothing. A context cut short on the side of a short or empty
     anchor cannot be told from the field's edge; the words it hides then look
     deleted from the dictation, which can put the offer's range in the wrong
-    place but never its word, which is always text the user has there, and
-    the app then saves without a check
-    ([Custom dictionary](#custom-dictionary), Words from corrections, 4).
+    place but never its word, which is always text the user has there. The
+    app's check then looks for the word in the wrong place: it may find it
+    anyway, save it at ×1 because no candidate can be attempted, or answer
+    `notHeard` and save nothing
+    ([Custom dictionary](#custom-dictionary), Words from corrections). So
+    the cost is at worst a missed save, never a wrong word saved.
 
   Text must not be selected, and the field must be the watch's. Otherwise
   there is no offer, and the watch goes on. **A context the keyboard cannot
