@@ -226,6 +226,8 @@ enum WordAutocorrect {
                        setup: AutocorrectSetup?) -> Review? {
         guard let setup, !setup.secureTextEntry, !setup.autocorrectionDisabled, record.owned,
               let found = word(before: record.text) else { return nil }
+        // An emoji search's letters stay as typed (ARCHITECTURE.md, "Emoji search").
+        guard !EmojiSearch.startsSearch(record: record, before: before) else { return nil }
         let entries = record.entries
         let word = String(entries[found.word].map(\.character))
         guard isCorrectable(word) else { return nil }
@@ -300,7 +302,8 @@ enum WordAutocorrect {
     ///   or apostrophe form (`offered`) gets that the same way.
     static func typingStrip(before: String, record: WordTapRecord, reverted: Set<String>, neverCorrect: Set<String> = [],
                             allCapitals: Bool = false, setup: AutocorrectSetup?) -> Typing? {
-        guard let setup, setup.suggestsWhileTyping, record.owned, let found = word(before: record.text) else { return nil }
+        guard let setup, setup.suggestsWhileTyping, record.owned, let found = word(before: record.text),
+              !EmojiSearch.startsSearch(record: record, before: before) else { return nil }
         let entries = record.entries
         let word = String(entries[found.word].map(\.character))
         guard isCorrectable(word) else { return nil }

@@ -1532,7 +1532,9 @@ The iPhone app in `iOS/` was brought whole from the earlier repository by
 the same author, who wrote all of it, and was then renamed and moved onto
 the shared modules. The licences of the data its keyboard's typing models
 were made from are in `iOS/Resources/Swipe`, and its display typeface's
-licence is beside the font.
+licence is beside the font. Its keyboard's emoji, and the names they are
+found by, are generated from Unicode's emoji data and CLDR's annotations,
+whose versions, sources and licence are in `ThirdPartyNotices.md`.
 
 ## 13. The iPhone app
 

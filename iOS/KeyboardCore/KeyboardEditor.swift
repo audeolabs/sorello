@@ -10,6 +10,8 @@ struct SwipeStrip: Equatable, Sendable {
     /// While a word is typed (`WordAutocorrect.typingStrip`), what the bar marks; nil after a swipe or a commit key,
     /// where `inserted` is the word in the field.
     var live: Live?
+    /// The strip holds emoji an emoji search found (ARCHITECTURE.md, "Emoji search"), drawn larger than words.
+    var emoji = false
 
     /// The marks of a strip shown while a word is typed: the word as typed in quotes (a tap keeps it) and the
     /// correction a commit key would make, each only while a correction is pending.
@@ -20,10 +22,11 @@ struct SwipeStrip: Equatable, Sendable {
 
     static let limit = 3
 
-    init(candidates: [String], inserted: Int, live: Live? = nil) {
+    init(candidates: [String], inserted: Int, live: Live? = nil, emoji: Bool = false) {
         self.candidates = candidates
         self.inserted = inserted
         self.live = live
+        self.emoji = emoji
     }
 
     var insertedWord: String { candidates[inserted] }
@@ -141,7 +144,8 @@ final class KeyboardEditor {
         }
     }
     /// The strip while the owned word is typed (ARCHITECTURE.md, "Word autocorrect", Suggestions), shown when no
-    /// other strip is. Derived from the word's record after every key; in memory only.
+    /// other strip is, or an emoji search's matches for it (ARCHITECTURE.md, "Emoji search"). Derived from the word's record
+    /// after every key; in memory only.
     private var typingSuggestions: WordAutocorrect.Typing? {
         didSet { reportStrip() }
     }
@@ -205,6 +209,10 @@ final class KeyboardEditor {
     /// Autocorrect's corrector and inputs, read at each commit key (ARCHITECTURE.md, "Word autocorrect"); nil
     /// while autocorrect is off, without Full Access, or before its model has loaded.
     var autocorrect: () -> AutocorrectSetup? = { nil }
+    /// Emoji search's inputs (ARCHITECTURE.md, "Emoji search"), read after every key; nil where it does not run.
+    var emojiSearch: () -> EmojiSearchSetup? = { nil }
+    /// A tap on the strip put this emoji in place of its query: it joins the recents.
+    var onEmojiChosen: ((String) -> Void)?
     /// The current word's characters with their taps' touch-down points. In memory only; dropped on hiding.
     private(set) var wordTaps = WordTapRecord()
     /// A digest of the text after the caret when the space after the record's finished word was typed (own typing never
@@ -1017,6 +1025,11 @@ final class KeyboardEditor {
             typingSuggestions = nil
             return
         }
+        // A `:` and letters: the emoji they find (from two letters), or nothing; never word suggestions.
+        if EmojiSearch.startsSearch(record: wordTaps, before: before) {
+            typingSuggestions = EmojiSearch.typingStrip(before: before, record: wordTaps, setup: emojiSearch())
+            return
+        }
         // Caps lock, or a field that capitalizes every character: one capital letter is already all capitals.
         let allCapitals = typing.shift == .capsLock || autocapitalization() == .allCharacters
         typingSuggestions = WordAutocorrect.typingStrip(before: before, record: wordTaps, reverted: revertedWords,
@@ -1046,7 +1059,9 @@ final class KeyboardEditor {
         // another), with the word shown before the caret, as at a commit key, and the same text after it (a caret the
         // host moved after another copy of the word, not reported yet, has other text after it).
         guard let anchor = typingAnchor, anchor.field == core.documentID, core.documentID == document.documentID,
-              !document.hasSelection, wordTaps.isShown(before: document.contextBefore), document.contextAfter == anchor.after
+              !document.hasSelection, wordTaps.isShown(before: document.contextBefore), document.contextAfter == anchor.after,
+              // An emoji's query must still start a search where the proxy shows it (the host may have typed before the `:`).
+              !typing.strip.emoji || EmojiSearch.query(record: wordTaps, before: document.contextBefore ?? "") != nil
         else {
             typingSuggestions = nil
             return
@@ -1079,6 +1094,7 @@ final class KeyboardEditor {
             revertedWords.insert(typing.word)
             offerNeverCorrect(typing.word, typed: typing.typed)
         }
+        if typed, typing.strip.emoji { onEmojiChosen?(chosen) }
         typingSuggestions = nil
         typingAnchor = nil
         refreshNextWords()

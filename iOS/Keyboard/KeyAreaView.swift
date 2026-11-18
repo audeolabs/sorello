@@ -149,9 +149,11 @@ final class KeyAreaView: UIView {
     /// The emoji press under way, like a held key's: the field it touched down in (or, touched down before any
     /// identity, the first one identified after), and whether it was dropped (the menu, hiding, another field).
     private var emojiPress: (emoji: String, field: UUID?, cancelled: Bool)?
+    /// The emoji recents (ARCHITECTURE.md, "Emoji panel"), which the panel shows and emoji search ranks by.
+    let emojiRecents = EmojiRecentsStore()
     /// The emoji panel, shown on the emoji layer over the area above its bottom keys.
     private lazy var emojiPanel: EmojiPanelView = {
-        let panel = EmojiPanelView()
+        let panel = EmojiPanelView(recents: emojiRecents)
         panel.onEmojiPressBegan = { [weak self] emoji in self?.emojiPressBegan(emoji) }
         panel.onEmojiPressCancelled = { [weak self] in self?.emojiPress = nil }
         panel.onEmoji = { [weak self] emoji in self?.typeEmoji(emoji) }
@@ -571,7 +573,7 @@ final class KeyAreaView: UIView {
         let now = CACurrentMediaTime()
         delegate?.keyAreaTouchedDownKey(self, timestamp: now)
         delegate?.keyArea(self, typed: .character(emoji), field: field ?? currentField(), timestamp: now)
-        emojiPanel.emojiTyped(emoji)
+        emojiRecents.use(emoji)
     }
 
     // MARK: Swipe trace

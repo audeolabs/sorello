@@ -441,8 +441,12 @@ private struct Middle: View {
 /// the correction a space would make emphasized, while one is pending). A tap replaces the word (the editor decides
 /// whether it still can). The words share one text size (`CandidateStripLayout`); words that would shrink below
 /// `CandidateStripLayout.minimumScale` make room by dropping the least useful candidate; no divider shows beside the
-/// emphasized one's pill, which glides to a new pick in the same strip instead of jumping.
+/// emphasized one's pill, which glides to a new pick in the same strip instead of jumping. An emoji search's matches
+/// are drawn larger than words (`emojiScale` of the strip's height) and nothing is emphasized.
 private struct CandidateStrip: View {
+    /// An emoji's size, as a share of the strip's height: 22 pt in portrait and 17 pt in landscape, whatever the text size.
+    static let emojiScale: CGFloat = 0.72
+
     let strip: SwipeStrip
     let height: CGFloat
     /// The bar's height: each candidate takes taps from the bar's top, through the bar and the gap above the top row
@@ -458,7 +462,7 @@ private struct CandidateStrip: View {
 
     var body: some View {
         let fit = CandidateStripLayout.fit(strip, widths: strip.candidates.indices.map(textWidth), available: Double(width))
-        let size = baseFont.pointSize * CGFloat(fit.scale)
+        let size = fullSize * CGFloat(fit.scale)
         HStack(spacing: 0) {
             ForEach(Array(fit.shown.enumerated()), id: \.element) { position, index in
                 let word = strip.candidates[index]
@@ -489,7 +493,8 @@ private struct CandidateStrip: View {
                 }
                 .buttonStyle(PressableStyle())
                 .accessibilityLabel(quoted ? "Keep \(word)" : word)
-                .accessibilityHint(strip.live != nil && emphasized ? "Space puts this in" : "")
+                .accessibilityHint(strip.emoji ? "Replaces the colon and the letters"
+                    : strip.live != nil && emphasized ? "Space puts this in" : "")
                 .accessibilityAddTraits(emphasized ? .isSelected : [])
                 .accessibilityIdentifier("sorello.swipe.candidate.\(index)")
             }
@@ -530,9 +535,14 @@ private struct CandidateStrip: View {
         return UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traits)
     }
 
-    /// The candidate's width at full size, in the bar's text size.
+    /// The candidates' size before any shrinking: the bar's text size, or the emoji's.
+    private var fullSize: CGFloat {
+        strip.emoji ? (height * Self.emojiScale).rounded() : baseFont.pointSize
+    }
+
+    /// The candidate's width at full size.
     private func textWidth(_ index: Int) -> Double {
-        let font = UIFont.systemFont(ofSize: baseFont.pointSize, weight: index == strip.emphasized ? .semibold : .regular)
+        let font = UIFont.systemFont(ofSize: fullSize, weight: index == strip.emphasized ? .semibold : .regular)
         return Double(ceil((label(index) as NSString).size(withAttributes: [.font: font]).width))
     }
 }
