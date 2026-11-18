@@ -12,6 +12,7 @@ enum DictationProtocolTests {
             ("terminalPhases", testTerminalPhases),
             ("storeReadAccessors", testStoreReadAccessors),
             ("statusWithoutAVoiceNoteIsUnchanged", testStatusWithoutAVoiceNoteIsUnchanged),
+            ("statusWithoutAnAddedWordIsUnchanged", testStatusWithoutAnAddedWordIsUnchanged),
         ]
     }
 
@@ -27,6 +28,7 @@ enum DictationProtocolTests {
         TestSupport.expectEqual(DictationProtocol.keyboardPresenceTimeout, 15)
         TestSupport.expectEqual(DictationProtocol.maxDictationDuration, 300)
         TestSupport.expectEqual(DictationProtocol.resultTTL, 60)
+        TestSupport.expectEqual(DictationProtocol.addedWordTTL, 60)
     }
 
     private static func roundTrip<T: Codable & Equatable>(_ value: T) {
@@ -64,6 +66,13 @@ enum DictationProtocolTests {
         }
         roundTrip(Fixture.result(text: "Synthetic \"quoted\" text with émoji 🎙️\nand a newline", pressEnter: true))
         roundTrip(Fixture.result(text: ""))
+        roundTrip(Fixture.addedWord("Quint Morrow", range: 0..<3))
+        for outcome in [AddedWordStatus.Outcome.added, .alreadyInDictionary, .notHeard, .notAdded] {
+            var status = Fixture.status()
+            status.addedWord = AddedWordStatus(id: Fixture.addedWordID, outcome: outcome,
+                                               strength: outcome == .added ? 2.83 : nil, decidedAt: Fixture.now)
+            roundTrip(status)
+        }
     }
 
     private static func testWireFormatUsesSortedKeysAndUnixSeconds() {
@@ -98,11 +107,34 @@ enum DictationProtocolTests {
         TestSupport.expectEqual(decoded.voiceNote, nil)
     }
 
+    /// Schema 1 still: a status with no added word's outcome is written without the key, and a status written before
+    /// added words existed reads with none (ARCHITECTURE.md, "Types", Schema).
+    private static func testStatusWithoutAnAddedWordIsUnchanged() {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .secondsSince1970
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .secondsSince1970
+        let status = Fixture.status(dictation: Fixture.dictation(.completed))
+        let object = try! JSONSerialization.jsonObject(with: try! encoder.encode(status)) as! [String: Any]
+        TestSupport.expect(object["addedWord"] == nil, "a status with no added word names one")
+        var older = object
+        older.removeValue(forKey: "addedWord")
+        let decoded = try! decoder.decode(HostStatus.self, from: try! JSONSerialization.data(withJSONObject: older))
+        TestSupport.expectEqual(decoded, status)
+        TestSupport.expectEqual(decoded.addedWord, nil)
+        // The outcome names no word.
+        var deciding = status
+        deciding.addedWord = AddedWordStatus(id: Fixture.addedWordID, outcome: .added, strength: 2, decidedAt: Fixture.now)
+        let json = String(data: try! encoder.encode(deciding), encoding: .utf8)!
+        TestSupport.expect(!json.contains("Xylo") && !json.contains("\"word\""), "the status names a word")
+    }
+
     private static func testNewRecordsUseCurrentSchema() {
         TestSupport.expectEqual(Fixture.intent(.record).schema, DictationProtocol.schema)
         TestSupport.expectEqual(Fixture.presence().schema, DictationProtocol.schema)
         TestSupport.expectEqual(Fixture.status().schema, DictationProtocol.schema)
         TestSupport.expectEqual(Fixture.result().schema, DictationProtocol.schema)
+        TestSupport.expectEqual(Fixture.addedWord().schema, DictationProtocol.schema)
     }
 
     private static func testMissingSchemaFailsToDecode() {

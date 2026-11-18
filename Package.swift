@@ -22,7 +22,7 @@ let package = Package(
         // What the iPhone app links, built for iOS by iOS/Makefile: the app takes the first, its keyboard the second.
         .library(name: "SorelloSpeech", type: .static,
                  targets: ["SpeechEngine", "DictionaryKit", "TextRules", "DictationCore"]),
-        .library(name: "SorelloText", type: .static, targets: ["TextRules"]),
+        .library(name: "SorelloText", type: .static, targets: ["TextRules", "DictionaryKit"]),
     ],
     // Sorello's one dependency: Sparkle updates the app (ARCHITECTURE.md, section 6, "Updates"). One exact version, so
     // what is signed and shipped is what was reviewed.

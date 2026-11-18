@@ -108,7 +108,8 @@ iOS/
   tap and word models in `KeyboardCore/`, CryptoKit in `KeyboardCore/` (a
   digest) and `NotesCore/` (sealing), and two of Sorello's shared modules,
   which are Foundation-only too: `TextRules` in `Shared/` and `HostCore/`, and
-  `DictionaryKit` in `HostCore/`. So they compile for the macOS test runner.
+  `DictionaryKit` in `HostCore/` and `KeyboardCore/`. So they compile for the
+  macOS test runner.
   `HostCore/` also uses `NotesCore/`, to write voice notes. UIKit, SwiftUI,
   AVFoundation and Core ML belong in `App/` and `Keyboard/`.
 - The shared modules are the package's at the repository root
@@ -126,8 +127,11 @@ iOS/
     fitting a dictation to the text around the cursor.
   - `DictationCore`: the speech port's types the engine speaks in.
 - The keyboard is compiled from `Keyboard/`, `Shared/` and `KeyboardCore/`
-  and links `SorelloText`, which is `TextRules` alone. It never links
-  `SpeechEngine`, `DictionaryKit`, `HostCore` or `NotesCore`, and it never captures audio.
+  and links `SorelloText`: `TextRules`, and `DictionaryKit` for its
+  correction rules alone ([Dictation corrections](#dictation-corrections)).
+  It has no dictionary: the entries are the app's
+  ([Custom dictionary](#custom-dictionary)). It never links `SpeechEngine`,
+  `HostCore` or `NotesCore`, and it never captures audio.
 - The Live Activity extension is compiled from `Activity/`, `ActivityCore/`
   and `KeyboardCore/RingMark.swift` with `KeyboardCore/KeyboardLayout.swift`
   (the ring mark and its box) and `KeyboardCore/DotWave.swift` (the strip's
@@ -247,6 +251,7 @@ each carries `schema: Int` (currently `1`).
 | `presence.json` | keyboard | host | `KeyboardPresence`: a visible keyboard with Full Access | class C, `.completeUntilFirstUserAuthentication` |
 | `status.json` | host | keyboard | `HostStatus`: run, session, capture, model, dictation and voice note state | class C |
 | `result-<UUID>.json` | host | keyboard | `DictationResult`: one finished transcript | class A |
+| `added-word.json` | keyboard | host | `AddedWord`: a word the user tapped "Add to dictionary" for | class A |
 
 - Class A applies on devices only. The simulator does not enforce data
   protection and macOS refuses class A to unentitled processes, so both use
@@ -258,15 +263,37 @@ each carries `schema: Int` (currently `1`).
   option is not used, because its temporary file escapes the staging sweeps.
 - **Claim by rename.** Every result removal (the keyboard's claim, and every
   purge) first renames the file to a private staging name and deletes it from
-  there. Only one rename of a name can succeed, so exactly one caller sees
+  there. Only the host takes `added-word.json` that way; the keyboard's
+  removal of an expired one follows "One added word" below. Only one rename of a name can succeed, so exactly one caller sees
   `.removed`. Concurrent `unlink` calls on APFS can all report success, so
   they are not used to decide a claim.
+- **One added word.** `added-word.json` has one fixed name: a new word is
+  written over an unclaimed one, which is then lost (one word is offered per
+  dictation, so two taps that close together cannot happen in practice). The
+  host claims it and deletes it at once
+  ([Custom dictionary](#custom-dictionary), Words from corrections). Either
+  process deletes it once it is not fresh within `addedWordTTL` (judged by
+  `issuedAt`, or by the file's modification date when the record cannot be
+  read): the keyboard when it appears, on every result read, and, while it
+  is visible with Full Access after writing one, at that file's deadline and
+  every `cleanupRetryInterval` after a failed removal until it is gone; the
+  host at launch, on every heartbeat while live, and at session end. The
+  host's purge is its claim: it takes the file (rename, then judge the
+  private copy), deletes a copy that is stale or malformed and decides a
+  fresh one, so it never sets a fresh word aside. The keyboard, the file's
+  only writer, writes and purges on its main thread, so its purge never
+  meets its own write: it judges the file where it lies and removes it by
+  name only when that reading is past `addedWordTTL`. A removal that finds
+  the name gone (the host took it meanwhile) has nothing left to do. The file can
+  outlive `addedWordTTL` only while neither process runs, as a result file
+  can.
 - **Staging sweeps.** `purgeExpiredResults` also deletes staging files older
   than `resultTTL`. At launch, before writing anything, the host deletes
   staging files of any age (`purgeStagingFiles(olderThan: 0, now:)`): a
   writer that died before renaming may have left a transcript in one.
 - Darwin notification names are `"\(appGroupID).intent"`, `.presence` (never
-  posted), `.status` and `.result`, each posted after the matching write.
+  posted), `.status`, `.result` and `.addedWord`, each posted after the
+  matching write.
 
 ### Reading records
 
@@ -304,6 +331,7 @@ enum DictationProtocol {
     static let keyboardPresenceTimeout: TimeInterval = 15   // see "Keyboard presence"
     static let maxDictationDuration: TimeInterval = 300     // host auto-finishes a recording after this
     static let resultTTL: TimeInterval = 60                 // insertion window; expired results are deleted by either process
+    static let addedWordTTL: TimeInterval = 60              // an unclaimed added-word.json is deleted by either process after this
 }
 
 struct KeyboardIntent: Codable, Equatable, Sendable {
@@ -336,6 +364,7 @@ struct HostStatus: Codable, Equatable, Sendable {
     var level: Float = 0           // 0...1, meaningful only while recording
     var error: HostErrorCode?      // content-free, most recent session-level error
     var voiceNote: VoiceNoteStatus?  // the voice note preparing, recording or saving; absent when none
+    var addedWord: AddedWordStatus?  // the last added word's outcome, for addedWordTTL; absent when none
 }
 
 struct VoiceNoteStatus: Codable, Equatable, Sendable {
@@ -370,7 +399,30 @@ struct DictationResult: Codable, Equatable, Sendable {
     var pressEnter: Bool
     var createdAt: Date
 }
+
+struct AddedWord: Codable, Equatable, Sendable {
+    var schema: Int = DictationProtocol.schema
+    var id: UUID                   // this tap's; the host's outcome names it
+    var requestID: UUID            // the dictation the word corrects
+    var word: String               // the word or phrase to add, as the offer showed it
+    var replacedStart: Int         // the dictation's words it replaces: whitespace-split indices of
+    var replacedEnd: Int           //   DictationResult.text, half open (DictionaryKit `CorrectionOffer.replacedWords`)
+    var issuedAt: Date
+}
+
+struct AddedWordStatus: Codable, Equatable, Sendable {
+    enum Outcome: String, Codable, Sendable { case added, alreadyInDictionary, notHeard, notAdded }
+    var id: UUID                   // the AddedWord's
+    var outcome: Outcome
+    var strength: Float?           // the strength saved, with .added only
+    var decidedAt: Date
+}
 ```
+
+`addedWord` is the outcome of the last word the host claimed, kept until
+`addedWordTTL` after `decidedAt`
+([Custom dictionary](#custom-dictionary), Words from corrections). It holds no
+word: the keyboard still has the word it sent.
 
 `writeStatus` clamps `level` to 0...1 and writes 0 for a non-finite level, so
 a heartbeat never fails to encode.
@@ -384,7 +436,7 @@ or records.
 
 **Schema.** These records are still `schema` 1. Each addition is optional or a
 new value, so a reader of this version decodes every older record unchanged
-(an absent `voiceNote` is nil). A record that holds a new value exists only
+(an absent `voiceNote` or `addedWord` is nil). A record that holds a new value exists only
 while the app and the keyboard of this version are installed, and they ship in
 one bundle and update together; an older reader sees one only after a
 downgrade, where it cannot decode it, reads it as `unreadable` and treats it as
@@ -904,7 +956,10 @@ synthetic source in self-test builds, a fake in tests.
   batch transcription of the same samples. If the stream fails (other than by
   cancellation), the drained samples are transcribed in one batch.
   Cancellation, supersession, lock, session end and background-time expiry
-  cancel the stream.
+  cancel the stream. A dictation's stream is opened with
+  `retainForCorrection`, so the engine keeps what it needs to decode it again
+  for a correction ([Custom dictionary](#custom-dictionary), Words from
+  corrections); a dictation transcribed in one batch keeps nothing.
 - **A voice note's stream** (`beginStream(.note)`, only from a ready model) is
   opened with progress and with bounded leading silence
   ([../ARCHITECTURE.md](../ARCHITECTURE.md), section 5), so a note that begins
@@ -1089,8 +1144,11 @@ user's own "Start session" tap, does.
 ### Custom dictionary
 
 The shared custom dictionary (`DictionaryKit`: a fixed bonus per entry with a
-strength) decodes iPhone dictations as it decodes the Mac's. There is no
-correction detection on iOS: entries are added by hand.
+strength) decodes iPhone dictations as it decodes the Mac's. Entries are
+added by hand, or from a correction: the keyboard notices that the user fixed a
+word it dictated and offers to add it
+([Dictation corrections](#dictation-corrections)), and the app measures the
+word's strength from that dictation's audio before it saves it.
 
 - **Storage.** The host app's own `UserDefaults.standard`, never the App
   Group, under the keys and in the payloads the earlier build of this app
@@ -1134,9 +1192,73 @@ correction detection on iOS: entries are added by hand.
   any work still running. Nothing changes until the user taps "Use ×n". A
   check that has started may finish in the background. It runs through
   `TranscriptionEngine.withReadyRuntime` and is not reported as a dictation.
+- **Words from corrections** (`AddedWordInbox`, HostCore, tested). A word the
+  user taps "Add to dictionary" for reaches the app as `added-word.json`
+  ([Files](#files)).
+  - **What is kept for it.** The engine keeps the newest streamed dictation's
+    encoder output, its dictionary snapshot and its unprocessed text, in
+    memory only ([../docs/dictionary/DESIGN.md](../docs/dictionary/DESIGN.md),
+    §3.4: at most 16 MiB, at most 90 s, the newest recording only). The host
+    keeps, beside it, that dictation's request id, the engine's correction id
+    and the text it wrote to `result-R.json`, for at most 90 s on the
+    monotonic clock (`AddedWordInbox.keptLifetime`), as long as the engine
+    keeps the audio. All of it goes when the engine lets it go. The host releases everything kept
+    (`SpeechEngine.discardCorrection`) when a new recording starts, the
+    session ends, the device locks, the dictionary is edited (a word saved
+    from a correction included) or the runtime is released. Deciding a word
+    releases only its own dictation's
+    (`SpeechEngine.releaseCorrection(correctionID)`), never a newer one's.
+  - **Claim.** The host takes `added-word.json` on `.addedWord`, on every
+    heartbeat while it runs, at launch and when it comes to the foreground.
+    Taking it is one step: rename the file to a private staging name (only
+    one rename of a name succeeds), then read and judge that private copy,
+    so what is decided, purged or kept is always the version that was
+    claimed, never one the keyboard wrote over it meanwhile. A copy that is
+    not fresh within `addedWordTTL`, of another schema, or malformed (a word
+    that is empty, or a range that is not 0 ≤ start < end) is deleted and
+    ignored. How many of the dictation's words the range holds (one to three
+    that are not punctuation alone, DESIGN §1.5.2) is checked against the
+    kept text in 3 only, since indices count punctuation-only pieces too. A copy that cannot be read yet (the device
+    is locked) stays under its private name and is read again at the next
+    take, until `addedWordTTL` after its modification date, when it is
+    deleted unread. A copy that was read is deleted before the word is
+    decided, so a word is acted on at most once. One word is decided at a
+    time; a word taken while another is decided waits for it.
+  - **Decision.** In this order, with the outcome published as
+    `HostStatus.addedWord`:
+    1. The dictionary cannot be edited (no vocabulary, saved data that failed
+       validation), is full, or the word fails validation with the
+       vocabulary: `notAdded`.
+    2. Its key is already in the dictionary: `alreadyInDictionary`. Nothing
+       changes.
+    3. The request id is the dictation whose audio and text are kept, and the
+       range lies within that text's words and holds one to three of them:
+       the edited text is rebuilt from
+       the text the host wrote, with the words in the range replaced by the
+       word, and the engine checks it as the Mac checks a correction
+       (`SpeechEngine.verifyCorrection`; DESIGN §1.5, §1.6 and §4.2), with
+       the dictionary of the dictation's snapshot and no ignore list (the
+       user asked for this word). Verified: saved at the strength the check
+       found (×1 for a casing fix), `added`. Every strength tried and none
+       recognized the word: not saved, `notHeard`.
+    4. Otherwise (the audio and text are gone or belong to another dictation,
+       the range does not fit the kept text, or the check could not run or
+       finish: no candidate could be attempted, its budget ran out, or a new
+       recording, the session's end, a lock or a dictionary edit stopped it):
+       saved at ×1 (`DictionaryValidation.defaultStrength`), `added`.
+
+    The save is decided again against the library as it is at that moment,
+    on the main actor in the same turn as the save, because the check in 3
+    takes time: if the dictionary can no longer be edited or is full, the
+    outcome is `notAdded`; if the key is there now (the user added it
+    meanwhile), `alreadyInDictionary`, and the entry the user made is never
+    changed. Saving goes through `DictionaryLibrary` as any edit does. The
+    outcome stays in the status until `addedWordTTL` after it was decided.
 - **Privacy.** Entries are user content: never logged, never in a bug report
-  and never in the App Group. Test recordings follow invariant 1, and the
-  transcripts shown in the sheet are never stored.
+  and never in the App Group; a word on its way in waits in
+  `added-word.json` for at most `addedWordTTL` (invariants 7 and 9). Test
+  recordings follow invariant 1, and the transcripts shown in the sheet are
+  never stored.
 
 ### Bug report (HostCore/BugReportEmail.swift)
 
@@ -2183,7 +2305,9 @@ every other point of the bar
   ([Word autocorrect](#word-autocorrect)), or with the emoji an emoji
   search finds ([Emoji search](#emoji-search)), replaces the chips while it
   shows. The "Never correct" chip after an autocorrect revert replaces both
-  while it shows ([Word autocorrect](#word-autocorrect)). Neither covers
+  while it shows ([Word autocorrect](#word-autocorrect)), and so, below it,
+  does the "Add to dictionary" chip after a fix to a dictated word
+  ([Dictation corrections](#dictation-corrections)). None covers
   dictation's own UI (`BarMiddleContent`): while a dictation is starting,
   recording, transcribing or waiting for the model, while a notice is up,
   or while its Undo chip shows, the middle stays dictation's.
@@ -2852,6 +2976,91 @@ from "press enter" included (`UndoTracker`, owned by `EditingCore`).
   most 30 s.
 - A host that edits text without sending callbacks is a residual risk the
   anchors mitigate.
+
+### Dictation corrections
+
+When the user fixes a word of a dictation the keyboard just inserted, the top
+row offers to add the fixed word to the custom dictionary, so the next
+dictation hears it (`DictationCorrectionWatch`, pure, tested; owned by
+`EditingCore`). The app decides what is saved
+([Custom dictionary](#custom-dictionary), Words from corrections).
+
+- **The watch.** Inserting a dictation (automatically or by the chip) starts
+  a watch on it, replacing any earlier one, when the keyboard has Full
+  Access, the result does not press Return, and its trimmed text is not empty
+  and within DictionaryKit's bounds (4096 bytes and 200 words; DESIGN §1.5.1).
+  The watch holds, in memory only, the dictation's request id, its text as
+  inserted (the result's text, trimmed, without the leading space or a
+  `"\n"`), up to 24 characters of the context before it and up to 24 after
+  it (read as Undo reads them), the field's `documentIdentifier` and the
+  time.
+- **Where the dictation is now.** Read from the proxy, never kept. The
+  dictation as edited lies between the before-anchor, in the text before the
+  caret, and the after-anchor, in the text after it, so the caret is in it
+  or at one of its ends. Each anchor must place that end without doubt:
+  - A full anchor (24 characters) must occur exactly once in the text the
+    proxy shows on its side. Two or more occurrences (the same words written
+    again, as in a repeated line) place nothing.
+  - A shorter anchor means the dictation was that close to the field's start
+    (before) or end (after), so it must be at the very start of the text
+    before the caret, or at the very end of the text after it, and occur
+    nowhere else on that side. An empty anchor puts that end at the start of
+    the text before the caret, or at the end of the text after it.
+  - The proxy may show less than the whole field. A full anchor it has cut
+    off places nothing. A context cut short on the side of a short or empty
+    anchor cannot be told from the field's edge; the words it hides then look
+    deleted from the dictation, which can put the offer's range in the wrong
+    place but never its word, which is always text the user has there. The
+    app's check then looks for the word in the wrong place: it may find it
+    anyway, save it at ×1 because no candidate can be attempted, or answer
+    `notHeard` and save nothing
+    ([Custom dictionary](#custom-dictionary), Words from corrections). So
+    the cost is at worst a missed save, never a wrong word saved.
+
+  Text must not be selected, and the field must be the watch's. Otherwise
+  there is no offer, and the watch goes on. **A context the keyboard cannot
+  place means a missed offer, never a wrong one.**
+- **What counts as a correction** (`CorrectionOffer.find(typed:edited:)`,
+  DictionaryKit; DESIGN §4.1): the Mac's rules for a correction
+  (DESIGN §1.5), with no dictionary, ignore list or vocabulary to consult
+  (the keyboard has none), after dropping the words typed before the
+  dictation's first word or after its last (text added around it, not
+  within it): not a rewrite, and a block of one to three of the dictation's
+  words replaced by one to three words that make a valid entry. The first
+  such block in text order is the offer: its word and the range of the
+  dictation's words it replaces. A casing fix ("iphone" to "iPhone") counts;
+  a change of a sentence's first capital does not.
+- **When.** The edit is checked once the text has been quiet for 0.75 s
+  (`DictationCorrectionWatch.quietPeriod`, half the Mac's: the keyboard sees
+  each key as it is typed, so the offer can follow the fix sooner): every
+  key, strip choice, swipe, trackpad movement and text or selection callback
+  restarts the wait. Nothing is checked while the dictation is unchanged, or
+  while the dictation as edited holds more than 1000 words as DictionaryKit
+  counts them (`DictationCorrectionWatch.maxEditedWords`,
+  `CorrectionOffer.wordCount`), which bounds the alignment's memory in the
+  keyboard.
+- **The offer** shows only while a session is on (the host alive, as in
+  [Keyboard presentation](#keyboard-presentation-sharedkeyboardpresenterswift-pure-tested))
+  and the middle of the top row may show it: a chip, `Add “Xylo” to
+  dictionary`, the word as the offer has it. It takes the place the "Never
+  correct" offer takes, over the chips, the status line and the candidate
+  strip, and gives way to dictation's own UI and to a "Never correct" offer
+  ([Top row](#top-row)). Any key action, strip choice, swipe, trackpad
+  movement, caret move or outside edit ends it; the next quiet check may
+  offer again, the same word or another, while the watch lasts.
+- **Accepting** writes `AddedWord` (the request id, the word and its range)
+  to `added-word.json`, posts `.addedWord`, ends the watch, and shows the
+  notice `Adding “Xylo”…`. The keyboard keeps the word and the record's id in
+  memory until the host's outcome for that id arrives in the status, then
+  shows it as a notice: `Added “Xylo” · ×2` (the strength as
+  `DictionaryValidation.label` writes it), `Already in your dictionary`,
+  `“Xylo” wasn't heard in that recording` or `Couldn't add “Xylo”`. A
+  failed write shows `Couldn't add “Xylo”`. Hiding forgets the word, and an
+  outcome that arrives after that shows nothing.
+- **The watch ends** at accepting, 60 s after the insertion
+  (`DictationCorrectionWatch.lifetime`), at another dictation's start or
+  insertion, its own Undo, a change of field, hiding the keyboard, and losing
+  Full Access. Its text and anchors go with it.
 
 ### Trackpad: activation and motion
 
@@ -4135,7 +4344,12 @@ app reads only the count. The models are fixed.
 ## Privacy and security invariants (review checklist)
 
 1. Audio is never written to disk. Between dictations, capture buffers are
-   dropped in the tap callback. "Find strength" recordings stay in memory. A
+   dropped in the tap callback. "Find strength" recordings stay in memory. So
+   does what the engine keeps of the newest streamed dictation to measure a
+   corrected word's strength (its encoder output, at most 16 MiB), with that
+   dictation's text, for at most 90 s and released sooner on a new recording,
+   the session's end, a lock or a dictionary edit
+   ([Custom dictionary](#custom-dictionary), Words from corrections). A
    voice note's audio is not even kept in memory: the capture feeds its stream,
    which holds at most the chunk in progress and a bounded leading silence.
 2. A dictation's transcript exists on disk only as one `result-R.json` (or,
@@ -4167,14 +4381,15 @@ app reads only the count. The models are fixed.
    `documentContextAfterInput`, `documentIdentifier` and whether text is
    selected in memory only, for spacing, result binding, shift, cursor
    movement, word deletion, Undo, swipe insertion, predicting the next letter
-   (soft key edges), correcting the word before the caret and predicting the
-   next word (autocorrect), and finding emoji (emoji search). It never stores,
-   logs or transmits them, and drops
-   them when the operation ends or the keyboard hides, except the word it was
-   typing, kept in memory across hiding with a digest of the text around it
-   until it appears again ("Word autocorrect", Owned
-   words). What it persists about fields is content-free: trait fingerprints
-   and layout choices.
+   (soft key edges), correcting the word before the caret, predicting the
+   next word (autocorrect), finding emoji (emoji search) and noticing a fix to
+   a dictation it inserted ([Dictation corrections](#dictation-corrections)).
+   It never stores, logs or transmits them, and drops them when the operation
+   ends or the keyboard hides, except the word it was typing, kept in memory
+   across hiding with a digest of the text around it until it appears again
+   ("Word autocorrect", Owned words), and a word the user taps "Add to
+   dictionary" for, which it hands to the app (invariant 9). What it persists
+   about fields is content-free: trait fingerprints and layout choices.
 6. Capture requires a session the user started: in the foreground, or with
    the session control or the "Voice Note" control after iOS authenticated
    the user; a background start
@@ -4187,13 +4402,22 @@ app reads only the count. The models are fixed.
    cancels a dictation in progress and admits none until unlock, and lets a
    voice note go on; the session ends at idle expiry.
 7. Custom dictionary entries live only in the host app's own `UserDefaults`,
-   never in the App Group, a log or a bug report.
+   never in the App Group, a log or a bug report. The one exception is a word
+   on its way in from a correction, which waits in `added-word.json` for at
+   most `addedWordTTL` (invariant 9).
 8. A bug report is a draft the user reviews and sends; it carries only version
    and generic device metadata.
 9. The only words the keyboard stores are those the user taps "Never correct"
    for, in the never-correct store on this iPhone until the user clears it;
    the app reads only their count ("Never correct",
-   [Word autocorrect](#word-autocorrect)).
+   [Word autocorrect](#word-autocorrect)). And a word the user taps "Add to
+   dictionary" for: one word, its dictation's request id and the range of
+   that dictation's words it replaces, in `added-word.json` in the App
+   Group's `Library/Caches`, excluded from backup and protected while the
+   device is locked, until the app claims and deletes it, or for at most
+   `addedWordTTL` (60 s) while either process runs ("One added word"); the
+   app's outcome in the status names no word
+   ([Dictation corrections](#dictation-corrections)).
 10. The Live Activity shows on the Lock Screen and in the Dynamic Island, so
     it carries only the session's phase, its timer dates and four flags (a
     voice note's power, its last minutes, its end at the cap, and whether a

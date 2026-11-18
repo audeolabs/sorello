@@ -4,7 +4,7 @@ import Foundation
 /// Wake-up signals between the host app and the keyboard. Darwin notifications carry no payload
 /// and any process can post one, so a handler must re-read the shared files and trust nothing else.
 struct DarwinNotifier: Sendable {
-    enum Signal: String, CaseIterable, Sendable { case intent, presence, status, result }
+    enum Signal: String, CaseIterable, Sendable { case intent, presence, status, result, addedWord }
 
     /// Content-free counters, so tests can check CF unregistration separately from handler suppression.
     struct Diagnostics: Equatable, Sendable {

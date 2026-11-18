@@ -621,24 +621,52 @@ public actor SpeechEngine: SpeechTranscribing {
             return token.isCancelled || !gate.allows(correctionID)
         }
         guard !cancelled(), let session = liveSession(correctionID) else { return nil }
-        let model = session.model
         let suggestion = DictionarySuggestionFinder.find(
             typed: typed, edited: edited, base: session.base, dictionary: session.snapshot.entries, ignore: ignore,
-            encoder: model.encoder, exhausted: session.exhausted, now: { Self.uptime() }, isCancelled: cancelled,
-            decode: { extra in
-                let entries = session.snapshot.entries.filter { $0.key != extra.key } + [extra]
-                guard let graph = BiasGraph.build(entries: entries, encoder: model.encoder),
-                      let text = try? Self.decode(session.chunks, model: model, bias: graph, check: {
-                          if cancelled() { throw TranscriptionError.cancelled }
-                      }) else {
-                    return nil
-                }
-                return CasingRestorer.apply(text, entries: entries)
-            })
+            encoder: session.model.encoder, exhausted: session.exhausted, now: { Self.uptime() }, isCancelled: cancelled,
+            decode: { Self.decode(session, adding: $0, isCancelled: cancelled) })
         let stopped = cancelled()
         // After the last check nothing else can use this dictation's audio.
         if isLast && !stopped { release(correctionID) }
         return stopped ? nil : suggestion
+    }
+
+    /// Checks a correction the user made to a dictation on the iPhone (DESIGN §4.2): §1.6 for the retained session
+    /// `correctionID`, with the dictionary of its snapshot, no ignore list and no exhausted candidates. `unverified`
+    /// when no session is kept for it, or when a newer recording, a release or the calling task's cancellation stops
+    /// the check. The session is released afterwards, whatever the outcome; a newer one is never touched.
+    public func verifyCorrection(typed: String, edited: String, correctionID: UInt64) async -> CorrectionVerification {
+        let token = checks.begin().token
+        let gate = self.gate
+        func cancelled() -> Bool {
+            if Task.isCancelled { token.cancel() }
+            return token.isCancelled || !gate.allows(correctionID)
+        }
+        defer {
+            gate.release(correctionID)
+            release(correctionID)
+        }
+        guard !cancelled(), let session = liveSession(correctionID) else { return .unverified }
+        let outcome = DictionarySuggestionFinder.verify(
+            typed: typed, edited: edited, base: session.base, dictionary: session.snapshot.entries, ignore: [],
+            encoder: session.model.encoder, now: { Self.uptime() }, isCancelled: cancelled,
+            decode: { Self.decode(session, adding: $0, isCancelled: cancelled) })
+        return cancelled() ? .unverified : outcome
+    }
+
+    /// One re-decode of a retained session with `extra` added to its snapshot's words, casing restored; nil when it
+    /// failed or was stopped.
+    private static func decode(_ session: RetainedCorrection, adding extra: DictionaryEntry,
+                               isCancelled: () -> Bool) -> String? {
+        let model = session.model
+        let entries = session.snapshot.entries.filter { $0.key != extra.key } + [extra]
+        guard let graph = BiasGraph.build(entries: entries, encoder: model.encoder),
+              let text = try? decode(session.chunks, model: model, bias: graph, check: {
+                  if isCancelled() { throw TranscriptionError.cancelled }
+              }) else {
+            return nil
+        }
+        return CasingRestorer.apply(text, entries: entries)
     }
 
     /// Releases the audio kept for any dictation and stops a running check: clearing the Run Log, turning suggestions

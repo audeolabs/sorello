@@ -19,6 +19,8 @@ enum TranscriptionEngineTests {
             ("noteStreamFromAReadyModel", isolated(testNoteStreamFromAReadyModel)),
             ("streamedRecordingIsNotTranscribedAgain", isolated(testStreamedRecordingIsNotTranscribedAgain)),
             ("failedStreamFallsBackToTheRecording", isolated(testFailedStreamFallsBackToTheRecording)),
+            ("onlyAFinishedStreamCarriesACorrectionID", isolated(testOnlyAFinishedStreamCarriesACorrectionID)),
+            ("releasingTheRuntimeDiscardsWhatItKept", isolated(testReleasingTheRuntimeDiscardsWhatItKept)),
             ("cancellationCancelsTheStream", isolated(testCancellationCancelsTheStream)),
             ("streamKeepsTheRuntimeUntilItsWorkDrains", isolated(testStreamKeepsTheRuntimeUntilItsWorkDrains)),
         ]
@@ -307,6 +309,44 @@ enum TranscriptionEngineTests {
         TestSupport.expectEqual(h.attempts.last?.outcome, .transcribed)
     }
 
+    /// ARCHITECTURE.md, "Transcription": the engine's correction id comes from a dictation's stream that finished; a
+    /// recording transcribed in one batch keeps nothing.
+    @MainActor
+    private static func testOnlyAFinishedStreamCarriesACorrectionID() {
+        let h = readyHarness()
+        let stream = h.engine.beginStream() as! FakeSpeechStream
+        stream.keptCorrectionID = 7
+        let result = h.transcribe(RecordedAudio(samples: [0.1], stream: stream))
+        stream.complete(.success("streamed words"))
+        TestSupport.expect(TestSupport.waitUntil(timeout: 2) { result.value != nil }, "no result")
+        TestSupport.expectEqual(result.correctionID, 7)
+
+        let failing = h.engine.beginStream() as! FakeSpeechStream
+        failing.keptCorrectionID = 8
+        let fallback = h.transcribe(RecordedAudio(samples: [0.1], stream: failing))
+        failing.complete(.failure(FakeRuntime.Failure()))
+        TestSupport.expect(TestSupport.waitUntil(timeout: 2) { h.runtime(0)!.transcribeCalls == 1 }, "no fallback")
+        h.runtime(0)!.finishTranscribing(.success("recorded words"))
+        TestSupport.expect(TestSupport.waitUntil(timeout: 2) { fallback.value != nil }, "no result")
+        TestSupport.expectEqual(fallback.text, "recorded words")
+        TestSupport.expectEqual(fallback.correctionID, nil)
+    }
+
+    /// Releasing the runtime first discards what its engine kept for a correction, so nothing (an expiry) holds the old
+    /// engine and its model once it is let go. Correction calls reach only the ready runtime.
+    @MainActor
+    private static func testReleasingTheRuntimeDiscardsWhatItKept() {
+        let h = readyHarness()
+        let runtime = h.runtime(0)!
+        h.engine.discardCorrection()
+        h.engine.releaseCorrection(7)
+        TestSupport.expectEqual(runtime.correctionCalls, ["discard", "release 7"])
+        TestSupport.expect(h.engine.releaseIfIdle(), "not released")
+        TestSupport.expectEqual(runtime.correctionCalls, ["discard", "release 7", "discard"])
+        h.engine.discardCorrection()
+        TestSupport.expectEqual(runtime.correctionCalls.count, 3)
+    }
+
     /// Cancelling the transcription cancels its stream and never falls back.
     @MainActor
     private static func testCancellationCancelsTheStream() {
@@ -480,6 +520,7 @@ private final class EngineHarness {
     final class Outcome {
         var task: Task<Void, Never>?
         var value: Result<String, Error>?
+        var correctionID: UInt64?
         var text: String? { try? value?.get() }
         var error: Error? {
             if case .failure(let error)? = value { return error }
@@ -496,7 +537,13 @@ private final class EngineHarness {
         let outcome = Outcome()
         let engine = self.engine!
         outcome.task = Task {
-            do { outcome.value = .success(try await engine.transcribe(audio)) } catch { outcome.value = .failure(error) }
+            do {
+                let transcript = try await engine.transcribe(audio)
+                outcome.correctionID = transcript.correctionID
+                outcome.value = .success(transcript.text)
+            } catch {
+                outcome.value = .failure(error)
+            }
         }
         return outcome
     }
@@ -532,6 +579,12 @@ private final class FakeRuntime: SpeechRuntime {
     }
 
     private(set) var streamKinds: [SpeechStreamKind] = []
+    /// "discard" and "release <id>", in order.
+    private(set) var correctionCalls: [String] = []
+
+    func discardCorrection() { correctionCalls.append("discard") }
+
+    func releaseCorrection(_ correctionID: UInt64) { correctionCalls.append("release \(correctionID)") }
 
     func beginStream(_ kind: SpeechStreamKind, onEnd: @escaping @Sendable () -> Void) -> SpeechStream? {
         let stream = FakeSpeechStream(onEnd: onEnd, reportsProgress: kind == .note)

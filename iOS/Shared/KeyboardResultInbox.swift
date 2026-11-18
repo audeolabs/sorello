@@ -144,6 +144,8 @@ struct KeyboardResultInbox: Equatable, Sendable {
         results.removeAll { !Self.isFresh($0, now: now) }
         guard let reason = readReason(status: status, now: now) else { return nil }
         store.purgeExpiredResults(now: now)
+        // The added word too, on every result read (ARCHITECTURE.md, "Files", One added word).
+        store.purgeExpiredAddedWord(now: now)
         guard let requestIDs = store.listResultRequestIDs() else {
             listingFailed(now: now)
             return reason

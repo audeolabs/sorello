@@ -5,6 +5,7 @@ enum BarContentTests {
     static var tests: [TestCase] {
         [
             ("dictationIsNeverHiddenByTheStripOrTheOffer", testDictationIsNeverHiddenByTheStripOrTheOffer),
+            ("theDictionaryOfferSitsBelowNeverCorrect", testTheDictionaryOfferSitsBelowNeverCorrect),
             ("returnKeyFollowsEnablesReturnKeyAutomatically", testReturnKeyFollowsEnablesReturnKeyAutomatically),
             ("emojiRecentsAreNewestFirstAndBounded", testEmojiRecentsAreNewestFirstAndBounded),
             ("noDividerBesideTheHighlightedCandidate", testNoDividerBesideTheHighlightedCandidate),
@@ -30,6 +31,24 @@ enum BarContentTests {
                 TestSupport.expectEqual(content(offer: offer, strip: strip, notice: true), .dictation)
                 TestSupport.expectEqual(content(offer: offer, strip: strip, undo: true), .dictation)
             }
+        }
+    }
+
+    /// ARCHITECTURE.md, "Top row" and "Dictation corrections": the "Add to dictionary" offer covers the strip and the
+    /// chips, gives way to a "Never correct" offer, and never covers dictation's own UI.
+    private static func testTheDictionaryOfferSitsBelowNeverCorrect() {
+        func content(never: Bool = false, strip: Bool = false, inProgress: Bool = false, notice: Bool = false,
+                     undo: Bool = false) -> BarMiddleContent {
+            BarMiddleContent.resolve(neverCorrectOffer: never, dictionaryOffer: true, candidates: strip,
+                                     dictationInProgress: inProgress, notice: notice, dictationUndoShown: undo)
+        }
+        TestSupport.expectEqual(content(), .addToDictionary)
+        TestSupport.expectEqual(content(strip: true), .addToDictionary)
+        TestSupport.expectEqual(content(never: true, strip: true), .neverCorrect)
+        for never in [false, true] {
+            TestSupport.expectEqual(content(never: never, inProgress: true), .dictation)
+            TestSupport.expectEqual(content(never: never, notice: true), .dictation)
+            TestSupport.expectEqual(content(never: never, undo: true), .dictation)
         }
     }
 

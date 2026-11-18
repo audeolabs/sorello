@@ -84,6 +84,14 @@ enum Fixture {
                    level: level, error: error)
     }
 
+    static let addedWordID = UUID(uuidString: "00000000-0000-4000-8000-0000000000E1")!
+
+    static func addedWord(_ word: String = "Xylo", requestID: UUID = requestID, range: Range<Int> = 1..<2,
+                          id: UUID = addedWordID, issuedAt: Date = now) -> AddedWord {
+        AddedWord(id: id, requestID: requestID, word: word, replacedStart: range.lowerBound, replacedEnd: range.upperBound,
+                  issuedAt: issuedAt)
+    }
+
     static func result(_ requestID: UUID = requestID, text: String = "Synthetic sample sentence",
                        pressEnter: Bool = false, createdAt: Date = now, hostRunID: UUID = hostRunID) -> DictationResult {
         DictationResult(requestID: requestID, hostRunID: hostRunID, text: text, pressEnter: pressEnter,

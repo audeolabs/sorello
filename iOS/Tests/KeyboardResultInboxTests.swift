@@ -12,6 +12,7 @@ enum KeyboardResultInboxTests {
             ("reportedCompletionReadsOnce", testReportedCompletionReadsOnce),
             ("newHostRunReads", testNewHostRunReads),
             ("expiryPurgesOnTheReadPath", testExpiryPurgesOnTheReadPath),
+            ("readsPurgeAnExpiredAddedWord", testReadsPurgeAnExpiredAddedWord),
             ("undecodedFilesAreRetriedAndPurged", testUndecodedFilesAreRetriedAndPurged),
             ("clockMovedBackReads", testClockMovedBackReads),
             ("deferredResultIsInsertedFromMemory", testDeferredResultIsInsertedFromMemory),
@@ -201,6 +202,19 @@ enum KeyboardResultInboxTests {
             late.update(from: store, status: .absent, now: Fixture.now + ttl + 20)
             TestSupport.expectEqual(store.resultRequestIDs(), [])
             TestSupport.expectEqual(late.results, [])
+        }
+    }
+
+    /// ARCHITECTURE.md, "Files", One added word: the keyboard deletes an expired added word on every result read.
+    private static func testReadsPurgeAnExpiredAddedWord() {
+        withStore { store in
+            try! store.writeAddedWord(Fixture.addedWord(issuedAt: Fixture.now))
+            var inbox = KeyboardResultInbox()
+            inbox.update(from: store, status: .absent, now: Fixture.now + DictationProtocol.addedWordTTL)
+            TestSupport.expectEqual(store.readAddedWord(), .value(Fixture.addedWord(issuedAt: Fixture.now)))
+            var later = KeyboardResultInbox()
+            later.update(from: store, status: .absent, now: Fixture.now + DictationProtocol.addedWordTTL + 1)
+            TestSupport.expectEqual(store.readAddedWord(), .absent)
         }
     }
 

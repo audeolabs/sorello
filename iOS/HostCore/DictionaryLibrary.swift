@@ -8,6 +8,7 @@ import Foundation
 @MainActor
 final class DictionaryLibrary {
     private let defaults: UserDefaults
+    private let encoder: BPEEncoder?
     private let editor: DictionaryEditor
     private(set) var dictionary: CustomDictionary
     private(set) var loadFailed: Bool
@@ -18,6 +19,7 @@ final class DictionaryLibrary {
 
     init(defaults: UserDefaults, encoder: BPEEncoder?) {
         self.defaults = defaults
+        self.encoder = encoder
         editor = DictionaryEditor(encoder: encoder)
         // The keys and payloads the earlier build wrote.
         switch DictionaryStorage.load(from: defaults, encoder: encoder) {
@@ -39,6 +41,17 @@ final class DictionaryLibrary {
     var canEdit: Bool { editor.canEdit && !loadFailed }
 
     var isFull: Bool { dictionary.entries.count >= DictionaryValidation.capacity }
+
+    /// Whether an entry with `key` is in the dictionary.
+    func contains(_ key: DictionaryKey) -> Bool { dictionary.entries.contains { $0.key == key } }
+
+    /// `text` as the entry a save would make, validated with the vocabulary; nil without one or when it is not valid.
+    func validatedEntry(text: String, strength: Float) -> DictionaryEntry? {
+        guard let encoder,
+              case .success(let entry) = DictionaryValidation.validate(text: text, strength: strength, encoder: encoder)
+        else { return nil }
+        return entry
+    }
 
     /// Adds, or edits the entry `original`. Returns a content-free message, or nil on success.
     func save(text: String, strength: Float, replacing original: DictionaryKey?) -> String? {

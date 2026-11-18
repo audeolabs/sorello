@@ -673,6 +673,61 @@ struct EngineTests {
         #expect(await suggest(known, knownID) == nil, "A word already in the dictation's dictionary is not offered")
     }
 
+    // MARK: - Verifying a correction (DESIGN §4.2)
+
+    private func verifyCorrection(_ engine: SpeechEngine, _ id: UInt64, edited: String = "W0 zorblax w2.")
+        async -> CorrectionVerification? {
+        await within { await engine.verifyCorrection(typed: "W0 w1 w2.", edited: edited, correctionID: id) }
+    }
+
+    @Test func verifyCorrectionFindsTheStrength() async throws {
+        let log = ModelLog()
+        let engine = engine(log)
+        let id = try #require(try await retained(engine).correctionID)
+        #expect(await verifyCorrection(engine, id) == .verified(DictionarySuggestion(word: "zorblax", strength: 2,
+                                                                                      kind: .replace)))
+        #expect(await within { await engine.heldProjections() } == 0, "The session is released afterwards")
+        #expect(await verifyCorrection(engine, id) == .unverified, "Nothing is kept for it any more")
+        #expect(await suggest(engine, id) == nil)
+    }
+
+    @Test func verifyCorrectionTellsNotHeardFromUndecided() async throws {
+        let log = ModelLog()
+        let engine = engine(log)
+        let heard = try #require(try await retained(engine).correctionID)
+        #expect(await verifyCorrection(engine, heard, edited: "W0 quintel w2.") == .notRecognized,
+                "Every strength tried, the word never heard")
+        #expect(await within { await engine.heldProjections() } == 0, "Released after a word that was not heard")
+        let casing = try #require(try await retained(engine).correctionID)
+        #expect(await verifyCorrection(engine, casing, edited: "W0 w1 W2.") == .unverified,
+                "No candidate (an initial capital alone)")
+        #expect(await within { await engine.heldProjections() } == 0, "Released when nothing was decided")
+        #expect(await verifyCorrection(engine, casing &+ 7) == .unverified, "An unknown id")
+    }
+
+    /// A newer recording or a discard stops the check, and releasing a decided word never drops a newer dictation's
+    /// audio.
+    @Test func verifyCorrectionNeverReleasesANewerDictation() async throws {
+        let log = ModelLog()
+        let engine = engine(log)
+        let older = try #require(try await retained(engine).correctionID)
+        let newer = try #require(try await retained(engine).correctionID)
+        #expect(await verifyCorrection(engine, older) == .unverified, "The older dictation's audio is gone")
+        #expect(await suggest(engine, newer) != nil, "Deciding the older word keeps the newer dictation's audio")
+        #expect(await verifyCorrection(engine, newer) != .unverified)
+
+        let discarded = try #require(try await retained(engine).correctionID)
+        engine.discardCorrection()
+        #expect(await verifyCorrection(engine, discarded) == .unverified, "Discarded")
+
+        let cancelledID = try #require(try await retained(engine).correctionID)
+        let cancelled = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await engine.verifyCorrection(typed: "W0 w1 w2.", edited: "W0 zorblax w2.", correctionID: cancelledID)
+        }
+        #expect(await within { await cancelled.value } == .unverified, "Cancelling the calling task stops it")
+    }
+
     // MARK: - Find strength
 
     @Test func probeStrength() async throws {

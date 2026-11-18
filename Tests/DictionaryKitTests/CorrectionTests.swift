@@ -252,6 +252,132 @@ struct CorrectionTests {
                 "One free slot still offers the word")
     }
 
+    // MARK: - The iPhone's offer and verification (DESIGN §4)
+
+    func offer(_ typed: String, _ edited: String) -> CorrectionOffer? { CorrectionOffer.find(typed: typed, edited: edited) }
+
+    @Test func offerHandCases() throws {
+        let kubernetes = try #require(offer("we deployed it on cooper netties yesterday",
+                                            "we deployed it on Kubernetes yesterday"))
+        expectScalars(kubernetes.word, "Kubernetes")
+        #expect(kubernetes.kind == .replace && kubernetes.replacedWords == 4..<6, "Two typed words, one edited")
+        let casing = try #require(offer("we run nixos at home", "we run NixOS at home"))
+        expectScalars(casing.word, "NixOS")
+        #expect(casing.kind == .casing && casing.replacedWords == 2..<3, "A casing fix is offered")
+        #expect(offer("the plan works", "The plan works") == nil, "A sentence's first capital is not offered")
+        #expect(offer("we use kubernetes", "we use Kubernetes") == nil, "An initial capital alone is not offered")
+        let three = try #require(offer("send it to cooper net ease now", "send it to Kubernetes now"))
+        expectScalars(three.word, "Kubernetes")
+        #expect(three.replacedWords == 3..<6, "Three typed words, one edited")
+        let one = try #require(offer("send it to sam now", "send it to Quint Morrow Jr now"))
+        expectScalars(one.word, "Quint Morrow Jr")
+        #expect(one.replacedWords == 3..<4, "One typed word, three edited")
+        #expect(offer("one two three four five six seven eight nine ten",
+                      "one zwei drei vier funf six seven eight nine ten") == nil, "A four-word block is not offered")
+        #expect(offer("please send the report today", "can you email me the summary") == nil, "A rewrite is not offered")
+        #expect(offer("ship the cart now", "ship the cart now") == nil, "Nothing changed")
+        #expect(offer("hello world", "hello big world") == nil, "A pure insertion within is not offered")
+        let quoted = try #require(offer("try cooper netties.", "try “Kubernetes.”"))
+        expectScalars(quoted.word, "Kubernetes")
+        #expect(quoted.replacedWords == 1..<3, "Edge punctuation is stripped from the word")
+        let first = try #require(offer("use the alder package and review the cart patch",
+                                       "use the Eldar package and review the chart patch"))
+        expectScalars(first.word, "Eldar")
+        #expect(first.replacedWords == 2..<3, "The first block in text order")
+        #expect(offer("ship the cart now", "ship the ¢art now") != nil, "No vocabulary: any valid entry may be offered")
+    }
+
+    /// Words typed before the dictation's first word or after its last are dropped before the rules apply, so text
+    /// written around a dictation is neither offered nor counted toward a rewrite.
+    @Test func offerDropsWordsTypedAroundTheDictation() throws {
+        let after = try #require(offer("ship the cart now", "ship the chart now and then a few more words of mine"))
+        expectScalars(after.word, "chart")
+        #expect(after.replacedWords == 2..<3)
+        let before = try #require(offer("ship the cart now", "Dear team, as discussed ship the chart now"))
+        expectScalars(before.word, "chart")
+        #expect(before.replacedWords == 2..<3)
+        let both = try #require(offer("ship the cart now", "so ship the chart now, thanks"))
+        expectScalars(both.word, "chart")
+        #expect(offer("ship the cart now", "ship the cart now and more words") == nil, "Only added words: no offer")
+        #expect(offer("ship the cart now", "Then ship the cart now") == nil, "Only added words before: no offer")
+        #expect(CorrectionOffer.droppingSurroundingWords(typed: "a b c", edited: "x — a b c y") == "a b c")
+    }
+
+    /// DESIGN §1.5.1 applies to the dictation and to what remains of the edit.
+    @Test func offerBounds() {
+        let long = Array(repeating: "word", count: 200).joined(separator: " ")
+        #expect(offer(long + " cart", long + " chart") == nil, "More than 200 typed words")
+        #expect(offer(long, long.replacingOccurrences(of: "word word", with: "word chart", options: [],
+                                                     range: long.range(of: "word word"))) != nil,
+                "200 words is within bounds")
+        #expect(offer(String(repeating: "é", count: 2049), "x") == nil, "More than 4096 UTF-8 bytes")
+        let around = Array(repeating: "mine", count: 300).joined(separator: " ")
+        #expect(offer("ship the cart now", "ship the chart now " + around) != nil,
+                "Words typed after the dictation do not count toward the bounds")
+        #expect(offer("", "anything") == nil && offer("cart", "") == nil, "Empty sides")
+    }
+
+    /// Words counted by the scalars DictionaryKit splits on: a combining mark after a space is a word of its own.
+    @Test func offerWordCount() {
+        #expect(CorrectionOffer.wordCount("") == 0)
+        #expect(CorrectionOffer.wordCount("  ship  the\ncart. ") == 3)
+        #expect(CorrectionOffer.wordCount(String(repeating: " \u{0301}", count: 5)) == 5)
+        #expect(CorrectionOffer.wordCount(String(repeating: " \u{0301}", count: 5))
+                == DictionaryText.words(String(repeating: " \u{0301}", count: 5).unicodeScalars).count)
+    }
+
+    /// The edited text an app rebuilds from the text it inserted and an offer's range.
+    @Test func offerReplacement() throws {
+        let typed = "we deployed it on cooper netties yesterday"
+        let found = try #require(offer(typed, "we deployed it on Kubernetes yesterday"))
+        #expect(CorrectionOffer.replacing(found.replacedWords, in: typed, with: found.word)
+                == "we deployed it on Kubernetes yesterday")
+        #expect(CorrectionOffer.replacing(0..<1, in: "  ship   the cart ", with: "Ship") == "Ship the cart")
+        #expect(CorrectionOffer.replacing(3..<4, in: "ship the cart", with: "x") == nil, "Past the end")
+        #expect(CorrectionOffer.replacing(1..<5, in: "a b c d e f", with: "x") == nil, "Four words")
+        #expect(CorrectionOffer.replacing(1..<5, in: "a b — c d f", with: "x") == "a x f",
+                "A punctuation-only piece is not a word")
+        #expect(CorrectionOffer.replacing(1..<2, in: "a — b", with: "x") == nil, "Punctuation alone")
+    }
+
+    private func verify(typed: String, edited: String, base: String, dictionary: [DictionaryEntry] = [],
+                        clock: () -> TimeInterval = { 0 }, cancelled: () -> Bool = { false },
+                        decode: (DictionaryEntry) -> String?) -> CorrectionVerification {
+        DictionarySuggestionFinder.verify(typed: typed, edited: edited, base: base, dictionary: dictionary, ignore: [],
+                                          encoder: testEncoder, now: clock, isCancelled: cancelled, decode: decode)
+    }
+
+    /// DESIGN §4.2: verified, every attempted candidate tried at every strength, or nothing decided.
+    @Test func verifyOutcomes() {
+        let typed = "ship the cart now"
+        #expect(verify(typed: typed, edited: "ship the chart now", base: typed) { entry in
+            entry.strength >= 2 ? "ship the chart now" : typed
+        } == .verified(DictionarySuggestion(word: "chart", strength: 2, kind: .replace)))
+        #expect(verify(typed: "we run nixos", edited: "we run NixOS", base: "we run nixos") { _ in nil }
+                == .verified(DictionarySuggestion(word: "NixOS", strength: 1, kind: .casing)), "Casing at strength 1")
+        var calls = 0
+        #expect(verify(typed: typed, edited: "ship the chart now", base: typed) { _ in calls += 1; return typed }
+                == .notRecognized)
+        #expect(calls == 7, "Every strength was tried")
+        #expect(verify(typed: typed, edited: typed, base: typed) { _ in typed } == .unverified, "No candidate")
+        #expect(verify(typed: typed, edited: "ship the chart now", base: "ship the kart now") { _ in typed }
+                == .unverified, "No candidate could be attempted")
+        let full = (0..<DictionaryValidation.capacity).map { entry("word\($0)x") }
+        #expect(verify(typed: typed, edited: "ship the chart now", base: typed, dictionary: full) { _ in typed }
+                == .unverified, "A full dictionary")
+        #expect(verify(typed: typed, edited: "ship the chart now", base: typed) { _ in nil } == .unverified,
+                "A decode failed")
+        var time: TimeInterval = 0
+        #expect(verify(typed: typed, edited: "ship the chart now", base: typed, clock: { time }) { _ in
+            time += 1; return typed
+        } == .unverified, "The budget ran out before every strength was tried")
+        #expect(verify(typed: typed, edited: "ship the chart now", base: typed, cancelled: { true }) { _ in typed }
+                == .unverified, "Cancelled")
+        let ten = "one two three four five six seven eight nine ten"
+        #expect(verify(typed: ten, edited: "one zwei three vier five sechs seven acht nine ten", base: ten) { _ in ten }
+                == .notRecognized, "Three candidates attempted, none recognized")
+    }
+
     @Test func strengthProbeContains() {
         #expect(StrengthProbe.contains("Zorblax", in: "we shipped zorblax, finally."), "folded, edge punctuation")
         #expect(StrengthProbe.contains("Quint Morrow", in: "ask quint morrow today"), "a phrase")

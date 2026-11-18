@@ -58,6 +58,7 @@ final class HostSessionController: ObservableObject, SessionControlHandling, Voi
     private let activity = SessionActivityDriver(backend: LiveActivityBackend())
     private var timer: Timer?
     private var intentObservation: DarwinNotifier.Observation?
+    private var addedWordObservation: DarwinNotifier.Observation?
     private var lifecycleObservers: [NSObjectProtocol] = []
     private var lastAdmittedRequestID: UUID?
     private var hapticRequestID: UUID?
@@ -93,9 +94,11 @@ final class HostSessionController: ObservableObject, SessionControlHandling, Voi
         let noteStorage = (try? NoteStorage.appDirectory()).map { NoteStorage(directory: $0) }
         let noteRecorder = noteStorage.map { NoteRecorder(storage: $0) }
         self.noteRecorder = noteRecorder
+        let engine = transcriber.engine
+        let addedWords = AddedWordInbox(store: store, library: dictionary.library, verifier: engine, now: { Date() })
         let core = HostSessionCore(store: store, settings: sharedSettings, buffer: buffer, capture: capture,
-                                   transcriber: transcriber.engine, notifier: DarwinNotifier(configuration: configuration),
-                                   environment: Self.environment, noteRecorder: noteRecorder)
+                                   transcriber: engine, notifier: DarwinNotifier(configuration: configuration),
+                                   environment: Self.environment, noteRecorder: noteRecorder, addedWords: addedWords)
         self.core = core
         let format = NoteRunText.formatter(settings: sharedSettings)
         notes = noteStorage.map { storage in
@@ -122,6 +125,7 @@ final class HostSessionController: ObservableObject, SessionControlHandling, Voi
         }
         #endif
         transcriber.onStateChange = { [weak core] in core?.modelStateChanged() }
+        dictionary.onEdit = { [weak core] in core?.dictionaryEdited() }
         core.onChange = { [weak self] in self?.refresh() }
     }
 
@@ -145,6 +149,9 @@ final class HostSessionController: ObservableObject, SessionControlHandling, Voi
         timer = Timer.mainLoop(after: HostSessionPolicy.tickInterval, repeats: true) { [weak self] _ in self?.tick() }
         intentObservation = configuration.map(DarwinNotifier.init(configuration:))?.observe(.intent) { [weak self] in
             self?.core?.reconcile(.intentSignal)
+        }
+        addedWordObservation = configuration.map(DarwinNotifier.init(configuration:))?.observe(.addedWord) { [weak self] in
+            self?.core?.addedWordSignal()
         }
         observeLifecycle()
         refreshNoteVault()

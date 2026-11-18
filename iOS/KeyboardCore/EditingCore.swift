@@ -53,6 +53,9 @@ extension AdjustmentOwner {
 ///   every callback that is not a pending trackpad adjustment's own ends it for good, our own edits'
 ///   reports included (UIKit sends none for them, so no allowance is made; a host that reports them
 ///   loses Undo). No time windows.
+/// - **Dictation corrections**, through `DictationCorrectionWatch` (ARCHITECTURE.md, "Dictation corrections"): a
+///   dictation inserted with its request is watched in its field. Edits never end the watch; they restart its wait.
+///   Another field, hiding, another dictation and its own Undo end it.
 final class EditingCore {
     enum CallbackOutcome: Equatable {
         /// An outcome of a pending trackpad adjustment.
@@ -74,6 +77,7 @@ final class EditingCore {
     private(set) var documentID: UUID?
     private(set) var generation = 0
     private(set) var undo = UndoTracker()
+    private(set) var correction = DictationCorrectionWatch()
     /// The contexts our own recent edits left, as hashes (no text is kept), oldest first.
     private var ownEdits: [(state: String, at: TimeInterval)] = []
 
@@ -113,6 +117,7 @@ final class EditingCore {
     private func invalidate() {
         generation &+= 1
         undo.invalidate()
+        correction.end()
         ownEdits = []
     }
 
@@ -126,6 +131,8 @@ final class EditingCore {
             invalidate()
             return .newField
         }
+        // Any callback in the field restarts the correction's wait and ends its offer.
+        correction.activity(at: now)
         let before = document.contextBefore
         let after = document.contextAfter
         // A gesture's report of its oldest adjustment as issued (WebKit) shows the context it was issued in,
@@ -185,8 +192,10 @@ final class EditingCore {
 
     // MARK: Dictation and undo
 
-    /// Inserts dictated text and records it, with its anchors, for undo.
-    func insertDictation(_ text: String, now: TimeInterval) {
+    /// Inserts dictated text and records it, with its anchors, for undo. With `watching`, its request, the
+    /// dictation is watched for a correction (the caller passes it only with Full Access, for a result that does not
+    /// press Return); without, any earlier watch ends.
+    func insertDictation(_ text: String, now: TimeInterval, watching requestID: UUID? = nil) {
         guard !text.isEmpty else { return }
         let before = document.contextBefore
         let after = document.contextAfter
@@ -194,10 +203,37 @@ final class EditingCore {
         generation &+= 1
         document.insertText(text)
         recordOwnEdit(now: now)
-        // Text that replaced a selection is not undone by deleting it alone.
+        correction.end()
+        // Text that replaced a selection is not undone by deleting it alone, nor placed by its anchors.
         guard !replacesSelection else { return undo.invalidate() }
         undo.recordInsertion(text, contextBefore: before, contextAfter: after, documentID: documentID,
                              generation: generation, at: now)
+        if let requestID {
+            correction.start(requestID: requestID, inserted: text, contextBefore: before, contextAfter: after,
+                             documentID: documentID, at: now)
+        }
+    }
+
+    // MARK: Dictation corrections
+
+    /// A key, strip choice, swipe or trackpad movement: the correction's wait starts over and its offer ends.
+    func correctionActivity(now: TimeInterval) {
+        correction.activity(at: now)
+    }
+
+    /// Another dictation starts, or the offer was accepted: the watch ends.
+    func endCorrectionWatch() {
+        correction.end()
+    }
+
+    /// Ends the watch at its lifetime, and checks the edit once the text has been quiet (never while a trackpad
+    /// gesture runs: that is activity).
+    func serviceCorrection(now: TimeInterval) {
+        correction.expire(now: now)
+        guard let due = correction.checkDue, now >= due else { return }
+        guard adjustments?.isActive != true else { return correction.activity(at: now) }
+        correction.check(documentID: currentDocumentID, before: document.contextBefore, after: document.contextAfter,
+                         hasSelection: document.hasSelection, now: now)
     }
 
     func canUndo(now: TimeInterval) -> Bool {
@@ -210,6 +246,11 @@ final class EditingCore {
     /// shown the last deletion yet (call `continueUndo` later), else how it ended.
     func beginUndo(now: TimeInterval) -> UndoTracker.Step {
         guard adjustments?.isActive != true, !undo.isUndoing, !document.hasSelection else { return .stopped }
+        // Its own Undo ends the dictation's watch.
+        if undo.isOffered(documentID: currentDocumentID, generation: generation, before: document.contextBefore,
+                          after: document.contextAfter, now: now) {
+            correction.end()
+        }
         return run(undo.begin(documentID: currentDocumentID, generation: generation, before: document.contextBefore,
                               after: document.contextAfter, now: now), now: now)
     }

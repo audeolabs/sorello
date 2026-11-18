@@ -12,6 +12,7 @@ enum DictationProtocol {
     static let keyboardPresenceTimeout: TimeInterval = 15   // see "Keyboard presence"
     static let maxDictationDuration: TimeInterval = 300     // host auto-finishes a recording after this
     static let resultTTL: TimeInterval = 60                 // insertion window; expired results are deleted by either process
+    static let addedWordTTL: TimeInterval = 60              // an unclaimed added-word.json is deleted by either process after this
 
     /// Whether a record stamped `timestamp` is still fresh: `-clockSkewTolerance <= age <= ttl`.
     /// A backward clock jump makes records stale rather than fresh.
@@ -76,6 +77,7 @@ struct HostStatus: Codable, Equatable, Sendable {
     var level: Float = 0           // 0...1, meaningful only while recording
     var error: HostErrorCode?      // content-free, most recent session-level error
     var voiceNote: VoiceNoteStatus?  // the voice note preparing, recording or saving; absent when none
+    var addedWord: AddedWordStatus?  // the last added word's outcome, for addedWordTTL; absent when none
 }
 
 /// What the keyboard's bar and the Live Activity need of the host's voice note: phases, dates and a flag, never
@@ -117,4 +119,26 @@ struct DictationResult: Codable, Equatable, Sendable {
     var text: String               // already post-processed by the text rules (DictationRules)
     var pressEnter: Bool
     var createdAt: Date
+}
+
+/// A word the user tapped "Add to dictionary" for (ARCHITECTURE.md, "Dictation corrections"), on its way to the app
+/// in `added-word.json`. The app claims and deletes it at once; either process deletes it after `addedWordTTL`.
+struct AddedWord: Codable, Equatable, Sendable {
+    var schema: Int = DictationProtocol.schema
+    var id: UUID                   // this tap's; the host's outcome names it
+    var requestID: UUID            // the dictation the word corrects
+    var word: String               // the word or phrase to add, as the offer showed it
+    var replacedStart: Int         // the dictation's words it replaces: whitespace-split indices of
+    var replacedEnd: Int           //   DictationResult.text, half open (DictionaryKit `CorrectionOffer.replacedWords`)
+    var issuedAt: Date
+}
+
+/// The app's outcome for the last added word, kept in the status until `addedWordTTL` after `decidedAt`. It names
+/// no word: the keyboard still has the word it sent.
+struct AddedWordStatus: Codable, Equatable, Sendable {
+    enum Outcome: String, Codable, Sendable { case added, alreadyInDictionary, notHeard, notAdded }
+    var id: UUID                   // the AddedWord's
+    var outcome: Outcome
+    var strength: Float?           // the strength saved, with .added only
+    var decidedAt: Date
 }

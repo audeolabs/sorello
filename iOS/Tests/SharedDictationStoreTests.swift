@@ -23,6 +23,10 @@ enum SharedDictationStoreTests {
             ("removeResultReportsEachOutcome", testRemoveResultReportsEachOutcome),
             ("concurrentRemovalsHaveOneWinner", testConcurrentRemovalsHaveOneWinner),
             ("purgeRacingClaimantsRemovesOnce", testPurgeRacingClaimantsRemovesOnce),
+            ("addedWordIsOneFixedFile", testAddedWordIsOneFixedFile),
+            ("takingAnAddedWordJudgesTheTakenCopy", testTakingAnAddedWordJudgesTheTakenCopy),
+            ("concurrentTakesHaveOneWinner", testConcurrentTakesHaveOneWinner),
+            ("keyboardPurgesAnExpiredAddedWordByName", testKeyboardPurgesAnExpiredAddedWordByName),
         ]
     }
 
@@ -73,6 +77,9 @@ enum SharedDictationStoreTests {
             TestSupport.expectEqual(store.removeResult(requestID: Fixture.requestID), .alreadyAbsent)
             store.purgeExpiredResults(now: Fixture.now)
             store.purgeResults { _, _ in true }
+            TestSupport.expectEqual(store.readAddedWord(), .absent)
+            TestSupport.expectEqual(store.takeAddedWord(), nil)
+            TestSupport.expectEqual(store.purgeExpiredAddedWord(now: Fixture.now), .absent)
             TestSupport.expect(!FileManager.default.fileExists(atPath: store.directory.path), "reads created the directory")
         }
     }
@@ -450,6 +457,92 @@ enum SharedDictationStoreTests {
                 TestSupport.expectEqual(store.readResult(requestID: requestID), .absent)
             }
             TestSupport.expectEqual(stagingNames(in: store), [])
+        }
+    }
+
+    // MARK: The added word (ARCHITECTURE.md, "Files", One added word)
+
+    private static func testAddedWordIsOneFixedFile() {
+        withStore { store in
+            let first = Fixture.addedWord("Xylo")
+            let second = Fixture.addedWord("Quint Morrow", range: 0..<2, id: Fixture.otherRequestID)
+            try! store.writeAddedWord(first)
+            TestSupport.expectEqual(store.readAddedWord(), .value(first))
+            try! store.writeAddedWord(second)
+            // A new word is written over an unclaimed one.
+            TestSupport.expectEqual(store.readAddedWord(), .value(second))
+            TestSupport.expectEqual(fileNames(in: store), ["added-word.json"])
+            let values = try! store.directory.resourceValues(forKeys: [.isExcludedFromBackupKey])
+            TestSupport.expectEqual(values.isExcludedFromBackup, true)
+            var other = Fixture.addedWord()
+            other.schema = 2
+            try! store.writeAddedWord(other)
+            TestSupport.expectEqual(store.readAddedWord(), .incompatible)
+        }
+    }
+
+    /// Taking is one rename: what is judged is the copy taken, never a word the keyboard wrote after it.
+    private static func testTakingAnAddedWordJudgesTheTakenCopy() {
+        withStore { store in
+            let first = Fixture.addedWord("Xylo")
+            try! store.writeAddedWord(first)
+            let taken = store.takeAddedWord()!
+            TestSupport.expectEqual(store.readAddedWord(), .absent)
+            TestSupport.expectEqual(stagingNames(in: store).count, 1)
+            let replacement = Fixture.addedWord("Zorblax", id: Fixture.otherRequestID)
+            try! store.writeAddedWord(replacement)
+            TestSupport.expectEqual(store.readTaken(taken), .value(first))
+            TestSupport.expect(store.modificationDate(of: taken) != nil, "the taken copy keeps its date")
+            store.removeTaken(taken)
+            TestSupport.expectEqual(store.readTaken(taken), .absent)
+            TestSupport.expectEqual(store.readAddedWord(), .value(replacement))
+            TestSupport.expectEqual(stagingNames(in: store), [])
+        }
+    }
+
+    private static func testConcurrentTakesHaveOneWinner() {
+        withStore { store in
+            let otherProcess = SharedDictationStore(directory: store.directory)
+            for iteration in 0..<200 {
+                try! store.writeAddedWord(Fixture.addedWord("Xylo\(iteration)"))
+                let taken = Locked<[SharedDictationStore.TakenAddedWord]>([])
+                Concurrently.run(3) { thread in
+                    if let copy = (thread == 0 ? otherProcess : store).takeAddedWord() { taken.update { $0.append(copy) } }
+                }
+                TestSupport.expect(taken.current.count == 1, "iteration \(iteration): \(taken.current.count) takers won")
+                taken.current.forEach(store.removeTaken)
+            }
+            TestSupport.expectEqual(fileNames(in: store), [])
+        }
+    }
+
+    /// The keyboard judges the file where it lies and removes it by name only once it has expired.
+    private static func testKeyboardPurgesAnExpiredAddedWordByName() {
+        withStore { store in
+            let ttl = DictationProtocol.addedWordTTL
+            try! store.writeAddedWord(Fixture.addedWord(issuedAt: Fixture.now))
+            TestSupport.expectEqual(store.purgeExpiredAddedWord(now: Fixture.now + ttl), .kept(deadline: Fixture.now + ttl))
+            // A clock moved back makes it stale.
+            TestSupport.expectEqual(store.purgeExpiredAddedWord(now: Fixture.now - DictationProtocol.clockSkewTolerance - 1),
+                                    .removed)
+            try! store.writeAddedWord(Fixture.addedWord(issuedAt: Fixture.now))
+            withReadOnlyDirectory(of: store) {
+                TestSupport.expectEqual(store.purgeExpiredAddedWord(now: Fixture.now + ttl + 1), .failed)
+            }
+            TestSupport.expectEqual(store.purgeExpiredAddedWord(now: Fixture.now + ttl + 1), .removed)
+            TestSupport.expectEqual(store.readAddedWord(), .absent)
+            // Unreadable (locked, or another version's): judged by the file's date.
+            put("{", at: store.addedWordURL)
+            let now = Date()
+            setModificationDate(now - 10, of: store.addedWordURL)
+            if case .kept(let deadline) = store.purgeExpiredAddedWord(now: now) {
+                TestSupport.expect(abs(deadline.timeIntervalSince(now - 10 + ttl)) < 1, "judged by the file's date")
+            } else {
+                TestSupport.expect(false, "a fresh unreadable file was not kept")
+            }
+            setModificationDate(now - ttl - 1, of: store.addedWordURL)
+            TestSupport.expectEqual(store.purgeExpiredAddedWord(now: now), .removed)
+            TestSupport.expectEqual(fileNames(in: store), [])
         }
     }
 }

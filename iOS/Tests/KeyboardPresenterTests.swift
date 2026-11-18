@@ -4,6 +4,7 @@ enum KeyboardPresenterTests {
     static var tests: [TestCase] {
         [
             ("accessComesFirst", testAccessComesFirst),
+            ("hostAliveNeedsAFreshActiveSession", testHostAliveNeedsAFreshActiveSession),
             ("incompatibleComesBeforeHostState", testIncompatibleComesBeforeHostState),
             ("noHostIsUnavailable", testNoHostIsUnavailable),
             ("readyNeedsLiveHostAndCapture", testReadyNeedsLiveHostAndCapture),
@@ -238,6 +239,21 @@ enum KeyboardPresenterTests {
         }
         // The user's own cancel carries no error and returns to idle.
         TestSupport.expectEqual(mode(Fixture.status(dictation: Fixture.dictation(.cancelled)), Fixture.intent(.cancel)), .ready)
+    }
+
+    /// Rule 4, which the "Add to dictionary" offer follows (ARCHITECTURE.md, "Dictation corrections").
+    private static func testHostAliveNeedsAFreshActiveSession() {
+        let live = Fixture.status(.active, heartbeatAt: Fixture.now)
+        TestSupport.expect(KeyboardPresenter.isHostAlive(status: .value(live), now: Fixture.now + 3), "fresh")
+        TestSupport.expect(!KeyboardPresenter.isHostAlive(status: .value(live), now: Fixture.now + 3.1), "stale")
+        TestSupport.expect(!KeyboardPresenter.isHostAlive(status: .value(Fixture.status(.starting)), now: Fixture.now),
+                           "a starting session")
+        TestSupport.expect(!KeyboardPresenter.isHostAlive(status: .value(Fixture.status(.inactive)), now: Fixture.now),
+                           "no session")
+        var other = live
+        other.schema = 2
+        TestSupport.expect(!KeyboardPresenter.isHostAlive(status: .value(other), now: Fixture.now), "another schema")
+        TestSupport.expect(!KeyboardPresenter.isHostAlive(status: .absent, now: Fixture.now), "no status")
     }
 
     private static func testErrorShownAfterSessionEnds() {
