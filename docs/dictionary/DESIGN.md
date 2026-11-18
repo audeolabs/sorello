@@ -868,7 +868,10 @@ an empty ignore list and no vocabulary, after one step of its own: words of
 around the dictation, not in it. The bounds (§1.5.1) and the rewrite check
 (§1.5.4) apply to what remains. The result holds the candidate's surface
 (`word`), its kind, and `replacedWords`, its `before_range` in `typed`
-(§1.5.6). (`CorrectionTests.offer*`)
+(§1.5.6). `CorrectionOffer.wordCount` counts words as §1.5.2 splits them,
+and `CorrectionOffer.replacing(_:in:with:)` rebuilds an edited text from a
+typed one, a range of its split indices and a word, as the app does before
+it verifies (§4.2). (`CorrectionTests.offer*`)
 
 ### §4.2 Verification
 

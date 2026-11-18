@@ -1200,8 +1200,9 @@ word's strength from that dictation's audio before it saves it.
     memory only ([../docs/dictionary/DESIGN.md](../docs/dictionary/DESIGN.md),
     §3.4: at most 16 MiB, at most 90 s, the newest recording only). The host
     keeps, beside it, that dictation's request id, the engine's correction id
-    and the text it wrote to `result-R.json`. All of it goes when the engine
-    lets it go. The host releases everything kept
+    and the text it wrote to `result-R.json`, for at most 90 s on the
+    monotonic clock (`AddedWordInbox.keptLifetime`), as long as the engine
+    keeps the audio. All of it goes when the engine lets it go. The host releases everything kept
     (`SpeechEngine.discardCorrection`) when a new recording starts, the
     session ends, the device locks, the dictionary is edited (a word saved
     from a correction included) or the runtime is released. Deciding a word
@@ -3032,7 +3033,11 @@ dictation hears it (`DictationCorrectionWatch`, pure, tested; owned by
 - **When.** The edit is checked once the text has been quiet for 1.5 s
   (`DictationCorrectionWatch.quietPeriod`, as the Mac's quiet period): every
   key, strip choice, swipe, trackpad movement and text or selection callback
-  restarts the wait. Nothing is checked while the dictation is unchanged.
+  restarts the wait. Nothing is checked while the dictation is unchanged, or
+  while the dictation as edited holds more than 1000 words as DictionaryKit
+  counts them (`DictationCorrectionWatch.maxEditedWords`,
+  `CorrectionOffer.wordCount`), which bounds the alignment's memory in the
+  keyboard.
 - **The offer** shows only while a session is on (the host alive, as in
   [Keyboard presentation](#keyboard-presentation-sharedkeyboardpresenterswift-pure-tested))
   and the middle of the top row may show it: a chip, `Add “Xylo” to
