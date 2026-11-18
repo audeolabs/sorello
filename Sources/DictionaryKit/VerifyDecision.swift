@@ -119,6 +119,17 @@ public final class ExhaustedCandidates {
     func insert(_ candidate: CorrectionCandidate) { keys.insert(Self.key(candidate)) }
 }
 
+/// What one check of a correction decided (DESIGN §4.2).
+public enum CorrectionVerification: Equatable, Sendable {
+    /// A candidate was accepted (a casing one at strength 1).
+    case verified(DictionarySuggestion)
+    /// At least one candidate was attempted, and every attempted candidate failed at every strength.
+    case notRecognized
+    /// Nothing was decided: the dictionary is full, no candidate could be attempted, the budget ran out, a decode
+    /// failed, or the check was cancelled.
+    case unverified
+}
+
 /// Finds the word to suggest from one correction (DESIGN §1.5 and §1.6): candidates in text order, at most three
 /// attempted, seven decodes each, within 3 s of elapsed time, stopping when cancelled.
 public enum DictionarySuggestionFinder {
@@ -134,9 +145,22 @@ public enum DictionarySuggestionFinder {
                             exhausted: ExhaustedCandidates = ExhaustedCandidates(),
                             now: () -> TimeInterval, isCancelled: () -> Bool,
                             decode: (DictionaryEntry) -> String?) -> DictionarySuggestion? {
+        guard case .verified(let suggestion) = verify(typed: typed, edited: edited, base: base, dictionary: dictionary,
+                                                      ignore: ignore, encoder: encoder, exhausted: exhausted, now: now,
+                                                      isCancelled: isCancelled, decode: decode) else { return nil }
+        return suggestion
+    }
+
+    /// `find`, telling a check that tried every attempted candidate at every strength (`notRecognized`) from one that
+    /// decided nothing (`unverified`) (DESIGN §4.2).
+    public static func verify(typed: String, edited: String, base: String, dictionary: [DictionaryEntry],
+                              ignore: Set<DictionaryKey>, encoder: BPEEncoder?,
+                              exhausted: ExhaustedCandidates = ExhaustedCandidates(),
+                              now: () -> TimeInterval, isCancelled: () -> Bool,
+                              decode: (DictionaryEntry) -> String?) -> CorrectionVerification {
         // Every candidate would be a new entry; a full dictionary could not take it, so nothing is offered (and
         // nothing is decoded).
-        guard dictionary.count < DictionaryValidation.capacity else { return nil }
+        guard dictionary.count < DictionaryValidation.capacity else { return .unverified }
         let start = now()
         func withinBudget() -> Bool { !isCancelled() && now() - start < maxSeconds }
         let b = VerifyDecision.norms(base)
@@ -152,24 +176,25 @@ public enum DictionarySuggestionFinder {
             .prefix(maxCandidates)
         for candidate in attempted {
             if candidate.kind == .casing {
-                guard withinBudget() else { return nil }
-                return DictionarySuggestion(word: candidate.surface, strength: DictionaryValidation.defaultStrength,
-                                            kind: .casing)
+                guard withinBudget() else { return .unverified }
+                return .verified(DictionarySuggestion(word: candidate.surface,
+                                                      strength: DictionaryValidation.defaultStrength, kind: .casing))
             }
             for strength in VerifyDecision.strengths {
-                guard withinBudget() else { return nil }
+                guard withinBudget() else { return .unverified }
                 // A decode error ends verification without a suggestion.
                 guard let decoded = decode(DictionaryEntry(text: candidate.surface, strength: strength)) else {
-                    return nil
+                    return .unverified
                 }
                 // A result that arrives cancelled or past the deadline is discarded.
-                guard withinBudget() else { return nil }
+                guard withinBudget() else { return .unverified }
                 if VerifyDecision.accepts(typed: typed, candidate: candidate, base: base, decoded: decoded) {
-                    return DictionarySuggestion(word: candidate.surface, strength: strength, kind: .replace)
+                    return .verified(DictionarySuggestion(word: candidate.surface, strength: strength, kind: .replace))
                 }
             }
             exhausted.insert(candidate)
         }
-        return nil
+        // Here every attempted candidate was a replacement decoded at every strength without being accepted.
+        return attempted.isEmpty ? .unverified : .notRecognized
     }
 }
