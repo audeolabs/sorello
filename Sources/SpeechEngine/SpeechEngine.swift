@@ -288,7 +288,8 @@ public actor SpeechEngine: SpeechTranscribing {
             Task { await self.dropStaleRetention() }
         }
         return SpeechStream(id: id, engine: self, snapshot: dictionary(options.appBundleID),
-                            retainsAudio: options.retainForCorrection)
+                            retainsAudio: options.retainForCorrection, reportsProgress: options.reportsProgress,
+                            boundsLeadingSilence: options.boundsLeadingSilence)
     }
 
     /// Returns once the model work running now has ended. A stream cancelled before this is called, and one whose
@@ -474,11 +475,29 @@ public actor SpeechEngine: SpeechTranscribing {
         guard !samples.isEmpty, work.failure == nil else { return }
         let check = stream.cancellationCheck, gate = self.gate
         do {
-            try work.transcription.append(samples) {
+            try work.transcription.append(samples, transcribe: {
                 try Self.transcribe($0, work: work, model: model, gate: gate, check: check)
-            }
+            }, chunked: Self.reporter(work, stream))
+            Self.boundLeadingSilence(work)
         } catch {
             work.failure = Self.failure(error)
+            stream.endProgress()
+        }
+    }
+
+    /// For a stream that asked, lets go of the silence held before any speech once it passes one chunk, as a file's
+    /// is (ARCHITECTURE.md, section 5). Unlike a file, a stream cannot be read again, so one with no speech at all
+    /// gives the model only what is still held.
+    private static func boundLeadingSilence(_ work: StreamWork) {
+        if work.boundsLeadingSilence { _ = work.transcription.dropLeadingSilence(beyond: SpeechCore.chunkSamples) }
+    }
+
+    /// Reports each chunk to the stream's owner, when the owner asked; nil otherwise, so a stream without a feed does
+    /// no work for one.
+    private static func reporter(_ work: StreamWork, _ stream: SpeechStream) -> ChunkedTranscription.Chunked? {
+        guard work.feed != nil else { return nil }
+        return { transcript, next in
+            if let progress = work.feed?.report(transcript, next: next) { stream.report(progress) }
         }
     }
 
@@ -486,14 +505,17 @@ public actor SpeechEngine: SpeechTranscribing {
     /// result retained is released, because nobody will ever see it.
     func complete(_ stream: SpeechStream) async {
         let outcome: Result<SpeechResult, SpeechFailure>
+        var last: SpeechProgress?
         do throws(SpeechFailure) {
-            outcome = .success(try await finishWork(stream))
+            let finished = try await finishWork(stream)
+            outcome = .success(finished.result)
+            last = finished.last
         } catch {
             outcome = .failure(error)
         }
         work[stream.id] = nil
         beforeDelivery?(stream.id)
-        if !stream.deliver(outcome), case .success(let result) = outcome, let id = result.correctionID {
+        if !stream.deliver(outcome, last: last), case .success(let result) = outcome, let id = result.correctionID {
             release(id)
         }
     }
@@ -503,7 +525,9 @@ public actor SpeechEngine: SpeechTranscribing {
         work[id] = nil
     }
 
-    private func finishWork(_ stream: SpeechStream) async throws(SpeechFailure) -> SpeechResult {
+    /// The stream's result, and its last report when the owner asked for progress.
+    private func finishWork(_ stream: SpeechStream) async throws(SpeechFailure)
+        -> (result: SpeechResult, last: SpeechProgress?) {
         if let failure = stream.failure { throw failure }
         let model = try await readyModel()
         guard !stream.isCancelled else { throw .cancelled }
@@ -512,18 +536,20 @@ public actor SpeechEngine: SpeechTranscribing {
         let samples = stream.takeInbox()
         if let failure = work.failure { throw failure }
         let check = stream.cancellationCheck, gate = self.gate
+        let transcribe = { (window: AudioWindow) throws -> [HeardWord] in
+            try Self.transcribe(window, work: work, model: model, gate: gate, check: check)
+        }
+        let report = Self.reporter(work, stream)
         do {
             if !samples.isEmpty {
-                try work.transcription.append(samples) {
-                    try Self.transcribe($0, work: work, model: model, gate: gate, check: check)
-                }
+                try work.transcription.append(samples, transcribe: transcribe, chunked: report)
+                Self.boundLeadingSilence(work)
             }
-            let raw = try work.transcription.finish {
-                try Self.transcribe($0, work: work, model: model, gate: gate, check: check)
-            }
+            let raw = try work.transcription.finish(transcribe: transcribe, chunked: report)
             try check()
             let text = CasingRestorer.apply(raw, entries: work.snapshot.entries)
-            return SpeechResult(text: text, correctionID: retain(work, id: stream.id, model: model, base: text))
+            let last = work.feed?.last(work.transcription.words)
+            return (SpeechResult(text: text, correctionID: retain(work, id: stream.id, model: model, base: text)), last)
         } catch {
             throw Self.failure(error)
         }
@@ -535,7 +561,8 @@ public actor SpeechEngine: SpeechTranscribing {
         if let existing = work[stream.id] { return existing }
         let snapshot = stream.snapshot
         let bias = graphs.graph(for: snapshot) { BiasGraph.build(entries: snapshot.entries, encoder: model.encoder) }
-        let created = StreamWork(id: stream.id, snapshot: snapshot, bias: bias, retainsAudio: stream.retainsAudio)
+        let created = StreamWork(id: stream.id, snapshot: snapshot, bias: bias, retainsAudio: stream.retainsAudio,
+                                 reportsProgress: stream.progress != nil, boundsLeadingSilence: stream.boundsLeadingSilence)
         work[stream.id] = created
         return created
     }
@@ -938,12 +965,19 @@ final class StreamWork {
     var transcription = ChunkedTranscription.recording()
     var retained: RetainedAudio?
     var failure: SpeechFailure?
+    /// What the owner has been told, when it asked for progress.
+    var feed: ProgressFeed?
+    /// The owner asked for the silence before the first speech to be let go as it grows (ARCHITECTURE.md, section 5).
+    let boundsLeadingSilence: Bool
 
-    init(id: UInt64, snapshot: DictionarySnapshot, bias: BiasGraph?, retainsAudio: Bool) {
+    init(id: UInt64, snapshot: DictionarySnapshot, bias: BiasGraph?, retainsAudio: Bool, reportsProgress: Bool = false,
+         boundsLeadingSilence: Bool = false) {
         self.id = id
+        self.boundsLeadingSilence = boundsLeadingSilence
         self.snapshot = snapshot
         self.bias = bias
         retained = retainsAudio ? RetainedAudio() : nil
+        feed = reportsProgress ? ProgressFeed(entries: snapshot.entries) : nil
     }
 }
 

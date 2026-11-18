@@ -6,6 +6,8 @@ enum HostAction: Equatable, Sendable {
     case finish(UUID)
     case cancel(UUID)
     case reject(UUID, HostErrorCode)
+    /// Stop the voice note, if one prepares or records (ARCHITECTURE.md, "Voice notes").
+    case stopNote(UUID)
 }
 
 /// Decides how the host moves toward the keyboard's latest intent. Pure, so it can run on every
@@ -46,6 +48,12 @@ enum HostReconciler {
             case .starting?, .recording?, .transcribing?: return .cancel(request)
             default: return .none
             }
+        case .stopNote:
+            // Acted on once, and only while fresh, so a stop left in the file never stops a later note.
+            guard !knownRequestIDs.contains(request),
+                  DictationProtocol.isFresh(intent.issuedAt, ttl: DictationProtocol.pendingRecordTTL, now: now)
+            else { return .none }
+            return .stopNote(request)
         }
     }
 }

@@ -24,9 +24,9 @@ enum SessionActivityMotion {
     /// The minimal island's recording dot.
     static func minimalDot(_ reduceMotion: Bool) -> Handover { reduceMotion ? .fade : .scale(from: 0.4) }
 
-    /// The mark's dot: a little larger while recording.
+    /// The mark's dot: a little larger while recording, a dictation or a note.
     static func markDotScale(phase: SessionActivityState.Phase, isStale: Bool, reduceMotion: Bool) -> Double {
-        phase == .recording && !isStale && !reduceMotion ? 1.3 : 1
+        (phase == .recording || phase == .noteRecording) && !isStale && !reduceMotion ? 1.3 : 1
     }
 
     /// A strip dot's size, as a share of its place, for how lit it is (0 to 1): lit dots a touch larger.
@@ -45,4 +45,10 @@ extension SessionActivityState {
     static let lockScreenCountdownTail = "left"
     /// What VoiceOver hears before the countdown there.
     static let countdownSpokenLead = "Session ends if idle in"
+    /// A voice note on battery shows its time left beside the same glyph; VoiceOver hears this before it.
+    static let noteCountdownSpokenLead = "Note stops in"
+    /// A voice note with power connected: a bolt and a word, no countdown, and what VoiceOver hears for them.
+    static let chargingSymbol = "bolt.fill"
+    static let chargingWords = "Charging"
+    static let chargingSpoken = "Charging, no time limit"
 }

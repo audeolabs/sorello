@@ -9,6 +9,7 @@ enum AtomicRecordFilesTests {
         [
             ("writeReplacesTheFileWhole", testWriteReplacesTheFileWhole),
             ("createsDirectoryExcludedFromBackup", testCreatesDirectoryExcludedFromBackup),
+            ("createsDirectoryIncludedInBackupWhenAsked", testCreatesDirectoryIncludedInBackupWhenAsked),
             ("successfulWritesLeaveNoStagingFile", testSuccessfulWritesLeaveNoStagingFile),
             ("failedWriteRemovesItsStagingFile", testFailedWriteRemovesItsStagingFile),
             ("stagingNamesAreUniqueAndCarryTheSuffix", testStagingNamesAreUniqueAndCarryTheSuffix),
@@ -64,6 +65,16 @@ enum AtomicRecordFilesTests {
             try! files.write(Data("{}".utf8), to: files.directory.appendingPathComponent("record.json"), protection: protection)
             let values = try! files.directory.resourceValues(forKeys: [.isExcludedFromBackupKey])
             TestSupport.expectEqual(values.isExcludedFromBackup, true)
+        }
+    }
+
+    private static func testCreatesDirectoryIncludedInBackupWhenAsked() {
+        withFiles { files in
+            var backedUp = files
+            backedUp.excludedFromBackup = false
+            try! backedUp.write(Data("{}".utf8), to: files.directory.appendingPathComponent("record.json"), protection: protection)
+            let values = try! files.directory.resourceValues(forKeys: [.isExcludedFromBackupKey])
+            TestSupport.expectEqual(values.isExcludedFromBackup, false)
         }
     }
 

@@ -28,6 +28,8 @@ struct SorelloIOSTests {
             ("ComputePolicy", ComputePolicyTests.tests),
             ("HostSessionCore", HostSessionCoreTests.tests),
             ("SessionActivity", SessionActivityTests.tests),
+            ("SessionActivityNote", SessionActivityNoteTests.tests),
+            ("VoiceNoteIntent", VoiceNoteIntentTests.tests),
             ("AppScreens", AppScreensTests.tests),
             ("CapturePipeline", CapturePipelineTests.tests),
             ("CaptureTiming", CaptureTimingTests.tests),
@@ -78,6 +80,15 @@ struct SorelloIOSTests {
             ("BundleModelLoader", BundleModelLoaderTests.tests),
             ("HostSessionLock", HostSessionLockTests.tests),
             ("HostSessionLockLatch", HostSessionLockLatchTests.tests),
+            ("HostSessionNote", HostSessionNoteTests.tests),
+            ("VoiceNotePolicy", VoiceNotePolicyTests.tests),
+            ("NoteSealing", NoteSealingTests.tests),
+            ("NoteRecoveryCode", NoteRecoveryCodeTests.tests),
+            ("NoteVault", NoteVaultTests.tests),
+            ("NoteRun", NoteRunTests.tests),
+            ("NoteSearch", NoteSearchTests.tests),
+            ("NoteScreens", NoteScreensTests.tests),
+            ("NotesLibrary", NotesLibraryTests.tests),
         ]
         var count = 0
         for (suite, tests) in suites {

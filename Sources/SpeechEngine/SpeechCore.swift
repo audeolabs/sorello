@@ -1,4 +1,5 @@
 import CryptoKit
+import DictationCore
 import DictionaryKit
 import Foundation
 
@@ -214,9 +215,17 @@ struct ChunkedTranscription {
                              compactor: SilenceCompactor())
     }
 
-    mutating func append(_ samples: [Float], transcribe: (AudioWindow) throws -> [HeardWord]) rethrows {
-        try Self.append(samples, &compactor, &chunker, &transcript, transcribe)
+    /// The words so far, joined at their seams.
+    var words: [HeardWord] { transcript.words }
+
+    /// Transcribes each chunk the samples complete. After each one is joined, `chunked` hears the transcript and the
+    /// sample the next chunk starts at.
+    mutating func append(_ samples: [Float], transcribe: (AudioWindow) throws -> [HeardWord],
+                         chunked: Chunked? = nil) rethrows {
+        try Self.append(samples, &compactor, &chunker, &transcript, transcribe, chunked)
     }
+
+    typealias Chunked = (_ transcript: TranscriptAssembler, _ next: Int) -> Void
 
     /// The same chunks without compaction: what `recording()` gives for audio with no speech in it, which the
     /// compactor passes through unchanged.
@@ -224,10 +233,10 @@ struct ChunkedTranscription {
         ChunkedTranscription(size: SpeechCore.chunkSamples, overlap: SpeechCore.chunkOverlapSamples)
     }
 
-    /// Transcribes the remaining partial chunk, if it holds new audio, and returns the text. Ends compaction first
-    /// unless `endCompaction` already has.
-    mutating func finish(transcribe: (AudioWindow) throws -> [HeardWord]) rethrows -> String {
-        try Self.endCompaction(&compactor, &chunker, &transcript, &heardSpeech, transcribe)
+    /// Transcribes what remains: full chunks, which `chunked` hears as `append`'s do, then the partial chunk, if it
+    /// holds new audio. Returns the text. Ends compaction first unless `endCompaction` already has.
+    mutating func finish(transcribe: (AudioWindow) throws -> [HeardWord], chunked: Chunked? = nil) rethrows -> String {
+        try Self.endCompaction(&compactor, &chunker, &transcript, &heardSpeech, transcribe, chunked)
         try chunker.finish { transcript.append(try transcribe($0), covering: $0.range) }
         return transcript.text
     }
@@ -236,13 +245,13 @@ struct ChunkedTranscription {
     /// `finish` then has only the last partial chunk left, so a caller can let other work run between the two. Sets
     /// `heardSpeech`. Without a compactor, or once compaction has ended, it does nothing.
     mutating func endCompaction(transcribe: (AudioWindow) throws -> [HeardWord]) rethrows {
-        try Self.endCompaction(&compactor, &chunker, &transcript, &heardSpeech, transcribe)
+        try Self.endCompaction(&compactor, &chunker, &transcript, &heardSpeech, transcribe, nil)
     }
 
     /// Lets the compactor drop the silence it holds before any speech beyond `limit` samples, which bounds what a
-    /// file with a long silent start holds (`SilenceCompactor.dropLeadingSilence`). Returns whether it dropped any;
-    /// if it did and `heardSpeech` is false after `finish`, the text is wrong and the audio must be transcribed again
-    /// with `uncompacted()`.
+    /// file with a long silent start holds, or a stream that asked (`SilenceCompactor.dropLeadingSilence`). Returns
+    /// whether it dropped any; if it did and `heardSpeech` is false after `finish`, the text is not that of the whole
+    /// audio: a file is transcribed again with `uncompacted()`, and a stream that asked accepts it.
     mutating func dropLeadingSilence(beyond limit: Int) -> Bool {
         compactor?.dropLeadingSilence(beyond: limit) ?? false
     }
@@ -250,26 +259,31 @@ struct ChunkedTranscription {
     // Separate inout properties: a closure capturing self would overlap the chunker's access.
     private static func append(_ samples: [Float], _ compactor: inout SilenceCompactor?, _ chunker: inout Chunker,
                                _ transcript: inout TranscriptAssembler,
-                               _ transcribe: (AudioWindow) throws -> [HeardWord]) rethrows {
-        guard var active = compactor else { return try chunk(samples, &chunker, &transcript, transcribe) }
+                               _ transcribe: (AudioWindow) throws -> [HeardWord], _ chunked: Chunked?) rethrows {
+        guard var active = compactor else { return try chunk(samples, &chunker, &transcript, transcribe, chunked) }
         // Moved out and back, so the compactor's buffers are never shared and never copied.
         compactor = nil
         defer { compactor = active }
-        try active.append(samples) { try chunk($0, &chunker, &transcript, transcribe) }
+        try active.append(samples) { try chunk($0, &chunker, &transcript, transcribe, chunked) }
     }
 
     /// A recording is finished once, so the compactor is not needed again.
     private static func endCompaction(_ compactor: inout SilenceCompactor?, _ chunker: inout Chunker,
                                       _ transcript: inout TranscriptAssembler, _ heardSpeech: inout Bool,
-                                      _ transcribe: (AudioWindow) throws -> [HeardWord]) rethrows {
+                                      _ transcribe: (AudioWindow) throws -> [HeardWord], _ chunked: Chunked?) rethrows {
         guard var active = compactor else { return }
         compactor = nil
-        heardSpeech = try active.finish { try chunk($0, &chunker, &transcript, transcribe) }
+        heardSpeech = try active.finish { try chunk($0, &chunker, &transcript, transcribe, chunked) }
     }
 
     private static func chunk(_ samples: [Float], _ chunker: inout Chunker, _ transcript: inout TranscriptAssembler,
-                              _ transcribe: (AudioWindow) throws -> [HeardWord]) rethrows {
-        try chunker.append(samples) { transcript.append(try transcribe($0), covering: $0.range) }
+                              _ transcribe: (AudioWindow) throws -> [HeardWord], _ chunked: Chunked?) rethrows {
+        let overlap = chunker.overlap
+        try chunker.append(samples) { window in
+            transcript.append(try transcribe(window), covering: window.range)
+            // Every chunk but the last is full, so the next one starts `overlap` before this one's end.
+            chunked?(transcript, window.range.upperBound - overlap)
+        }
     }
 }
 
@@ -280,10 +294,17 @@ struct ChunkedTranscription {
 struct TranscriptAssembler {
     /// Starts of the same word in two chunks differ by a few encoder frames.
     static let alignmentTolerance = 6400
-    private var words: [HeardWord] = []
+    private(set) var words: [HeardWord] = []
     private var end: Int?
 
     var text: String { words.map(\.text).joined(separator: " ") }
+
+    /// How many leading words no later chunk can change, when the next chunk starts at sample `next`: a seam replaces
+    /// only words that start within the alignment tolerance of the overlap, or later. `known` of them are already
+    /// known to be settled.
+    func settled(nextChunkAt next: Int, known: Int = 0) -> Int {
+        words[known...].firstIndex { $0.start >= next - Self.alignmentTolerance } ?? words.count
+    }
 
     mutating func append(_ chunkWords: [HeardWord], covering range: Range<Int>) {
         if let end, range.lowerBound < end {
@@ -352,6 +373,37 @@ struct TranscriptAssembler {
 
     private static func key(_ text: String) -> String {
         String(String.UnicodeScalarView(text.lowercased().unicodeScalars.filter(CharacterSet.alphanumerics.contains)))
+    }
+}
+
+/// The settled text and provisional tail of a transcript as its chunks are joined (ARCHITECTURE.md, section 5,
+/// "Progress"). Each settled word is handed out once, with the dictionary's casing.
+struct ProgressFeed {
+    let entries: [DictionaryEntry]
+    /// The words handed out as settled so far. The casing scan starts afresh after them.
+    private var reported = 0
+
+    init(entries: [DictionaryEntry]) {
+        self.entries = entries
+    }
+
+    /// The report after a chunk that is not the last, when the next chunk starts at sample `next`.
+    mutating func report(_ transcript: TranscriptAssembler, next: Int) -> SpeechProgress {
+        let words = transcript.words
+        let fixed = transcript.settled(nextChunkAt: next, known: reported)
+        let settled = CasingRestorer.settle(words[reported..<fixed].map(\.text), entries: entries)
+        reported += settled.count
+        return SpeechProgress(settled: settled.text, provisional: text(words[reported...]))
+    }
+
+    /// The report once the last chunk is joined: every word not yet handed out.
+    mutating func last(_ words: [HeardWord]) -> SpeechProgress {
+        defer { reported = words.count }
+        return SpeechProgress(settled: text(words[reported...]), provisional: "")
+    }
+
+    private func text(_ words: ArraySlice<HeardWord>) -> String {
+        CasingRestorer.apply(words.map(\.text).joined(separator: " "), entries: entries)
     }
 }
 

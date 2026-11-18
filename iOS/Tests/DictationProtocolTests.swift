@@ -11,6 +11,7 @@ enum DictationProtocolTests {
             ("freshnessToleratesSmallSkewOnly", testFreshnessToleratesSmallSkewOnly),
             ("terminalPhases", testTerminalPhases),
             ("storeReadAccessors", testStoreReadAccessors),
+            ("statusWithoutAVoiceNoteIsUnchanged", testStatusWithoutAVoiceNoteIsUnchanged),
         ]
     }
 
@@ -37,7 +38,7 @@ enum DictationProtocolTests {
     }
 
     private static func testRecordsRoundTripThroughJSON() {
-        for action in [KeyboardIntent.Action.record, .finish, .cancel] { roundTrip(Fixture.intent(action)) }
+        for action in [KeyboardIntent.Action.record, .finish, .cancel, .stopNote] { roundTrip(Fixture.intent(action)) }
         roundTrip(Fixture.presence())
         roundTrip(Fixture.status(.inactive, captureReady: false))
         roundTrip(Fixture.status(.starting, error: .microphonePermissionDenied))
@@ -47,13 +48,20 @@ enum DictationProtocolTests {
         let codes: [HostErrorCode] = [
             .microphonePermissionDenied, .audioSessionFailed, .startupTimeout, .interrupted, .deviceLocked,
             .keyboardDismissed, .sessionInactive, .modelUnavailable, .modelFailed, .transcriptionFailed,
-            .backgroundTimeExpired, .notRecording, .tooLong, .superseded,
+            .backgroundTimeExpired, .notRecording, .tooLong, .superseded, .noteRecording,
         ]
         for code in codes { roundTrip(Fixture.dictation(.failed, error: code)) }
         var bare = Fixture.status()
         bare.sessionID = nil
         bare.sessionExpiresAt = nil
         roundTrip(bare)
+        for phase in [VoiceNoteStatus.Phase.preparing, .recording, .saving] {
+            var noting = Fixture.status()
+            noting.voiceNote = VoiceNoteStatus(phase: phase, startedAt: Fixture.now, endsAt: Fixture.now + 3600, onPower: false)
+            roundTrip(noting)
+            noting.voiceNote = VoiceNoteStatus(phase: phase, startedAt: Fixture.now, endsAt: nil, onPower: true)
+            roundTrip(noting)
+        }
         roundTrip(Fixture.result(text: "Synthetic \"quoted\" text with émoji 🎙️\nand a newline", pressEnter: true))
         roundTrip(Fixture.result(text: ""))
     }
@@ -71,6 +79,23 @@ enum DictationProtocolTests {
         TestSupport.expectEqual(object["issuedAt"] as? Double, 1_800_000_000)
         TestSupport.expectEqual(object["schema"] as? Int, 1)
         TestSupport.expectEqual(object["action"] as? String, "record")
+    }
+
+    /// Schema 1 still: a status with no voice note is written as before, without the key, and a status written
+    /// before voice notes existed reads with none (ARCHITECTURE.md, "Types", Schema).
+    private static func testStatusWithoutAVoiceNoteIsUnchanged() {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .secondsSince1970
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .secondsSince1970
+        let status = Fixture.status(dictation: Fixture.dictation(.recording))
+        let object = try! JSONSerialization.jsonObject(with: try! encoder.encode(status)) as! [String: Any]
+        TestSupport.expect(object["voiceNote"] == nil, "a status with no voice note names one")
+        var older = object
+        older.removeValue(forKey: "voiceNote")
+        let decoded = try! decoder.decode(HostStatus.self, from: try! JSONSerialization.data(withJSONObject: older))
+        TestSupport.expectEqual(decoded, status)
+        TestSupport.expectEqual(decoded.voiceNote, nil)
     }
 
     private static func testNewRecordsUseCurrentSchema() {

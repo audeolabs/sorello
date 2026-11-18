@@ -10,8 +10,9 @@ struct SorelloApp: App {
         #if SORELLO_SELFTEST
         SelfTest.startIfRequested()
         #endif
-        // Before iOS can run the session control's intent in a process it launched for it.
+        // Before iOS can run a control's or the Live Activity's intent in a process it launched for it.
         ToggleFlowSessionIntent.handler = HostSessionController.shared
+        VoiceNoteIntentHost.handler = HostSessionController.shared
         DisplayFace.styleLargeTitles()
     }
 

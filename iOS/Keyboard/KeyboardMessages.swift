@@ -19,6 +19,10 @@ enum KeyboardMessages {
     /// VoiceOver's words for Start with no session (the bar shows Start's dot, still, instead of these words).
     static let noSessionSpoken = "No session. Start opens Sorello"
     static let storeWriteFailed = "Couldn't reach Sorello"
+    /// A voice note holds the microphone (ARCHITECTURE.md, "Top row"): the island's label, and the middle's words.
+    static let stopNote = "Stop note"
+    static let noteRecording = "Voice note recording"
+    static let noteStarting = "Voice note starting"
     static let fullAccessExplanation = "Full Access lets this keyboard talk to the Sorello app, which transcribes "
         + "your speech on this iPhone. Nothing leaves your phone."
     static let configurationErrorDetail = "The keyboard cannot reach Sorello's shared storage. Reinstall Sorello, "
@@ -43,6 +47,7 @@ enum KeyboardMessages {
         case .waitingForModel, .preparingModel: return preparingModel
         case .error(let code): return text(for: code)
         case .ready: return "Ready to dictate"
+        case .voiceNote(let recording, _): return recording ? noteRecording : noteStarting
         // Describes, never instructs: a tap on the bar's text types the top-row key under it.
         case .hostUnavailable: return launcherFailed ? openSorello : "Start opens Sorello"
         }
@@ -55,6 +60,7 @@ enum KeyboardMessages {
         case .starting, .recording: return "Stop dictation"
         case .transcribing: return "Transcribing"
         case .waitingForModel: return "Preparing model"
+        case .voiceNote: return "Stop voice note"
         default: return "Start dictation"
         }
     }
@@ -71,6 +77,12 @@ enum KeyboardMessages {
             let time = "Recording, " + Duration.seconds(seconds).formatted(.units(allowed: [.minutes, .seconds], width: .wide))
             return detail.map { time + ". " + $0 } ?? time
         case .transcribing, .waitingForModel: return ""
+        case .voiceNote(let recording, let startedAt):
+            guard recording else { return "Note starting" }
+            let seconds = max(0, Int(now.timeIntervalSince(startedAt)))
+            return "Recording note, "
+                + Duration.seconds(seconds).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .wide,
+                                                             maximumUnitCount: 2))
         default: return detail ?? ""
         }
     }
@@ -111,6 +123,7 @@ enum KeyboardMessages {
         case .notRecording: return "Stopped before recording began"
         case .tooLong: return "The dictation was too long"
         case .superseded: return "Replaced by a newer dictation"
+        case .noteRecording: return "A voice note is recording"
         }
     }
 
@@ -199,7 +212,7 @@ enum CapsuleStyle: Equatable, Sendable {
         case .starting, .recording: self = .stop
         case .transcribing, .waitingForModel: self = .working
         case .needsFullAccess, .configurationError, .incompatible: self = .unavailable
-        case .ready, .preparingModel, .hostUnavailable, .error: self = .start
+        case .ready, .preparingModel, .hostUnavailable, .error, .voiceNote: self = .start
         }
     }
 }
@@ -217,18 +230,20 @@ extension IslandForm {
 
 /// What the island holds (ARCHITECTURE.md, "Top row"): the ring mark and "Start"; while starting, the status and the
 /// stop glyph; while recording, the wave, the time and the stop glyph; while the recording waits for its transcript, only
-/// the shimmer (no words name the wait).
+/// the shimmer (no words name the wait); while a voice note holds the microphone, a stop glyph and "Stop note".
 enum CapsuleContent: Equatable, Sendable {
     case start
     case starting
     case stop(startedAt: Date)
     case processing
+    case stopNote
 
     init(mode: KeyboardMode) {
         switch mode {
         case .starting: self = .starting
         case .recording(_, let startedAt): self = .stop(startedAt: startedAt)
         case .transcribing, .waitingForModel: self = .processing
+        case .voiceNote: self = .stopNote
         case .needsFullAccess, .configurationError, .incompatible, .ready, .preparingModel, .hostUnavailable, .error:
             self = .start
         }
@@ -237,7 +252,8 @@ enum CapsuleContent: Equatable, Sendable {
 
 /// What the bar's middle shows beside any chips (ARCHITECTURE.md, "Top row"): words only where they earn their space.
 /// A notice whenever one is up; the words of what the user must act on (Full Access, a broken install or versions,
-/// "Open Sorello to start a session" after the launcher failed), of an error, and of a model that cannot load
+/// "Open Sorello to start a session" after the launcher failed), of a voice note holding the microphone, of an error,
+/// and of a model that cannot load
 /// (`hint`); otherwise nothing: the island's motion says it is starting, recording or waiting, and Start's dot
 /// (`SessionDot`) whether a session is on. Nothing beside a chip but a notice.
 enum BarStatus: Equatable, Sendable {
@@ -260,6 +276,8 @@ enum BarStatus: Equatable, Sendable {
             self = title.isEmpty ? .none : .text(title, attention: true)
         case .ready:
             self = hint.map { .text($0, attention: true) } ?? .none
+        case .voiceNote:
+            self = .text(title, attention: false)
         case .starting, .hostUnavailable:
             self = title == KeyboardMessages.openSorello ? .text(title, attention: false) : .none
         case .recording, .transcribing, .waitingForModel, .preparingModel:

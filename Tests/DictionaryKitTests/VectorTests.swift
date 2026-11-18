@@ -161,6 +161,25 @@ struct VectorTests {
         }
     }
 
+    /// Casing restored on a transcript that is still growing: whichever of its first words are known, the words
+    /// `settle` returns with their text, then the rest restored on its own, give exactly what `apply` gives the whole.
+    @Test func casingSettlesAsTheTranscriptGrows() {
+        for item in file.casing {
+            let words = item.transcript.components(separatedBy: " ")
+            // Engine transcripts are words between single spaces; other spacing is not a growing transcript.
+            guard !words.contains(where: { $0.isEmpty || $0.unicodeScalars.contains(where: \.properties.isWhitespace) })
+            else { continue }
+            let entries = item.entries.map { entry($0) }
+            for known in 0...words.count {
+                let (count, text) = CasingRestorer.settle(Array(words[..<known]), entries: entries)
+                #expect(count <= known, "\(item.transcript) knowing \(known) words")
+                let rest = CasingRestorer.apply(words[count...].joined(separator: " "), entries: entries)
+                let joined = [text, rest].filter { !$0.isEmpty }.joined(separator: " ")
+                expectScalars(joined, item.expected)
+            }
+        }
+    }
+
     @Test func candidates() throws {
         for item in file.candidates {
             let found = CorrectionCandidates.find(before: item.before, after: item.after,

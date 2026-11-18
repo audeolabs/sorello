@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum HomeRoute: Hashable {
-    case keyboardSetup, dictionary, diagnostics, reportBug
+    case keyboardSetup, dictionary, notes, diagnostics, reportBug
 }
 
 struct HomeView: View {
@@ -33,6 +33,12 @@ struct HomeView: View {
                         RowLabel(title: "Dictionary", symbol: "character.book.closed")
                     }
                     .accessibilityIdentifier("home.dictionary")
+                    if host.notes != nil {
+                        NavigationLink(value: HomeRoute.notes) {
+                            RowLabel(title: "Notes", symbol: "note.text")
+                        }
+                        .accessibilityIdentifier("home.notes")
+                    }
                 }
                 .listRowBackground(Theme.cardBackground)
 
@@ -115,6 +121,7 @@ struct HomeView: View {
                 switch route {
                 case .keyboardSetup: KeyboardSetupScreen()
                 case .dictionary: DictionaryView(dictionary: host.dictionary)
+                case .notes: if let notes = host.notes { NotesView(model: notes) }
                 case .diagnostics: DiagnosticsView(transcriber: transcriber)
                 case .reportBug: ReportBugView(recipient: SupportContact.email)
                 }

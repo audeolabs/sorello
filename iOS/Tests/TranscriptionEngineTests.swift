@@ -16,6 +16,7 @@ enum TranscriptionEngineTests {
             ("readyRuntimeFailures", isolated(testReadyRuntimeFailures)),
             ("readyRuntimeCancelledWhileWaiting", isolated(testReadyRuntimeCancelledWhileWaiting)),
             ("streamOnlyFromAReadyModel", isolated(testStreamOnlyFromAReadyModel)),
+            ("noteStreamFromAReadyModel", isolated(testNoteStreamFromAReadyModel)),
             ("streamedRecordingIsNotTranscribedAgain", isolated(testStreamedRecordingIsNotTranscribedAgain)),
             ("failedStreamFallsBackToTheRecording", isolated(testFailedStreamFallsBackToTheRecording)),
             ("cancellationCancelsTheStream", isolated(testCancellationCancelsTheStream)),
@@ -258,6 +259,22 @@ enum TranscriptionEngineTests {
         failed.runtime(0)!.finishPreparing(succeeded: false)
         TestSupport.expect(TestSupport.waitUntil(timeout: 2) { failed.engine.modelState == .failed }, "not failed")
         TestSupport.expect(failed.engine.beginStream() == nil, "a stream from a failed model")
+    }
+
+    /// A voice note's stream comes from a ready model as a dictation's does, and is the runtime's note stream, with
+    /// its progress feed.
+    @MainActor
+    private static func testNoteStreamFromAReadyModel() {
+        let h = EngineHarness()
+        TestSupport.expect(h.engine.beginStream(.note) == nil, "a note stream before preparation")
+        h.engine.prepare()
+        h.runtime(0)!.finishPreparing()
+        TestSupport.expect(TestSupport.waitUntil(timeout: 2) { h.engine.modelState == .ready }, "not ready")
+        let stream = h.engine.beginStream(.note)
+        TestSupport.expect(stream != nil && stream?.progress != nil, "no note stream with progress")
+        TestSupport.expectEqual(h.runtime(0)!.streamKinds, [.note])
+        TestSupport.expect(h.engine.beginStream()?.progress == nil, "a dictation stream with progress")
+        TestSupport.expectEqual(h.runtime(0)!.streamKinds, [.note, .dictation])
     }
 
     /// A streamed recording returns the stream's result; the runtime does not transcribe it again.
@@ -514,9 +531,12 @@ private final class FakeRuntime: SpeechRuntime {
         return try await withCheckedThrowingContinuation { transcription = $0 }
     }
 
-    func beginStream(onEnd: @escaping @Sendable () -> Void) -> SpeechStream? {
-        let stream = FakeSpeechStream(onEnd: onEnd)
+    private(set) var streamKinds: [SpeechStreamKind] = []
+
+    func beginStream(_ kind: SpeechStreamKind, onEnd: @escaping @Sendable () -> Void) -> SpeechStream? {
+        let stream = FakeSpeechStream(onEnd: onEnd, reportsProgress: kind == .note)
         streams.append(stream)
+        streamKinds.append(kind)
         return stream
     }
 

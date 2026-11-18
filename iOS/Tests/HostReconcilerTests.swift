@@ -16,6 +16,7 @@ enum HostReconcilerTests {
             ("unknownCancelDoesNothing", testUnknownCancelDoesNothing),
             ("instanceIDDoesNotMatter", testInstanceIDDoesNotMatter),
             ("reEvaluationAfterApplyingIsIdempotent", testReEvaluationAfterApplyingIsIdempotent),
+            ("stopNoteActsOnceWhileFresh", testStopNoteActsOnceWhileFresh),
         ]
     }
 
@@ -152,6 +153,23 @@ enum HostReconcilerTests {
     }
 
     /// Simulates a controller that applies each action and records the request as known.
+    /// A stop-note is acted on whatever the dictation does, in the foreground or not and with or without a session,
+    /// but only while fresh and only once: a stop left in the file never stops a later note.
+    private static func testStopNoteActsOnceWhileFresh() {
+        let stop = Fixture.intent(.stopNote)
+        for current in [nil] + allPhases.map({ Optional(Fixture.dictation($0, Fixture.otherRequestID)) }) {
+            for (isForeground, sessionActive) in [(false, false), (true, false), (false, true)] {
+                TestSupport.expectEqual(action(stop, current, isForeground: isForeground, sessionActive: sessionActive),
+                                        .stopNote(Fixture.requestID))
+            }
+        }
+        TestSupport.expectEqual(action(stop, nil, known: [Fixture.requestID]), .none)
+        let window = DictationProtocol.pendingRecordTTL
+        TestSupport.expectEqual(action(stop, nil, now: Fixture.now + window), .stopNote(Fixture.requestID))
+        TestSupport.expectEqual(action(stop, nil, now: Fixture.now + window + 0.1), .none)
+        TestSupport.expectEqual(action(stop, nil, now: Fixture.now - DictationProtocol.clockSkewTolerance - 0.1), .none)
+    }
+
     private static func testReEvaluationAfterApplyingIsIdempotent() {
         var current: DictationStatus? = Fixture.dictation(.recording, Fixture.otherRequestID)
         var known: Set<UUID> = [Fixture.otherRequestID]
@@ -164,6 +182,7 @@ enum HostReconcilerTests {
             case .finish(let id): current = Fixture.dictation(.transcribing, id, updatedAt: now)
             case .cancel(let id): current = Fixture.dictation(.cancelled, id, updatedAt: now)
             case .reject(let id, let code): current = Fixture.dictation(.failed, id, error: code, updatedAt: now)
+            case .stopNote(let id): known.insert(id)
             }
             if let id = current?.requestID { known.insert(id) }
             return result

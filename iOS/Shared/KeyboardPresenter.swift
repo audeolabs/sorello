@@ -16,6 +16,7 @@ enum KeyboardMode: Equatable, Sendable {
     case transcribing
     case waitingForModel           // the recording ended and waits for the host to prepare the model
     case error(HostErrorCode)
+    case voiceNote(recording: Bool, startedAt: Date)   // a voice note holds the microphone: the bar offers Stop note
     case preparingModel            // as `ready`, but the model is preparing: a recording waits for it
     case ready
     case hostUnavailable           // a mic tap bounces, or shows instructions
@@ -58,6 +59,12 @@ enum KeyboardPresenter {
             case .completed, .failed, .cancelled: break
             }
         }
+        // A voice note preparing or recording, from a live host whose session may still be starting. A saving note
+        // frees the keyboard.
+        if let status, let note = status.voiceNote, note.phase != .saving,
+           DictationProtocol.isFresh(status.heartbeatAt, ttl: DictationProtocol.livenessTimeout, now: now) {
+            return .voiceNote(recording: note.phase == .recording, startedAt: note.startedAt)
+        }
         if let dictation, dictation.phase == .failed || (dictation.phase == .cancelled && dictation.error != nil),
            DictationProtocol.isFresh(dictation.updatedAt, ttl: errorDisplayDuration, now: now) {
             return .error(dictation.error ?? .transcriptionFailed)
@@ -98,9 +105,9 @@ enum KeyboardPresenter {
     }
 
     /// The stale-writer guard: re-read the intent right before writing `finish` or `cancel`, and
-    /// write only if it still names the request the keyboard is showing. `record` starts a new
-    /// request and is always allowed.
+    /// write only if it still names the request the keyboard is showing. `record` and `stopNote` start a
+    /// new request and are always allowed.
     static func mayWrite(_ action: KeyboardIntent.Action, requestID: UUID, currentIntent: StoreRead<KeyboardIntent>) -> Bool {
-        action == .record || currentIntent.value?.requestID == requestID
+        action == .record || action == .stopNote || currentIntent.value?.requestID == requestID
     }
 }

@@ -174,17 +174,31 @@ if [ -f "$app_plist" ] && [ -f "$keyboard_plist" ] && [ -f "$activity_plist" ]; 
     # The session's Live Activity: a WidgetKit extension, allowed by the app.
     expect "$activity_plist" NSExtension.NSExtensionPointIdentifier com.apple.widgetkit-extension activity
     expect_bool "$app_plist" NSSupportsLiveActivities true app
-    # The session control's App Intent, which iOS learns from each bundle's metadata: an audio recording intent
-    # that asks for authentication and runs in the background only, so the control is never a launcher
-    # (ARCHITECTURE.md, "Session control").
+    # The App Intents, which iOS learns from each bundle's metadata. The two controls' are audio recording intents
+    # that ask for authentication; the Live Activity's Note asks for it too, and its Stop never does. Every one runs
+    # in the background only, so no control is a launcher and no button opens the app (ARCHITECTURE.md, "Session
+    # control", "Voice Note control"; "Live Activity", Buttons). authenticationPolicy 2 is
+    # requiresLocalDeviceAuthentication, 0 alwaysAllowed.
     for target in app activity; do
         case "$target" in app) actions="$app/Metadata.appintents/extract.actionsdata" ;; *) actions="$activity/Metadata.appintents/extract.actionsdata" ;; esac
         if [ ! -f "$actions" ]; then
-            fail "$target: Metadata.appintents is missing (no session control intent)"
+            fail "$target: Metadata.appintents is missing (no App Intents)"
             continue
         fi
-        for needle in '"ToggleFlowSessionIntent"' 'com.apple.link.systemProtocol.AudioRecording' '"authenticationPolicy":2' '"supportedModes":1' '"openAppWhenRun":false'; do
-            grep -Fq "$needle" "$actions" || fail "$target: the App Intents metadata lacks $needle"
+        for spec in ToggleFlowSessionIntent:2:audio ToggleVoiceNoteIntent:2:audio StartVoiceNoteIntent:2: StopVoiceNoteIntent:0:; do
+            intent=${spec%%:*} rest=${spec#*:}
+            policy=${rest%%:*} audio=${rest#*:}
+            if [ "$(kind "$actions" "actions.$intent")" != dictionary ]; then
+                fail "$target: the App Intents metadata lacks $intent"
+                continue
+            fi
+            expect "$actions" "actions.$intent.authenticationPolicy" "$policy" "$target"
+            expect "$actions" "actions.$intent.supportedModes" 1 "$target"
+            expect_bool "$actions" "actions.$intent.openAppWhenRun" false "$target"
+            if [ -n "$audio" ]; then
+                json "$actions" "actions.$intent.systemProtocols" | grep -Fq 'com.apple.link.systemProtocol.AudioRecording' ||
+                    fail "$target: $intent is not an audio recording intent"
+            fi
         done
     done
     for key in SorelloAppGroupIdentifier SorelloURLScheme SorelloUniversalLink; do
@@ -322,7 +336,7 @@ for binary in "$app/Sorello" "$appex/SorelloKeyboard" "$activity/SorelloActivity
     if grep -aq SORELLO_SELFTEST "$binary"; then fail "$(basename "$binary") is a self-test build"; fi
 done
 # No networking API in any executable; the keyboard and the Live Activity hold
-# only what they may of the shared modules.
+# only what they may of the shared modules, and nothing of the notes.
 sh "$(dirname "$0")/check-binaries.sh" "$app/Sorello" "$appex/SorelloKeyboard" "$activity/SorelloActivity" \
     > "$work/binaries.txt" 2>&1 || { grep '^FAIL:' "$work/binaries.txt"; fail "the executables' checks failed (above)"; }
 junk=$(find "$app" \( -name .DS_Store -o -name '*.xcent' -o -name '*.der' -o -name '__MACOSX' \) -print | head -5)

@@ -230,10 +230,31 @@ public struct SpeechStreamOptions: Sendable, Equatable {
     public var appBundleID: String?
     /// Keep what a correction suggestion needs to decode this audio again. Held in memory only.
     public var retainForCorrection: Bool
+    /// Give the stream a `progress` feed (ARCHITECTURE.md, section 5, "Progress").
+    public var reportsProgress: Bool
+    /// Hold a bounded amount of the silence before the first speech instead of all of it (ARCHITECTURE.md,
+    /// section 5). The text differs only for a recording with no speech at all.
+    public var boundsLeadingSilence: Bool
 
-    public init(appBundleID: String? = nil, retainForCorrection: Bool = false) {
+    public init(appBundleID: String? = nil, retainForCorrection: Bool = false, reportsProgress: Bool = false,
+                boundsLeadingSilence: Bool = false) {
         self.appBundleID = appBundleID
         self.retainForCorrection = retainForCorrection
+        self.reportsProgress = reportsProgress
+        self.boundsLeadingSilence = boundsLeadingSilence
+    }
+}
+
+/// What a stream has heard, reported as its chunks are transcribed (ARCHITECTURE.md, section 5, "Progress").
+public struct SpeechProgress: Sendable, Equatable {
+    /// Text that has become final since the last report, with the dictionary's casing. Empty when nothing has.
+    public var settled: String
+    /// Everything else heard so far, which a later chunk may still change. Empty in the last report.
+    public var provisional: String
+
+    public init(settled: String, provisional: String) {
+        self.settled = settled
+        self.provisional = provisional
     }
 }
 
@@ -281,6 +302,15 @@ public protocol SpeechStreaming: Sendable {
     func finish() async throws -> SpeechResult
     /// Drops the audio and any partial result, and keeps nothing. Wins over `finish`. Safe to call more than once.
     func cancel()
+    /// Reports while the audio arrives, for one consumer, when the stream was opened with `reportsProgress`; nil
+    /// otherwise. Joined, the settled parts are `finish`'s text: its last report is sent before `finish` returns, and
+    /// then it ends. A failed or cancelled stream ends it without one. Reporting never waits for the consumer.
+    var progress: AsyncStream<SpeechProgress>? { get }
+}
+
+extension SpeechStreaming {
+    /// A stream that cannot report progress has no feed.
+    public var progress: AsyncStream<SpeechProgress>? { nil }
 }
 
 // MARK: - Text

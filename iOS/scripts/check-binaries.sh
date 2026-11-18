@@ -4,7 +4,8 @@
 # - none of them names a networking API, as an undefined symbol or as a linked library: the iPhone app opens no
 #   network connection and holds no networking code;
 # - the keyboard holds nothing of SpeechEngine, DictionaryKit or DictationCore, so it cannot reach the model or the
-#   dictionary, and the Live Activity nothing of any shared module.
+#   dictionary, and the Live Activity nothing of any shared module;
+# - neither the keyboard nor the Live Activity holds anything of NotesCore, so neither can seal or open a note.
 # It reads the executables only. Prints every failure and exits 1 if there is any.
 #
 # Usage: check-binaries.sh APP KEYBOARD ACTIVITY   (the three executables)
@@ -26,6 +27,10 @@ network_libraries='/(CFNetwork|Network|WebKit)\.framework/|/libnetwork\.'
 # A Swift symbol of a module carries the module's name with its length in front of it.
 speech_and_dictionary='12SpeechEngine|13DictionaryKit|13DictationCore'
 shared_modules="$speech_and_dictionary|9TextRules"
+# Every NotesCore type is named Note… (ARCHITECTURE.md, "Notes"), so any of them, in any module, shows as a length
+# followed by Note and a capital (the rest of its name, or the kind of a type named Note). NotesCore seals with
+# CryptoKit's HPKE, which nothing else in the app uses.
+notes='[0-9]Note[A-Z]|9CryptoKit4HPKE'
 
 for binary in "$app" "$keyboard" "$activity"; do
     name=$(basename "$binary")
@@ -55,6 +60,8 @@ holds_none() {
 }
 holds_none "$keyboard" "$speech_and_dictionary" "speech or dictionary code"
 holds_none "$activity" "$shared_modules" "code of the shared modules"
+holds_none "$keyboard" "$notes" "notes code"
+holds_none "$activity" "$notes" "notes code"
 
 if [ "$failures" -gt 0 ]; then
     echo "$failures binary check(s) failed."

@@ -15,6 +15,20 @@ final class RecordedAudio: Sendable {
     var duration: TimeInterval { Double(samples.count) / DictationSampleBuffer.sampleRate }
 }
 
+/// What a stream is for. A voice note's reports its progress and bounds its leading silence
+/// (ARCHITECTURE.md, "Transcription").
+enum SpeechStreamKind: Equatable, Sendable {
+    case dictation
+    case note
+}
+
+/// What a voice note's stream has heard, as each chunk is transcribed (../ARCHITECTURE.md, section 5, "Progress"): the
+/// text that has newly settled, and the provisional tail.
+struct SpeechStreamProgress: Equatable, Sendable {
+    var settled: String
+    var provisional: String
+}
+
 /// The host-owned model runtime as the session core sees it.
 @MainActor
 protocol HostTranscriber: AnyObject {
@@ -22,9 +36,10 @@ protocol HostTranscriber: AnyObject {
     /// Starts preparing unless the model is ready or already preparing, or a failed preparation is still
     /// backing off (the model then stays `failed`; ARCHITECTURE.md, "Transcription").
     func prepare()
-    /// A transcription fed while the next recording is recorded, or nil unless the model is ready: the
-    /// recording is then transcribed after it ends. Give it back in `RecordedAudio`, or cancel it.
-    func beginStream() -> SpeechStream?
+    /// A transcription fed while the next recording is recorded, or nil unless the model is ready: a dictation is
+    /// then transcribed after it ends. Give a dictation's back in `RecordedAudio`, or cancel it; a voice note's owner
+    /// finishes it.
+    func beginStream(_ kind: SpeechStreamKind) -> SpeechStream?
     /// Waits for readiness, then transcribes; with `audio.stream`, finishes the stream instead and falls
     /// back to the samples only if it fails. Cancellation ends the wait at once and cancels the stream.
     /// Throws `TranscriptionFailure` or `CancellationError`.
@@ -33,6 +48,8 @@ protocol HostTranscriber: AnyObject {
     /// or transcribing.
     @discardableResult
     func releaseIfIdle() -> Bool
+    /// The content-free hint for a failure, as a transcription's (ARCHITECTURE.md, "Transcription").
+    func failureHint(after failure: TranscriptionFailure, inBackground: Bool) -> ComputeFailureHint?
 }
 
 /// One loaded speech model: the shared `SpeechEngine` on the Neural Engine in the app, fakes in tests.
@@ -42,7 +59,7 @@ protocol SpeechRuntime: AnyObject, Sendable {
     /// A transcription fed while recording, whose `finish` returns what `transcribe` returns for the
     /// samples appended; nil when it cannot stream. Only on a prepared runtime. `onEnd` runs once, on
     /// any thread, when the stream is finished or cancelled and its model work has fully drained.
-    @MainActor func beginStream(onEnd: @escaping @Sendable () -> Void) -> SpeechStream?
+    @MainActor func beginStream(_ kind: SpeechStreamKind, onEnd: @escaping @Sendable () -> Void) -> SpeechStream?
 }
 
 /// A recording transcribed while it is recorded (a `SpeechEngine` stream in the app).
@@ -53,6 +70,14 @@ protocol SpeechStream: AnyObject, Sendable {
     func finish() async throws -> String
     /// Drops the audio and any partial result. Idempotent; a later `finish` throws `CancellationError`.
     func cancel()
+    /// A voice note's stream reports what it has heard, for one consumer: each report as its chunk is transcribed, the
+    /// last before `finish` returns, then the feed ends. A failed or cancelled stream ends it without a last report.
+    /// Nil for a dictation's.
+    var progress: AsyncStream<SpeechStreamProgress>? { get }
+}
+
+extension SpeechStream {
+    var progress: AsyncStream<SpeechStreamProgress>? { nil }
 }
 
 /// Owns the speech model runtime: preparation, readiness and transcription, always on the Neural Engine
@@ -151,9 +176,9 @@ final class TranscriptionEngine: HostTranscriber {
     /// Only on a ready runtime, so its audio never waits behind preparation. The engine is busy until the
     /// stream's model work has drained after its finish or cancellation, so the runtime it uses is not
     /// released, and no second one prepared, under it.
-    func beginStream() -> SpeechStream? {
+    func beginStream(_ kind: SpeechStreamKind = .dictation) -> SpeechStream? {
         guard isAvailable, let loaded, loaded.readiness == .ready else { return nil }
-        guard let stream = loaded.runtime.beginStream(onEnd: { [weak self] in
+        guard let stream = loaded.runtime.beginStream(kind, onEnd: { [weak self] in
             Task { @MainActor in self?.activeStreams -= 1 }
         }) else { return nil }
         activeStreams += 1
@@ -218,6 +243,10 @@ final class TranscriptionEngine: HostTranscriber {
         } catch {
             throw TranscriptionFailure.transcriptionFailed
         }
+    }
+
+    func failureHint(after failure: TranscriptionFailure, inBackground: Bool) -> ComputeFailureHint? {
+        ComputePolicy.failureHint(after: failure, inBackground: inBackground, osMajorVersion: osMajorVersion)
     }
 
     @discardableResult

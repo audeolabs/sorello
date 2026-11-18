@@ -16,7 +16,37 @@ enum KeyboardMessagesTests {
             ("recordingWhileTheModelLoadsFitsASmallPhone", testRecordingWhileTheModelLoadsFitsASmallPhone),
             ("theLargestTextSizesPutTheMenusActionsFirst", testTheLargestTextSizesPutTheMenusActionsFirst),
             ("theWidthTipSaysWhatLandsOnTheWrongLine", testTheWidthTipSaysWhatLandsOnTheWrongLine),
+            ("aVoiceNoteReadsAsANote", testAVoiceNoteReadsAsANote),
         ]
+    }
+
+    /// With a voice note holding the microphone the island is Stop note, compact, in Start's place; the middle says a
+    /// note records (plain, never a warning), unless a chip shows; VoiceOver hears the stop and the note's time. A
+    /// refusal with `noteRecording`, if it is ever seen, says why.
+    private static func testAVoiceNoteReadsAsANote() {
+        let recording = KeyboardMode.voiceNote(recording: true, startedAt: Fixture.now - 125)
+        let preparing = KeyboardMode.voiceNote(recording: false, startedAt: Fixture.now)
+        for mode in [recording, preparing] {
+            TestSupport.expectEqual(CapsuleContent(mode: mode), .stopNote)
+            TestSupport.expectEqual(IslandForm(CapsuleStyle(mode: mode)), .compact)
+            TestSupport.expectEqual(KeyboardMessages.capsuleAccessibilityLabel(for: mode), "Stop voice note")
+            TestSupport.expectEqual(KeyboardMessages.spokenStatus(mode: mode, status: Fixture.status(), launcherFailed: false,
+                                                                  now: Fixture.now), nil)
+        }
+        TestSupport.expectEqual(KeyboardMessages.stopNote, "Stop note")
+        let title = KeyboardMessages.title(for: recording, launcherFailed: false)
+        TestSupport.expectEqual(title, "Voice note recording")
+        TestSupport.expectEqual(KeyboardMessages.title(for: preparing, launcherFailed: false), "Voice note starting")
+        TestSupport.expectEqual(BarStatus(mode: recording, title: title, hint: nil, notice: nil, chipsShown: false),
+                                .text("Voice note recording", attention: false))
+        TestSupport.expectEqual(BarStatus(mode: recording, title: title, hint: nil, notice: nil, chipsShown: true), .none)
+        TestSupport.expectEqual(BarStatus(mode: recording, title: title, hint: nil, notice: "Couldn't reach Sorello",
+                                          chipsShown: false), .notice("Couldn't reach Sorello"))
+        TestSupport.expectEqual(KeyboardMessages.islandAccessibilityValue(for: recording, detail: nil, now: Fixture.now),
+                                "Recording note, 2 minutes, 5 seconds")
+        TestSupport.expectEqual(KeyboardMessages.islandAccessibilityValue(for: preparing, detail: nil, now: Fixture.now),
+                                "Note starting")
+        TestSupport.expectEqual(KeyboardMessages.text(for: .noteRecording), "A voice note is recording")
     }
 
     private static func status(model: HostStatus.Model, _ session: HostStatus.Session = .active,

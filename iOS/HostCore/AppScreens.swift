@@ -270,3 +270,396 @@ enum SupportContact {
     static let email = "support@audeolabs.com"
     static let privacyPolicy = URL(string: "https://audeolabs.github.io/sorello/privacy.html")!
 }
+
+// MARK: Notes (ARCHITECTURE.md, "Host app", Notes)
+
+/// The Notes screen for the vault's state: what it offers, and whether any note shows.
+enum NotesScreen: Equatable, Sendable {
+    /// No vault, and the iPhone has no passcode: it says one is needed, and makes nothing.
+    case needsPasscode
+    /// No vault: a few words on what it is, and Make vault.
+    case firstUse
+    /// The vault was just made: the recovery code is offered, and may be skipped.
+    case recoveryOffer
+    /// Unlock and Record, and nothing of any note: no text, title, count or date.
+    case locked
+    /// The search field and the list.
+    case unlocked
+    /// Notes on this iPhone, but no secret: the recovery code, or erasing.
+    case secretMissing
+
+    init(vault: NoteVaultState, canMakeVault: Bool, offersRecoveryCode: Bool) {
+        switch vault {
+        case .noVault: self = canMakeVault ? .firstUse : .needsPasscode
+        case .locked: self = .locked
+        case .unlocked: self = offersRecoveryCode ? .recoveryOffer : .unlocked
+        case .secretMissing: self = .secretMissing
+        }
+    }
+
+    /// Whether any note shows: its text, its date, or how many there are.
+    var showsNotes: Bool { self == .unlocked }
+
+    /// Whether Record is offered: recording needs a vault, never an unlock.
+    var offersRecord: Bool { self == .locked || self == .unlocked }
+
+    var offersUnlock: Bool { self == .locked }
+}
+
+/// The Notes screens' sentences.
+enum NotesWords {
+    /// What the vault is, in a few words, before it is made.
+    static let vault =
+        "Notes keeps what you say as text, sealed on this iPhone. Only Face ID or your passcode opens it. Recording never needs either."
+    static let locked = "Notes are locked. Recording a new note doesn’t need them open."
+    static let passcodeNeeded = "Notes needs a passcode on this iPhone. Set one in Settings, then come back."
+    static let recoveryOffer =
+        "A recovery code opens your notes on a new iPhone. You can make one now or later in Notes settings."
+    /// Under the recovery code's row in Notes settings.
+    static let recoverySetting =
+        "The only way back into your notes on a new iPhone. Making a new one stops the old one working."
+    /// Shown with the recovery code itself, which shows once.
+    static let recoveryWarning =
+        "This code is the only way back into your notes on a new iPhone. Sorello can’t recover it for you. Write it down and keep it safe; it won’t be shown again."
+    static let secretMissing =
+        "Your notes are on this iPhone, but the key that opens them isn’t. Enter your recovery code to open them."
+}
+
+/// Record, or Stop while a note is in progress wherever it started, or Saving while it saves.
+enum NoteRecordButton: Equatable, Sendable {
+    case record, stop, saving
+
+    /// Nil where the screen offers no Record and no note is in progress.
+    init?(offersRecord: Bool, note phase: VoiceNoteStatus.Phase?) {
+        switch phase {
+        case .preparing?, .recording?: self = .stop
+        case .saving?: self = .saving
+        case nil:
+            guard offersRecord else { return nil }
+            self = .record
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .record: return "Record"
+        case .stop: return "Stop"
+        case .saving: return "Saving"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .record: return "mic.fill"
+        case .stop: return "stop.fill"
+        case .saving: return "arrow.down.circle"
+        }
+    }
+
+    /// The glyph's colour: coral while a note records, glacier while it saves.
+    var accent: AppAccent? {
+        switch self {
+        case .record: return nil
+        case .stop: return .coral
+        case .saving: return .glacier
+        }
+    }
+
+    var isEnabled: Bool { self != .saving }
+}
+
+/// The note screen's one mode: recording (the text read-only and live) or editing (an ordinary text field), never
+/// both; locked, it shows no text.
+enum NoteScreenMode: Equatable, Sendable {
+    /// The vault is locked: Unlock, and Stop while this note is in progress.
+    case locked(inProgress: Bool)
+    /// This note waits for the model: nothing is recorded yet.
+    case preparing
+    case recording
+    /// This note stopped and its last piece is being written: no Stop, no edits yet.
+    case saving
+    /// The text field, Resume and Delete; Resume waits while another note is in progress or saves.
+    case editing(canResume: Bool)
+
+    /// `recordingNoteID` is the session core's note, and `phase` its phase; nil when none.
+    init(isUnlocked: Bool, noteID: UUID, recordingNoteID: UUID?, phase: VoiceNoteStatus.Phase?) {
+        let isThisNote = phase != nil && recordingNoteID == noteID
+        guard isUnlocked else {
+            self = .locked(inProgress: isThisNote && phase != .saving)
+            return
+        }
+        switch isThisNote ? phase : nil {
+        case .preparing?: self = .preparing
+        case .recording?: self = .recording
+        case .saving?: self = .saving
+        case nil: self = .editing(canResume: phase == nil)
+        }
+    }
+
+    var showsText: Bool {
+        if case .locked = self { return false }
+        return true
+    }
+
+    /// The live, read-only text, as against the text field.
+    var isLive: Bool { self == .preparing || self == .recording || self == .saving }
+
+    var offersStop: Bool { self == .preparing || self == .recording || self == .locked(inProgress: true) }
+
+    var isEditing: Bool {
+        if case .editing = self { return true }
+        return false
+    }
+
+    /// What the screen says of the recording, above its text; nil when it shows none.
+    var status: String? {
+        switch self {
+        case .preparing: return "Preparing the speech model. Nothing is recorded yet."
+        case .recording: return "Recording"
+        case .saving: return "Saving"
+        case .locked, .editing: return nil
+        }
+    }
+
+    /// The status's dot: coral while recording, glacier while waiting.
+    var accent: AppAccent? {
+        switch self {
+        case .recording: return .coral
+        case .preparing, .saving: return .glacier
+        case .locked, .editing: return nil
+        }
+    }
+}
+
+/// The note being recorded as it shows: the vault's text, with the provisional tail at the end of the recording run's
+/// text. `before + after` is the vault's text; the tail is dimmed between them.
+struct NoteLiveText: Equatable, Sendable {
+    var before: String
+    var provisional: String
+    var after: String
+
+    init(note: Note, provisional: String, format: NoteRunFormatter) {
+        let runs = note.pendingRuns
+        if let last = runs.last, last.isRecording {
+            let base = NoteMerge.merge(runs.dropLast().map { NoteRunContent(place: $0.place, pieces: $0.pieces) },
+                                       into: note.body, format: format)
+            let index = NoteMerge.index(of: last.place, in: base)
+            before = String(base[..<index]) + format(last.pieces, base[..<index], base[index...])
+            after = String(base[index...])
+        } else {
+            before = note.text
+            after = ""
+        }
+        let tail = provisional.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !tail.isEmpty else {
+            self.provisional = ""
+            return
+        }
+        var spaced = tail
+        if let previous = before.last, !previous.isWhitespace { spaced = " " + spaced }
+        if let next = after.first, !next.isWhitespace { spaced += " " }
+        self.provisional = spaced
+    }
+}
+
+/// A row of the notes list: the start of the note, and how its date shows.
+enum NoteRowText {
+    /// How much of a note's start a row holds; the row shows two lines of it.
+    static let previewLength = 160
+
+    /// The note's start on one line, nil for a note with no words yet.
+    static func preview(_ text: String) -> String? {
+        var line = ""
+        var pendingSpace = false
+        for character in text {
+            if character.isWhitespace {
+                pendingSpace = !line.isEmpty
+                continue
+            }
+            if line.count + (pendingSpace ? 1 : 0) >= previewLength { break }
+            if pendingSpace { line.append(" ") }
+            pendingSpace = false
+            line.append(character)
+        }
+        return line.isEmpty ? nil : line
+    }
+
+    /// The row's sentence for a note with no words yet.
+    static let empty = "No words yet"
+
+    enum DateStyle: Equatable, Sendable {
+        /// Today: the time.
+        case time
+        /// This year: day and month.
+        case dayAndMonth
+        /// Earlier: day, month and year.
+        case fullDate
+    }
+
+    static func dateStyle(_ date: Date, now: Date, calendar: Calendar) -> DateStyle {
+        if calendar.isDate(date, inSameDayAs: now) { return .time }
+        if calendar.component(.year, from: date) == calendar.component(.year, from: now) { return .dayAndMonth }
+        return .fullDate
+    }
+
+    /// Said under the list when some notes did not open; nil when all did.
+    static func unreadable(_ count: Int) -> String? {
+        switch count {
+        case ..<1: return nil
+        case 1: return "1 note couldn’t be opened."
+        default: return "\(count) notes couldn’t be opened."
+        }
+    }
+}
+
+/// What swiping a row of the notes list offers: Pin or Unpin on the leading edge, Delete on the trailing edge. A note
+/// that records, or is the core's note, offers neither; one with a run not yet merged offers Delete only, as its pin
+/// waits for the merge.
+struct NoteRowActions: Equatable, Sendable {
+    enum Pin: Equatable, Sendable {
+        case pin, unpin
+
+        var title: String { self == .pin ? "Pin" : "Unpin" }
+        var symbol: String { self == .pin ? "pin" : "pin.slash" }
+        /// Whether the note is pinned once the action is taken.
+        var pins: Bool { self == .pin }
+    }
+
+    /// Nil when the row offers no pin.
+    var pin: Pin?
+    var offersDelete: Bool
+}
+
+extension NoteRowActions {
+    /// `recordingNoteID` is the session core's note; nil when none.
+    init(note: Note, recordingNoteID: UUID?) {
+        guard !note.isRecording, note.id != recordingNoteID else {
+            self.init(pin: nil, offersDelete: false)
+            return
+        }
+        self.init(pin: note.pendingRuns.isEmpty ? (note.isPinned ? .unpin : .pin) : nil, offersDelete: true)
+    }
+}
+
+/// A search result's row: the text around the first match, on one line, with the matches inside it.
+struct NoteSnippet: Equatable, Sendable {
+    var text: String
+    /// Character offsets into `text`.
+    var highlights: [Range<Int>]
+
+    /// Characters shown before the first match.
+    static let lead = 32
+    static let length = 140
+
+    /// `matches` are character offsets into `text`, sorted (`NoteSearchHit.matchedCharacters`). Starts at a word, an
+    /// ellipsis marks a cut, and line breaks show as spaces.
+    init(text source: String, matches: [Range<Int>]) {
+        let characters = Array(source)
+        guard let first = matches.first, first.lowerBound < characters.count else {
+            self.text = NoteRowText.preview(source) ?? ""
+            highlights = []
+            return
+        }
+        var start = max(0, first.lowerBound - Self.lead)
+        if start > 0 {
+            // From the first word that starts in the lead, so no word is cut at the front.
+            var index = start
+            while index < first.lowerBound, !characters[index - 1].isWhitespace { index += 1 }
+            start = index
+            while start < first.lowerBound, characters[start].isWhitespace { start += 1 }
+        }
+        var end = min(characters.count, start + Self.length)
+        if end < characters.count {
+            var index = end
+            while index > first.upperBound, !characters[index].isWhitespace { index -= 1 }
+            end = max(index, min(first.upperBound, characters.count))
+        }
+        let cutFront = start > 0, cutBack = end < characters.count
+        var shown = String(characters[start ..< end].map { $0.isNewline ? " " : $0 })
+        if cutBack { shown = shown.trimmingTrailingWhitespace() + "…" }
+        let shift = cutFront ? 1 : 0
+        text = (cutFront ? "…" : "") + shown
+        let limit = text.count - (cutBack ? 1 : 0)
+        highlights = matches.compactMap { match in
+            let lower = max(match.lowerBound, start) - start + shift
+            let upper = min(match.upperBound, end) - start + shift
+            let clamped = min(upper, limit)
+            return lower < clamped ? lower ..< clamped : nil
+        }
+    }
+}
+
+private extension String {
+    func trimmingTrailingWhitespace() -> String {
+        var text = self
+        while let last = text.last, last.isWhitespace { text.removeLast() }
+        return text
+    }
+}
+
+/// Where Resume puts the new speech: at the cursor, the end of a selection, or the note's end with no cursor.
+enum NoteCursor {
+    static func place(selection: Range<String.Index>?, in text: String) -> NoteRunPlace {
+        guard let selection, selection.upperBound < text.endIndex else { return .end }
+        return .offset(text.utf16.distance(from: text.utf16.startIndex, to: selection.upperBound))
+    }
+}
+
+extension NoteError {
+    /// A short, content-free sentence for the screens.
+    var message: String {
+        switch self {
+        case .noPasscode: return NotesWords.passcodeNeeded
+        case .vaultExists: return "Notes are already set up."
+        case .noVault: return "Notes aren’t set up yet."
+        case .secretMissing: return "This iPhone doesn’t have the key to your notes. Enter your recovery code."
+        case .locked: return "Notes are locked."
+        case .authenticationCancelled: return "Notes stayed locked."
+        case .keyStoreFailed: return "The key to your notes couldn’t be reached."
+        case .unavailable: return "Your notes couldn’t be read just now. Try again in a moment."
+        case .storageFailed: return "Your notes couldn’t be saved."
+        case .noRecoveryCode: return "No recovery code was made for these notes."
+        case .malformedRecoveryCode: return "That isn’t a recovery code. It has 32 letters and digits."
+        case .wrongRecoveryCode: return "That recovery code doesn’t open these notes."
+        case .noSuchNote: return "This note no longer exists."
+        case .noteIsRecording: return "A note is recording. Stop it first."
+        case .runEnded: return "That recording had already ended."
+        }
+    }
+}
+
+extension NoteStartOutcome {
+    /// Why a start did not record, in a short content-free sentence; nil when it started or stopped.
+    var message: String? {
+        switch self {
+        case .started, .startedInBackground, .stopped: return nil
+        case .busy: return "A note is already recording."
+        case .needsApp(.noVault): return "Set up Notes first."
+        case .needsApp(.microphone): return NoteEndReason.microphonePermissionDenied.message
+        case .needsApp(.locked): return "Unlock your iPhone to record."
+        case .needsApp(.foreground): return "Open Sorello to record."
+        case .needsApp(.liveActivity): return "Turn on Live Activities for Sorello to record from here."
+        case .failed(let reason): return reason.message ?? "The note stopped."
+        }
+    }
+}
+
+extension NoteEndReason {
+    /// How a note ended, in a short content-free sentence; nil for the user's own stop.
+    var message: String? {
+        switch self {
+        case .stopped: return nil
+        case .reachedLimit: return "The note reached its time limit."
+        case .sessionEnded: return "The session ended, so the note stopped."
+        case .interrupted: return "A call or another app took the microphone."
+        case .captureFailed: return "The microphone stopped."
+        case .microphonePermissionDenied: return "Microphone access is off. Turn it on in Settings."
+        case .modelUnavailable: return "This build has no speech model."
+        case .modelFailed: return "The speech model couldn’t be prepared."
+        case .transcriptionFailed: return "Transcription failed. What was saved is kept."
+        case .storageFailed: return "The note couldn’t be saved."
+        case .backgroundTimeExpired: return "iOS stopped the note in the background. What was saved is kept."
+        case .noteGone: return "This note no longer exists."
+        }
+    }
+}

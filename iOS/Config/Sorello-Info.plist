@@ -53,6 +53,8 @@
     <string>$(DEPLOYMENT_TARGET)</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Sorello uses the microphone to transcribe your dictation on this iPhone. Audio is never saved or sent anywhere.</string>
+    <key>NSFaceIDUsageDescription</key>
+    <string>Sorello uses Face ID to open your notes. They stay sealed on this iPhone.</string>
     <key>NSSupportsLiveActivities</key>
     <true/>
     <key>UIApplicationSceneManifest</key>

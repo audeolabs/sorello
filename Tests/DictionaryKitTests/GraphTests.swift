@@ -102,4 +102,28 @@ struct GraphTests {
             expectScalars(CasingRestorer.apply(input, entries: entries.map { entry($0) }), expected)
         }
     }
+
+    /// Words settle as soon as no entry could still join them to words that are not known yet.
+    @Test func casingSettlesWhatLaterWordsCannotChange() {
+        let cases: [([String], [String], Int, String)] = [
+            // Without entries that carry case, every known word settles as it is.
+            ([], ["i", "live", "here."], 3, "i live here."),
+            (["kubectl"], ["Kubectl", "get"], 2, "Kubectl get"),
+            // An entry of one word changes only the word it matches.
+            (["NixOS"], ["i", "run", "nixos"], 3, "i run NixOS"),
+            // An entry of three words could still join the last two known words to words that follow.
+            (["New York City"], ["i", "live", "in", "new", "york"], 3, "i live in"),
+            (["New York City"], ["new", "york", "city", "is", "big"], 3, "New York City"),
+            // A match across the last place the known words could be cut holds them back to its start.
+            (["New York"], ["in", "new", "york"], 1, "in"),
+            (["New York"], ["in", "new", "york", "today"], 3, "in New York"),
+            ([], [], 0, ""),
+            (["New York"], ["new"], 0, ""),
+        ]
+        for (entries, words, count, text) in cases {
+            let settled = CasingRestorer.settle(words, entries: entries.map { entry($0) })
+            #expect(settled.count == count, "\(words) with \(entries)")
+            expectScalars(settled.text, text)
+        }
+    }
 }
