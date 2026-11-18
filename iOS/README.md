@@ -402,6 +402,10 @@ dev builds.
   shift (double-tap for caps lock), auto-capitalization and the double-space
   period. Keys play a light haptic (Typing haptics, on by default; needs Full
   Access).
+- **Emoji search:** type `:` and the start of a name, after a space or at the
+  start of a field, and the bar offers matching emoji: `:heart` offers ❤️, and
+  a tap puts it in place of `:heart`. Space keeps what you typed. It needs no
+  Full Access, and the emoji you choose lead the panel's recents.
 - **Autocorrect and soft key edges** (Home → Keyboard, on by default, need
   Full Access; each switch applies the next time the keyboard appears):
   - Soft key edges: a tap near a key's edge may type the likelier neighbour.
@@ -539,6 +543,7 @@ Keyboard (compare side by side with Apple's keyboard in a note with soft-wrapped
 - [ ] Field keys: "@" and "." beside a narrower space bar in an email field (Contacts → new contact → email); ".", "/" and ".com" in a URL field (Contacts → URL), holding ".com" offers .org/.net/.edu/.us; "." beside space in Safari's address bar. No emoji key in email and URL fields.
 - [ ] Press-and-hold: holding e, a, o, n, s, c, - . ' " $ ? ! shows the choices; sliding picks, lifting types; lifting without moving types the key itself. Fast typing, swipes, the callout, held delete and the space-bar trackpad are unchanged.
 - [ ] Emoji: the face key opens the panel at the same height; recents first after use, the jump bar scrolls to a category, a tap inserts, delete and ABC work, recents survive a keyboard restart without Full Access.
+- [ ] Emoji search: `:heart` after a space offers ❤️ first, a tap gives "❤️ " and ❤️ leads the panel's recents; `:hea` already offers it; `10:30`, `http://`, `Re:hi` and `:)` offer nothing; Space after `:heart` keeps it uncorrected; `:heart`, Space, Delete brings the emoji back; it works without Full Access, and is off in a URL field (Contacts → URL) and an email field; the emoji read as their names with VoiceOver.
 - [ ] Return key: in a field with `enablesReturnKeyAutomatically` (Messages, Safari's address bar) Return looks disabled and does nothing while empty, and enables with the first character, typed or dictated.
 - [ ] Menu: the keys dim under it, a tap outside the card closes it; it fits or scrolls in landscape and at the largest accessibility text sizes; "Full width" / "Chat bubble" switches the cursor's text width for this kind of field.
 - [ ] Appearance and accessibility: a field asking for a dark keyboard gets one, others follow the system (Safari's address bar stays dark in dark mode); Bold Text, Increase Contrast and Reduce Motion as in ARCHITECTURE.md ("Top row").
