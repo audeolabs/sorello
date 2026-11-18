@@ -1,3 +1,4 @@
+import DictionaryKit
 import Foundation
 
 /// One finished recording on its way to the model. A class, so ownership is explicit: the session core
@@ -29,9 +30,34 @@ struct SpeechStreamProgress: Equatable, Sendable {
     var provisional: String
 }
 
+/// A dictation's transcript, with the engine's correction id when its stream kept what a correction check needs
+/// (ARCHITECTURE.md, "Custom dictionary", Words from corrections).
+struct DictationTranscript: Equatable, Sendable {
+    var text: String
+    var correctionID: UInt64?
+
+    init(text: String, correctionID: UInt64? = nil) {
+        self.text = text
+        self.correctionID = correctionID
+    }
+}
+
+/// What a word from a correction needs of the speech engine (`SpeechEngine.verifyCorrection`, `discardCorrection` and
+/// `releaseCorrection`; ARCHITECTURE.md, "Custom dictionary", Words from corrections).
+@MainActor
+protocol CorrectionVerifying: AnyObject {
+    /// Checks a correction against the retained dictation `correctionID` and releases it; `unverified` when nothing is
+    /// kept for it.
+    func verifyCorrection(typed: String, edited: String, correctionID: UInt64) async -> CorrectionVerification
+    /// Releases everything kept for corrections.
+    func discardCorrection()
+    /// Releases one dictation's, never a newer one's.
+    func releaseCorrection(_ correctionID: UInt64)
+}
+
 /// The host-owned model runtime as the session core sees it.
 @MainActor
-protocol HostTranscriber: AnyObject {
+protocol HostTranscriber: CorrectionVerifying {
     var modelState: HostStatus.Model { get }
     /// Starts preparing unless the model is ready or already preparing, or a failed preparation is still
     /// backing off (the model then stays `failed`; ARCHITECTURE.md, "Transcription").
@@ -42,8 +68,9 @@ protocol HostTranscriber: AnyObject {
     func beginStream(_ kind: SpeechStreamKind) -> SpeechStream?
     /// Waits for readiness, then transcribes; with `audio.stream`, finishes the stream instead and falls
     /// back to the samples only if it fails. Cancellation ends the wait at once and cancels the stream.
-    /// Throws `TranscriptionFailure` or `CancellationError`.
-    func transcribe(_ audio: RecordedAudio) async throws -> String
+    /// The correction id comes only from a dictation's stream that finished. Throws `TranscriptionFailure` or
+    /// `CancellationError`.
+    func transcribe(_ audio: RecordedAudio) async throws -> DictationTranscript
     /// Releases the runtime and returns true, or returns false and changes nothing while it is preparing
     /// or transcribing.
     @discardableResult
@@ -60,6 +87,21 @@ protocol SpeechRuntime: AnyObject, Sendable {
     /// samples appended; nil when it cannot stream. Only on a prepared runtime. `onEnd` runs once, on
     /// any thread, when the stream is finished or cancelled and its model work has fully drained.
     @MainActor func beginStream(_ kind: SpeechStreamKind, onEnd: @escaping @Sendable () -> Void) -> SpeechStream?
+    /// `SpeechEngine.verifyCorrection`, `discardCorrection` and `releaseCorrection` on this runtime's engine.
+    func verifyCorrection(typed: String, edited: String, correctionID: UInt64) async -> CorrectionVerification
+    @MainActor func discardCorrection()
+    @MainActor func releaseCorrection(_ correctionID: UInt64)
+}
+
+extension SpeechRuntime {
+    /// A runtime that keeps nothing for corrections decides nothing.
+    func verifyCorrection(typed: String, edited: String, correctionID: UInt64) async -> CorrectionVerification {
+        .unverified
+    }
+
+    func discardCorrection() {}
+
+    func releaseCorrection(_ correctionID: UInt64) {}
 }
 
 /// A recording transcribed while it is recorded (a `SpeechEngine` stream in the app).
@@ -70,6 +112,9 @@ protocol SpeechStream: AnyObject, Sendable {
     func finish() async throws -> String
     /// Drops the audio and any partial result. Idempotent; a later `finish` throws `CancellationError`.
     func cancel()
+    /// After `finish` returned, the engine's correction id for what it kept of this dictation; nil when it kept
+    /// nothing (ARCHITECTURE.md, "Transcription").
+    var correctionID: UInt64? { get }
     /// A voice note's stream reports what it has heard, for one consumer: each report as its chunk is transcribed, the
     /// last before `finish` returns, then the feed ends. A failed or cancelled stream ends it without a last report.
     /// Nil for a dictation's.
@@ -78,6 +123,7 @@ protocol SpeechStream: AnyObject, Sendable {
 
 extension SpeechStream {
     var progress: AsyncStream<SpeechStreamProgress>? { nil }
+    var correctionID: UInt64? { nil }
 }
 
 /// Owns the speech model runtime: preparation, readiness and transcription, always on the Neural Engine
@@ -187,7 +233,7 @@ final class TranscriptionEngine: HostTranscriber {
 
     /// With a stream, its result; after any stream failure but cancellation, `audio` as without one.
     /// Cancelling the calling task cancels the stream.
-    func transcribe(_ audio: RecordedAudio) async throws -> String {
+    func transcribe(_ audio: RecordedAudio) async throws -> DictationTranscript {
         guard isAvailable else {
             audio.stream?.cancel()
             throw TranscriptionFailure.modelUnavailable
@@ -206,7 +252,7 @@ final class TranscriptionEngine: HostTranscriber {
                     let text = try await withTaskCancellationHandler { try await stream.finish() } onCancel: { stream.cancel() }
                     report.transcriptionSeconds = now().timeIntervalSince(waitStart)
                     report.outcome = .transcribed
-                    return text
+                    return DictationTranscript(text: text, correctionID: stream.correctionID)
                 } catch {
                     try Task.checkCancellation()
                 }
@@ -217,7 +263,8 @@ final class TranscriptionEngine: HostTranscriber {
             let text = try await run(runtime, audio)
             report.transcriptionSeconds = now().timeIntervalSince(start)
             report.outcome = .transcribed
-            return text
+            // Transcribed in one batch: nothing is kept for a correction.
+            return DictationTranscript(text: text)
         } catch is CancellationError {
             report.outcome = .cancelled
             throw CancellationError()
@@ -249,11 +296,33 @@ final class TranscriptionEngine: HostTranscriber {
         ComputePolicy.failureHint(after: failure, inBackground: inBackground, osMajorVersion: osMajorVersion)
     }
 
+    // MARK: CorrectionVerifying
+
+    /// On the ready runtime only: a runtime that is not ready keeps nothing. The engine stays busy meanwhile, so the
+    /// runtime is not released under the check.
+    func verifyCorrection(typed: String, edited: String, correctionID: UInt64) async -> CorrectionVerification {
+        guard let loaded, loaded.readiness == .ready else { return .unverified }
+        activeTranscriptions += 1
+        defer { activeTranscriptions -= 1 }
+        return await loaded.runtime.verifyCorrection(typed: typed, edited: edited, correctionID: correctionID)
+    }
+
+    func discardCorrection() {
+        loaded?.runtime.discardCorrection()
+    }
+
+    func releaseCorrection(_ correctionID: UInt64) {
+        loaded?.runtime.releaseCorrection(correctionID)
+    }
+
     @discardableResult
     func releaseIfIdle() -> Bool {
         guard !isBusy else { return false }
-        if loaded != nil {
-            loaded = nil
+        if let loaded {
+            // What the engine keeps for a correction goes first: its expiry would otherwise hold the engine, and its
+            // model, for up to 90 s after this lets go of it.
+            loaded.runtime.discardCorrection()
+            self.loaded = nil
             preparationStartedAt = nil
             setState(.notPrepared)
         }

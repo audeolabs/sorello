@@ -28,6 +28,34 @@ public struct CorrectionOffer: Equatable, Sendable {
         return CorrectionOffer(word: candidate.surface, kind: candidate.kind, replacedWords: candidate.beforeRange)
     }
 
+    /// How many words `text` holds as DictionaryKit splits it (DESIGN §1.5.2, before punctuation-only words are
+    /// dropped), counted without keeping them: what an alignment of it would cost.
+    public static func wordCount(_ text: String) -> Int {
+        var count = 0, inWord = false
+        for scalar in text.unicodeScalars {
+            if DictionaryText.isWhitespace(scalar) {
+                inWord = false
+            } else if !inWord {
+                inWord = true
+                count += 1
+            }
+        }
+        return count
+    }
+
+    /// `typed` with the words in `range` replaced by `word`: the edited text an app rebuilds from the text it inserted
+    /// and an offer's range. Nil unless `range` lies within `typed`'s whitespace-split words and holds one to three of
+    /// them that are not punctuation alone (DESIGN §1.5.2), as a candidate's typed side does.
+    public static func replacing(_ range: Range<Int>, in typed: String, with word: String) -> String? {
+        let words = DictionaryText.words(typed.unicodeScalars)
+        guard range.lowerBound >= 0, range.upperBound <= words.count else { return nil }
+        let counted = words[range].count { !DictionaryText.norm($0).isEmpty }
+        guard (1...CorrectionCandidates.maxBlockWords).contains(counted) else { return nil }
+        let pieces = words[..<range.lowerBound].map { DictionaryText.string($0) } + [word]
+            + words[range.upperBound...].map { DictionaryText.string($0) }
+        return pieces.joined(separator: " ")
+    }
+
     /// `edited` without the words the alignment (§1.5.3) inserts before the first word of `typed` or after its last,
     /// with what lies between kept as it was split.
     static func droppingSurroundingWords(typed: String, edited: String) -> String {

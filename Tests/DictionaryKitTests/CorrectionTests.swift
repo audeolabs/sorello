@@ -317,6 +317,29 @@ struct CorrectionTests {
         #expect(offer("", "anything") == nil && offer("cart", "") == nil, "Empty sides")
     }
 
+    /// Words counted by the scalars DictionaryKit splits on: a combining mark after a space is a word of its own.
+    @Test func offerWordCount() {
+        #expect(CorrectionOffer.wordCount("") == 0)
+        #expect(CorrectionOffer.wordCount("  ship  the\ncart. ") == 3)
+        #expect(CorrectionOffer.wordCount(String(repeating: " \u{0301}", count: 5)) == 5)
+        #expect(CorrectionOffer.wordCount(String(repeating: " \u{0301}", count: 5))
+                == DictionaryText.words(String(repeating: " \u{0301}", count: 5).unicodeScalars).count)
+    }
+
+    /// The edited text an app rebuilds from the text it inserted and an offer's range.
+    @Test func offerReplacement() throws {
+        let typed = "we deployed it on cooper netties yesterday"
+        let found = try #require(offer(typed, "we deployed it on Kubernetes yesterday"))
+        #expect(CorrectionOffer.replacing(found.replacedWords, in: typed, with: found.word)
+                == "we deployed it on Kubernetes yesterday")
+        #expect(CorrectionOffer.replacing(0..<1, in: "  ship   the cart ", with: "Ship") == "Ship the cart")
+        #expect(CorrectionOffer.replacing(3..<4, in: "ship the cart", with: "x") == nil, "Past the end")
+        #expect(CorrectionOffer.replacing(1..<5, in: "a b c d e f", with: "x") == nil, "Four words")
+        #expect(CorrectionOffer.replacing(1..<5, in: "a b — c d f", with: "x") == "a x f",
+                "A punctuation-only piece is not a word")
+        #expect(CorrectionOffer.replacing(1..<2, in: "a — b", with: "x") == nil, "Punctuation alone")
+    }
+
     private func verify(typed: String, edited: String, base: String, dictionary: [DictionaryEntry] = [],
                         clock: () -> TimeInterval = { 0 }, cancelled: () -> Bool = { false },
                         decode: (DictionaryEntry) -> String?) -> CorrectionVerification {

@@ -1,3 +1,4 @@
+import DictionaryKit
 import Foundation
 
 /// Drives `HostSessionCore` through the contract's host scenarios with a fake capture, transcriber,
@@ -1547,8 +1548,18 @@ final class CoreHarness {
     /// The fake capture; tests that inject another capture do not use it.
     var capture: FakeCapture { fakeCapture! }
 
+    /// The words from corrections, when the harness was given a dictionary.
+    let addedWords: AddedWordInbox?
+    /// The uptime clock the words from corrections time what is kept by.
+    final class UptimeBox { var value: TimeInterval = 1_000 }
+    let uptimeBox = UptimeBox()
+    var uptime: TimeInterval {
+        get { uptimeBox.value }
+        set { uptimeBox.value = newValue }
+    }
+
     init(launch: Bool = true, maxDuration: TimeInterval = DictationProtocol.maxDictationDuration,
-         capture injected: HostCapture? = nil, notes: NoteFixture? = nil) {
+         capture injected: HostCapture? = nil, notes: NoteFixture? = nil, dictionary: DictionaryLibrary? = nil) {
         let clock = Clock()
         self.clock = clock
         self.notes = notes
@@ -1568,9 +1579,15 @@ final class CoreHarness {
             },
             formatTranscript: { text, pressEnter, _, _ in ("<\(text)>", pressEnter) },
             powerState: { clock.power })
+        let transcriber = self.transcriber
+        let store = self.store
+        let uptime = self.uptimeBox
+        addedWords = dictionary.map {
+            AddedWordInbox(store: store, library: $0, verifier: transcriber, now: { clock.now }, uptime: { uptime.value })
+        }
         core = HostSessionCore(hostRunID: Fixture.hostRunID, store: store, settings: settings, buffer: buffer,
                                capture: injected ?? fakeCapture!, transcriber: transcriber, notifier: nil,
-                               environment: environment, noteRecorder: notes?.recorder)
+                               environment: environment, noteRecorder: notes?.recorder, addedWords: addedWords)
         core.onChange = { [unowned self] in
             if let status = self.store.readStatus().value { self.published.append(status) }
         }
@@ -1758,7 +1775,15 @@ final class FakeTranscriber: HostTranscriber {
     var hint: ComputeFailureHint?
     /// The stream handed over with each recording, in order.
     private(set) var receivedStreams: [SpeechStream?] = []
-    private var pending: [(id: UUID, continuation: CheckedContinuation<String, Error>)] = []
+    private var pending: [(id: UUID, continuation: CheckedContinuation<DictationTranscript, Error>)] = []
+    /// Every call for corrections, in order: "discard", "release <id>", "verify <id>", and "stream" for each dictation
+    /// stream begun, so a test can see a release come before the next stream.
+    private(set) var correctionLog: [String] = []
+    /// What `verifyCorrection` answers, and the checks still waiting for `answerVerification`.
+    var verification = CorrectionVerification.unverified
+    var holdsVerification = false
+    private(set) var verifications: [(typed: String, edited: String, correctionID: UInt64)] = []
+    private var pendingVerifications: [CheckedContinuation<CorrectionVerification, Never>] = []
 
     var pendingCount: Int { pending.count }
 
@@ -1778,6 +1803,7 @@ final class FakeTranscriber: HostTranscriber {
             guard streams else { return nil }
             let stream = FakeSpeechStream()
             begunStreams.append(stream)
+            correctionLog.append("stream")
             return stream
         case .note:
             let stream = FakeSpeechStream(reportsProgress: true)
@@ -1791,7 +1817,7 @@ final class FakeTranscriber: HostTranscriber {
     }
 
     /// Like `TranscriptionEngine`, cancellation also cancels the recording's stream.
-    func transcribe(_ audio: RecordedAudio) async throws -> String {
+    func transcribe(_ audio: RecordedAudio) async throws -> DictationTranscript {
         received.append(audio.samples.count)
         receivedStreams.append(audio.stream)
         lastAudio = audio
@@ -1815,17 +1841,38 @@ final class FakeTranscriber: HostTranscriber {
         return true
     }
 
-    /// Completes the oldest pending transcription.
-    func complete(_ result: Result<String, Error>) {
+    /// Completes the oldest pending transcription, with the engine's correction id when it kept the audio.
+    func complete(_ result: Result<String, Error>, correctionID: UInt64? = nil) {
         guard let id = pending.first?.id else { return }
-        resume(id, with: result)
+        resume(id, with: result.map { DictationTranscript(text: $0, correctionID: correctionID) })
     }
 
     func cancelAll() {
         while let id = pending.first?.id { resume(id, with: .failure(CancellationError())) }
+        answerVerifications(.unverified)
     }
 
-    private func resume(_ id: UUID, with result: Result<String, Error>) {
+    func verifyCorrection(typed: String, edited: String, correctionID: UInt64) async -> CorrectionVerification {
+        verifications.append((typed, edited, correctionID))
+        correctionLog.append("verify \(correctionID)")
+        guard holdsVerification else { return verification }
+        return await withCheckedContinuation { pendingVerifications.append($0) }
+    }
+
+    /// Answers every check waiting.
+    func answerVerifications(_ answer: CorrectionVerification) {
+        let waiting = pendingVerifications
+        pendingVerifications = []
+        for continuation in waiting { continuation.resume(returning: answer) }
+    }
+
+    var waitingVerifications: Int { pendingVerifications.count }
+
+    func discardCorrection() { correctionLog.append("discard") }
+
+    func releaseCorrection(_ correctionID: UInt64) { correctionLog.append("release \(correctionID)") }
+
+    private func resume(_ id: UUID, with result: Result<DictationTranscript, Error>) {
         guard let index = pending.firstIndex(where: { $0.id == id }) else { return }
         pending.remove(at: index).continuation.resume(with: result)
     }

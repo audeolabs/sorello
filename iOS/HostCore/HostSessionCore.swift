@@ -52,6 +52,9 @@ final class HostSessionCore {
     private let environment: HostEnvironment
     /// Begins a voice note's runs; nil when the notes directory is out of reach, and every note start then fails.
     private let noteRecorder: NoteRecorder?
+    /// Words from corrections (ARCHITECTURE.md, "Custom dictionary"): what is kept of the newest dictation, and the
+    /// added word taken and decided. Nil when the app has no dictionary to save into.
+    let addedWords: AddedWordInbox?
 
     private(set) var isLaunched = false
     private(set) var session: HostStatus.Session = .inactive
@@ -125,9 +128,11 @@ final class HostSessionCore {
 
     init(hostRunID: UUID = UUID(), store: SharedDictationStore, settings: SorelloSettings,
          buffer: DictationSampleBuffer, capture: HostCapture, transcriber: HostTranscriber,
-         notifier: DarwinNotifier?, environment: HostEnvironment, noteRecorder: NoteRecorder? = nil) {
+         notifier: DarwinNotifier?, environment: HostEnvironment, noteRecorder: NoteRecorder? = nil,
+         addedWords: AddedWordInbox? = nil) {
         self.hostRunID = hostRunID
         self.noteRecorder = noteRecorder
+        self.addedWords = addedWords
         self.store = store
         self.settings = settings
         self.buffer = buffer
@@ -136,6 +141,7 @@ final class HostSessionCore {
         self.notifier = notifier
         self.environment = environment
         slot = HostDictationSlot(hostRunID: hostRunID)
+        addedWords?.onOutcome = { [weak self] in self?.addedWordDecided() }
     }
 
     // MARK: State for the UI
@@ -170,6 +176,7 @@ final class HostSessionCore {
         let run = hostRunID
         store.purgeResults { _, read in HostRunRecovery.isFromAnotherRun(read, hostRunID: run) }
         store.purgeExpiredResults(now: now)
+        addedWords?.take()
         lastPurgeAt = now
         // The previous run's interrupted request is published before anything is reconciled.
         needsPublish = true
@@ -200,6 +207,7 @@ final class HostSessionCore {
             drainClosing(now)   // the tail never arrived (a stalled engine): transcribe what did
         }
         superviseNote(now)
+        addedWords?.expire()
         if pendingStart != nil, !slot.isInProgress { endSession(.startFailed(.audioSessionFailed), now) }
         if let requested = controlStartRequestedAt,
            !HostSessionPolicy.isControlStartFresh(requestedAt: requested, now: now) {
@@ -214,6 +222,7 @@ final class HostSessionCore {
         }
         if live, HostSessionPolicy.isDue(last: lastPurgeAt, interval: DictationProtocol.heartbeatInterval, now: now) {
             store.purgeExpiredResults(now: now)
+            addedWords?.take()
             lastPurgeAt = now
         }
         if live, HostSessionPolicy.isDue(last: lastStatusAt, interval: HostSessionPolicy.statusInterval(for: slot.current),
@@ -241,6 +250,7 @@ final class HostSessionCore {
             // A choice made while the app could not apply it takes effect now that it is in front.
             if session == .active, capture.needsReconfiguration { reconfigureCapture(now) }
             reconcilePass(.activation, now)
+            addedWords?.take()
         }
         needsPublish = true
         flush(now)
@@ -451,6 +461,8 @@ final class HostSessionCore {
         // starting or recording is superseded. One transcribing goes on.
         if closing != nil { drainClosing(now) }
         if slot.phase == .starting || slot.phase == .recording { endInProgress(.cancelled(.superseded), now) }
+        // A new recording: nothing is kept for an earlier dictation's correction.
+        addedWords?.releaseAll()
         noteGeneration &+= 1
         note = ActiveNote(generation: noteGeneration, writer: writer, startedAt: now,
                           power: environment.powerState())
@@ -707,12 +719,33 @@ final class HostSessionCore {
         flush(now)
     }
 
+    // MARK: Words from corrections (ARCHITECTURE.md, "Custom dictionary")
+
+    /// `.addedWord`: the keyboard wrote a word to add.
+    func addedWordSignal() {
+        guard isLaunched else { return }
+        addedWords?.take()
+    }
+
+    /// The dictionary changed (a word saved from a correction included): what was kept for a correction goes.
+    func dictionaryEdited() {
+        addedWords?.releaseAll()
+    }
+
+    private func addedWordDecided() {
+        let now = environment.now()
+        needsPublish = true
+        flush(now)
+    }
+
     /// `protectedDataWillBecomeUnavailable`: latches the lock and cancels everything in flight, including
     /// a transcription that outlived its session. The session itself goes on until idle expiry.
     func deviceWillLock() {
         let now = environment.now()
         isLocked = true
         lockedAt = now
+        // What is kept for a correction goes at a lock (ARCHITECTURE.md, "Custom dictionary", Words from corrections).
+        addedWords?.releaseAll()
         guard isLaunched else { return }   // locked at launch: latched; run recovery publishes first
         // Intents and results are class A and unreadable while locked, so the dictation is cancelled, but
         // capture goes on with buffers dropped, as between dictations.
@@ -775,6 +808,8 @@ final class HostSessionCore {
                 guard let self else { return }
                 let now = self.environment.now()
                 self.releaseModelIfPending()
+                // A runtime that is not ready keeps nothing for a correction: released, preparing anew or failed.
+                if self.transcriber.modelState != .ready { self.addedWords?.releaseAll() }
                 self.advanceNote(now)   // a preparing note records once the model is ready, or ends if it failed
                 self.flush(now)
             }
@@ -850,6 +885,8 @@ final class HostSessionCore {
         // The newest request wins; the old one's outcome is discarded by the fence.
         endInProgress(.cancelled(.superseded), now)
         knownRequestIDs.insert(requestID)
+        // A new recording releases what was kept for an earlier dictation's correction, before its own stream opens.
+        addedWords?.releaseAll()
         // With the model ready, the recording is transcribed while it is recorded; the buffer feeds the
         // stream exactly the samples it collects and cancels it with the recording.
         let generation = buffer.begin(requestID: requestID, stream: transcriber.beginStream(.dictation))
@@ -1063,7 +1100,7 @@ final class HostSessionCore {
         }
         let transcriber = self.transcriber
         let task = Task { [weak self] in
-            let outcome: Result<String, Error>
+            let outcome: Result<DictationTranscript, Error>
             do { outcome = .success(try await transcriber.transcribe(audio)) } catch { outcome = .failure(error) }
             self?.transcriptionFinished(ticket, outcome)
             endBackgroundTask.run()
@@ -1071,15 +1108,18 @@ final class HostSessionCore {
         transcription = Transcription(ticket: ticket, task: task, endBackgroundTask: endBackgroundTask)
     }
 
-    private func transcriptionFinished(_ ticket: DictationTicket, _ outcome: Result<String, Error>) {
+    private func transcriptionFinished(_ ticket: DictationTicket, _ outcome: Result<DictationTranscript, Error>) {
         if transcription?.ticket == ticket { transcription = nil }
-        // Superseded, cancelled or expired meanwhile: the outcome is discarded.
-        guard slot.isCurrent(ticket), slot.phase == .transcribing else { return }
+        // Superseded, cancelled or expired meanwhile: the outcome is discarded, and so is what was kept for it.
+        guard slot.isCurrent(ticket), slot.phase == .transcribing else {
+            if case .success(let transcript) = outcome, let id = transcript.correctionID { transcriber.releaseCorrection(id) }
+            return
+        }
         let now = environment.now()
         switch outcome {
-        case .success(let text):
-            let formatted = environment.formatTranscript(text, settings.pressEnterEnabled, settings.spokenDelimitersEnabled,
-                                                         settings.spokenNumbersEnabled)
+        case .success(let transcript):
+            let formatted = environment.formatTranscript(transcript.text, settings.pressEnterEnabled,
+                                                         settings.spokenDelimitersEnabled, settings.spokenNumbersEnabled)
             let result = DictationResult(requestID: ticket.requestID, hostRunID: hostRunID, text: formatted.text,
                                          pressEnter: formatted.pressEnter, createdAt: now)
             do {
@@ -1087,8 +1127,17 @@ final class HostSessionCore {
                 try store.writeResult(result)
                 notifier?.post(.result)
                 slot.end(ticket, .completed, now: now)
+                // The text the keyboard will insert is the one a correction is checked against.
+                if let id = transcript.correctionID {
+                    if let addedWords {
+                        addedWords.keep(requestID: ticket.requestID, correctionID: id, text: formatted.text)
+                    } else {
+                        transcriber.releaseCorrection(id)
+                    }
+                }
             } catch {
                 slot.end(ticket, .failed, error: .transcriptionFailed, now: now)
+                if let id = transcript.correctionID { transcriber.releaseCorrection(id) }
             }
         case .failure(let error):
             slot.end(ticket, .failed, error: (error as? TranscriptionFailure)?.errorCode ?? .transcriptionFailed, now: now)
@@ -1206,6 +1255,9 @@ final class HostSessionCore {
         captureStartedAt = nil
         recoveriesWithoutInput = 0
         store.purgeExpiredResults(now: now)
+        // What is kept for a correction goes with the session; a waiting added word is taken (and decided) now.
+        addedWords?.releaseAll()
+        addedWords?.take()
         needsPublish = true
     }
 
@@ -1228,7 +1280,7 @@ final class HostSessionCore {
             hostRunID: hostRunID, sessionID: sessionID, session: session, captureRunning: capture.isRunning,
             lastBufferAt: capture.lastBufferAt, idleSince: idleSince, sessionDuration: settings.sessionDuration,
             model: transcriber.modelState, dictation: slot.current, level: buffer.level, error: sessionError,
-            voiceNote: voiceNote, now: now)
+            voiceNote: voiceNote, addedWord: addedWords?.status(now: now), now: now)
         lastStatusAt = now
         // A failed write is retried by the next heartbeat; the reader treats a stale one as a dead host.
         if (try? store.writeStatus(status)) != nil { notifier?.post(.status) }

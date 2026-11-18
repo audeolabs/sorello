@@ -11,8 +11,11 @@ final class DictionaryModel: ObservableObject {
 
     /// The carried model's vocabulary, so entries the model can't produce are rejected.
     let encoder: BPEEncoder?
-    private let library: DictionaryLibrary
+    /// The library itself, for the words from corrections the session decides (`AddedWordInbox`).
+    let library: DictionaryLibrary
     private let transcriber: ParakeetTranscriber
+    /// After every change, once the transcriber has the new snapshot: what was kept for a correction goes.
+    var onEdit: (@MainActor () -> Void)?
 
     init(transcriber: ParakeetTranscriber, defaults: UserDefaults = .standard) {
         encoder = CarriedModel.directory.flatMap {
@@ -20,7 +23,10 @@ final class DictionaryModel: ObservableObject {
         }
         library = DictionaryLibrary(defaults: defaults, encoder: encoder)
         self.transcriber = transcriber
-        library.onChange = { [weak self] in self?.sync() }
+        library.onChange = { [weak self] in
+            self?.sync()
+            self?.onEdit?()
+        }
         sync()
     }
 

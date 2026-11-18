@@ -199,6 +199,21 @@ private final class ParakeetRuntime: SpeechRuntime {
         }
     }
 
+    // MARK: Words from corrections (ARCHITECTURE.md, "Custom dictionary")
+
+    func verifyCorrection(typed: String, edited: String, correctionID: UInt64) async -> CorrectionVerification {
+        guard let engine else { return .unverified }
+        return await engine.verifyCorrection(typed: typed, edited: edited, correctionID: correctionID)
+    }
+
+    func discardCorrection() {
+        engine?.discardCorrection()
+    }
+
+    func releaseCorrection(_ correctionID: UInt64) {
+        engine?.releaseCorrection(correctionID)
+    }
+
     /// "Find strength" with the current dictionary, minus the word.
     func probeStrength(samples: [Float], word: String) async throws -> StrengthProbe.Result {
         guard let engine else { throw TranscriptionFailure.modelUnavailable }
@@ -210,7 +225,8 @@ private final class ParakeetRuntime: SpeechRuntime {
     }
 
     /// The snapshot is taken now, on the main actor, so it is the one whose revision the stream keeps. A dictation's
-    /// `finish` fails, so the recording is transcribed as before, if the dictionary changed meanwhile. A voice note's
+    /// `finish` fails, so the recording is transcribed as before, if the dictionary changed meanwhile. A dictation's
+    /// stream keeps what a correction check needs (ARCHITECTURE.md, "Transcription"). A voice note's
     /// has no recording to fall back to: it keeps its snapshot to the end, reports its progress and holds only a
     /// bounded amount of leading silence (ARCHITECTURE.md, "Transcription").
     func beginStream(_ kind: SpeechStreamKind, onEnd: @escaping @Sendable () -> Void) -> SpeechStream? {
@@ -218,7 +234,7 @@ private final class ParakeetRuntime: SpeechRuntime {
         switch kind {
         case .dictation:
             let revision = dictionary.current.revision
-            let stream = engine.openStream(SpeechStreamOptions())
+            let stream = engine.openStream(SpeechStreamOptions(retainForCorrection: true))
             return ParakeetStream(stream: stream, engine: engine, revision: revision, dictionary: dictionary, onEnd: onEnd)
         case .note:
             let stream = engine.openStream(SpeechStreamOptions(reportsProgress: true, boundsLeadingSilence: true))
@@ -244,6 +260,10 @@ private final class ParakeetStream: SpeechStream {
     private let dictionary: DictionarySnapshotBox
     private let onEnd: @Sendable () -> Void
     private let ended = Mutex(false)
+    private let kept = Mutex<UInt64?>(nil)
+
+    /// The engine's correction id once `finish` returned, when it kept the dictation's audio.
+    var correctionID: UInt64? { kept.withLock { $0 } }
 
     init(stream: any SpeechStreaming, engine: SpeechEngine, revision: UInt64?, dictionary: DictionarySnapshotBox,
          onEnd: @escaping @Sendable () -> Void) {
@@ -276,7 +296,9 @@ private final class ParakeetStream: SpeechStream {
         }
         defer { end() }
         do {
-            return try await stream.finish().text
+            let result = try await stream.finish()
+            kept.withLock { $0 = result.correctionID }
+            return result.text
         } catch {
             throw ParakeetRuntime.failure(error)
         }

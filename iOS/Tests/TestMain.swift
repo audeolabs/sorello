@@ -36,6 +36,7 @@ struct SorelloIOSTests {
             ("TranscriptionEngine", TranscriptionEngineTests.tests),
             ("ModelPreparationBackoff", ModelPreparationBackoffTests.tests),
             ("DictionaryLibrary", DictionaryLibraryTests.tests),
+            ("AddedWordInbox", AddedWordInboxTests.tests),
             ("MicrophoneRoute", MicrophoneRouteTests.tests),
             ("NotificationObservers", NotificationObserversTests.tests),
             ("CursorMotion", CursorMotionTests.tests),

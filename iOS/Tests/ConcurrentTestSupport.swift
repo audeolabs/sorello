@@ -99,6 +99,9 @@ final class FakeSpeechStream: SpeechStream, @unchecked Sendable {
 
     var samples: [Float] { state.current.samples }
     var isCancelled: Bool { state.current.cancelled }
+    /// What the engine kept for a correction, once finished; set by the test.
+    var keptCorrectionID: UInt64?
+    var correctionID: UInt64? { keptCorrectionID }
     var finishCount: Int { state.current.finishes }
 
     /// A chunk is running: the end waits for `finishWork()`.
