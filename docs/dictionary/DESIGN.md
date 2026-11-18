@@ -849,6 +849,46 @@ everything without a vocabulary. Errors never quote a word or an app.
 `BiasGraphCache`, `Sources/SpeechEngine/SpeechEngine.swift`; tests in
 `AppScopeTests` and `EngineTests.graphCache`)
 
+## §4 Sorello for iPhone
+
+The iPhone keyboard notices a fix to a dictation and offers its word; the app
+verifies it with the dictation's retained audio and saves it
+(`iOS/ARCHITECTURE.md`, "Dictation corrections" and "Custom dictionary").
+The keyboard has no dictionary, so the two halves split §1.5 and §1.6
+between them.
+
+### §4.1 The offer
+
+`CorrectionOffer.find(typed:edited:)` (`CorrectionOffer.swift`) returns the
+first candidate of §1.5 for `typed` (the dictation as inserted) and
+`edited` (the same text as the user left it), with an empty dictionary,
+an empty ignore list and no vocabulary, after one step of its own: words of
+`edited` that the alignment (§1.5.3) inserts before the first word of
+`typed`, or after its last, are dropped first, because they were typed
+around the dictation, not in it. The bounds (§1.5.1) and the rewrite check
+(§1.5.4) apply to what remains. The result holds the candidate's surface
+(`word`), its kind, and `replacedWords`, its `before_range` in `typed`
+(§1.5.6). (`CorrectionTests.offer*`)
+
+### §4.2 Verification
+
+`SpeechEngine.verifyCorrection(typed:edited:correctionID:)` runs §1.6 for a
+retained session (§3.4) with the dictionary of its snapshot, no ignore list
+and no exhausted candidates, and releases the session afterwards. It
+returns one of:
+
+- `verified(DictionarySuggestion)`: a candidate was accepted (a casing one
+  at strength 1);
+- `notRecognized`: at least one candidate was attempted, and every attempted
+  candidate failed at every strength;
+- `unverified`: nothing was decided: no session is kept for
+  `correctionID`, the dictionary is full, no candidate could be attempted,
+  the budget ran out, a decode failed, or the check was cancelled or voided.
+
+(`DictionarySuggestionFinder.verify`, `VerifyDecision.swift`;
+`EngineTests.verifyCorrection*`) What the app does with each is in
+`iOS/ARCHITECTURE.md`, "Custom dictionary", Words from corrections.
+
 ## Platform differences
 
 | Aspect | Sorello (macOS) | iOS | Linux |
@@ -856,12 +896,12 @@ everything without a vocabulary. Errors never quote a word or an app.
 | Implementation | Swift, `Sources/DictionaryKit` and `Sources/SpeechEngine` | Swift sharing the same rules (`iOS/ARCHITECTURE.md`, "Custom dictionary") | Rust: `lf-asr`, `lf-cpu`, `lf-dictation`, `lf-daemon` |
 | Storage | `dictionary.json` with entries, app limits and the ignore list; an unreadable file is moved aside and replaced (§3.2) | two UserDefaults keys in the host app's UserDefaults, never the App Group | one 0600 file with entries and ignore list (§2.1) |
 | Vocabulary file | `vocabulary.json` | `vocabulary.json` | `tokenizer.vocab`, with scores checked (§1.3) |
-| How corrections are found | Accessibility watcher on the pasted text (§3.5) | none: entries are added by hand | user-initiated `localflowctl correct` (§2.5) |
-| Strength calibration | the strength verified from a correction | "Find strength": one recording, `StrengthProbe.accepts` accepts a decode that has at least one edit block against the unboosted transcript, where every edit block has the word as its new side and replaces at most `maxExtraReplacedWords` (2) extra words (`StrengthProbe.swift`, `CorrectionTests.strengthProbe*`) | the strength verified from a correction |
-| Retained audio | projections ≤ 16 MiB, 90 s, the newest recording only (§3.4) | for "Find strength" only: the recorded samples and the encoder output live only while the probe task runs (`StrengthProbeModel.done`, `iOS/App/DictionaryModel.swift:104-122`; Sorello's `SpeechEngine.probeStrength` keeps them only while it runs); the finished result keeps only texts, shown until the sheet closes | projections of the last typed dictation, ≤ 16 MiB, 120 s (§2.4) |
-| Candidates that failed at every strength | remembered per dictation (`ExhaustedCandidates`) | not applicable | not remembered (inferred: no such cache in `verify_with_clock`, `worker.rs`) |
-| Full dictionary | nothing verified or offered (`DictionarySuggestionFinder.find`) | not applicable | still verified; `dict-add` then fails with `full` (inferred: no capacity check in `submit_correction` or `verify_with_clock`) |
+| How corrections are found | Accessibility watcher on the pasted text (§3.5) | the keyboard watches the dictation it inserted for 60 s and offers the word; the app verifies it (§4) | user-initiated `localflowctl correct` (§2.5) |
+| Strength calibration | the strength verified from a correction | the strength verified from a correction, ×1 when it could not be verified (§4.2); and "Find strength": one recording, `StrengthProbe.accepts` accepts a decode that has at least one edit block against the unboosted transcript, where every edit block has the word as its new side and replaces at most `maxExtraReplacedWords` (2) extra words (`StrengthProbe.swift`, `CorrectionTests.strengthProbe*`) | the strength verified from a correction |
+| Retained audio | projections ≤ 16 MiB, 90 s, the newest recording only (§3.4) | as on the Mac for a streamed dictation (§3.4), released on a new recording, the session's end, a lock or a dictionary edit; and for "Find strength": the recorded samples and the encoder output live only while the probe task runs (`StrengthProbeModel.done`, `iOS/App/DictionaryModel.swift:104-122`; Sorello's `SpeechEngine.probeStrength` keeps them only while it runs); the finished result keeps only texts, shown until the sheet closes | projections of the last typed dictation, ≤ 16 MiB, 120 s (§2.4) |
+| Candidates that failed at every strength | remembered per dictation (`ExhaustedCandidates`) | not applicable: one check per dictation | not remembered (inferred: no such cache in `verify_with_clock`, `worker.rs`) |
+| Full dictionary | nothing verified or offered (`DictionarySuggestionFinder.find`) | offered (the keyboard cannot know); the app saves nothing and says so | still verified; `dict-add` then fails with `full` (inferred: no capacity check in `submit_correction` or `verify_with_clock`) |
 | Phrase order before building the graph | first seen (`BiasGraph.phrases`) | first seen | sorted by token sequence (`phrases`); the graph does not depend on order (vectors `graph`, "G2 reversed") |
-| Suggestion UI | a notice on the pill, 12 s, Add (or Add to <App> / Add everywhere) / Not now / Don't suggest | not applicable | picker dialog (rofi, fuzzel, wofi or tofi), Add / Not now / Don't suggest |
+| Suggestion UI | a notice on the pill, 12 s, Add (or Add to <App> / Add everywhere) / Not now / Don't suggest | a chip in the keyboard's top row before verification, Add only; the outcome as a notice | picker dialog (rofi, fuzzel, wofi or tofi), Add / Not now / Don't suggest |
 | Project words | none | none | agent-link words are boosted and never end a session (§2.2) |
 | App-specific words | words limited to apps, chosen by the frontmost app at recording start (§3.6) | none | none |

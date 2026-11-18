@@ -95,7 +95,7 @@ Rules the compiler enforces through the package graph:
 The package also builds for iOS 26, for the iPhone app (section 13), and
 has two products that only that app links, both static libraries:
 `SorelloSpeech`, which is `SpeechEngine` and `TextRules` with the modules
-they depend on, and `SorelloText`, which is `TextRules` alone. The Mac app
+they depend on, and `SorelloText`, which is `TextRules` and `DictionaryKit`. The Mac app
 uses neither.
 
 Sorello has one dependency outside this package: Sparkle, at one exact
@@ -1548,9 +1548,11 @@ and ship it. This section holds what concerns both apps.
   and `TextRules` as the Mac app does, and has no copy of what they hold.
   It links them as the static libraries of section 2. The app links
   `SorelloSpeech`. The keyboard, which iOS allows little memory and which
-  never transcribes, links `SorelloText`, so it cannot reach the model or
-  the dictionary. The Live Activity links neither. A change to one of
-  these modules is a change to both apps.
+  never transcribes, links `SorelloText`: `TextRules`, and `DictionaryKit`
+  for the rules that notice a correction, so it cannot reach the model. It
+  has no dictionary to read: the entries are the app's alone. The Live
+  Activity links neither. A change to one of these modules is a change to
+  both apps.
 - **Its own build.** The iPhone app's own code is not part of the
   package, because SwiftPM builds neither an app bundle nor an app
   extension. `iOS/Makefile` has SwiftPM build the libraries for iOS,

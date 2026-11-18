@@ -37,7 +37,7 @@ make -C iOS check                # simulator type-check, host tests, lint, the e
 The app contains `PlugIns/SorelloKeyboard.appex` and
 `PlugIns/SorelloActivity.appex` (the session's Live Activity). The app links
 `SorelloSpeech` (`SpeechEngine`, `DictionaryKit`, `TextRules` and
-`DictationCore`), the keyboard `SorelloText` (`TextRules` alone) and the Live
+`DictationCore`), the keyboard `SorelloText` (`TextRules` and `DictionaryKit`) and the Live
 Activity neither. SwiftPM builds both libraries for each target triple in
 `build/package/<triple>/`, and again when the package's manifest or a source
 of those modules changes; the host tests link the Mac's build.
