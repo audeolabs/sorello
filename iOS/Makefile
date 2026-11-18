@@ -189,7 +189,7 @@ HOST_TARGET ?= $(shell uname -m)-apple-macosx26.0
 
 # Sorello's shared modules (../ARCHITECTURE.md, section 13), built by SwiftPM from the package as two static
 # libraries: the app links SorelloSpeech (SpeechEngine, DictionaryKit, TextRules and DictationCore), the keyboard
-# SorelloText (TextRules alone), and the Live Activity neither. Each target triple has a build directory of its own,
+# SorelloText (TextRules, and DictionaryKit for its correction rules), and the Live Activity neither. Each target triple has a build directory of its own,
 # $(PACKAGE_BUILD_DIR)/<triple>, built again whenever the package's manifest or a source of those modules changes, and
 # SwiftPM rebuilds only what changed. <triple>.bin-path records where SwiftPM put the libraries and their modules, as
 # SwiftPM says (--show-bin-path). The first build of a checkout fetches the package's one dependency, Sparkle, which

@@ -3,8 +3,9 @@
 # ../ARCHITECTURE.md, section 13):
 # - none of them names a networking API, as an undefined symbol or as a linked library: the iPhone app opens no
 #   network connection and holds no networking code;
-# - the keyboard holds nothing of SpeechEngine, DictionaryKit or DictationCore, so it cannot reach the model or the
-#   dictionary, and the Live Activity nothing of any shared module;
+# - the keyboard holds nothing of SpeechEngine or DictationCore, so it cannot reach the model (it links DictionaryKit
+#   for the rules that notice a correction, and has no dictionary to read), and the Live Activity nothing of any
+#   shared module;
 # - neither the keyboard nor the Live Activity holds anything of NotesCore, so neither can seal or open a note.
 # It reads the executables only. Prints every failure and exits 1 if there is any.
 #
@@ -25,8 +26,8 @@ fail() {
 network_symbols='URLSession|NSURLConnection|NSURLDownload|NWConnection|NWListener|NWBrowser|NWEndpoint|_nw_[a-z]|CFSocket|CFStreamCreatePairWithSocket|CFHost|WKWebView|^_(socket|connect|getaddrinfo|gethostbyname|gethostbyname2)$'
 network_libraries='/(CFNetwork|Network|WebKit)\.framework/|/libnetwork\.'
 # A Swift symbol of a module carries the module's name with its length in front of it.
-speech_and_dictionary='12SpeechEngine|13DictionaryKit|13DictationCore'
-shared_modules="$speech_and_dictionary|9TextRules"
+speech='12SpeechEngine|13DictationCore'
+shared_modules="$speech|13DictionaryKit|9TextRules"
 # Every NotesCore type is named Note… (ARCHITECTURE.md, "Notes"), so any of them, in any module, shows as a length
 # followed by Note and a capital (the rest of its name, or the kind of a type named Note). NotesCore seals with
 # CryptoKit's HPKE, which nothing else in the app uses.
@@ -58,7 +59,7 @@ holds_none() {
     found=$(xcrun nm "$1" 2>/dev/null | grep -E "$2" | head -3 | awk '{ print $NF }' | tr '\n' ' ')
     [ -z "$found" ] || fail "$(basename "$1") holds $3: $found"
 }
-holds_none "$keyboard" "$speech_and_dictionary" "speech or dictionary code"
+holds_none "$keyboard" "$speech" "speech code"
 holds_none "$activity" "$shared_modules" "code of the shared modules"
 holds_none "$keyboard" "$notes" "notes code"
 holds_none "$activity" "$notes" "notes code"
