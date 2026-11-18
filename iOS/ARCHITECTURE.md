@@ -274,8 +274,15 @@ each carries `schema: Int` (currently `1`).
   ([Custom dictionary](#custom-dictionary), Words from corrections). Either
   process deletes it once it is not fresh within `addedWordTTL` (judged by
   `issuedAt`, or by the file's modification date when the record cannot be
-  read): the keyboard on every result read, the host at launch, on every
-  heartbeat while live, and at session end.
+  read): the keyboard when it appears, on every result read, and, while it
+  is visible with Full Access after writing one, at that file's deadline and
+  every `cleanupRetryInterval` after a failed removal until it is gone; the
+  host at launch, on every heartbeat while live, and at session end. A purge
+  takes the file as the host's claim does (rename, then judge the private
+  copy). The keyboard is the file's only writer and writes and purges on its
+  main thread, so its own purge never meets its own write. The file can
+  outlive `addedWordTTL` only while neither process runs, as a result file
+  can.
 - **Staging sweeps.** `purgeExpiredResults` also deletes staging files older
   than `resultTTL`. At launch, before writing anything, the host deletes
   staging files of any age (`purgeStagingFiles(olderThan: 0, now:)`): a
@@ -1190,17 +1197,26 @@ word's strength from that dictation's audio before it saves it.
     §3.4: at most 16 MiB, at most 90 s, the newest recording only). The host
     keeps, beside it, that dictation's request id, the engine's correction id
     and the text it wrote to `result-R.json`. All of it goes when the engine
-    lets it go, and the host releases it (`SpeechEngine.discardCorrection`)
-    when a new recording starts, the session ends, the device locks, the
-    dictionary is edited, the runtime is released, or the word is decided.
-  - **Claim.** The host reads `added-word.json` on `.addedWord`, on every
+    lets it go. The host releases everything kept
+    (`SpeechEngine.discardCorrection`) when a new recording starts, the
+    session ends, the device locks, the dictionary is edited (a word saved
+    from a correction included) or the runtime is released. Deciding a word
+    releases only its own dictation's
+    (`SpeechEngine.releaseCorrection(correctionID)`), never a newer one's.
+  - **Claim.** The host takes `added-word.json` on `.addedWord`, on every
     heartbeat while it runs, at launch and when it comes to the foreground.
-    It claims the file by rename and deletes it before it acts, so a word is
-    acted on at most once. A record that is not fresh within `addedWordTTL`,
-    of another schema, or whose word range does not lie within the
-    dictation's words, is deleted and ignored; one that cannot be read (the
-    device is locked) is left until it can be, or it expires. One word is decided at a
-    time; a word claimed while another is decided waits for it.
+    Taking it is one step: rename the file to a private staging name (only
+    one rename of a name succeeds), then read and judge that private copy,
+    so what is decided, purged or kept is always the version that was
+    claimed, never one the keyboard wrote over it meanwhile. A copy that is
+    not fresh within `addedWordTTL`, of another schema, or malformed (a word
+    that is empty, or a range that is not 0 ≤ start < end with at most three
+    words) is deleted and ignored. A copy that cannot be read yet (the device
+    is locked) stays under its private name and is read again at the next
+    take, until `addedWordTTL` after its modification date, when it is
+    deleted unread. A copy that was read is deleted before the word is
+    decided, so a word is acted on at most once. One word is decided at a
+    time; a word taken while another is decided waits for it.
   - **Decision.** In this order, with the outcome published as
     `HostStatus.addedWord`:
     1. The dictionary cannot be edited (no vocabulary, saved data that failed
@@ -1208,22 +1224,28 @@ word's strength from that dictation's audio before it saves it.
        vocabulary: `notAdded`.
     2. Its key is already in the dictionary: `alreadyInDictionary`. Nothing
        changes.
-    3. The request id is the dictation whose audio is kept: the edited text
-       is rebuilt from the text the host wrote, with the words in the range
-       replaced by the word, and the engine checks it as the Mac checks a
-       correction (`SpeechEngine.verifyCorrection`; DESIGN §1.5, §1.6 and §4.2),
-       with the dictionary as it is and no ignore list (the user asked for
-       this word). Verified: saved at the strength the check found (×1 for a
-       casing fix), `added`. Every strength tried and none recognized the
-       word: not saved, `notHeard`.
-    4. Otherwise (the audio is gone, belongs to another dictation, or the
-       check could not run or finish: no candidate could be attempted, its
-       budget ran out, or a new recording, the session's end, a lock or a
-       dictionary edit stopped it): saved at ×1
-       (`DictionaryValidation.defaultStrength`), `added`.
+    3. The request id is the dictation whose audio and text are kept, and the
+       range lies within that text's words: the edited text is rebuilt from
+       the text the host wrote, with the words in the range replaced by the
+       word, and the engine checks it as the Mac checks a correction
+       (`SpeechEngine.verifyCorrection`; DESIGN §1.5, §1.6 and §4.2), with
+       the dictionary of the dictation's snapshot and no ignore list (the
+       user asked for this word). Verified: saved at the strength the check
+       found (×1 for a casing fix), `added`. Every strength tried and none
+       recognized the word: not saved, `notHeard`.
+    4. Otherwise (the audio and text are gone or belong to another dictation,
+       the range does not fit the kept text, or the check could not run or
+       finish: no candidate could be attempted, its budget ran out, or a new
+       recording, the session's end, a lock or a dictionary edit stopped it):
+       saved at ×1 (`DictionaryValidation.defaultStrength`), `added`.
 
-    Saving goes through `DictionaryLibrary` as any edit does. The outcome
-    stays in the status until `addedWordTTL` after it was decided.
+    The save is decided again against the library as it is at that moment,
+    on the main actor in the same turn as the save, because the check in 3
+    takes time: if the dictionary can no longer be edited or is full, the
+    outcome is `notAdded`; if the key is there now (the user added it
+    meanwhile), `alreadyInDictionary`, and the entry the user made is never
+    changed. Saving goes through `DictionaryLibrary` as any edit does. The
+    outcome stays in the status until `addedWordTTL` after it was decided.
 - **Privacy.** Entries are user content: never logged, never in a bug report
   and never in the App Group; a word on its way in waits in
   `added-word.json` for at most `addedWordTTL` (invariants 7 and 9). Test
@@ -2964,16 +2986,29 @@ dictation hears it (`DictationCorrectionWatch`, pure, tested; owned by
   `"\n"`), up to 24 characters of the context before it and up to 24 after
   it (read as Undo reads them), the field's `documentIdentifier` and the
   time.
-- **Where the dictation is now.** Read from the proxy, never kept: the text
-  before the caret must contain the before-anchor and the text after it the
-  after-anchor. The dictation as edited is what lies between the last
-  occurrence of the before-anchor before the caret and the first occurrence
-  of the after-anchor after it, so the caret is in it or at one of its ends.
-  An empty anchor (the dictation began the field, or ended it) puts that end
-  at the end of what the proxy shows. Text must not be selected, and the
-  field must be the watch's. Otherwise there is no offer, and the watch goes
-  on. **A context the keyboard cannot place means a missed offer, never a
-  wrong one.**
+- **Where the dictation is now.** Read from the proxy, never kept. The
+  dictation as edited lies between the before-anchor, in the text before the
+  caret, and the after-anchor, in the text after it, so the caret is in it
+  or at one of its ends. Each anchor must place that end without doubt:
+  - A full anchor (24 characters) must occur exactly once in the text the
+    proxy shows on its side. Two or more occurrences (the same words written
+    again, as in a repeated line) place nothing.
+  - A shorter anchor means the dictation was that close to the field's start
+    (before) or end (after), so it must be at the very start of the text
+    before the caret, or at the very end of the text after it, and occur
+    nowhere else on that side. An empty anchor puts that end at the start of
+    the text before the caret, or at the end of the text after it.
+  - The proxy may show less than the whole field. A full anchor it has cut
+    off places nothing. A context cut short on the side of a short or empty
+    anchor cannot be told from the field's edge; the words it hides then look
+    deleted from the dictation, which can put the offer's range in the wrong
+    place but never its word, which is always text the user has there, and
+    the app then saves without a check
+    ([Custom dictionary](#custom-dictionary), Words from corrections, 4).
+
+  Text must not be selected, and the field must be the watch's. Otherwise
+  there is no offer, and the watch goes on. **A context the keyboard cannot
+  place means a missed offer, never a wrong one.**
 - **What counts as a correction** (`CorrectionOffer.find(typed:edited:)`,
   DictionaryKit; DESIGN §4.1): the Mac's rules for a correction
   (DESIGN §1.5), with no dictionary, ignore list or vocabulary to consult
@@ -4364,7 +4399,8 @@ app reads only the count. The models are fixed.
    that dictation's words it replaces, in `added-word.json` in the App
    Group's `Library/Caches`, excluded from backup and protected while the
    device is locked, until the app claims and deletes it, or for at most
-   `addedWordTTL` (60 s); the app's outcome in the status names no word
+   `addedWordTTL` (60 s) while either process runs ("One added word"); the
+   app's outcome in the status names no word
    ([Dictation corrections](#dictation-corrections)).
 10. The Live Activity shows on the Lock Screen and in the Dynamic Island, so
     it carries only the session's phase, its timer dates and four flags (a
