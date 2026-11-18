@@ -3,9 +3,9 @@ import UIKit
 /// The emoji panel (ARCHITECTURE.md, "Emoji panel"): on the emoji layer it covers the key area above the bottom row
 /// with a horizontally scrolling grid, recents first and then the catalog's categories, the shown category's name
 /// above it, and a jump bar between the bottom row's keys (the layer key back to letters, and delete, which the key
-/// area draws and handles). A tap on an emoji types it (`onEmoji`) and adds it to the recents, kept in the keyboard's
-/// own `UserDefaults` (no Full Access needed); the grid keeps its order until the panel is shown again. It takes only
-/// touches in the grid and the jump bar.
+/// area draws and handles). A tap on an emoji types it (`onEmoji`), and the key area adds it to the recents
+/// (`EmojiRecentsStore`, shared with emoji search); the grid keeps its order until the panel is shown again. It takes
+/// only touches in the grid and the jump bar.
 final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionViewDelegate {
     /// An emoji was touched down: the press binds to the field served now, and the key area may drop or commit it.
     var onEmojiPressBegan: ((String) -> Void)?
@@ -23,12 +23,10 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
         var emoji: [String]
     }
 
-    /// Kept: people's recents are saved under it (ARCHITECTURE.md, "Identifiers").
-    private static let recentsKey = "emojiRecents"
     /// The catalog, split once.
     private static let catalog: [Section] = EmojiCatalog.categories.map { Section(name: $0.name, symbol: $0.symbol, emoji: $0.emoji) }
 
-    private var recents = EmojiRecents(stored: UserDefaults.standard.stringArray(forKey: recentsKey) ?? [])
+    private let recents: EmojiRecentsStore
     private var sections: [Section] = []
     private var shownSection = 0
     private let flow = UICollectionViewFlowLayout()
@@ -37,8 +35,9 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
     private var gridArea = CGRect.zero
     private var jumpArea = CGRect.zero
 
-    override init(frame: CGRect) {
-        super.init(frame: frame)
+    init(recents: EmojiRecentsStore) {
+        self.recents = recents
+        super.init(frame: .zero)
         backgroundColor = .clear
         flow.scrollDirection = .horizontal
         flow.minimumLineSpacing = 0
@@ -80,7 +79,8 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
 
     /// The panel is shown: recents first (when there are any), from the start.
     func reload() {
-        sections = (recents.emoji.isEmpty ? [] : [Section(name: "Frequently Used", symbol: "clock", emoji: recents.emoji)])
+        let recent = recents.recents.emoji
+        sections = (recent.isEmpty ? [] : [Section(name: "Frequently Used", symbol: "clock", emoji: recent)])
             + Self.catalog
         grid.reloadData()
         grid.layoutIfNeeded()
@@ -169,12 +169,6 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         collectionView.deselectItem(at: indexPath, animated: false)
         onEmoji?(sections[indexPath.section].emoji[indexPath.item])
-    }
-
-    /// An emoji was typed (at its release, or committed by a key's touch-down): it joins the recents.
-    func emojiTyped(_ emoji: String) {
-        recents.use(emoji)
-        UserDefaults.standard.set(recents.emoji, forKey: Self.recentsKey)
     }
 
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {

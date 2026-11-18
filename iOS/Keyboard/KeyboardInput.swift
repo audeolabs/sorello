@@ -105,6 +105,8 @@ final class KeyboardInput: KeyAreaViewDelegate {
         editor.onSwipeStripChanged = { [weak self] in self?.onSwipeStripChanged?() }
         editor.onNeverCorrectOfferChanged = { [weak self] in self?.onNeverCorrectOfferChanged?() }
         editor.autocorrect = { [weak self] in self?.autocorrectSetup() }
+        editor.emojiSearch = { [weak self] in self?.emojiSearchSetup() }
+        editor.onEmojiChosen = { [weak keyArea] emoji in keyArea?.emojiRecents.use(emoji) }
         keyArea.currentField = { [weak controller] in controller?.textDocumentProxy.documentIdentifierIfAvailable }
     }
 
@@ -311,6 +313,13 @@ final class KeyboardInput: KeyAreaViewDelegate {
                                 secureTextEntry: proxy?.isSecureTextEntry == true,
                                 autocorrectionDisabled: proxy?.autocorrectionType == .no, field: keyArea.field,
                                 numeric: isNumericField)
+    }
+
+    /// Emoji search's inputs (ARCHITECTURE.md, "Emoji search"): the recents, in every field but URL, email and secure ones.
+    /// It needs no Full Access.
+    private func emojiSearchSetup() -> EmojiSearchSetup? {
+        guard let keyArea, EmojiSearch.runs(in: keyArea.field, secureTextEntry: proxy?.isSecureTextEntry == true) else { return nil }
+        return EmojiSearchSetup(recents: keyArea.emojiRecents.recents.emoji)
     }
 
     /// The candidate strip after a swipe or an autocorrect commit, or while a word is typed; nil when closed.
