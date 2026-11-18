@@ -75,6 +75,8 @@ struct SorelloIOSTests {
             ("ReopenedWord", ReopenedWordTests.tests),
             ("CompletionEvaluation", CompletionEvaluation.tests),
             ("CorrectionEvaluation", CorrectionEvaluation.tests),
+            ("EmojiSearch", EmojiSearchTests.tests),
+            ("EmojiSearchEvaluation", EmojiSearchEvaluation.tests),
             ("NeverCorrect", NeverCorrectTests.tests),
             ("ModelLoadSlot", ModelLoadSlotTests.tests),
             ("BundleModelLoader", BundleModelLoaderTests.tests),

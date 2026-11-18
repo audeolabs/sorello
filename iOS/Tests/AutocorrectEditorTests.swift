@@ -1601,6 +1601,11 @@ final class AutocorrectRig {
     var field = KeyboardField.standard
     var numeric = false
     var autocapitalization: AutocapitalizationMode = .none
+    /// Emoji search (ARCHITECTURE.md, "Emoji search"): off unless a test turns it on, with these recents.
+    var emojiSearchRuns = false
+    var emojiRecents: [String] = []
+    /// The emoji a tap on the strip put in, in order.
+    private(set) var chosenEmoji: [String] = []
     private var time: TimeInterval = 100
 
     convenience init(_ text: String, corrections: [String: String], alternatives: [String: [String]] = [:],
@@ -1623,6 +1628,8 @@ final class AutocorrectRig {
             return AutocorrectSetup(corrector: self.corrector, keys: Self.keys, params: self.params, secureTextEntry: self.secure,
                                     autocorrectionDisabled: self.autocorrectionDisabled, field: self.field, numeric: self.numeric)
         }
+        editor.emojiSearch = { [unowned self] in self.emojiSearchRuns ? EmojiSearchSetup(recents: self.emojiRecents) : nil }
+        editor.onEmojiChosen = { [unowned self] in self.chosenEmoji.append($0) }
         editor.reset(numeric: false)
     }
 
