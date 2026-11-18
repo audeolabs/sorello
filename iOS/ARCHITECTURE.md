@@ -2614,8 +2614,10 @@ needs neither Full Access nor autocorrect's model.
   its English name and of its keywords from CLDR 49's annotations
   (`common/annotations/en.xml`, and `common/annotationsDerived/en.xml` for
   sequences), folded to lowercase a–z and digits. The generator stops if a
-  catalog emoji has no name. Unicode License v3; its notice is in
-  `ThirdPartyNotices.md`. It is parsed on the first query and a search
+  catalog emoji has no name. Unicode License v3: its notice is in
+  `ThirdPartyNotices.md` and ships in the keyboard as
+  `Emoji/LICENSE-unicode.txt` (from `Resources/Emoji`), which the App Store
+  checker requires. It is parsed on the first query and a search
   scans every emoji (1,870); measured in an optimized build on an M-series
   Mac: the parse 3 to 7 ms and 0.8 MB, a search about 0.16 ms.
 - **Privacy:** the query and its matches are the word being typed and stay in

@@ -297,6 +297,10 @@ for target in app keyboard activity; do
     done
 done
 
+# The Unicode licence of the emoji data compiled into the keyboard.
+cmp -s "$(dirname "$0")/../Resources/Emoji/LICENSE-unicode.txt" "$appex/Emoji/LICENSE-unicode.txt" ||
+    fail "keyboard: Emoji/LICENSE-unicode.txt is missing or differs from Resources/Emoji"
+
 # Contents: the model, no self-test code, nothing a build machine left behind.
 # The model is the build the pin lists for the app's oldest iOS: its
 # bundle.json has that build's SHA-256, and Model/ holds exactly the files it

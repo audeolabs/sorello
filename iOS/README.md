@@ -325,6 +325,7 @@ make -C iOS appstore-upload "${STORE[@]}" ASC_KEY_ID=<key id> ASC_ISSUER_ID=<iss
     keyboard and Live Activity, exactly those two extensions, the
     WidgetKit extension point and `NSSupportsLiveActivities`
   - the compiled, opaque 1024-pixel icon
+  - the Unicode licence of the emoji data in the keyboard
   - the three privacy manifests, with only reasons Apple defines
   - the Xcode build metadata and export compliance
   - the model: the build the pin lists for the app's `MinimumOSVersion`,

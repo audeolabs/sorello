@@ -22,7 +22,8 @@ The iPhone keyboard's emoji and the names it finds them by are generated from Un
 (https://www.unicode.org/Public/emoji/15.0/emoji-test.txt, © 2022 Unicode, Inc.), and their English names and
 keywords from the Unicode Common Locale Data Repository (CLDR), release 49
 (https://github.com/unicode-org/cldr, tag `release-49`, `common/annotations/en.xml` and
-`common/annotationsDerived/en.xml`, © 2001–2026 Unicode, Inc.). Both are licensed under the Unicode License V3:
+`common/annotationsDerived/en.xml`, © 2001–2026 Unicode, Inc.). Both are licensed under the Unicode License V3, whose
+notice also ships inside the keyboard as `Emoji/LICENSE-unicode.txt` (from `iOS/Resources/Emoji`):
 
 ```text
 UNICODE LICENSE V3

@@ -140,6 +140,8 @@ ACTIVITY_KEYBOARDCORE_SOURCES ?= KeyboardCore/RingMark.swift KeyboardCore/Keyboa
 APP_KEYBOARDCORE_SOURCES ?= $(ACTIVITY_KEYBOARDCORE_SOURCES)
 # The display face, Urbanist Medium (SIL OFL 1.1), the repository's one copy, with its license beside it (`UIAppFonts`).
 APP_FONTS ?= ../Resources/Fonts/Urbanist-Medium.ttf ../Resources/Fonts/Urbanist-OFL.txt
+# The Unicode licence of the emoji data the keyboard is compiled with (ARCHITECTURE.md, "Emoji search"), in its bundle.
+EMOJI_NOTICE = Resources/Emoji/LICENSE-unicode.txt
 SHARED_SOURCES ?= $(call swift_sources,Shared)
 HOSTCORE_SOURCES ?= $(call swift_sources,HostCore)
 KEYBOARDCORE_SOURCES ?= $(call swift_sources,KeyboardCore)
@@ -462,7 +464,7 @@ $(APP_SIGNATURE): $(APP_BINARY) $(KEYBOARD_BINARY) $(ACTIVITY_BINARY) $(APP_ENTI
 		Config/SorelloActivity-Info.plist $(ICON_SOURCE) $(MODEL_STAMP) Config/Sorello-PrivacyInfo.xcprivacy \
 		Config/SorelloKeyboard-PrivacyInfo.xcprivacy Config/SorelloActivity-PrivacyInfo.xcprivacy \
 		$(MODEL_INPUTS) \
-		$(SWIPE_STAMP) $(wildcard Resources/Swipe/LICENSE-*) $(APP_FONTS)
+		$(SWIPE_STAMP) $(wildcard Resources/Swipe/LICENSE-*) $(APP_FONTS) $(EMOJI_NOTICE)
 	@rm -rf "$(APPEX_BUNDLE)" "$(ACTIVITY_APPEX_BUNDLE)" "$(APP_BUNDLE)/_CodeSignature" "$(APP_BUNDLE)/embedded.mobileprovision" "$(APP_BUNDLE)/Fonts"
 	@mkdir -p "$(APPEX_BUNDLE)" "$(ACTIVITY_APPEX_BUNDLE)"
 	@cp "$(APP_BINARY)" "$(APP_BUNDLE)/Sorello"
@@ -480,6 +482,7 @@ $(APP_SIGNATURE): $(APP_BINARY) $(KEYBOARD_BINARY) $(ACTIVITY_BINARY) $(APP_ENTI
 	@cp Config/Sorello-PrivacyInfo.xcprivacy "$(APP_BUNDLE)/PrivacyInfo.xcprivacy"
 	@cp Config/SorelloKeyboard-PrivacyInfo.xcprivacy "$(APPEX_BUNDLE)/PrivacyInfo.xcprivacy"
 	@cp Config/SorelloActivity-PrivacyInfo.xcprivacy "$(ACTIVITY_APPEX_BUNDLE)/PrivacyInfo.xcprivacy"
+	@mkdir -p "$(APPEX_BUNDLE)/Emoji" && cp $(EMOJI_NOTICE) "$(APPEX_BUNDLE)/Emoji/"
 	@mkdir -p "$(APP_BUNDLE)/Fonts" && cp $(APP_FONTS) "$(APP_BUNDLE)/Fonts/"
 	@# The icon source is a full-bleed square (Resources/ICON.md); iOS applies its
 	@# own mask. The App Store rejects an icon with an alpha channel, so it is
