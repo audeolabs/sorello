@@ -2,17 +2,20 @@ import Foundation
 
 /// What the middle of the top row shows (ARCHITECTURE.md, "Top row"). Dictation's own UI wins: while a dictation is
 /// starting, recording, transcribing or waiting for the model, while a notice is up, or while its Undo chip shows,
-/// neither the candidate strip nor the "Never correct" offer covers it; hidden, they still end as usual. Otherwise
-/// the offer goes over the strip, and the strip over the chips and status line. Pure.
+/// neither the candidate strip nor an offer covers it; hidden, they still end as usual. Otherwise the "Never correct"
+/// offer goes over everything, below it the "Add to dictionary" offer (ARCHITECTURE.md, "Dictation corrections"), and
+/// the strip over the chips and status line. Pure.
 enum BarMiddleContent: Equatable, Sendable {
     case neverCorrect
+    case addToDictionary
     case candidates
     case dictation
 
-    static func resolve(neverCorrectOffer: Bool, candidates: Bool, dictationInProgress: Bool, notice: Bool,
-                        dictationUndoShown: Bool) -> BarMiddleContent {
+    static func resolve(neverCorrectOffer: Bool, dictionaryOffer: Bool = false, candidates: Bool,
+                        dictationInProgress: Bool, notice: Bool, dictationUndoShown: Bool) -> BarMiddleContent {
         guard !dictationInProgress, !notice, !dictationUndoShown else { return .dictation }
         if neverCorrectOffer { return .neverCorrect }
+        if dictionaryOffer { return .addToDictionary }
         return candidates ? .candidates : .dictation
     }
 }

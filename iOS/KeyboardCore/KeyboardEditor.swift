@@ -237,6 +237,22 @@ final class KeyboardEditor {
     }
     /// The offer appeared, changed or went. Never called while there is none, so typing re-renders nothing.
     var onNeverCorrectOfferChanged: (() -> Void)?
+    /// The offer to add a word fixed in a dictation (ARCHITECTURE.md, "Dictation corrections") appeared, changed or
+    /// went. Never called while there is none.
+    var onCorrectionOfferChanged: (() -> Void)?
+    /// The offer last reported through `onCorrectionOfferChanged`.
+    private var reportedCorrectionOffer: DictationCorrectionOffer?
+
+    /// The offer to add a word fixed in the watched dictation, nil when none.
+    var correctionOffer: DictationCorrectionOffer? { core.correction.offer }
+    /// A dictation is watched: `serviceCorrection` must run until it ends.
+    var isWatchingCorrection: Bool { core.correction.isWatching }
+
+    private func reportCorrectionOffer() {
+        guard correctionOffer != reportedCorrectionOffer else { return }
+        reportedCorrectionOffer = correctionOffer
+        onCorrectionOfferChanged?()
+    }
     /// The last autocorrection while a Delete can still revert it: its edit (the replacement and the commit
     /// key; the record its strip refers to too, witnessed by both), and the text it replaced with the record to
     /// restore.
@@ -312,6 +328,7 @@ final class KeyboardEditor {
         updateAutomaticShift()
         restoreParkedWord()
         onUndoChanged?()
+        reportCorrectionOffer()
     }
 
     /// The keyboard is hiding: the trackpad stops (an outstanding probe rolled back) and every copy of
@@ -330,6 +347,7 @@ final class KeyboardEditor {
         contextWatchUntil = nil
         onStateChanged?()
         onUndoChanged?()
+        reportCorrectionOffer()
     }
 
     func expireTail(now: TimeInterval) {
@@ -373,6 +391,7 @@ final class KeyboardEditor {
         restoreParkedWord()
         retryTypingSuggestions()
         retryNextWords()
+        reportCorrectionOffer()
         return outcome
     }
 
@@ -409,8 +428,11 @@ final class KeyboardEditor {
         defer {
             refreshTypingSuggestions()
             refreshNextWords()
+            reportCorrectionOffer()
         }
         parkedWord = nil
+        // Any key action restarts the wait for a dictation's correction and ends its offer.
+        core.correctionActivity(now: now)
         // Only Shift and layer keys keep the next words (recased).
         switch action {
         case .shift, .layer: break
@@ -495,8 +517,12 @@ final class KeyboardEditor {
     /// While the strip shows, the first deletion (a tap, or a held delete's first) removes the whole
     /// swiped word instead; the strip closes, so repeats are the usual ones.
     func heldDelete(_ unit: DeleteRepeat.Unit, field: UUID?, now: TimeInterval) {
-        defer { refreshTypingSuggestions() }
+        defer {
+            refreshTypingSuggestions()
+            reportCorrectionOffer()
+        }
         parkedWord = nil
+        core.correctionActivity(now: now)
         predictsNextWord = false
         nextWords = nil
         pendingSpace = nil
@@ -527,8 +553,10 @@ final class KeyboardEditor {
 
     /// Inserts dictated text, undoable, at once, in the field the proxy serves now (the caller has bound
     /// the result to it, and claims it only for this). Ends any gesture on the spot, like a key.
-    func insertDictation(_ text: String, now: TimeInterval) {
+    /// `watching`: the dictation's request, to watch it for a correction (ARCHITECTURE.md, "Dictation corrections").
+    func insertDictation(_ text: String, now: TimeInterval, watching requestID: UUID? = nil) {
         guard !text.isEmpty else { return }
+        defer { reportCorrectionOffer() }
         parkedWord = nil
         swipe = nil
         pendingSpace = nil
@@ -537,7 +565,7 @@ final class KeyboardEditor {
         adoptCurrentField()
         trackpad.interrupt(at: now)
         tail.forget()
-        core.insertDictation(text, now: now)
+        core.insertDictation(text, now: now, watching: requestID)
         typing.resetTiming()
         contextWatchUntil = now + Self.contextWatch
         updateAutomaticShift()
@@ -618,6 +646,8 @@ final class KeyboardEditor {
     func insertSwipe(_ candidates: [SwipeCandidate], field: UUID?, now: TimeInterval) {
         let words = candidates.map(\.word).filter { !$0.isEmpty }
         guard !words.isEmpty else { return }
+        core.correctionActivity(now: now)
+        defer { reportCorrectionOffer() }
         parkedWord = nil
         predictsNextWord = false
         nextWords = nil
@@ -665,6 +695,9 @@ final class KeyboardEditor {
     /// commit key, choosing the typed word over a correction reverts it as a Delete would, and choosing the
     /// correction back undoes that.
     func chooseSwipeCandidate(at index: Int, now: TimeInterval) {
+        // A strip choice restarts the wait for a dictation's correction and ends its offer.
+        core.correctionActivity(now: now)
+        defer { reportCorrectionOffer() }
         guard let shown = swipe else { return chooseTypingSuggestion(at: index, now: now) }
         neverCorrectOffer = nil
         guard let strip = currentSwipe(now: now) else {
@@ -944,6 +977,35 @@ final class KeyboardEditor {
         revertedWords.insert(pending.correction.word)
         offerNeverCorrect(pending.correction.word, typed: pending.correction.typed)
         return true
+    }
+
+    // MARK: Dictation corrections (ARCHITECTURE.md, "Dictation corrections")
+
+    /// A trackpad gesture began or ended, or the caret moved by other means the editor hears of only from its adapter:
+    /// the correction's wait starts over and its offer ends.
+    func noteCorrectionActivity(now: TimeInterval) {
+        core.correctionActivity(now: now)
+        reportCorrectionOffer()
+    }
+
+    /// While a dictation is watched, on a timer: its lifetime, and the check once the text has been quiet.
+    func serviceCorrection(now: TimeInterval) {
+        core.serviceCorrection(now: now)
+        reportCorrectionOffer()
+    }
+
+    /// Another dictation starts: the watch ends.
+    func endCorrectionWatch() {
+        core.endCorrectionWatch()
+        reportCorrectionOffer()
+    }
+
+    /// The user tapped the offer: it is handed back, and the watch ends.
+    func acceptCorrectionOffer() -> DictationCorrectionOffer? {
+        let offer = correctionOffer
+        core.endCorrectionWatch()
+        reportCorrectionOffer()
+        return offer
     }
 
     // MARK: Never correct (ARCHITECTURE.md, "Word autocorrect", Never correct)
@@ -1345,6 +1407,7 @@ final class KeyboardEditor {
     }
 
     private func finishUndoStep(_ step: UndoTracker.Step, now: TimeInterval) -> UndoTracker.Step {
+        reportCorrectionOffer()
         if step != .wait {
             contextWatchUntil = now + Self.contextWatch
             typing.resetTiming()

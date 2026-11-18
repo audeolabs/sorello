@@ -48,6 +48,7 @@ struct SorelloIOSTests {
             ("TypingRules", TypingRulesTests.tests),
             ("UndoTracker", UndoTrackerTests.tests),
             ("EditingCore", EditingCoreTests.tests),
+            ("DictationCorrection", DictationCorrectionTests.tests),
             ("ExpectedDocument", ExpectedDocumentTests.tests),
             ("KeyboardEditor", KeyboardEditorTests.tests),
             ("SwipeEditor", SwipeEditorTests.tests),
