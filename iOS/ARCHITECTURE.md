@@ -263,8 +263,8 @@ each carries `schema: Int` (currently `1`).
   option is not used, because its temporary file escapes the staging sweeps.
 - **Claim by rename.** Every result removal (the keyboard's claim, and every
   purge) first renames the file to a private staging name and deletes it from
-  there. So does every removal of `added-word.json` (the host's claim, and
-  every purge). Only one rename of a name can succeed, so exactly one caller sees
+  there. Only the host takes `added-word.json` that way; the keyboard's
+  removal of an expired one follows "One added word" below. Only one rename of a name can succeed, so exactly one caller sees
   `.removed`. Concurrent `unlink` calls on APFS can all report success, so
   they are not used to decide a claim.
 - **One added word.** `added-word.json` has one fixed name: a new word is
