@@ -743,7 +743,7 @@ endif
 		*) echo "$$result" >&2; echo "See $(SMOKE_DEVICE_LOG)" >&2; exit 1 ;; \
 	esac
 
-.PHONY: e2e-sim e2e-sim-probe e2e-sim-scenarios
+.PHONY: e2e-sim e2e-sim-probe e2e-sim-scenarios e2e-sim-added-word
 
 E2E_BUILD_DIR ?= build/e2e-simulator
 E2E_SIM_DEVICE ?= Sorello-E2E
@@ -916,6 +916,64 @@ e2e-sim-scenarios:
 	sleep $$(( 21 + 3 )); launch_app; sleep 3; \
 	[ "$$(status_of "$$r")" = none ] && [ "$$(field session)" = inactive ] || fail url-hint-stale "$$(status_of "$$r") session=$$(field session)"; \
 	pass url-hint-stale
+
+# Words from corrections (ARCHITECTURE.md, "Custom dictionary") against an e2e-sim install, playing the keyboard's
+# side: dictations through the intents, then added-word.json with a word and the range of the transcript's words it
+# replaces, .addedWord posted, and the outcome read from the status and the entry from the app's UserDefaults. Start
+# from an empty dictionary (a fresh install), with E2E_PHRASE containing E2E_ADDED_WORD, an invented word the model mishears, and
+# E2E_NOT_HEARD a word the recording does not hold. One pass/fail line per case:
+# - heard: the word is checked against the dictation's audio and saved at the strength found;
+# - already: the same word again is alreadyInDictionary;
+# - not-heard: a word not in the audio is not saved;
+# - fallback: a word for a dictation whose audio a later one released is saved at x1.
+# A first dictation readies the model: transcribed in one batch, it keeps nothing for a correction, so the cases
+# start after it. It prints the outcomes, strengths and the invented words only; result files are deleted.
+E2E_ADDED_WORD ?=
+E2E_NOT_HEARD ?= Zanzibarquent
+e2e-sim-added-word:
+	@[ -n "$(strip $(E2E_ADDED_WORD))" ] || { echo "e2e-sim-added-word needs E2E_ADDED_WORD (a word of E2E_PHRASE)." >&2; exit 1; }
+	@set -e; $(E2E_SHELL); \
+	pass() { echo "e2e-added-word: $$1 result=pass $$2"; }; \
+	fail() { echo "e2e-added-word: $$1 result=fail $$2" >&2; exit 1; }; \
+	norm() { tr 'A-Z' 'a-z' | tr -cd 'a-z \n'; }; \
+	dictate() { r=$$(uuidgen); intent record "$$r"; launch_app; i=0; \
+		until [ "$$(status_of "$$r")" = "recording/" ]; do sleep 0.25; i=$$((i + 1)); [ $$i -lt 120 ] || fail "$$1" "not recording: $$(status_of "$$r")"; done; \
+		sleep $(E2E_SPEAK_SECONDS); intent finish "$$r"; i=0; \
+		until [ "$$(status_of "$$r")" = "completed/" ]; do sleep 0.25; i=$$((i + 1)); [ $$i -lt 2400 ] || fail "$$1" "no result: $$(status_of "$$r")"; done; \
+		text=$$(plutil -extract text raw -o - "$$dir/result-$$r.json"); rm -f "$$dir/result-$$r.json"; }; \
+	index_of() { n=0; for w in $$(printf '%s' "$$text" | norm); do [ "$$w" = "$$1" ] && { echo $$n; return; }; n=$$((n + 1)); done; echo -1; }; \
+	add() { id=$$(uuidgen); printf '{"id":"%s","issuedAt":%s,"replacedEnd":%s,"replacedStart":%s,"requestID":"%s","schema":1,"word":"%s"}' \
+		"$$id" "$$(date +%s)" "$$(($$3 + 1))" "$$3" "$$2" "$$1" > "$$dir/.e2e-added.tmp"; mv "$$dir/.e2e-added.tmp" "$$dir/added-word.json"; \
+		xcrun simctl spawn "$$udid" notifyutil -p "$(APP_GROUP).addedWord" >/dev/null 2>&1 || true; i=0; \
+		until [ "$$(field addedWord.id)" = "$$id" ]; do sleep 0.25; i=$$((i + 1)); [ $$i -lt 120 ] || fail add "no outcome for $$1"; done; \
+		outcome=$$(field addedWord.outcome); strength=$$(field addedWord.strength); }; \
+	prefs=$$(xcrun simctl get_app_container "$$udid" "$(BUNDLE_ID)" data)/Library/Preferences/$(BUNDLE_ID).plist; \
+	saved() { i=0; while :; do s=$$(plutil -extract custom_dictionary raw -o - "$$prefs" 2>/dev/null | base64 -D 2>/dev/null || true); \
+		case "$$s" in *"\"$$1\""*) printf '%s' "$$s" | tr -d ' \n'; return 0 ;; esac; \
+		sleep 0.5; i=$$((i + 1)); [ $$i -lt 30 ] || return 1; done; }; \
+	heard_word=$$(printf '%s' "$(E2E_ADDED_WORD)" | norm); \
+	dictate warm-up; dictate heard; first=$$r; \
+	n=0; at=-1; for w in $$(printf '%s' "$(E2E_PHRASE)" | norm); do [ "$$w" = "$$heard_word" ] && at=$$n; n=$$((n + 1)); done; \
+	[ $$at -ge 0 ] || fail heard "E2E_ADDED_WORD is not in E2E_PHRASE"; \
+	[ $$(printf '%s' "$$text" | norm | wc -w) -eq $$n ] || fail heard "the transcript of the invented phrase has another word count: $$text"; \
+	misheard=$$(printf '%s' "$$text" | awk -v i=$$((at + 1)) '{ print $$i }'); \
+	[ "$$(index_of "$$heard_word")" -lt 0 ] || fail heard "the model heard $(E2E_ADDED_WORD) already: pick another word"; \
+	echo "  heard \"$$misheard\" for $(E2E_ADDED_WORD) (word $$at)"; \
+	add "$(E2E_ADDED_WORD)" "$$first" $$at; \
+	[ "$$outcome" = added ] || fail heard "outcome=$$outcome"; \
+	entries=$$(saved "$(E2E_ADDED_WORD)") || fail heard "not saved"; \
+	pass heard "outcome=$$outcome strength=$$strength saved=$$entries"; \
+	add "$(E2E_ADDED_WORD)" "$$first" $$at; \
+	[ "$$outcome" = alreadyInDictionary ] || fail already "outcome=$$outcome"; pass already "outcome=$$outcome"; \
+	dictate not-heard; second=$$r; \
+	add "$(E2E_NOT_HEARD)" "$$second" 0; \
+	[ "$$outcome" = notHeard ] || fail not-heard "outcome=$$outcome strength=$$strength"; \
+	! saved "$(E2E_NOT_HEARD)" >/dev/null || fail not-heard "saved"; pass not-heard "outcome=$$outcome"; \
+	dictate fallback; older=$$r; dictate fallback; \
+	add "$(E2E_NOT_HEARD)" "$$older" 0; \
+	[ "$$outcome" = added ] && [ "$$strength" = 1 ] || fail fallback "outcome=$$outcome strength=$$strength"; \
+	entries=$$(saved "$(E2E_NOT_HEARD)") || fail fallback "not saved"; \
+	pass fallback "outcome=$$outcome strength=$$strength saved=$$entries"
 
 clean:
 	@# Each directory reaches the shell as one exact path, spaces and quotes included.

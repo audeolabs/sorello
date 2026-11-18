@@ -164,6 +164,7 @@ keyboard and the Full Access row.
 make -C iOS e2e-sim SORELLO_MODEL_DIR=/path/to/model [E2E_SKIP_ONBOARDING=1] [E2E_SCREEN=home] [E2E_START_SESSION=1] [E2E_HEADPHONES=bluetooth|none]
 make -C iOS e2e-sim-probe [E2E_BACKGROUND=1 | E2E_FROM_BACKGROUND=1]
 make -C iOS e2e-sim-scenarios
+make -C iOS e2e-sim-added-word E2E_PHRASE="…" E2E_ADDED_WORD=<a word of it the model mishears>
 ```
 
 `e2e-sim` builds the self-test variant into `build/e2e-simulator` and installs
@@ -187,6 +188,13 @@ alone. The app's content-free `Sorello self-test:` lines go to
 4. result
 
 It prints only phases and pass/fail, then deletes the result file.
+
+`e2e-sim-added-word` plays the keyboard's side of a word added from a
+correction, on a fresh install: after a warm-up dictation it hands the app
+`E2E_ADDED_WORD` for the word the model misheard, then the same word again,
+a word the recording does not hold, and a word for a dictation a later one
+released. It prints one pass/fail line each, with the outcome, the strength
+and the entry the app saved.
 
 `e2e-sim-scenarios` runs four cases with one pass/fail line each:
 - `cancel`
