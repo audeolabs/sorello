@@ -72,7 +72,13 @@ final class KeyboardLocalDictation {
         handle(.tap(attempt: UUID(), documentID: documentID))
     }
 
-    func stop(_ attemptID: UUID) { handle(.stop(attempt: attemptID)) }
+    /// Stop on the attempt the bar showed. Returns whether the machine took it, after judging the clock: it sealed the
+    /// recording, or cancelled an attempt that had heard nothing.
+    @discardableResult
+    func stop(_ attemptID: UUID) -> Bool {
+        let effects = handle(.stop(attempt: attemptID))
+        return effects.contains(.seal(attemptID)) || effects.contains(.outcome(.cancelled, attemptID))
+    }
 
     func cancel(_ attemptID: UUID) { handle(.cancel(attempt: attemptID)) }
 
@@ -126,11 +132,13 @@ final class KeyboardLocalDictation {
 
     // MARK: The machine
 
-    private func handle(_ event: KeyboardDictationMachine.Event) {
+    @discardableResult
+    private func handle(_ event: KeyboardDictationMachine.Event) -> [KeyboardDictationMachine.Effect] {
         let effects = machine.handle(event, at: Self.now)
         for effect in effects { apply(effect) }
         scheduleTimer()
         if !effects.isEmpty || event == .tick { hooks.changed() }
+        return effects
     }
 
     private func apply(_ effect: KeyboardDictationMachine.Effect) {
@@ -187,7 +195,8 @@ final class KeyboardLocalDictation {
             onMessage: { [weak self] message in self?.received(message, for: id) })
         self.capture = capture
         guard let container = hooks.container() else {
-            return DispatchQueue.main.async { [weak self] in self?.handle(.captureFailed(attempt: id)) }
+            DispatchQueue.main.async { [weak self] in self?.handle(.captureFailed(attempt: id)) }
+            return
         }
         capture.open(in: container)
     }
@@ -213,7 +222,7 @@ final class KeyboardLocalDictation {
             guard machine.runningAttemptID == id, machine.isCaptureOpen else { return }
             guard let pipeline, pipeline.accept(samples, rate: rate, converted: { [weak self] in
                 Task { @MainActor in self?.converted(id) }
-            }) else { return handle(.captureFailed(attempt: id)) }
+            }) else { handle(.captureFailed(attempt: id)); return }
             self.meter = meter
             hooks.level(meter.level)
         case .failed, .ended, .malformed:
@@ -250,7 +259,7 @@ final class KeyboardLocalDictation {
             handle(.transcriptionFailed(attempt: id))
         case .transcribed(let text, let source):
             // Checked again before the text is delivered: the host may have taken the microphone meanwhile.
-            guard !hooks.hostOwnsMicrophone() else { return handle(.hostOwnsMicrophone) }
+            guard !hooks.hostOwnsMicrophone() else { handle(.hostOwnsMicrophone); return }
             if let transcription { speech.attemptEnding(after: transcription.ended()) }
             transcription = nil
             pipeline = nil

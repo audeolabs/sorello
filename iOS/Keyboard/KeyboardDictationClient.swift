@@ -247,8 +247,7 @@ final class KeyboardDictationClient: ObservableObject {
         // The in-keyboard dictation the bar showed takes the tap, whatever the host publishes; once it has ended, the
         // tap does nothing. A Start drawn before one began does nothing either.
         if let attempt = (shown ?? state).localAttemptID {
-            let stopped = local?.runningAttemptID == attempt
-            local?.stop(attempt)
+            let stopped = local?.stop(attempt) ?? false
             refresh()
             return stopped
         }
@@ -267,7 +266,7 @@ final class KeyboardDictationClient: ObservableObject {
                 let now = Date()
                 actAsHostTap(in: KeyboardPresenter.shownMode(
                     KeyboardPresenter.mode(access: access, status: status, intent: intent, now: now),
-                    bouncedRequestID: bouncedRequestID, intent: intent, status: status), status: status)
+                    bouncedRequestID: bouncedRequestID, intent: intent, status: status), status: status, intent: intent)
                 refresh()
                 return false
             case .notConsidered: break
@@ -281,15 +280,17 @@ final class KeyboardDictationClient: ObservableObject {
         return false
     }
 
-    /// The mic tap's host path ("Mic tap"), for the mode `mode`; an error starts from `status` (the shown one if nil).
-    private func actAsHostTap(in mode: KeyboardMode, status: StoreRead<HostStatus>? = nil) {
+    /// The mic tap's host path ("Mic tap"), for the mode `mode`; an error starts from `status`, and a finish names
+    /// `intent`'s request (the shown ones if nil).
+    private func actAsHostTap(in mode: KeyboardMode, status: StoreRead<HostStatus>? = nil,
+                              intent: StoreRead<KeyboardIntent>? = nil) {
         switch mode {
         case .ready, .preparingModel: startDictation(openingHost: false)
         case .hostUnavailable: startDictation(openingHost: true)
         case .error:
             // The error is informational; start the way the host's current state allows.
             startAsHostTap(status: status)
-        case .starting, .recording: send(.finish)
+        case .starting, .recording: send(.finish, requestID: intent?.value?.requestID)
         case .voiceNote: stopNote()
         case .transcribing, .waitingForModel, .needsFullAccess, .configurationError, .incompatible: break
         }
@@ -606,8 +607,9 @@ final class KeyboardDictationClient: ObservableObject {
     }
 
     /// `finish` or `cancel` for the request on screen, under the stale-writer guard.
-    private func send(_ action: KeyboardIntent.Action) {
-        guard let store, let requestID = shownIntent.value?.requestID,
+    /// `requestID`: the request a fresh read showed; the one on screen if nil.
+    private func send(_ action: KeyboardIntent.Action, requestID: UUID? = nil) {
+        guard let store, let requestID = requestID ?? shownIntent.value?.requestID,
               KeyboardPresenter.mayWrite(action, requestID: requestID, currentIntent: store.readIntent()),
               write(KeyboardIntent(requestID: requestID, action: action, keyboardInstanceID: instanceID,
                                    issuedAt: Date()), to: store)
@@ -684,7 +686,7 @@ final class KeyboardDictationClient: ObservableObject {
         let startDictatesInKeyboard = false
         #endif
         ledger.prune(now: now, keeping: Set([intent.value?.requestID, shownIntent.value?.requestID].compactMap { $0 }))
-        if access == .fullAccess { deliverResults(status: status, intent: intent, documentID: documentID, now: now) }
+        if access == .fullAccess { deliverResults(status: status, documentID: documentID, now: now) }
         shownIntent = intent
         shownStatus = status
         showAddedWordOutcome(status)
@@ -697,7 +699,7 @@ final class KeyboardDictationClient: ObservableObject {
         publish(mode, intent: intent, status: status, now: now, startDictatesInKeyboard: startDictatesInKeyboard)
     }
 
-    private func deliverResults(status: StoreRead<HostStatus>, intent: StoreRead<KeyboardIntent>, documentID: UUID?, now: Date) {
+    private func deliverResults(status: StoreRead<HostStatus>, documentID: UUID?, now: Date) {
         guard let store else { return }
         // Purges, lists and decodes the result files only when a read is due; otherwise the results
         // read earlier stand in for them, so a deferred one is still delivered on a later pass.
@@ -717,8 +719,10 @@ final class KeyboardDictationClient: ObservableObject {
                 manualInsertID = plan.manualInsert?.requestID
                 // The host may own the microphone by now: checked again right before the text is delivered. Then it
                 // is dropped, and nothing else is inserted on this pass.
-                if KeyboardDictationRoute.hostOwnsMicrophone(access: access, status: status, intent: intent,
-                                                             instanceID: instanceID, now: now) {
+                // Read afresh here, not at the pass's start: the host may have published since.
+                if KeyboardDictationRoute.hostOwnsMicrophone(access: access, status: store.readStatus(),
+                                                             intent: store.readIntent(), instanceID: instanceID,
+                                                             now: Date()) {
                     local.dropText(next.requestID)
                 } else if let result = local.takeBoundText(next.requestID) {
                     var context = target.contextBeforeInput
