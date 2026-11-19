@@ -266,7 +266,7 @@ each carries `schema: Int` (currently `1`).
 | `status.json` | host | keyboard | `HostStatus`: run, session, capture, model, dictation and voice note state | class C |
 | `result-<UUID>.json` | host | keyboard | `DictationResult`: one finished transcript | class A |
 | `added-word.json` | keyboard | host | `AddedWord`: a word the user tapped "Add to dictionary" for | class A |
-| `keyboard-dictation.json` | keyboard | host | `KeyboardDictationRecord`: the last in-keyboard dictation's steps, content-free ([In-keyboard dictation](#in-keyboard-dictation-experiment)) | class C |
+| `keyboard-dictation.json` | keyboard (experiment builds) | host, keyboard | `KeyboardDictationRecord`: the last in-keyboard dictation's steps, content-free ([In-keyboard dictation](#in-keyboard-dictation-experiment)) | class C |
 
 - Class A applies on devices only. The simulator does not enforce data
   protection and macOS refuses class A to unentitled processes, so both use
@@ -274,7 +274,9 @@ each carries `schema: Int` (currently `1`).
 - **Staged writes.** Every write goes to a uniquely named
   `.staging-<UUID>.tmp` file in the same directory, written with the
   destination's protection class, then renamed over the destination. A reader
-  sees the old or the new record, never part of one. Foundation's `.atomic`
+  sees the old or the new record, never part of one. The keyboard's
+  `keyboard-dictation.json` is staged as `.staging-kd-<UUID>.tmp` instead
+  (Staging sweeps). Foundation's `.atomic`
   option is not used, because its temporary file escapes the staging sweeps.
 - **Claim by rename.** Every result removal (the keyboard's claim, and every
   purge) first renames the file to a private staging name and deletes it from
@@ -2114,15 +2116,25 @@ unchanged and always wins.
   and Diagnostics has no "Keyboard dictation" section; the checkers hold
   the keyboard to those rules ([Build and targets](#build-and-targets-iosmakefile)).
   A build with the flag is uploaded for internal testing only and is never
-  submitted for release; `make appstore-check` prints which variant it
-  checked.
-- **Route** (`KeyboardDictationRoute`, KeyboardCore; pure, tested). It is
-  decided from the freshly read status and intent, not from the mode on
-  screen. A mic tap starts an in-keyboard dictation when all of these hold,
-  and otherwise does what "Mic tap" says:
-  - no live host: no fresh status with an active or starting session, a
-    voice note, or a recording, and no `record` this instance wrote that the
-    host has not answered (a bounce in flight stays on the host's path);
+  submitted for release: `make appstore-check` fails on an experiment build
+  unless the same invocation sets `KEYBOARD_DICTATION=1`, so packaging one
+  is always deliberate, and prints which variant it checked. The person who
+  uploads one marks it in App Store Connect as for internal testing only
+  where Apple offers that.
+- **Host owns the microphone** (`KeyboardDictationRoute.hostOwnsMicrophone`,
+  pure, tested): one predicate, used both to refuse a start and to revoke a
+  dictation that runs. It holds when the status is fresh and readable (the
+  existing access and schema guards apply) and shows a session that is
+  active or starting, a voice note that is starting or recording (one that
+  is saving holds no microphone), or a dictation recording; or when this
+  instance wrote a `record` that is still fresh within `pendingRecordTTL`
+  and that the host has not answered (a bounce in flight).
+- **Route** (`KeyboardDictationRoute`, KeyboardCore; pure, tested). Start
+  is decided at the tap from the freshly read status and intent, not from
+  the mode on screen. A mic tap that would start starts an in-keyboard
+  dictation when all of these hold, and otherwise does what "Mic tap" says:
+  - the host does not own the microphone (above), and the presenter's mode
+    for the fresh state is `hostUnavailable`;
   - the keyboard has Full Access, and `keyboardDictationEnabled` is on;
   - the app's microphone permission (`AVAudioApplication.recordPermission`)
     is granted: undetermined or denied goes to the host, which asks or
@@ -2131,47 +2143,63 @@ unchanged and always wins.
     keyboard, at `Sorello.app/PlugIns/SorelloKeyboard.appex/../../Model/`;
   - this instance's last in-keyboard dictation did not end with
     `captureUnavailable`;
-  - `keyboard-dictation.json` does not hold an unfinished record (one whose
-    last step is not `inserted`, `offered`, `failed` or `cancelled`): the
-    keyboard that wrote it was terminated, most likely for its memory. That
-    tap goes to the host, and the keyboard first rewrites the record with
-    the outcome `terminated`, keeping its steps, so the next tap tries in
-    the keyboard again and the evidence of the termination is kept for
-    Diagnostics.
+  - `keyboard-dictation.json` does not hold an unfinished record (one with
+    no outcome) written by an earlier keyboard process: that keyboard went
+    away mid-dictation, for a reason the record cannot know (iOS's memory
+    limit is the likeliest). That one tap goes to the host. Before it, the
+    keyboard rewrites the record with the outcome `terminated`, keeping its
+    steps, so later taps try in the keyboard again; if the rewrite fails,
+    this keyboard instance still treats that record as handled.
 
-  A tap acts on the route and the dictation the bar showed when it was
-  drawn: while one in-keyboard dictation runs, the mic tap and Cancel go to
-  it, whatever the host publishes.
+  While an in-keyboard dictation runs, Stop and Cancel act only on its
+  attempt id, the one the bar showed; once it has ended they do nothing.
+  The host's taking the microphone is noticed by the status observation and
+  the poll, so both may capture for up to `KeyboardDictationClient.pollInterval`
+  (0.2 s) plus the host's own start; the keyboard checks the predicate again
+  just before WebKit's microphone grant and before delivering text.
 - **Phases** (`KeyboardDictationMachine`, KeyboardCore; pure, tested, one
-  state machine fed events, with a monotonic clock passed in). `idle` →
+  state machine fed events, with a monotonic clock passed in). Each attempt
+  has an in-memory id; every event carries the id it belongs to, and one for
+  an attempt that has ended has no effect. `idle` →
   `starting` (the tap) → `recording` (the first audio arrived) →
   `transcribing` (stopped) → `idle` with the text, or with a failure. The top
   row shows them as the host's `starting`, `recording(level:startedAt:)`,
   `transcribing` and `error(code)`, so they look the same; levels come from
   the keyboard's own samples. While one runs, the host's status does not
   change the mode.
-  - Stop in `starting` cancels: nothing was heard. Stop in `recording` seals
-    the recording and closes capture, once. Mic taps in `transcribing` do
-    nothing; Cancel still cancels.
+  - Capture is open only in `starting` and `recording`. Stop in `starting`
+    cancels: nothing was heard. Stop in `recording` closes capture at once
+    and seals the recording: the samples Swift had accepted before the stop
+    are converted, once, and nothing that arrives later is kept. Mic taps in
+    `transcribing` do nothing; Cancel still cancels.
   - At `DictationProtocol.maxDictationDuration` it stops as if tapped.
   - No audio within `KeyboardDictationTiming.startupTimeout` (5 s) of the
-    tap, and the web view unable to capture (`captureUnavailable`), tear
-    capture down and, if the keyboard is still visible in the same field,
-    go on as a host tap would ("Mic tap"), so the user is never stuck:
-    nothing had been heard.
+    tap, and the web view unable to capture (`captureUnavailable`), end the
+    attempt and tear capture down, and then, only if the keyboard is still
+    visible and the attempt's field binding still holds, go on as a host tap
+    would ("Mic tap"), so the user is never stuck: nothing had been heard.
+  - After the first audio, no well-formed chunk for
+    `KeyboardDictationTiming.audioGap` (2 s), or a malformed chunk, is
+    `captureLost`.
   - No result within `KeyboardDictationTiming.finishTimeout` (120 s) of the
     stop fails it with `transcriptionFailed`.
   - Ends that revoke it at once, in any phase: Cancel; the keyboard hiding
-    (`viewWillDisappear`); a fresh host status showing an active or starting
-    session or a voice note (the host took the microphone). Each tears
-    capture down at once, and no late callback (a permission decision, an
-    audio message, a model or transcription result) can start capture,
-    insert text or write the record afterwards.
+    (`viewWillDisappear`); the host owning the microphone (above).
+  - **Every end** (these, a timeout, a failure, a delivered text) first
+    marks the attempt ended, so that nothing it started has any effect
+    afterwards: a late permission decision is denied, a late media stream
+    has its tracks stopped at once, a late audio message is dropped, a late
+    timer does nothing, and a late model or transcription result inserts
+    nothing and writes nothing to the record. Only then does a fallback or a
+    delivery happen. The next attempt uses the engine only after the last
+    one's model work has ended.
   - Failures are `KeyboardDictationFailure`: `captureUnavailable`,
     `startupTimeout`, `captureLost` (capture stopped by itself, or the audio
     queue overflowed, after audio arrived), `modelFailed`,
     `transcriptionFailed`, `keyboardDismissed` and `hostTookOver`. The first
-    two go to the host as above. `captureLost`, `modelFailed` and
+    two go to the host as above. A transcript that is empty after
+    formatting ends with the outcome `noSpeech` and the keyboard's "No
+    speech detected" notice. `captureLost`, `modelFailed` and
     `transcriptionFailed` show the host's words for `interrupted`,
     `modelFailed` and `transcriptionFailed`; the next tap routes afresh. The
     last two show nothing.
@@ -2203,8 +2231,9 @@ unchanged and always wins.
     message handler. Swift accepts only well-formed chunks of at most that
     size from that web view's main frame, in order, and converts them
     continuously to 16 kHz mono Float (the engine's input). At most
-    `KeyboardDictationTiming.maxQueuedAudio` (2 s) may wait unconverted;
-    more is `captureLost`.
+    `KeyboardDictationTiming.maxQueuedAudio` (2 s) of accepted audio may
+    wait in Swift unconverted; more is `captureLost`. Messages WebKit has
+    not yet delivered are WebKit's, and are dropped once the attempt ends.
   - The recording is kept in memory only, at most `maxDictationDuration` of
     it, and dropped when its dictation ends. Nothing is written to disk.
   - Stop and every end stop every track and the audio context, and the web
@@ -2216,16 +2245,17 @@ unchanged and always wins.
   - Loading starts at the tap, beside capture, so preparation overlaps the
     speech. Once the model is ready, a stream (`openStream` with no options:
     nothing is retained for a correction) takes the samples heard so far,
-    once, and then each converted chunk; a stop before the model is ready
-    waits for it and finishes against the sealed recording. If the stream
-    fails other than by cancellation, the recording is transcribed in one
-    batch, once, after the stream's model work has ended
-    (`waitUntilModelWorkEnds`).
+    once, and then each converted chunk up to the seal; a stop before the
+    model is ready waits for it and finishes against the sealed recording.
+    If the stream fails other than by cancellation, the same sealed
+    recording is transcribed in one batch, once, after the stream's model
+    work has ended (`waitUntilModelWorkEnds`).
   - The text goes through `DictationRules.process` with the options the
     host uses, read from the shared settings, and is inserted like a host
     result, through `TextInsertionFormatter`, with no correction watch (it
-    never offers "Add to dictionary"; a tap ends the last dictation's
-    watch, as "Dictation corrections" says). Undo last dictation covers it.
+    never offers "Add to dictionary": only host results start a watch; a
+    tap ends the last dictation's watch, as "Dictation corrections" says).
+    Undo last dictation covers it.
   - **Binding.** The tap binds the dictation, by an in-memory id of its
     own, to the field it was made in, only when that field's
     `documentIdentifier` is not nil. A focus change seen at any time
@@ -2233,11 +2263,13 @@ unchanged and always wins.
     ([Results](#results-sharedkeyboardresultsswift-textinsertionformatterswift-pure-tested)).
     A bound text is inserted when the editing side is not busy; an unbound
     one is offered as "Insert last dictation" (the step `offered`). It is
-    inserted at most once, and is dropped at `resultTTL` or when the
-    keyboard hides.
+    inserted at most once, and is dropped `resultTTL` after the text was
+    made, or when the keyboard hides.
   - While one runs, the keyboard still reads host results as before but
-    claims and inserts none until it ends; then results are taken oldest
-    first, and the chip offers the newest of either kind.
+    claims and inserts none until it ends; then, once the editing side is
+    not busy, results are taken oldest first, and the chip offers the
+    newest of either kind. The chip acts on the result it showed, by id, and
+    does nothing if that one has expired or been taken meanwhile.
   - The engine stays loaded while this keyboard instance is visible, so the
     next dictation starts warm. It is released when the keyboard hides and
     on a memory warning while no dictation runs, after any preparation or
@@ -2253,20 +2285,27 @@ unchanged and always wins.
     loaded (warm) or not (cold);
   - the steps reached (`tapped`, `captureRequested`, `firstAudio`,
     `modelLoading`, `modelReady`, `firstChunkDecoded`, `stopped`,
-    `transcribed`, `inserted`, `offered`, `failed`, `cancelled`), each with
+    `transcribed`, `inserted`, `offered`, `ended`), each with
     milliseconds since the tap (monotonic), the footprint
     (`phys_footprint`) and the memory iOS still allows
     (`os_proc_available_memory`), in MB;
-  - the peak footprint (the task's `ledger_phys_footprint_peak`, which
-    catches what falls between steps) and the least memory left seen,
-    sampled at every step and every converted chunk;
+  - the keyboard process's peak footprint (the task's
+    `ledger_phys_footprint_peak`: the high-water mark of the process's
+    lifetime, so a warm attempt may show an earlier attempt's peak, and
+    WebKit's capture, which runs in its own process, is not in it) and the
+    least memory left seen, sampled at every step and every converted chunk;
   - the audio's seconds and the capture's sample rate; the model's
     preparation milliseconds; stop to text and stop to insertion in
     milliseconds; whether the text came from the stream or the batch;
-  - memory warnings seen; the outcome (a failure, `cancelled`,
-    `terminated`, or none while it runs).
+  - memory warnings seen; the outcome: `inserted`, `offered`, `noSpeech`,
+    a failure, `cancelled` or `terminated`, and none while it runs. A record
+    with no outcome is unfinished.
 
-  Never audio, text, or anything about the field or the app. Each
+  The record is written at each step and, while recording, at most once a
+  second when the least memory left or the warnings changed; the figures of
+  a `terminated` record are the last ones written. Decoding takes a missing
+  field as unknown. Never audio, text, or anything about the field or the
+  app. Each
   in-keyboard dictation overwrites it; nothing else removes it. Its staging
   files are named `.staging-kd-<UUID>.tmp`; the host's launch sweep leaves
   them, and the age sweep removes them after `resultTTL`. The app shows it
@@ -2480,12 +2519,15 @@ every other point of the bar
     the session line ("Session ends in 5 min if idle", "Session on"),
     "Model loads when you dictate", "Preparing model…" idle and in the
     wait, "Transcribing…", the cold start's "Model loading" while
-    recording, and "Start opens Sorello".
+    recording, and "Start opens Sorello" (or nothing about opening, when
+    Start would dictate in the keyboard).
   - **VoiceOver** still hears every state in words: what the bar no longer
     shows is the island's value (`KeyboardMessages.spokenStatus`), on Start
     "Session ends in 5 min if idle" (". Model loads when you dictate"),
     "Preparing model. Session ends in 5 min if idle", "No session. Start
-    opens Sorello"; while recording "Recording, 5 seconds. Model
+    opens Sorello" (just "No session" when Start would dictate in the
+    keyboard, [In-keyboard dictation](#in-keyboard-dictation-experiment));
+    while recording "Recording, 5 seconds. Model
     loading"; the wait from the label.
 
   | State | The bar shows | VoiceOver |
