@@ -21,6 +21,8 @@ final class KeyboardSpeech {
 
     private let modelDirectory: URL
     private var engine: SpeechEngine?
+    /// `engine` has prepared successfully: an attempt that uses it starts warm.
+    private var enginePrepared = false
     /// Ends once every attempt so far has ended and its model work has drained, and any release asked for has happened.
     private var work: Task<Void, Never>?
 
@@ -28,17 +30,29 @@ final class KeyboardSpeech {
         self.modelDirectory = modelDirectory
     }
 
-    /// The engine is loaded: an attempt now starts warm.
-    var isLoaded: Bool { engine != nil }
+    /// An engine is loaded and prepared: an attempt now starts warm.
+    var isWarm: Bool { engine != nil && enginePrepared }
 
-    /// The engine for an attempt, once the last attempt's model work has ended: the loaded one, or a new one.
-    func engineWhenFree() async -> SpeechEngine {
-        await work?.value
+    /// The engine for an attempt, once every earlier attempt's model work and every release asked for have ended: the
+    /// loaded one, or a new one. Nil, making nothing, when the calling task was cancelled meanwhile.
+    func engineWhenFree() async -> SpeechEngine? {
+        var awaited: Task<Void, Never>?
+        repeat {
+            awaited = work
+            await awaited?.value
+        } while work != awaited
+        guard !Task.isCancelled else { return nil }
         if let engine { return engine }
         let engine = SpeechEngine(modelDirectory: modelDirectory, storeDirectory: nil, compute: .neuralEngine,
                                   dictionary: { _ in .empty })
         self.engine = engine
+        enginePrepared = false
         return engine
+    }
+
+    /// `engine` prepared successfully.
+    func prepared(_ engine: SpeechEngine) {
+        if self.engine === engine { enginePrepared = true }
     }
 
     /// An attempt ended: the next waits until `ended` is done and the engine's model work has drained.
@@ -60,7 +74,10 @@ final class KeyboardSpeech {
             await previous?.value
             await engine?.waitUntilModelWorkEnds()
             // Only the engine this release was asked for; one made since stays.
-            if let self, self.engine === engine { self.engine = nil }
+            if let self, self.engine === engine {
+                self.engine = nil
+                self.enginePrepared = false
+            }
         }
     }
 }
@@ -100,8 +117,7 @@ final class KeyboardTranscription {
     func start() {
         tasks.append(Task { [weak self] in
             guard let speech = self?.speech else { return }
-            let engine = await speech.engineWhenFree()
-            guard let self, self.report != nil else { return }
+            guard let engine = await speech.engineWhenFree(), let self, self.report != nil else { return }
             self.engine = engine
             self.report?(.modelLoading)
             let started = ProcessInfo.processInfo.systemUptime
@@ -116,6 +132,7 @@ final class KeyboardTranscription {
                 self.report?(.modelFailed)
                 return
             }
+            self.speech.prepared(engine)
             self.report?(.modelReady(preparationMilliseconds: (ProcessInfo.processInfo.systemUptime - started) * 1_000))
             // Nothing is retained for a correction. Progress is asked for only to learn when the first chunk is
             // decoded; its text is never kept.

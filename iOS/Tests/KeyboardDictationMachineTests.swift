@@ -28,7 +28,9 @@ enum KeyboardDictationMachineTests {
             ("theChipTakesOnlyWhatItShowedOnce", testTheChipTakesOnlyWhatItShowedOnce),
             ("textIsDroppedAtResultTTL", testTextIsDroppedAtResultTTL),
             ("anEmptyTranscriptIsNoSpeech", testAnEmptyTranscriptIsNoSpeech),
-            ("aNewTextReplacesAWaitingOne", testANewTextReplacesAWaitingOne),
+            ("eachTextWaitsOnItsOwn", testEachTextWaitsOnItsOwn),
+            ("anExpiredTextIsNeverTaken", testAnExpiredTextIsNeverTaken),
+            ("callbacksAfterADeadlineFindItEnded", testCallbacksAfterADeadlineFindItEnded),
             ("deadlinesFollowThePhase", testDeadlinesFollowThePhase),
             ("recordWritesBetweenStepsAreThrottled", testRecordWritesBetweenStepsAreThrottled),
         ]
@@ -60,6 +62,15 @@ enum KeyboardDictationMachineTests {
         return (machine, id)
     }
 
+    /// One machine in each running phase with a moment inside its deadlines: starting, recording (audio at 1) and
+    /// transcribing (stopped at 3).
+    private static func everyPhase() -> [(Machine, UUID, Machine.Instant)] {
+        let (starting, startingID) = started()
+        let (recording, recordingID) = started(recording: true)
+        let (stopped, stoppedID) = transcribing()
+        return [(starting, startingID, 2), (recording, recordingID, 2), (stopped, stoppedID, 3.5)]
+    }
+
     private static func testABoundDictationIsInsertedOnce() {
         var machine = Machine()
         let id = UUID()
@@ -72,6 +83,7 @@ enum KeyboardDictationMachineTests {
         TestSupport.expectEqual(machine.handle(.audio(attempt: id, level: 0.6), at: 0.5), [])
         TestSupport.expectEqual(machine.phase, .recording)
         TestSupport.expectEqual(machine.handle(.modelReady(attempt: id), at: 1.5), [.step(.modelReady, id)])
+        TestSupport.expectEqual(machine.handle(.audio(attempt: id, level: 0.4), at: 2), [])
         TestSupport.expectEqual(machine.handle(.stop(attempt: id), at: 3), [.seal(id), .step(.stopped, id)])
         TestSupport.expectEqual(machine.phase, .transcribing)
         TestSupport.expect(!machine.isCaptureOpen, "capture is open while transcribing")
@@ -80,16 +92,17 @@ enum KeyboardDictationMachineTests {
                                 [.step(.transcribed, id), .outcome(.text, id)])
         TestSupport.expect(!machine.isRunning, "the attempt still runs after its text")
         TestSupport.expectEqual(machine.offeredText, nil)
-        TestSupport.expectEqual(machine.takeBoundText(), result(id))
-        TestSupport.expectEqual(machine.takeBoundText(), nil)
-        TestSupport.expectEqual(machine.takeOfferedText(id), nil)
+        TestSupport.expectEqual(machine.takeBoundText(at: 10), result(id))
+        TestSupport.expectEqual(machine.takeBoundText(at: 10), nil)
+        TestSupport.expectEqual(machine.takeOfferedText(id, at: 10), nil)
         TestSupport.expectEqual(machine.mode(at: 3.5, wallNow: wall), nil)
     }
 
     private static func testPhasesShowAsTheHostsModes() {
         var (machine, id) = started()
         TestSupport.expectEqual(machine.mode(at: 0.5, wallNow: wall), .starting)
-        _ = machine.handle(.audio(attempt: id, level: 0.7), at: 1)
+        _ = machine.handle(.audio(attempt: id, level: 0.2), at: 1)
+        _ = machine.handle(.audio(attempt: id, level: 0.7), at: 2.5)
         TestSupport.expectEqual(machine.mode(at: 4, wallNow: wall), .recording(level: 0.7, startedAt: wall - 3))
         _ = machine.handle(.audio(attempt: id, level: 5), at: 4.1)
         TestSupport.expectEqual(machine.mode(at: 4.1, wallNow: wall), .recording(level: 1, startedAt: wall - 3.1))
@@ -128,33 +141,33 @@ enum KeyboardDictationMachineTests {
         TestSupport.expectEqual(machine.handle(.stop(attempt: other), at: 2), [])
         TestSupport.expectEqual(machine.handle(.cancel(attempt: other), at: 2), [])
         TestSupport.expectEqual(machine.phase, .recording)
-        _ = machine.handle(.cancel(attempt: id), at: 3)
+        TestSupport.expectEqual(machine.handle(.cancel(attempt: id), at: 2.5), [.tearDown(id), .outcome(.cancelled, id)])
         // Once ended, they are inert.
         TestSupport.expectEqual(machine.handle(.stop(attempt: id), at: 3.1), [])
         TestSupport.expectEqual(machine.handle(.cancel(attempt: id), at: 3.1), [])
     }
 
     private static func testCancelEndsEveryPhase() {
-        for (machine, id) in [started(), started(recording: true), transcribing()] {
+        for (machine, id, at) in everyPhase() {
             var machine = machine
-            TestSupport.expectEqual(machine.handle(.cancel(attempt: id), at: 10), [.tearDown(id), .outcome(.cancelled, id)])
-            TestSupport.expectEqual(machine.mode(at: 10, wallNow: wall), nil)
+            TestSupport.expectEqual(machine.handle(.cancel(attempt: id), at: at), [.tearDown(id), .outcome(.cancelled, id)])
+            TestSupport.expectEqual(machine.mode(at: at, wallNow: wall), nil)
             TestSupport.expect(!machine.lastEndedCaptureUnavailable, "a cancel stuck as captureUnavailable")
         }
     }
 
     private static func testHidingEndsEveryPhaseAndDropsTheText() {
-        for (machine, id) in [started(), started(recording: true), transcribing()] {
+        for (machine, id, at) in everyPhase() {
             var machine = machine
-            TestSupport.expectEqual(machine.handle(.hide, at: 10), [.tearDown(id), .outcome(.keyboardDismissed, id)])
-            TestSupport.expectEqual(machine.mode(at: 10, wallNow: wall), nil)
+            TestSupport.expectEqual(machine.handle(.hide, at: at), [.tearDown(id), .outcome(.keyboardDismissed, id)])
+            TestSupport.expectEqual(machine.mode(at: at, wallNow: wall), nil)
         }
         var (machine, id) = transcribing(in: nil)
         _ = machine.handle(.transcribed(attempt: id, result: result(id)), at: 4)
         TestSupport.expectEqual(machine.offeredText, result(id))
         TestSupport.expectEqual(machine.handle(.hide, at: 5), [.step(.dropped, id)])
         TestSupport.expectEqual(machine.offeredText, nil)
-        TestSupport.expectEqual(machine.takeOfferedText(id), nil)
+        TestSupport.expectEqual(machine.takeOfferedText(id, at: 10), nil)
         TestSupport.expectEqual(machine.handle(.hide, at: 6), [])
         // A shown failure goes with the keyboard too.
         var (failed, failedID) = started(recording: true)
@@ -164,10 +177,10 @@ enum KeyboardDictationMachineTests {
     }
 
     private static func testTheHostTakingTheMicrophoneEndsIt() {
-        for (machine, id) in [started(), started(recording: true), transcribing()] {
+        for (machine, id, at) in everyPhase() {
             var machine = machine
-            TestSupport.expectEqual(machine.handle(.hostOwnsMicrophone, at: 10), [.tearDown(id), .outcome(.hostTookOver, id)])
-            TestSupport.expectEqual(machine.mode(at: 10, wallNow: wall), nil)
+            TestSupport.expectEqual(machine.handle(.hostOwnsMicrophone, at: at), [.tearDown(id), .outcome(.hostTookOver, id)])
+            TestSupport.expectEqual(machine.mode(at: at, wallNow: wall), nil)
         }
         var idle = Machine()
         TestSupport.expectEqual(idle.handle(.hostOwnsMicrophone, at: 0), [])
@@ -177,7 +190,7 @@ enum KeyboardDictationMachineTests {
         var (machine, id) = started()
         TestSupport.expectEqual(machine.handle(.tick, at: KeyboardDictationTiming.startupTimeout - 0.01), [])
         TestSupport.expectEqual(machine.handle(.tick, at: KeyboardDictationTiming.startupTimeout),
-                                [.tearDown(id), .outcome(.startupTimeout, id), .handToHost])
+                                [.tearDown(id), .outcome(.startupTimeout, id), .handToHost(documentID: Fixture.documentA)])
         TestSupport.expectEqual(machine.mode(at: 5, wallNow: wall), nil)
         // Recording, it no longer counts.
         var (recording, _) = started(recording: true)
@@ -199,13 +212,13 @@ enum KeyboardDictationMachineTests {
         var (same, sameID) = started()
         _ = same.handle(.focus(documentID: Fixture.documentA), at: 1)
         TestSupport.expectEqual(same.handle(.captureFailed(attempt: sameID), at: 2),
-                                [.tearDown(sameID), .outcome(.captureUnavailable, sameID), .handToHost])
+                                [.tearDown(sameID), .outcome(.captureUnavailable, sameID), .handToHost(documentID: Fixture.documentA)])
     }
 
     private static func testCaptureFailuresDependOnThePhase() {
         var (starting, startingID) = started()
         TestSupport.expectEqual(starting.handle(.captureFailed(attempt: startingID), at: 1),
-                                [.tearDown(startingID), .outcome(.captureUnavailable, startingID), .handToHost])
+                                [.tearDown(startingID), .outcome(.captureUnavailable, startingID), .handToHost(documentID: Fixture.documentA)])
         TestSupport.expect(starting.lastEndedCaptureUnavailable, "captureUnavailable is not remembered")
         TestSupport.expectEqual(starting.mode(at: 1, wallNow: wall), nil)
         var (recording, recordingID) = started(recording: true)
@@ -255,14 +268,14 @@ enum KeyboardDictationMachineTests {
         TestSupport.expectEqual(machine.mode(at: 124, wallNow: wall), .error(.transcriptionFailed))
         // The text that comes after it inserts nothing.
         TestSupport.expectEqual(machine.handle(.transcribed(attempt: id, result: result(id)), at: 124), [])
-        TestSupport.expectEqual(machine.takeBoundText(), nil)
+        TestSupport.expectEqual(machine.takeBoundText(at: 10), nil)
     }
 
     private static func testModelAndTranscriptionFailuresShowTheHostsWords() {
-        for (machine, id) in [started(), started(recording: true), transcribing()] {
+        for (machine, id, at) in everyPhase() {
             var machine = machine
-            TestSupport.expectEqual(machine.handle(.modelFailed(attempt: id), at: 10), [.tearDown(id), .outcome(.modelFailed, id)])
-            TestSupport.expectEqual(machine.mode(at: 10, wallNow: wall), .error(.modelFailed))
+            TestSupport.expectEqual(machine.handle(.modelFailed(attempt: id), at: at), [.tearDown(id), .outcome(.modelFailed, id)])
+            TestSupport.expectEqual(machine.mode(at: at, wallNow: wall), .error(.modelFailed))
         }
         var (machine, id) = transcribing()
         TestSupport.expectEqual(machine.handle(.transcriptionFailed(attempt: id), at: 4),
@@ -291,7 +304,7 @@ enum KeyboardDictationMachineTests {
             for event in late {
                 TestSupport.expectEqual(machine.handle(event, at: 5), [])
             }
-            TestSupport.expectEqual(machine.takeBoundText(), nil)
+            TestSupport.expectEqual(machine.takeBoundText(at: 10), nil)
             TestSupport.expectEqual(machine.offeredText, nil)
             // A new attempt.
             let new = UUID()
@@ -321,17 +334,17 @@ enum KeyboardDictationMachineTests {
         TestSupport.expectEqual(machine.handle(.focus(documentID: Fixture.documentA), at: 1.5), [])
         TestSupport.expectEqual(machine.handle(.focus(documentID: Fixture.documentB), at: 2), [])
         TestSupport.expectEqual(machine.handle(.focus(documentID: Fixture.documentA), at: 2.5), [])
-        _ = machine.handle(.stop(attempt: id), at: 3)
+        _ = machine.handle(.stop(attempt: id), at: 2.9)
         TestSupport.expectEqual(machine.handle(.transcribed(attempt: id, result: result(id)), at: 4),
                                 [.step(.transcribed, id), .outcome(.text, id), .step(.offered, id)])
-        TestSupport.expectEqual(machine.takeBoundText(), nil)
+        TestSupport.expectEqual(machine.takeBoundText(at: 10), nil)
         TestSupport.expectEqual(machine.offeredText, result(id))
         // A nil identity (a field connecting) ends it too.
         var (connecting, connectingID) = transcribing()
         _ = connecting.handle(.focus(documentID: nil), at: 3.5)
         _ = connecting.handle(.focus(documentID: Fixture.documentA), at: 3.6)
         _ = connecting.handle(.transcribed(attempt: connectingID, result: result(connectingID)), at: 4)
-        TestSupport.expectEqual(connecting.takeBoundText(), nil)
+        TestSupport.expectEqual(connecting.takeBoundText(at: 10), nil)
         TestSupport.expectEqual(connecting.offeredText, result(connectingID))
     }
 
@@ -342,28 +355,28 @@ enum KeyboardDictationMachineTests {
         TestSupport.expectEqual(machine.handle(.focus(documentID: Fixture.documentA), at: 4.5), [])
         TestSupport.expectEqual(machine.handle(.focus(documentID: Fixture.documentB), at: 5), [.step(.offered, id)])
         TestSupport.expectEqual(machine.handle(.focus(documentID: Fixture.documentA), at: 5.5), [])
-        TestSupport.expectEqual(machine.takeBoundText(), nil)
-        TestSupport.expectEqual(machine.takeOfferedText(id), result(id))
+        TestSupport.expectEqual(machine.takeBoundText(at: 10), nil)
+        TestSupport.expectEqual(machine.takeOfferedText(id, at: 10), result(id))
     }
 
     private static func testNoFieldIdentityMeansOffered() {
         var (machine, id) = transcribing(in: nil)
         TestSupport.expectEqual(machine.handle(.transcribed(attempt: id, result: result(id)), at: 4),
                                 [.step(.transcribed, id), .outcome(.text, id), .step(.offered, id)])
-        TestSupport.expectEqual(machine.takeBoundText(), nil)
+        TestSupport.expectEqual(machine.takeBoundText(at: 10), nil)
         TestSupport.expectEqual(machine.offeredText, result(id))
     }
 
     private static func testTheChipTakesOnlyWhatItShowedOnce() {
         var (machine, id) = transcribing(in: nil)
         _ = machine.handle(.transcribed(attempt: id, result: result(id)), at: 4)
-        TestSupport.expectEqual(machine.takeOfferedText(UUID()), nil)
-        TestSupport.expectEqual(machine.takeOfferedText(id), result(id))
-        TestSupport.expectEqual(machine.takeOfferedText(id), nil)
+        TestSupport.expectEqual(machine.takeOfferedText(UUID(), at: 10), nil)
+        TestSupport.expectEqual(machine.takeOfferedText(id, at: 10), result(id))
+        TestSupport.expectEqual(machine.takeOfferedText(id, at: 10), nil)
         // A bound one is not the chip's.
         var (bound, boundID) = transcribing()
         _ = bound.handle(.transcribed(attempt: boundID, result: result(boundID)), at: 4)
-        TestSupport.expectEqual(bound.takeOfferedText(boundID), nil)
+        TestSupport.expectEqual(bound.takeOfferedText(boundID, at: 10), nil)
     }
 
     private static func testTextIsDroppedAtResultTTL() {
@@ -372,39 +385,99 @@ enum KeyboardDictationMachineTests {
         TestSupport.expectEqual(machine.handle(.tick, at: 4 + DictationProtocol.resultTTL - 0.01), [])
         TestSupport.expectEqual(machine.offeredText, result(id))
         TestSupport.expectEqual(machine.handle(.tick, at: 4 + DictationProtocol.resultTTL), [.step(.dropped, id)])
-        TestSupport.expectEqual(machine.takeOfferedText(id), nil)
+        TestSupport.expectEqual(machine.takeOfferedText(id, at: 10), nil)
         var (bound, boundID) = transcribing()
         _ = bound.handle(.transcribed(attempt: boundID, result: result(boundID)), at: 4)
         TestSupport.expectEqual(bound.handle(.tick, at: 4 + DictationProtocol.resultTTL), [.step(.dropped, boundID)])
-        TestSupport.expectEqual(bound.takeBoundText(), nil)
+        TestSupport.expectEqual(bound.takeBoundText(at: 10), nil)
     }
 
     private static func testAnEmptyTranscriptIsNoSpeech() {
         var (machine, id) = transcribing()
         TestSupport.expectEqual(machine.handle(.transcribed(attempt: id, result: result(id, "")), at: 4),
                                 [.step(.transcribed, id), .outcome(.noSpeech, id), .noSpeech])
-        TestSupport.expectEqual(machine.takeBoundText(), nil)
+        TestSupport.expectEqual(machine.takeBoundText(at: 10), nil)
         TestSupport.expectEqual(machine.nextDeadline, nil)
         // Only "press enter" still presses Enter: not empty.
         var (enter, enterID) = transcribing()
         TestSupport.expectEqual(enter.handle(.transcribed(attempt: enterID, result: result(enterID, "", pressEnter: true)), at: 4),
                                 [.step(.transcribed, enterID), .outcome(.text, enterID)])
-        TestSupport.expectEqual(enter.takeBoundText(), result(enterID, "", pressEnter: true))
+        TestSupport.expectEqual(enter.takeBoundText(at: 10), result(enterID, "", pressEnter: true))
     }
 
-    private static func testANewTextReplacesAWaitingOne() {
+    /// Each text waits on its own until it is taken, `resultTTL` after it was made, or the keyboard hides: a second
+    /// one does not drop the first. The chip offers the newest unbound; insertion takes the oldest bound.
+    private static func testEachTextWaitsOnItsOwn() {
         var (machine, first) = transcribing(in: nil)
         _ = machine.handle(.transcribed(attempt: first, result: result(first)), at: 4)
         let second = UUID()
         _ = machine.handle(.tap(attempt: second, documentID: nil), at: 5)
-        TestSupport.expectEqual(machine.offeredText, result(first))
         _ = machine.handle(.audio(attempt: second, level: 0.3), at: 5.5)
         _ = machine.handle(.stop(attempt: second), at: 6)
         TestSupport.expectEqual(machine.handle(.transcribed(attempt: second, result: result(second)), at: 7),
-                                [.step(.dropped, first), .step(.transcribed, second), .outcome(.text, second),
-                                 .step(.offered, second)])
-        TestSupport.expectEqual(machine.takeOfferedText(first), nil)
-        TestSupport.expectEqual(machine.takeOfferedText(second), result(second))
+                                [.step(.transcribed, second), .outcome(.text, second), .step(.offered, second)])
+        TestSupport.expectEqual(machine.offeredText, result(second))
+        TestSupport.expectEqual(machine.takeOfferedText(second, at: 8), result(second))
+        // The first is still offered, by its own id, until its own TTL.
+        TestSupport.expectEqual(machine.offeredText, result(first))
+        TestSupport.expectEqual(machine.handle(.tick, at: 4 + DictationProtocol.resultTTL), [.step(.dropped, first)])
+        TestSupport.expectEqual(machine.takeOfferedText(first, at: 4 + DictationProtocol.resultTTL), nil)
+        // Bound texts are taken oldest first.
+        var (bound, a) = transcribing()
+        _ = bound.handle(.transcribed(attempt: a, result: result(a)), at: 4)
+        let b = UUID()
+        _ = bound.handle(.tap(attempt: b, documentID: Fixture.documentA), at: 5)
+        _ = bound.handle(.audio(attempt: b, level: 0.3), at: 5.5)
+        _ = bound.handle(.stop(attempt: b), at: 6)
+        _ = bound.handle(.transcribed(attempt: b, result: result(b)), at: 7)
+        TestSupport.expectEqual(bound.boundText, result(a))
+        TestSupport.expectEqual(bound.takeBoundText(at: 8), result(a))
+        TestSupport.expectEqual(bound.takeBoundText(at: 8), result(b))
+        TestSupport.expectEqual(bound.takeBoundText(at: 8), nil)
+    }
+
+    /// A text past `resultTTL` is never taken, even before the tick that drops it.
+    private static func testAnExpiredTextIsNeverTaken() {
+        var (bound, boundID) = transcribing()
+        _ = bound.handle(.transcribed(attempt: boundID, result: result(boundID)), at: 4)
+        TestSupport.expectEqual(bound.takeBoundText(at: 4 + DictationProtocol.resultTTL), nil)
+        var (offered, offeredID) = transcribing(in: nil)
+        _ = offered.handle(.transcribed(attempt: offeredID, result: result(offeredID)), at: 4)
+        TestSupport.expectEqual(offered.takeOfferedText(offeredID, at: 4 + DictationProtocol.resultTTL), nil)
+        // A host-ownership check at delivery drops it by id.
+        var (dropped, droppedID) = transcribing()
+        _ = dropped.handle(.transcribed(attempt: droppedID, result: result(droppedID)), at: 4)
+        TestSupport.expectEqual(dropped.dropText(UUID()), [])
+        TestSupport.expectEqual(dropped.dropText(droppedID), [.step(.dropped, droppedID)])
+        TestSupport.expectEqual(dropped.takeBoundText(at: 5), nil)
+    }
+
+    /// The clock is judged before every event: a callback that comes after a deadline, before its timer fired, finds
+    /// the attempt ended.
+    private static func testCallbacksAfterADeadlineFindItEnded() {
+        // First audio after the startup timeout.
+        var (starting, startingID) = started()
+        TestSupport.expectEqual(starting.handle(.audio(attempt: startingID, level: 0.5), at: KeyboardDictationTiming.startupTimeout + 0.1),
+                                [.tearDown(startingID), .outcome(.startupTimeout, startingID), .handToHost(documentID: Fixture.documentA)])
+        TestSupport.expectEqual(starting.phase, .idle)
+        // A chunk after the audio gap.
+        var (recording, recordingID) = started(recording: true)
+        TestSupport.expectEqual(recording.handle(.audio(attempt: recordingID, level: 0.5), at: 1 + KeyboardDictationTiming.audioGap + 0.1),
+                                [.tearDown(recordingID), .outcome(.captureLost, recordingID)])
+        // A text after the finish timeout.
+        var (late, lateID) = transcribing()
+        TestSupport.expectEqual(late.handle(.transcribed(attempt: lateID, result: result(lateID)), at: 3 + KeyboardDictationTiming.finishTimeout),
+                                [.tearDown(lateID), .outcome(.transcriptionFailed, lateID)])
+        TestSupport.expectEqual(late.takeBoundText(at: 124), nil)
+        // A stop after the maximum duration's moment is the maximum duration's stop, once.
+        var (long, longID) = started(recording: true)
+        var second = 1.0
+        while second < DictationProtocol.maxDictationDuration {
+            second += 1
+            _ = long.handle(.audio(attempt: longID, level: 0.2), at: second)
+        }
+        TestSupport.expectEqual(long.handle(.stop(attempt: longID), at: 1 + DictationProtocol.maxDictationDuration + 0.5),
+                                [.seal(longID), .step(.stopped, longID)])
     }
 
     private static func testDeadlinesFollowThePhase() {

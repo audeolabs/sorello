@@ -58,6 +58,10 @@ struct KeyboardViewState: Equatable {
     /// Start would dictate in the keyboard (ARCHITECTURE.md, "In-keyboard dictation (experiment)"): nothing is said
     /// about opening Sorello.
     var startDictatesInKeyboard = false
+    /// The in-keyboard attempt the bar shows running: Stop and Cancel act on it alone.
+    var localAttemptID: UUID?
+    /// The result "Insert last dictation" offers, by id: a host result's request, or an in-keyboard attempt's.
+    var chipResultID: UUID?
 }
 
 /// The keyboard side of the protocol in ARCHITECTURE.md. While visible it polls and observes the
@@ -115,8 +119,10 @@ final class KeyboardDictationClient: ObservableObject {
     /// `keyboardDictationEnabled` and the app's microphone permission, read when the keyboard appears and at a tap.
     private var keyboardDictationEnabled = false
     private var microphoneGranted = false
-    /// The in-keyboard attempt the bar showed when it was last drawn: Stop and Cancel act on it alone.
-    private var shownLocalAttempt: UUID?
+    /// The app's `Model/bundle.json` is readable from the keyboard, as of when the keyboard appeared.
+    private var modelCarried = false
+    /// Set from `viewWillDisappear` until the keyboard appears again: no in-keyboard dictation starts meanwhile.
+    private var hiding = false
     /// The dictation the chip showed, by id: a host result's request, or an in-keyboard attempt.
     private var chipLocalAttempt: UUID?
     /// The last in-keyboard attempt, and when it began, for Cancel's bud and Undo (`dictationRequestID`).
@@ -155,6 +161,8 @@ final class KeyboardDictationClient: ObservableObject {
             #if SORELLO_KEYBOARD_DICTATION
             keyboardDictationEnabled = settings?.keyboardDictationEnabled ?? false
             microphoneGranted = AVAudioApplication.shared.recordPermission == .granted
+            modelCarried = KeyboardSpeech.carriedModel() != nil
+            hiding = false
             #endif
             observations = [notifier.observe(.status) { [weak self] in self?.refresh() },
                             notifier.observe(.result) { [weak self] in self?.resultPosted() }]
@@ -178,8 +186,8 @@ final class KeyboardDictationClient: ObservableObject {
     #if SORELLO_KEYBOARD_DICTATION
     /// Call from `viewWillDisappear`: hiding ends an in-keyboard dictation at once, and its waiting text goes.
     func willHide() {
+        hiding = true
         local?.hide()
-        shownLocalAttempt = nil
         chipLocalAttempt = nil
     }
 
@@ -230,18 +238,27 @@ final class KeyboardDictationClient: ObservableObject {
 
     // MARK: Actions
 
-    func micTapped() {
+    /// `shown`: the state the bar drew the tapped control from.
+    func micTapped(shown: KeyboardViewState? = nil) {
         notice = nil
         #if SORELLO_KEYBOARD_DICTATION
         // The in-keyboard dictation the bar showed takes the tap, whatever the host publishes; once it has ended, the
-        // tap does nothing.
-        if let attempt = shownLocalAttempt {
+        // tap does nothing. A Start drawn before one began does nothing either.
+        if let attempt = (shown ?? state).localAttemptID {
             local?.stop(attempt)
             return refresh()
         }
+        if local?.isRunning == true || hiding { return refresh() }
         switch state.mode {
         case .ready, .preparingModel, .hostUnavailable, .error:
-            if startsInKeyboard() { return refresh() }
+            switch routeTap() {
+            case .keyboard: return refresh()
+            case .host(let status):
+                // Started from the same fresh state the route read.
+                startAsHostTap(status: status)
+                return refresh()
+            case .notConsidered: break
+            }
         default:
             break
         }
@@ -268,13 +285,14 @@ final class KeyboardDictationClient: ObservableObject {
         playHaptic(.press)
     }
 
-    func cancelTapped() {
+    func cancelTapped(shown: KeyboardViewState? = nil) {
         notice = nil
         #if SORELLO_KEYBOARD_DICTATION
-        if let attempt = shownLocalAttempt {
+        if let attempt = (shown ?? state).localAttemptID {
             local?.cancel(attempt)
             return refresh()
         }
+        if local?.isRunning == true { return refresh() }
         #endif
         switch state.mode {
         case .starting, .recording, .transcribing, .waitingForModel: send(.cancel)
@@ -284,19 +302,19 @@ final class KeyboardDictationClient: ObservableObject {
     }
 
     /// The "Insert last dictation" chip: claims the offered result and inserts it into this field.
-    func insertLastDictation() {
+    func insertLastDictation(shown: KeyboardViewState? = nil) {
         notice = nil
         #if SORELLO_KEYBOARD_DICTATION
-        // The chip showed an in-keyboard dictation: that one, by id, if it is still there.
-        if let attempt = chipLocalAttempt {
-            chipLocalAttempt = nil
-            if let target, !target.isEditingBusy, let result = local?.takeOfferedText(attempt) {
+        // The chip acts on the result it showed, by id, and does nothing if that one has expired or been taken.
+        let shownChip = (shown ?? state).chipResultID
+        guard local?.isRunning != true, let shownChip else { return refresh() }
+        if shownChip != manualInsertID {
+            if let local, let target, !target.isEditingBusy, let result = local.takeOfferedText(shownChip) {
                 var context = target.contextBeforeInput
                 insertLocal(result, context: &context)
             }
             return refresh()
         }
-        guard local?.isRunning != true else { return refresh() }
         #endif
         if let store, let target, !target.isEditingBusy, let requestID = manualInsertID {
             let read = store.readResult(requestID: requestID)
@@ -413,35 +431,52 @@ final class KeyboardDictationClient: ObservableObject {
     }
 
     #if SORELLO_KEYBOARD_DICTATION
+    private enum TapRoute {
+        /// An in-keyboard dictation started.
+        case keyboard
+        /// The host's path, from this freshly read status.
+        case host(StoreRead<HostStatus>)
+        /// The experiment is off here: the tap goes on as it always has.
+        case notConsidered
+    }
+
     /// The route at a tap that would start (ARCHITECTURE.md, "In-keyboard dictation (experiment)", Route), from the
-    /// freshly read status and intent: true if it started an in-keyboard dictation. A record another keyboard process
-    /// left unfinished is first rewritten as abandoned, and that one tap goes to the host.
-    private func startsInKeyboard() -> Bool {
-        guard keyboardDictationEnabled, access == .fullAccess, let store, let target else { return false }
+    /// freshly read status and intent. A record another keyboard process left unfinished is first rewritten as
+    /// abandoned, and that one tap goes to the host.
+    private func routeTap() -> TapRoute {
+        guard keyboardDictationEnabled, access == .fullAccess, let store, let target else { return .notConsidered }
         microphoneGranted = AVAudioApplication.shared.recordPermission == .granted
         var unfinished = false
-        if let record = store.readKeyboardDictation().value, let attempt = record.attemptID,
-           record.isUnfinished(byAnotherProcessThan: KeyboardLocalDictation.processID),
-           !Self.handledAbandonedAttempts.contains(attempt) {
+        if let attempt = unhandledUnfinishedRecord(in: store) {
+            // Handled once per process, even if the rewrite fails.
             Self.handledAbandonedAttempts.insert(attempt)
             _ = store.abandonUnfinishedKeyboardDictation(notWrittenBy: KeyboardLocalDictation.processID)
             unfinished = true
         }
+        let status = store.readStatus()
         let decision = KeyboardDictationRoute.decide(
-            access: access, status: store.readStatus(), intent: store.readIntent(), instanceID: instanceID, now: Date(),
+            access: access, status: status, intent: store.readIntent(), instanceID: instanceID, now: Date(),
             conditions: routeConditions(unfinishedRecord: unfinished))
-        guard decision == .keyboard, let local = localDictation() else { return false }
+        guard decision == .keyboard, let local = localDictation() else { return .host(status) }
         // Another dictation's start ends the watch of the last one.
         target.dictationStarting()
         local.start(documentID: target.documentID)
         playHaptic(.press)
-        return true
+        return .keyboard
+    }
+
+    /// The attempt id of a record another keyboard process left unfinished that this process has not handled yet.
+    private func unhandledUnfinishedRecord(in store: SharedDictationStore) -> UUID? {
+        guard let record = store.readKeyboardDictation().value, let attempt = record.attemptID,
+              record.isUnfinished(byAnotherProcessThan: KeyboardLocalDictation.processID),
+              !Self.handledAbandonedAttempts.contains(attempt) else { return nil }
+        return attempt
     }
 
     private func routeConditions(unfinishedRecord: Bool) -> KeyboardDictationRoute.Conditions {
         KeyboardDictationRoute.Conditions(
             hasFullAccess: target?.hasFullAccess == true, enabled: keyboardDictationEnabled,
-            microphoneGranted: microphoneGranted, modelCarried: KeyboardSpeech.carriedModel() != nil,
+            microphoneGranted: microphoneGranted, modelCarried: modelCarried,
             lastEndedCaptureUnavailable: local?.lastEndedCaptureUnavailable ?? false,
             unfinishedRecordOfAnotherProcess: unfinishedRecord)
     }
@@ -465,9 +500,10 @@ final class KeyboardDictationClient: ObservableObject {
                                        spokenNumbers: settings?.spokenNumbersEnabled ?? true,
                                        spokenDelimiters: settings?.spokenDelimitersEnabled ?? true, promptTag: "")
             },
-            handToHost: { [weak self] in
-                // Nothing was heard: on as a host tap, if the keyboard is still there for it.
-                guard let self, self.isVisible, let store = self.store else { return }
+            handToHost: { [weak self] field in
+                // Nothing was heard: on as a host tap, if the keyboard still shows the tap's field.
+                guard let self, self.isVisible, !self.hiding, self.target?.documentID == field, let store = self.store
+                else { return }
                 self.startAsHostTap(status: store.readStatus())
             },
             noSpeech: { [weak self] in self?.show(KeyboardMessages.noSpeech) },
@@ -608,13 +644,13 @@ final class KeyboardDictationClient: ObservableObject {
             }
             // While one runs, or shows its failure, the host's status does not change the mode.
             if let localMode = local.mode { mode = localMode }
-            shownLocalAttempt = local.runningAttemptID
             if let attempt = local.runningAttemptID, lastLocalAttempt?.id != attempt { lastLocalAttempt = (attempt, now) }
         }
-        if mode == .hostUnavailable, keyboardDictationEnabled, access == .fullAccess {
+        if mode == .hostUnavailable, keyboardDictationEnabled, access == .fullAccess, let store {
+            // Read only: the tap itself rewrites an unfinished record.
             startDictatesInKeyboard = KeyboardDictationRoute.decide(
                 access: access, status: status, intent: intent, instanceID: instanceID, now: now,
-                conditions: routeConditions(unfinishedRecord: false)) == .keyboard
+                conditions: routeConditions(unfinishedRecord: unhandledUnfinishedRecord(in: store) != nil)) == .keyboard
         }
         #else
         let mode = KeyboardPresenter.shownMode(KeyboardPresenter.mode(access: access, status: status, intent: intent, now: now),
@@ -622,7 +658,7 @@ final class KeyboardDictationClient: ObservableObject {
         let startDictatesInKeyboard = false
         #endif
         ledger.prune(now: now, keeping: Set([intent.value?.requestID, shownIntent.value?.requestID].compactMap { $0 }))
-        if access == .fullAccess { deliverResults(status: status, documentID: documentID, now: now) }
+        if access == .fullAccess { deliverResults(status: status, intent: intent, documentID: documentID, now: now) }
         shownIntent = intent
         shownStatus = status
         showAddedWordOutcome(status)
@@ -635,7 +671,7 @@ final class KeyboardDictationClient: ObservableObject {
         publish(mode, intent: intent, status: status, now: now, startDictatesInKeyboard: startDictatesInKeyboard)
     }
 
-    private func deliverResults(status: StoreRead<HostStatus>, documentID: UUID?, now: Date) {
+    private func deliverResults(status: StoreRead<HostStatus>, intent: StoreRead<KeyboardIntent>, documentID: UUID?, now: Date) {
         guard let store else { return }
         // Purges, lists and decodes the result files only when a read is due; otherwise the results
         // read earlier stand in for them, so a deferred one is still delivered on a later pass.
@@ -648,6 +684,12 @@ final class KeyboardDictationClient: ObservableObject {
                 manualInsertID = nil
                 chipLocalAttempt = nil
                 return
+            }
+            // The host may own the microphone by now: checked again right before a text is delivered, which then drops it.
+            if let bound = local.boundTextID,
+               KeyboardDictationRoute.hostOwnsMicrophone(access: access, status: status, intent: intent,
+                                                         instanceID: instanceID, now: now) {
+                local.dropText(bound)
             }
             // Then oldest first, one per pass, once the editing side is not busy.
             if let target, !target.isEditingBusy, let localAt = local.boundTextCreatedAt,
@@ -726,9 +768,13 @@ final class KeyboardDictationClient: ObservableObject {
             intent.value.map { $0.issuedAt <= last.at } ?? true ? last.id : nil
         } ?? intent.value?.requestID
         let canInsertLast = manualInsertID != nil || chipLocalAttempt != nil
+        let localAttemptID = local?.runningAttemptID
+        let chipResultID = chipLocalAttempt ?? manualInsertID
         #else
         let dictationRequestID = intent.value?.requestID
         let canInsertLast = manualInsertID != nil
+        let localAttemptID: UUID? = nil
+        let chipResultID = manualInsertID
         #endif
         if case .recording = mode, KeyboardPresenter.isModelPreparing(status: status, now: now) {
             title = KeyboardMessages.listeningWhilePreparing
@@ -747,7 +793,8 @@ final class KeyboardDictationClient: ObservableObject {
                                      levels: levels, levelSerial: levelSerial, dictationRequestID: dictationRequestID,
                                      lastInsertedRequestID: lastInsertedRequestID,
                                      hostAlive: KeyboardPresenter.isHostAlive(status: status, now: now),
-                                     startDictatesInKeyboard: startDictatesInKeyboard)
+                                     startDictatesInKeyboard: startDictatesInKeyboard, localAttemptID: localAttemptID,
+                                     chipResultID: chipResultID)
         guard next != state else { return }
         if mode.phase != state.mode.phase {
             if case .recording = mode { playHaptic(.listening) }

@@ -151,6 +151,15 @@ enum KeyboardDictationAudioTests {
         }
         // The next well-formed chunk is still taken in order.
         TestSupport.expectEqual(reader.read(chunk(1, samples: [0, 0])), .audio(samples: [0, 0], rate: 48_000))
+        // At an odd rate, a quarter of a second is rounded down: 11,025 samples at 44,101 Hz, not 11,026.
+        var odd = CaptureMessageReader()
+        TestSupport.expectEqual(odd.read(chunk(0, rate: 44_101, samples: [Int16](repeating: 0, count: 11_026))), .malformed)
+        TestSupport.expectEqual(odd.read(chunk(0, rate: 44_101, samples: [Int16](repeating: 0, count: 11_025))),
+                                .audio(samples: [Float](repeating: 0, count: 11_025), rate: 44_101))
+        // An oversized text is refused before it is decoded, even when it is not base64.
+        var big = CaptureMessageReader()
+        TestSupport.expectEqual(big.read(["kind": "audio", "seq": 0, "rate": 48_000,
+                                          "pcm": String(repeating: "A", count: 32_004)]), .malformed)
         // The first chunk must be the first.
         var fresh = CaptureMessageReader()
         TestSupport.expectEqual(fresh.read(chunk(1)), .malformed)

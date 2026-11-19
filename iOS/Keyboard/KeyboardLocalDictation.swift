@@ -17,8 +17,8 @@ final class KeyboardLocalDictation {
         var hostOwnsMicrophone: () -> Bool
         /// The text rules' options, as the host uses them, from the shared settings.
         var ruleOptions: () -> TextRuleOptions
-        /// Nothing was heard: go on as a host tap would.
-        var handToHost: () -> Void
+        /// Nothing was heard: go on as a host tap would, if the keyboard still shows the tap's field (its identity given).
+        var handToHost: (UUID) -> Void
         /// "No speech detected".
         var noSpeech: () -> Void
         /// A chunk's level, for the wave.
@@ -63,10 +63,10 @@ final class KeyboardLocalDictation {
     var mode: KeyboardMode? { machine.mode(at: Self.now, wallNow: Date()) }
     /// The unbound text the chip may offer.
     var offeredText: DictationResult? { machine.offeredText }
-    /// A bound text is waiting for the editing side.
-    var hasBoundText: Bool { machine.waiting?.bound == true }
-    /// The bound text's time, to take results oldest first.
-    var boundTextCreatedAt: Date? { machine.waiting.flatMap { $0.bound ? $0.result.createdAt : nil } }
+    /// The oldest bound text's time, to take results oldest first.
+    var boundTextCreatedAt: Date? { machine.boundText?.createdAt }
+    /// The oldest bound text's attempt.
+    var boundTextID: UUID? { machine.boundText?.requestID }
 
     // MARK: Inputs
 
@@ -99,11 +99,24 @@ final class KeyboardLocalDictation {
         writeIfDue()
     }
 
-    /// The bound text, for insertion now: taken at most once.
-    func takeBoundText() -> DictationResult? { machine.takeBoundText() }
+    /// The oldest bound text, for insertion now: taken at most once, and never past `resultTTL`.
+    func takeBoundText() -> DictationResult? {
+        defer { scheduleTimer() }
+        return machine.takeBoundText(at: Self.now)
+    }
 
-    /// The chip's text, if it is still the one `attemptID` names.
-    func takeOfferedText(_ attemptID: UUID) -> DictationResult? { machine.takeOfferedText(attemptID) }
+    /// The chip's text, if it still waits under the id the chip showed.
+    func takeOfferedText(_ attemptID: UUID) -> DictationResult? {
+        defer { scheduleTimer() }
+        return machine.takeOfferedText(attemptID, at: Self.now)
+    }
+
+    /// The host owns the microphone as a text would be delivered: it is dropped, never inserted.
+    func dropText(_ attemptID: UUID) {
+        for effect in machine.dropText(attemptID) { apply(effect) }
+        scheduleTimer()
+        hooks.changed()
+    }
 
     /// The text of `attemptID` went into the field.
     func inserted(_ attemptID: UUID) {
@@ -147,8 +160,8 @@ final class KeyboardLocalDictation {
             }
         case .tearDown:
             tearDown()
-        case .handToHost:
-            hooks.handToHost()
+        case .handToHost(let documentID):
+            hooks.handToHost(documentID)
         case .noSpeech:
             hooks.noSpeech()
         }
@@ -160,7 +173,7 @@ final class KeyboardLocalDictation {
         stoppedAt = nil
         schedule = KeyboardDictationRecordSchedule()
         record = KeyboardDictationRecord(attemptID: id, processID: Self.processID, tappedAt: Date(),
-                                         iosVersion: UIDevice.current.systemVersion, warm: speech.isLoaded)
+                                         iosVersion: UIDevice.current.systemVersion, warm: speech.isWarm)
     }
 
     private func openCapture(_ id: UUID) {

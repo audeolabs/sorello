@@ -131,10 +131,12 @@ struct CaptureMessageReader: Sendable {
         }
         guard let sequence = Self.integer(message["seq"]), sequence == nextSequence,
               let rate = Self.number(message["rate"]), rate == rate.rounded(), Self.rateRange.contains(rate),
-              self.rate == nil || self.rate == rate,
-              let encoded = message["pcm"] as? String, let data = Data(base64Encoded: encoded),
-              !data.isEmpty, data.count % 2 == 0,
-              Double(data.count / 2) <= (rate * KeyboardDictationTiming.maxChunkDuration).rounded(.up)
+              self.rate == nil || self.rate == rate, let encoded = message["pcm"] as? String
+        else { return .malformed }
+        // At most `maxChunkDuration` of samples, judged on the text before anything is decoded.
+        let maxBytes = 2 * Int((rate * KeyboardDictationTiming.maxChunkDuration).rounded(.down))
+        guard encoded.utf8.count <= (maxBytes + 2) / 3 * 4, let data = Data(base64Encoded: encoded),
+              !data.isEmpty, data.count % 2 == 0, data.count <= maxBytes
         else { return .malformed }
         nextSequence += 1
         self.rate = rate

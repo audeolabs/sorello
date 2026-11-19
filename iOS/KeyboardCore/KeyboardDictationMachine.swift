@@ -92,8 +92,8 @@ struct KeyboardDictationMachine: Sendable {
         case step(KeyboardDictationRecord.Step, UUID)
         /// The record's outcome (the step `ended`).
         case outcome(KeyboardDictationRecord.Outcome, UUID)
-        /// Nothing was heard: go on as a host tap would.
-        case handToHost
+        /// Nothing was heard: go on as a host tap would, if the keyboard still shows the tap's field `documentID`.
+        case handToHost(documentID: UUID)
         /// "No speech detected".
         case noSpeech
     }
@@ -121,8 +121,8 @@ struct KeyboardDictationMachine: Sendable {
     }
 
     private var attempt: Attempt?
-    /// The text of the last attempt that made one, until it is taken, expires or the keyboard hides.
-    private(set) var waiting: Waiting?
+    /// The texts made, oldest first, each until it is taken, `resultTTL` after it was made, or the keyboard hides.
+    private(set) var waiting: [Waiting] = []
     /// A failure the bar shows, until `KeyboardPresenter.errorDisplayDuration` after it.
     private var shown: (code: HostErrorCode, until: Instant)?
     /// This instance's last in-keyboard dictation ended with `captureUnavailable` (the route's sticky condition).
@@ -135,8 +135,15 @@ struct KeyboardDictationMachine: Sendable {
     /// Capture is open only while starting and recording.
     var isCaptureOpen: Bool { phase == .starting || phase == .recording }
 
-    /// Feeds one event at `now`; returns what to do, in order.
+    /// Feeds one event at `now`; returns what to do, in order. The clock is judged first, so an event that comes after a
+    /// deadline whose timer has not fired yet finds the attempt already ended.
     mutating func handle(_ event: Event, at now: Instant) -> [Effect] {
+        let expired = judgeTime(at: now)
+        guard event != .tick else { return expired }
+        return expired + process(event, at: now)
+    }
+
+    private mutating func process(_ event: Event, at now: Instant) -> [Effect] {
         switch event {
         case let .tap(id, documentID):
             guard attempt == nil else { return [] }
@@ -184,9 +191,8 @@ struct KeyboardDictationMachine: Sendable {
             guard !KeyboardResultLedger.insertsNothing(result) else {
                 return [.step(.transcribed, id), .outcome(.noSpeech, id), .noSpeech]
             }
-            let replaced = drop()
-            waiting = Waiting(result: result, boundTo: current.boundTo, madeAt: now)
-            return replaced + [.step(.transcribed, id), .outcome(.text, id)] + (current.boundTo == nil ? [.step(.offered, id)] : [])
+            waiting.append(Waiting(result: result, boundTo: current.boundTo, madeAt: now))
+            return [.step(.transcribed, id), .outcome(.text, id)] + (current.boundTo == nil ? [.step(.offered, id)] : [])
 
         case let .stop(id):
             guard var current = running(id) else { return [] }
@@ -209,7 +215,7 @@ struct KeyboardDictationMachine: Sendable {
         case .hide:
             var effects: [Effect] = []
             if attempt != nil { effects += end(with: .keyboardDismissed, at: now) }
-            effects += drop()
+            effects += drop { _ in true }
             shown = nil
             return effects
 
@@ -219,32 +225,43 @@ struct KeyboardDictationMachine: Sendable {
         case let .focus(documentID):
             // A focus change ends the binding for good, even if focus comes back.
             if let bound = attempt?.boundTo, bound != documentID { attempt?.boundTo = nil }
-            guard var text = waiting, let bound = text.boundTo, bound != documentID else { return [] }
-            text.boundTo = nil
-            waiting = text
-            return [.step(.offered, text.result.requestID)]
+            var effects: [Effect] = []
+            for index in waiting.indices {
+                guard let bound = waiting[index].boundTo, bound != documentID else { continue }
+                waiting[index].boundTo = nil
+                effects.append(.step(.offered, waiting[index].result.requestID))
+            }
+            return effects
 
         case .tick:
-            return judgeTime(at: now)
+            return []
         }
     }
 
-    /// The bound text, for insertion now (the editing side is not busy): taken at most once. Nil when there is none.
-    mutating func takeBoundText() -> DictationResult? {
-        guard let text = waiting, text.bound else { return nil }
-        waiting = nil
-        return text.result
+    /// The oldest bound text, for insertion now (the editing side is not busy): taken at most once, and only before
+    /// `resultTTL` has passed. Nil when there is none.
+    mutating func takeBoundText(at now: Instant) -> DictationResult? {
+        guard let index = waiting.firstIndex(where: { $0.bound && Self.isFresh($0, at: now) }) else { return nil }
+        return waiting.remove(at: index).result
     }
 
-    /// The chip's text, if `attemptID` is the one it showed and it is still waiting unbound: taken at most once.
-    mutating func takeOfferedText(_ attemptID: UUID) -> DictationResult? {
-        guard let text = waiting, !text.bound, text.result.requestID == attemptID else { return nil }
-        waiting = nil
-        return text.result
+    /// The chip's text, if `attemptID` is the one it showed and it still waits unbound and fresh: taken at most once.
+    mutating func takeOfferedText(_ attemptID: UUID, at now: Instant) -> DictationResult? {
+        guard let index = waiting.firstIndex(where: { !$0.bound && $0.result.requestID == attemptID && Self.isFresh($0, at: now) })
+        else { return nil }
+        return waiting.remove(at: index).result
     }
 
-    /// The unbound text the chip may offer.
-    var offeredText: DictationResult? { waiting.flatMap { $0.bound ? nil : $0.result } }
+    /// Drops the text of `attemptID`, if it still waits; its step `dropped`.
+    mutating func dropText(_ attemptID: UUID) -> [Effect] {
+        drop { $0.result.requestID == attemptID }
+    }
+
+    /// The newest unbound text the chip may offer.
+    var offeredText: DictationResult? { waiting.last { !$0.bound }?.result }
+
+    /// The oldest bound text waiting for the editing side.
+    var boundText: DictationResult? { waiting.first { $0.bound }?.result }
 
     /// The mode the top row shows for the attempt, or for a failure it shows; nil when the host's mode applies.
     /// `wallNow` dates the recording's start as the host's mode does.
@@ -277,7 +294,7 @@ struct KeyboardDictationMachine: Sendable {
             case .idle: break
             }
         }
-        if let waiting { deadlines.append(waiting.madeAt + DictationProtocol.resultTTL) }
+        if let oldest = waiting.first { deadlines.append(oldest.madeAt + DictationProtocol.resultTTL) }
         if let shown { deadlines.append(shown.until) }
         return deadlines.min()
     }
@@ -300,7 +317,7 @@ struct KeyboardDictationMachine: Sendable {
                 if let last = current.lastAudioAt, now - last >= KeyboardDictationTiming.audioGap {
                     effects += end(with: .captureLost, at: now)
                 } else if let start = current.recordingStartedAt, now - start >= DictationProtocol.maxDictationDuration {
-                    effects += handle(.stop(attempt: current.id), at: now)
+                    effects += process(.stop(attempt: current.id), at: now)
                 }
             case .transcribing:
                 if let stopped = current.stoppedAt, now - stopped >= KeyboardDictationTiming.finishTimeout {
@@ -310,7 +327,7 @@ struct KeyboardDictationMachine: Sendable {
                 break
             }
         }
-        if let text = waiting, now - text.madeAt >= DictationProtocol.resultTTL { effects += drop() }
+        effects += drop { !Self.isFresh($0, at: now) }
         if let current = shown, now >= current.until { shown = nil }
         return effects
     }
@@ -322,7 +339,7 @@ struct KeyboardDictationMachine: Sendable {
         lastEndedCaptureUnavailable = failure == .captureUnavailable
         if let code = failure.shownError { shown = (code, now + KeyboardPresenter.errorDisplayDuration) }
         var effects: [Effect] = [.tearDown(current.id), .outcome(KeyboardDictationRecord.Outcome(failure), current.id)]
-        if failure.fallsBackToHost, current.boundTo != nil { effects.append(.handToHost) }
+        if failure.fallsBackToHost, let field = current.boundTo { effects.append(.handToHost(documentID: field)) }
         return effects
     }
 
@@ -332,10 +349,14 @@ struct KeyboardDictationMachine: Sendable {
         return [.tearDown(id), .outcome(.cancelled, id)]
     }
 
-    private mutating func drop() -> [Effect] {
-        guard let text = waiting else { return [] }
-        waiting = nil
-        return [.step(.dropped, text.result.requestID)]
+    private mutating func drop(where matches: (Waiting) -> Bool) -> [Effect] {
+        let dropped = waiting.filter(matches)
+        waiting.removeAll(where: matches)
+        return dropped.map { .step(.dropped, $0.result.requestID) }
+    }
+
+    private static func isFresh(_ text: Waiting, at now: Instant) -> Bool {
+        now - text.madeAt < DictationProtocol.resultTTL
     }
 }
 #endif

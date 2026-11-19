@@ -255,7 +255,7 @@ struct DictationBarView: View {
                         // Just after Stop, Cancel slides into what was Stop: a quick second tap there must not cancel.
                         guard controls.acceptsCancel else { return }
                         onAction()
-                        client.cancelTapped()
+                        client.cancelTapped(shown: state)
                     } label: {
                         // The island's body draws it, budding out of the island (`IslandBody`); this takes the taps.
                         Color.clear
@@ -383,7 +383,7 @@ private struct Middle: View {
                 case .insertLast:
                     Chip(title: "Insert last", symbol: "text.insert", height: height) {
                         onAction()
-                        client.insertLastDictation()
+                        client.insertLastDictation(shown: state)
                     }
                     .accessibilityLabel("Insert last dictation")
                     .accessibilityIdentifier("sorello.insertLast")
@@ -781,7 +781,7 @@ private struct DictationIsland: View {
                 // Only a tap that opens Sorello pops; one that dictates in the keyboard starts as with a session.
                 if state.mode == .hostUnavailable, !state.startDictatesInKeyboard { bounces += 1 }
                 if state.mode.isActiveCapture { onStop() }
-                client.micTapped()
+                client.micTapped(shown: state)
             } else {
                 onUnavailable()
             }
