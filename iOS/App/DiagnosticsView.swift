@@ -14,6 +14,10 @@ struct DiagnosticsView: View {
 
             NeverCorrectSection()
 
+            #if SORELLO_KEYBOARD_DICTATION
+            KeyboardDictationSection(settings: host.settings.settings)
+            #endif
+
             Section("Runtime") {
                 LabeledContent("Model", value: modelText)
                 LabeledContent("Compute units", value: transcriber.activeUnits?.label ?? "Not loaded")
