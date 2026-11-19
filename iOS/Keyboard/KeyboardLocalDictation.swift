@@ -63,10 +63,8 @@ final class KeyboardLocalDictation {
     var mode: KeyboardMode? { machine.mode(at: Self.now, wallNow: Date()) }
     /// The unbound text the chip may offer.
     var offeredText: DictationResult? { machine.offeredText }
-    /// The oldest bound text's time, to take results oldest first.
-    var boundTextCreatedAt: Date? { machine.boundText?.createdAt }
-    /// The oldest bound text's attempt.
-    var boundTextID: UUID? { machine.boundText?.requestID }
+    /// The oldest bound text still fresh: the next to insert, then taken by its id (`takeBoundText(_:)`).
+    var nextBoundText: DictationResult? { machine.boundText(at: Self.now) }
 
     // MARK: Inputs
 
@@ -99,10 +97,10 @@ final class KeyboardLocalDictation {
         writeIfDue()
     }
 
-    /// The oldest bound text, for insertion now: taken at most once, and never past `resultTTL`.
-    func takeBoundText() -> DictationResult? {
+    /// The bound text of `attemptID`, for insertion now: taken at most once, and never past `resultTTL`.
+    func takeBoundText(_ attemptID: UUID) -> DictationResult? {
         defer { scheduleTimer() }
-        return machine.takeBoundText(at: Self.now)
+        return machine.takeBoundText(attemptID, at: Self.now)
     }
 
     /// The chip's text, if it still waits under the id the chip showed.
@@ -207,13 +205,16 @@ final class KeyboardLocalDictation {
         guard machine.runningAttemptID == id, machine.isCaptureOpen else { return }
         switch message {
         case let .audio(samples, rate):
+            var meter = self.meter ?? LevelMeter(sampleRate: rate)
+            meter.update(with: samples)
+            // The machine judges the clock first: a chunk after the maximum duration or the audio gap finds capture
+            // closed and is not kept.
+            handle(.audio(attempt: id, level: meter.level))
+            guard machine.runningAttemptID == id, machine.isCaptureOpen else { return }
             guard let pipeline, pipeline.accept(samples, rate: rate, converted: { [weak self] in
                 Task { @MainActor in self?.converted(id) }
             }) else { return handle(.captureFailed(attempt: id)) }
-            var meter = self.meter ?? LevelMeter(sampleRate: rate)
-            meter.update(with: samples)
             self.meter = meter
-            handle(.audio(attempt: id, level: meter.level))
             hooks.level(meter.level)
         case .failed, .ended, .malformed:
             handle(.captureFailed(attempt: id))

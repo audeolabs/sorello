@@ -31,6 +31,8 @@ enum KeyboardDictationMachineTests {
             ("eachTextWaitsOnItsOwn", testEachTextWaitsOnItsOwn),
             ("anExpiredTextIsNeverTaken", testAnExpiredTextIsNeverTaken),
             ("callbacksAfterADeadlineFindItEnded", testCallbacksAfterADeadlineFindItEnded),
+            ("theEarlierDeadlineDecides", testTheEarlierDeadlineDecides),
+            ("aBoundTextIsTakenByItsOwnID", testABoundTextIsTakenByItsOwnID),
             ("deadlinesFollowThePhase", testDeadlinesFollowThePhase),
             ("recordWritesBetweenStepsAreThrottled", testRecordWritesBetweenStepsAreThrottled),
         ]
@@ -430,7 +432,7 @@ enum KeyboardDictationMachineTests {
         _ = bound.handle(.audio(attempt: b, level: 0.3), at: 5.5)
         _ = bound.handle(.stop(attempt: b), at: 6)
         _ = bound.handle(.transcribed(attempt: b, result: result(b)), at: 7)
-        TestSupport.expectEqual(bound.boundText, result(a))
+        TestSupport.expectEqual(bound.boundText(at: 8), result(a))
         TestSupport.expectEqual(bound.takeBoundText(at: 8), result(a))
         TestSupport.expectEqual(bound.takeBoundText(at: 8), result(b))
         TestSupport.expectEqual(bound.takeBoundText(at: 8), nil)
@@ -509,5 +511,45 @@ enum KeyboardDictationMachineTests {
         // A clock that went back writes at once.
         schedule.figuresChanged()
         TestSupport.expect(schedule.isDue(at: 2), "a backward clock holds the write")
+    }
+
+    /// A callback that comes after both the maximum duration and the audio gap: the maximum duration came first, so
+    /// the recording is stopped and kept. The other way round, it is lost.
+    private static func testTheEarlierDeadlineDecides() {
+        var (machine, id) = started(recording: true)
+        var second = 1.0
+        while second < DictationProtocol.maxDictationDuration - 0.1 {
+            second += 1
+            _ = machine.handle(.audio(attempt: id, level: 0.2), at: second)
+        }
+        _ = machine.handle(.audio(attempt: id, level: 0.2), at: DictationProtocol.maxDictationDuration + 0.9)
+        // Limit at 301, gap at 302.9: both past at 303.
+        TestSupport.expectEqual(machine.handle(.tick, at: DictationProtocol.maxDictationDuration + 3),
+                                [.seal(id), .step(.stopped, id)])
+        // The gap first: audio stopped at 2.5 (gap at 4.5), limit at 301, a callback at 302.
+        var (lost, lostID) = started(recording: true)
+        _ = lost.handle(.audio(attempt: lostID, level: 0.2), at: 2.5)
+        TestSupport.expectEqual(lost.handle(.tick, at: DictationProtocol.maxDictationDuration + 2),
+                                [.tearDown(lostID), .outcome(.captureLost, lostID)])
+    }
+
+    /// The bound text chosen is the one taken: by its id, never another, and not once it has expired.
+    private static func testABoundTextIsTakenByItsOwnID() {
+        var (machine, a) = transcribing()
+        _ = machine.handle(.transcribed(attempt: a, result: result(a)), at: 4)
+        TestSupport.expectEqual(machine.boundText(at: 5), result(a))
+        TestSupport.expectEqual(machine.takeBoundText(UUID(), at: 5), nil)
+        TestSupport.expectEqual(machine.takeBoundText(a, at: 4 + DictationProtocol.resultTTL), nil)
+        TestSupport.expectEqual(machine.boundText(at: 4 + DictationProtocol.resultTTL), nil)
+        TestSupport.expectEqual(machine.takeBoundText(a, at: 5), result(a))
+        TestSupport.expectEqual(machine.takeBoundText(a, at: 5), nil)
+    }
+}
+
+private extension KeyboardDictationMachine {
+    /// The oldest fresh bound text, chosen and then taken by its id, as the client does.
+    mutating func takeBoundText(at now: Instant) -> DictationResult? {
+        guard let next = boundText(at: now) else { return nil }
+        return takeBoundText(next.requestID, at: now)
     }
 }

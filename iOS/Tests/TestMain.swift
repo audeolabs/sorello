@@ -12,6 +12,7 @@ struct SorelloIOSTests {
             ("KeyboardDictationRoute", KeyboardDictationRouteTests.tests),
             ("KeyboardDictationMachine", KeyboardDictationMachineTests.tests),
             ("KeyboardDictationAudio", KeyboardDictationAudioTests.tests),
+            ("KeyboardWorkLine", KeyboardWorkLineTests.tests),
             ("AtomicRecordFiles", AtomicRecordFilesTests.tests),
             ("HostReconciler", HostReconcilerTests.tests),
             ("HostRunRecovery", HostRunRecoveryTests.tests),

@@ -238,10 +238,16 @@ struct KeyboardDictationMachine: Sendable {
         }
     }
 
-    /// The oldest bound text, for insertion now (the editing side is not busy): taken at most once, and only before
-    /// `resultTTL` has passed. Nil when there is none.
-    mutating func takeBoundText(at now: Instant) -> DictationResult? {
-        guard let index = waiting.firstIndex(where: { $0.bound && Self.isFresh($0, at: now) }) else { return nil }
+    /// The oldest bound text still fresh at `now`: the one to insert next, chosen before it is taken by its id.
+    func boundText(at now: Instant) -> DictationResult? {
+        waiting.first { $0.bound && Self.isFresh($0, at: now) }?.result
+    }
+
+    /// The bound text of `attemptID`, for insertion now (the editing side is not busy): taken at most once, and only
+    /// before `resultTTL` has passed.
+    mutating func takeBoundText(_ attemptID: UUID, at now: Instant) -> DictationResult? {
+        guard let index = waiting.firstIndex(where: { $0.bound && $0.result.requestID == attemptID && Self.isFresh($0, at: now) })
+        else { return nil }
         return waiting.remove(at: index).result
     }
 
@@ -260,8 +266,7 @@ struct KeyboardDictationMachine: Sendable {
     /// The newest unbound text the chip may offer.
     var offeredText: DictationResult? { waiting.last { !$0.bound }?.result }
 
-    /// The oldest bound text waiting for the editing side.
-    var boundText: DictationResult? { waiting.first { $0.bound }?.result }
+
 
     /// The mode the top row shows for the attempt, or for a failure it shows; nil when the host's mode applies.
     /// `wallNow` dates the recording's start as the host's mode does.
@@ -314,10 +319,14 @@ struct KeyboardDictationMachine: Sendable {
                     effects += end(with: .startupTimeout, at: now)
                 }
             case .recording:
-                if let last = current.lastAudioAt, now - last >= KeyboardDictationTiming.audioGap {
-                    effects += end(with: .captureLost, at: now)
-                } else if let start = current.recordingStartedAt, now - start >= DictationProtocol.maxDictationDuration {
+                // The earlier of the two deadlines that have passed decides: a recording that reached its maximum
+                // duration before its audio stopped is stopped and kept, not lost.
+                let gap = current.lastAudioAt.map { $0 + KeyboardDictationTiming.audioGap }
+                let limit = current.recordingStartedAt.map { $0 + DictationProtocol.maxDictationDuration }
+                if let limit, now >= limit, gap.map({ limit <= $0 }) ?? true {
                     effects += process(.stop(attempt: current.id), at: now)
+                } else if let gap, now >= gap {
+                    effects += end(with: .captureLost, at: now)
                 }
             case .transcribing:
                 if let stopped = current.stoppedAt, now - stopped >= KeyboardDictationTiming.finishTimeout {

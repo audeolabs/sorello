@@ -780,8 +780,10 @@ private struct DictationIsland: View {
                 onAction()
                 // Only a tap that opens Sorello pops; one that dictates in the keyboard starts as with a session.
                 if state.mode == .hostUnavailable, !state.startDictatesInKeyboard { bounces += 1 }
-                if state.mode.isActiveCapture { onStop() }
-                client.micTapped(shown: state)
+                // A host recording's Stop arms the tap guard at once, as before; an in-keyboard one only once the
+                // client has stopped the dictation the bar showed, so a stale Stop arms nothing.
+                if state.mode.isActiveCapture, state.localAttemptID == nil { onStop() }
+                if client.micTapped(shown: state) { onStop() }
             } else {
                 onUnavailable()
             }
