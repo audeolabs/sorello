@@ -69,8 +69,11 @@ for binary in "$app" "$keyboard" "$activity"; do
     if [ "$binary" = "$keyboard" ]; then
         # Every WebKit type the keyboard names, as an Objective-C class or inside a Swift symbol (demangled, so a
         # name is whole).
-        web_types=$(printf '%s\n' "$symbols" | xcrun swift-demangle | grep -oE '(^|[^A-Za-z0-9])WK[A-Z][A-Za-z0-9]*' |
-            sed 's/^[^W]*//' | sort -u)
+        if ! demangled=$(printf '%s\n' "$symbols" | xcrun swift-demangle 2>/dev/null); then
+            fail "$name: cannot demangle its symbols"
+            continue
+        fi
+        web_types=$(printf '%s\n' "$demangled" | grep -oE '(^|[^A-Za-z0-9])WK[A-Z][A-Za-z0-9]*' | sed 's/^[^W]*//' | sort -u)
         if [ -n "$experiment" ]; then
             found=$(printf '%s\n' "$web_types" | grep -vxE "$web_view_types" | grep . | head -3 | tr '\n' ' ')
             [ -z "$found" ] || fail "$name names WebKit types beyond its web view's: $found"
@@ -90,7 +93,11 @@ done
 # $1: executable, $2: the modules it must hold nothing of, $3: what they are.
 holds_none() {
     [ -f "$1" ] || return 0
-    found=$(xcrun nm "$1" 2>/dev/null | grep -E "$2" | head -3 | awk '{ print $NF }' | tr '\n' ' ')
+    if ! all_symbols=$(xcrun nm "$1" 2>/dev/null); then
+        fail "$(basename "$1"): cannot read its symbols"
+        return 0
+    fi
+    found=$(printf '%s\n' "$all_symbols" | grep -E "$2" | head -3 | awk '{ print $NF }' | tr '\n' ' ')
     [ -z "$found" ] || fail "$(basename "$1") holds $3: $found"
 }
 [ -n "$experiment" ] || holds_none "$keyboard" "$speech" "speech code"

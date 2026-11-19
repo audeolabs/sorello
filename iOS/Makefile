@@ -591,19 +591,26 @@ ipa: all
 # What App Store Connect needs, checked locally from the built app and .ipa
 # (scripts/check-appstore-bundle.sh); it never contacts Apple. Asked for with
 # ipa, it waits for the package, also under -j.
+# $(1): the .ipa to check. The checker's command, with this invocation's KEYBOARD_DICTATION.
+appstore_check = sh scripts/check-appstore-bundle.sh --app "$(APP_BUNDLE)" --ipa "$(1)" --bundle-id "$(BUNDLE_ID)" \
+	--app-group "$(APP_GROUP)" --url-scheme "$(URL_SCHEME)" --universal-link "$(UNIVERSAL_LINK)" \
+	--display-name "$(DISPLAY_NAME)" --team-id "$(TEAM_ID)" --pin ../Models/model.lock.json \
+	--model-notices ../Resources/ModelNotices --keyboard-dictation "$(KEYBOARD_DICTATION)"
+
 appstore-check: $(filter ipa,$(MAKECMDGOALS))
-	@sh scripts/check-appstore-bundle.sh --app "$(APP_BUNDLE)" --ipa "$(IPA)" --bundle-id "$(BUNDLE_ID)" \
-		--app-group "$(APP_GROUP)" --url-scheme "$(URL_SCHEME)" --universal-link "$(UNIVERSAL_LINK)" \
-		--display-name "$(DISPLAY_NAME)" --team-id "$(TEAM_ID)" --pin ../Models/model.lock.json \
-		--model-notices ../Resources/ModelNotices --keyboard-dictation "$(KEYBOARD_DICTATION)"
+	@$(call appstore_check,$(IPA))
 
 # Apple's own checks, then the upload, with an App Store Connect API key
 # (ASC_KEY_ID, ASC_ISSUER_ID; the .p8 in ~/.appstoreconnect/private_keys). Both
-# send the .ipa to Apple, so neither runs as part of any other target. appstore-check runs first, on the very .ipa
-# they send and with this invocation's KEYBOARD_DICTATION, and stops them if it fails.
+# send the .ipa to Apple, so neither runs as part of any other target. Each takes a private copy of the .ipa, runs the
+# App Store check on that copy with this invocation's KEYBOARD_DICTATION, stops if it fails, and sends that same copy,
+# so nothing written to $(IPA) meanwhile is sent unchecked.
 appstore-validate appstore-upload: appstore-check
 	@[ -n "$(ASC_KEY_ID)" ] && [ -n "$(ASC_ISSUER_ID)" ] || { echo "$@ needs ASC_KEY_ID and ASC_ISSUER_ID." >&2; exit 1; }
-	xcrun altool $(if $(filter appstore-upload,$@),--upload-package,--validate-app) "$(IPA)" -t ios \
+	@set -e; snapshot=$$(mktemp -d "$${TMPDIR:-/tmp}/sorello-upload.XXXXXX"); trap 'rm -rf "$$snapshot"' EXIT; \
+	cp "$(IPA)" "$$snapshot/Sorello.ipa"; \
+	$(call appstore_check,$$snapshot/Sorello.ipa); \
+	xcrun altool $(if $(filter appstore-upload,$@),--upload-package,--validate-app) "$$snapshot/Sorello.ipa" -t ios \
 		--api-key "$(ASC_KEY_ID)" --api-issuer "$(ASC_ISSUER_ID)"
 
 check: typecheck test lint check-binaries
