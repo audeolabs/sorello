@@ -2309,7 +2309,11 @@ unchanged and always wins.
     `transcribed`, `inserted`, `offered`, `dropped`, `ended`), each with
     milliseconds since the tap (monotonic), the footprint
     (`phys_footprint`) and the memory iOS still allows
-    (`os_proc_available_memory`), in MB;
+    (`os_proc_available_memory`), in MB. `firstChunkDecoded` is the
+    stream's first progress report: during recording it marks the first
+    chunk the model decoded, a dictation shorter than one chunk may end
+    without it (its stop-to-text time says how long the decode took), and
+    a silent recording may report it without decoding anything;
   - the keyboard process's peak footprint (the task's
     `ledger_phys_footprint_peak`: the high-water mark of the process's
     lifetime, so a warm attempt may show an earlier attempt's peak, and
