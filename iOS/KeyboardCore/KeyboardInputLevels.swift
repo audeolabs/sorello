@@ -9,14 +9,21 @@ struct KeyboardInputLevels: Equatable, Sendable {
     /// Chunks per whole dBFS, from `floorDBFS` (index 0) to 0.
     private var counts = [Int](repeating: 0, count: -floorDBFS + 1)
     private var total = 0
+    /// Seconds of capture counted so far: the recording keeps at most `maxDictationDuration`, and so do the levels.
+    private var seconds = 0.0
 
-    /// One captured chunk. An empty chunk, or one holding a non-finite sample, adds nothing.
-    mutating func add(_ samples: [Float]) {
-        guard !samples.isEmpty else { return }
+    /// One captured chunk at `rate`: only its part within `maxDictationDuration` of the recording counts. An empty
+    /// chunk, or one holding a non-finite sample, adds nothing.
+    mutating func add(_ samples: [Float], rate: Double) {
+        guard rate > 0 else { return }
+        let room = max(0, Int(((DictationProtocol.maxDictationDuration - seconds) * rate).rounded()))
+        let kept = samples.prefix(room)
+        guard !kept.isEmpty else { return }
         var sumOfSquares: Float = 0
-        for sample in samples { sumOfSquares += sample * sample }
+        for sample in kept { sumOfSquares += sample * sample }
         guard sumOfSquares.isFinite else { return }
-        let rms = (sumOfSquares / Float(samples.count)).squareRoot()
+        seconds += Double(kept.count) / rate
+        let rms = (sumOfSquares / Float(kept.count)).squareRoot()
         let dBFS = rms > 0 ? Int((20 * log10f(rms)).rounded()) : Self.floorDBFS
         counts[min(max(dBFS, Self.floorDBFS), 0) - Self.floorDBFS] += 1
         total += 1

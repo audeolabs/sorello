@@ -227,7 +227,7 @@ final class KeyboardLocalDictation {
                 Task { @MainActor in self?.converted(id) }
             }) else { handle(.captureFailed(attempt: id)); return }
             self.meter = meter
-            inputLevels.add(samples)
+            inputLevels.add(samples, rate: rate)
             hooks.level(meter.level)
         case .failed, .ended, .malformed:
             handle(.captureFailed(attempt: id))

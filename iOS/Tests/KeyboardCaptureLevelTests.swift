@@ -12,6 +12,7 @@ enum KeyboardCaptureLevelTests {
             ("inputLevelsAreTheLoudestAndTheMedianChunk", testInputLevelsAreTheLoudestAndTheMedianChunk),
             ("inputLevelsOfNothingAreUnknown", testInputLevelsOfNothingAreUnknown),
             ("inputLevelsAreBoundedWholeDecibels", testInputLevelsAreBoundedWholeDecibels),
+            ("inputLevelsStopAtTheRecordingsCap", testInputLevelsStopAtTheRecordingsCap),
         ]
     }
 
@@ -96,10 +97,10 @@ enum KeyboardCaptureLevelTests {
     /// The loudest chunk's RMS and the median chunk's (the higher middle of an even count), each in whole dBFS.
     private static func testInputLevelsAreTheLoudestAndTheMedianChunk() {
         var levels = KeyboardInputLevels()
-        for dBFS in [-52.0, -40, -61, -33, -47] { levels.add(tone(at: dBFS)) }
+        for dBFS in [-52.0, -40, -61, -33, -47] { levels.add(tone(at: dBFS), rate: rate) }
         TestSupport.expectEqual(levels.loudestDBFS, -33)
         TestSupport.expectEqual(levels.typicalDBFS, -47)
-        levels.add(tone(at: -44))
+        levels.add(tone(at: -44), rate: rate)
         TestSupport.expectEqual(levels.typicalDBFS, -44)
         TestSupport.expectEqual(levels.loudestDBFS, -33)
     }
@@ -107,7 +108,7 @@ enum KeyboardCaptureLevelTests {
     /// Before any audio there is nothing to say; an empty chunk adds nothing.
     private static func testInputLevelsOfNothingAreUnknown() {
         var levels = KeyboardInputLevels()
-        levels.add([])
+        levels.add([], rate: rate)
         TestSupport.expectEqual(levels.loudestDBFS, nil)
         TestSupport.expectEqual(levels.typicalDBFS, nil)
     }
@@ -116,12 +117,26 @@ enum KeyboardCaptureLevelTests {
     /// sample adds nothing: the record only ever holds a whole number from -120 to 0.
     private static func testInputLevelsAreBoundedWholeDecibels() {
         var levels = KeyboardInputLevels()
-        levels.add([Float](repeating: 0, count: chunk))
+        levels.add([Float](repeating: 0, count: chunk), rate: rate)
         TestSupport.expectEqual(levels.loudestDBFS, -120)
-        levels.add([Float](repeating: 4, count: chunk))
+        levels.add([Float](repeating: 4, count: chunk), rate: rate)
         TestSupport.expectEqual(levels.loudestDBFS, 0)
-        levels.add([.nan] + [Float](repeating: 0.5, count: chunk - 1))
+        levels.add([.nan] + [Float](repeating: 0.5, count: chunk - 1), rate: rate)
         TestSupport.expectEqual(levels.loudestDBFS, 0)
         TestSupport.expectEqual(levels.typicalDBFS, 0)
+    }
+
+    /// Only the audio the recording keeps counts: past `maxDictationDuration` the recording drops the rest, so a chunk
+    /// that crosses the cap counts only its part before it, and a loud tail beyond the cap never becomes the loudest.
+    private static func testInputLevelsStopAtTheRecordingsCap() {
+        // A low rate keeps five minutes of samples small; the rule is the same at 48 kHz.
+        let rate = 1_000.0
+        var levels = KeyboardInputLevels()
+        let capSamples = Int(DictationProtocol.maxDictationDuration * rate)
+        levels.add([Float](repeating: 0.001, count: capSamples - 100), rate: rate)   // -60 dBFS
+        levels.add([Float](repeating: 0.001, count: 100) + [Float](repeating: 0.5, count: 300), rate: rate)
+        TestSupport.expectEqual(levels.loudestDBFS, -60)
+        levels.add([Float](repeating: 0.5, count: 400), rate: rate)
+        TestSupport.expectEqual(levels.loudestDBFS, -60)
     }
 }
