@@ -271,6 +271,10 @@ enum KeyboardDictationRecordTests {
             TestSupport.expect(exists(fresh), "the launch sweep removed a fresh keyboard staging file")
             store.purgeExpiredResults(now: now)
             TestSupport.expect(!exists(older), "the age sweep left an old keyboard staging file")
+            // One dated ahead of the sweep's clock, by more than the skew allowance, is not taken as expired.
+            let ahead = stagingFile(".staging-kd-\(UUID().uuidString).tmp", in: store, modified: now + 60)
+            store.purgeExpiredResults(now: now)
+            TestSupport.expect(exists(ahead), "the age sweep removed a keyboard staging file dated ahead")
         }
     }
 
