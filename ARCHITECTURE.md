@@ -1547,11 +1547,12 @@ and ship it. This section holds what concerns both apps.
 - **Shared modules.** The iPhone app uses `SpeechEngine`, `DictionaryKit`
   and `TextRules` as the Mac app does, and has no copy of what they hold.
   It links them as the static libraries of section 2. The app links
-  `SorelloSpeech`. The keyboard links `SorelloSpeech` too: `TextRules`,
-  `DictionaryKit` for the rules that notice a correction, and the engine
-  for the in-keyboard dictation experiment (`iOS/ARCHITECTURE.md`,
-  "In-keyboard dictation"), which loads the model the app carries. It has
-  no dictionary to read: the entries are the app's alone. The Live
+  `SorelloSpeech`. The keyboard, which iOS allows little memory, links
+  `SorelloText`: `TextRules`, and `DictionaryKit` for the rules that
+  notice a correction, so it cannot reach the model. Only an experiment
+  build for internal testing links `SorelloSpeech` into the keyboard, for
+  in-keyboard dictation (`iOS/ARCHITECTURE.md`, "In-keyboard dictation").
+  It has no dictionary to read: the entries are the app's alone. The Live
   Activity links neither. A change to one of these modules is a change to
   both apps.
 - **Its own build.** The iPhone app's own code is not part of the
