@@ -2324,8 +2324,9 @@ unchanged and always wins.
   second when the least memory left or the warnings changed. Only a tap
   starts a record with a new attempt id. Every other write (a step, an
   outcome, a later insertion, offer or drop) first reads the record and
-  replaces it only if it still holds that attempt's id, and an `abandoned`
-  rewrite only if it is still unfinished. The read and the rename are not
+  replaces it only if it still holds that attempt's id and is not
+  `abandoned` (once marked, no write for that attempt replaces it), and an
+  `abandoned` rewrite only if it is still unfinished. The read and the rename are not
   locked against another keyboard process: only one keyboard is visible
   at a time, so losing a write needs a suspended keyboard to wake and
   write in that instant, and the cost is one record. The steps and figures
@@ -4858,9 +4859,10 @@ merge (AGENTS.md).
   Notes, Messages and Mail. Each dictation overwrites the record, and
   opening Diagnostics hides the keyboard, which releases the model, so:
   cold: the first dictation after an install, and one after switching
-  apps, each read in Diagnostics right after; warm: dictate once, then
-  again without hiding the keyboard, and read Diagnostics after the
-  second (it must say warm). Also Stop, Cancel, hiding the keyboard
+  apps, each read in Diagnostics right after; warm: after the first dictation inserts its text, dictate again
+  without hiding the keyboard, and read Diagnostics after the second; its
+  times are a warm sample only if it says warm (a memory warning may have
+  released the model, and then it says cold, which is worth noting). Also Stop, Cancel, hiding the keyboard
   mid-recording and a dictation over a minute, each read after; the
   microphone indicator only while recording. Call an `abandoned` record a
   memory termination only when iOS's own logs show one. Starting a
