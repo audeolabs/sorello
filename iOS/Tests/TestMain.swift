@@ -9,6 +9,7 @@ struct SorelloIOSTests {
             ("DictationProtocol", DictationProtocolTests.tests),
             ("SharedDictationStore", SharedDictationStoreTests.tests),
             ("KeyboardDictationRecord", KeyboardDictationRecordTests.tests),
+            ("KeyboardCaptureLevel", KeyboardCaptureLevelTests.tests),
             ("KeyboardDictationRoute", KeyboardDictationRouteTests.tests),
             ("KeyboardDictationMachine", KeyboardDictationMachineTests.tests),
             ("KeyboardDictationAudio", KeyboardDictationAudioTests.tests),

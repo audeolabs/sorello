@@ -87,6 +87,9 @@ struct KeyboardDictationRecord: Codable, Equatable, Sendable {
     var leastAvailableMB: Double?
     var audioSeconds: Double?
     var captureSampleRate: Double?
+    /// The loudest and the median captured chunk's RMS over the sealed recording, in whole dBFS.
+    var inputLoudestDBFS: Int?
+    var inputTypicalDBFS: Int?
     var preparationMilliseconds: Double?
     var stopToTextMilliseconds: Double?
     var stopToInsertionMilliseconds: Double?
@@ -106,7 +109,7 @@ struct KeyboardDictationRecord: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case schema, attemptID, processID, tappedAt, iosVersion, warm, steps, peakFootprintMB, leastAvailableMB, audioSeconds,
              captureSampleRate, preparationMilliseconds, stopToTextMilliseconds, stopToInsertionMilliseconds,
-             textSource, memoryWarnings, outcome
+             textSource, memoryWarnings, outcome, inputLoudestDBFS, inputTypicalDBFS
     }
 
     init(from decoder: Decoder) throws {
@@ -122,6 +125,8 @@ struct KeyboardDictationRecord: Codable, Equatable, Sendable {
         leastAvailableMB = try values.decodeIfPresent(Double.self, forKey: .leastAvailableMB)
         audioSeconds = try values.decodeIfPresent(Double.self, forKey: .audioSeconds)
         captureSampleRate = try values.decodeIfPresent(Double.self, forKey: .captureSampleRate)
+        inputLoudestDBFS = try values.decodeIfPresent(Int.self, forKey: .inputLoudestDBFS)
+        inputTypicalDBFS = try values.decodeIfPresent(Int.self, forKey: .inputTypicalDBFS)
         preparationMilliseconds = try values.decodeIfPresent(Double.self, forKey: .preparationMilliseconds)
         stopToTextMilliseconds = try values.decodeIfPresent(Double.self, forKey: .stopToTextMilliseconds)
         stopToInsertionMilliseconds = try values.decodeIfPresent(Double.self, forKey: .stopToInsertionMilliseconds)

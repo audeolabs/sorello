@@ -65,6 +65,8 @@ private struct RecordRows: View {
         LabeledContent("Peak (keyboard process)", value: KeyboardDictationLabels.megabytes(record.peakFootprintMB))
         LabeledContent("Least memory left", value: KeyboardDictationLabels.megabytes(record.leastAvailableMB))
         LabeledContent("Audio", value: KeyboardDictationLabels.audio(seconds: record.audioSeconds, rate: record.captureSampleRate))
+        LabeledContent("Input level", value: KeyboardDictationLabels.inputLevel(loudest: record.inputLoudestDBFS,
+                                                                              typical: record.inputTypicalDBFS))
         LabeledContent("Preparation", value: KeyboardDictationLabels.milliseconds(record.preparationMilliseconds))
         LabeledContent("Stop to text", value: KeyboardDictationLabels.milliseconds(record.stopToTextMilliseconds))
         LabeledContent("Stop to insertion", value: KeyboardDictationLabels.milliseconds(record.stopToInsertionMilliseconds))
@@ -116,6 +118,12 @@ enum KeyboardDictationLabels {
 
     static func megabytes(_ value: Double?) -> String {
         value.map { String(format: "%.0f MB", $0) } ?? "—"
+    }
+
+    /// "-38 dB loudest · -55 dB typical", in dBFS.
+    static func inputLevel(loudest: Int?, typical: Int?) -> String {
+        guard let loudest, let typical else { return "—" }
+        return "\(loudest) dB loudest · \(typical) dB typical"
     }
 
     static func audio(seconds: Double?, rate: Double?) -> String {

@@ -40,6 +40,8 @@ final class KeyboardLocalDictation {
     private var pipeline: KeyboardAudioPipeline?
     private var transcription: KeyboardTranscription?
     private var meter: LevelMeter?
+    /// The attempt's input levels, for the record (accepted chunks only, until the seal).
+    private var inputLevels = KeyboardInputLevels()
     private var timer: Timer?
     /// The last attempt's record, as this keyboard last wrote it, with its monotonic tap and stop.
     private var record: KeyboardDictationRecord?
@@ -186,6 +188,7 @@ final class KeyboardLocalDictation {
         let pipeline = KeyboardAudioPipeline()
         self.pipeline = pipeline
         meter = nil
+        inputLevels = KeyboardInputLevels()
         let capture = WebAudioCapture(
             page: capturePage,
             mayGrantMicrophone: { [weak self] in
@@ -214,7 +217,7 @@ final class KeyboardLocalDictation {
         guard machine.runningAttemptID == id, machine.isCaptureOpen else { return }
         switch message {
         case let .audio(samples, rate):
-            var meter = self.meter ?? LevelMeter(sampleRate: rate)
+            var meter = self.meter ?? LevelMeter.keyboardCapture(sampleRate: rate)
             meter.update(with: samples)
             // The machine judges the clock first: a chunk after the maximum duration or the audio gap finds capture
             // closed and is not kept.
@@ -224,6 +227,7 @@ final class KeyboardLocalDictation {
                 Task { @MainActor in self?.converted(id) }
             }) else { handle(.captureFailed(attempt: id)); return }
             self.meter = meter
+            inputLevels.add(samples)
             hooks.level(meter.level)
         case .failed, .ended, .malformed:
             handle(.captureFailed(attempt: id))
@@ -241,6 +245,8 @@ final class KeyboardLocalDictation {
         guard machine.runningAttemptID == id, record?.attemptID == id else { return }
         record?.audioSeconds = seconds
         record?.captureSampleRate = rate
+        record?.inputLoudestDBFS = inputLevels.loudestDBFS
+        record?.inputTypicalDBFS = inputLevels.typicalDBFS
     }
 
     private func reported(_ report: KeyboardTranscription.Report, for id: UUID) {

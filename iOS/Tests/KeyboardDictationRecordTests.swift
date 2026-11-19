@@ -47,6 +47,8 @@ enum KeyboardDictationRecordTests {
         record.reach(.transcribed, milliseconds: 4_300, memory: sample(153, available: 9))
         record.audioSeconds = 3.6
         record.captureSampleRate = 48_000
+        record.inputLoudestDBFS = -38
+        record.inputTypicalDBFS = -55
         record.preparationMilliseconds = 1_896
         record.stopToTextMilliseconds = 300
         record.stopToInsertionMilliseconds = 310
@@ -114,7 +116,8 @@ enum KeyboardDictationRecordTests {
             TestSupport.expectEqual(Set(object.keys), [
                 "schema", "attemptID", "processID", "tappedAt", "iosVersion", "warm", "steps", "peakFootprintMB", "leastAvailableMB",
                 "audioSeconds", "captureSampleRate", "preparationMilliseconds", "stopToTextMilliseconds",
-                "stopToInsertionMilliseconds", "textSource", "memoryWarnings", "outcome",
+                "stopToInsertionMilliseconds", "textSource", "memoryWarnings", "outcome", "inputLoudestDBFS",
+                "inputTypicalDBFS",
             ])
             let names = Set(KeyboardDictationRecord.Step.allCases.map(\.rawValue))
             for step in object["steps"] as! [[String: Any]] {

@@ -21,12 +21,27 @@ struct LevelMeter {
     private static let releaseBlend: Float = 0.55
 
     private let sampleRate: Float
+    private let gateDB: Float
+    private let peakFloorDB: Float
     private(set) var level: Float = 0
-    private var peakDB = Self.peakFloorDB
+    private var peakDB: Float
     private var sincePeak: Float = 0
 
     init(sampleRate: Double = 16_000) {
+        self.init(sampleRate: sampleRate, gateDB: Self.gateDB, peakFloorDB: Self.peakFloorDB)
+    }
+
+    private init(sampleRate: Double, gateDB: Float, peakFloorDB: Float) {
         self.sampleRate = Float(sampleRate)
+        self.gateDB = gateDB
+        self.peakFloorDB = peakFloorDB
+        peakDB = peakFloorDB
+    }
+
+    /// The in-keyboard wave's meter (ARCHITECTURE.md, "In-keyboard dictation (experiment)", Phases): the same shape with
+    /// its window 15 dB lower, for WebKit's capture, which with automatic gain off is that much quieter than the app's.
+    static func keyboardCapture(sampleRate: Double) -> LevelMeter {
+        LevelMeter(sampleRate: sampleRate, gateDB: gateDB - 15, peakFloorDB: peakFloorDB - 15)
     }
 
     mutating func update<Samples: Collection>(with samples: Samples) where Samples.Element == Float {
@@ -44,8 +59,8 @@ struct LevelMeter {
             peakDB = levelDB
             sincePeak = 0
         }
-        peakDB = max(peakDB, Self.peakFloorDB)
-        let low = max(Self.gateDB, peakDB - Self.rangeDB)
+        peakDB = max(peakDB, peakFloorDB)
+        let low = max(gateDB, peakDB - Self.rangeDB)
         let target = min(max((levelDB - low) / (peakDB - low), 0), 1)
         level += (target - level) * (target > level ? Self.attackBlend : Self.releaseBlend)
     }
