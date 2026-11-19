@@ -132,13 +132,15 @@ struct SharedDictationStore: Sendable {
     /// that dies between writing and renaming leaves one behind, and a result's may hold a transcript.
     /// The host passes 0 during run recovery, before it writes anything, to remove them at any age.
     /// Other callers keep a long age so they never pull an in-flight write from under the other process.
-    /// The keyboard's `.staging-kd-` files hold no content and may belong to a keyboard writing now: whatever `age`,
-    /// they are kept while fresh within `resultTTL` ("Files", Staging sweeps).
+    /// The keyboard's `.staging-kd-` files hold no content and may belong to a keyboard writing now: a sweep shorter
+    /// than `resultTTL` (the host's launch sweep) leaves them all, and the age sweep removes them past `resultTTL`
+    /// ("Files", Staging sweeps).
     func purgeStagingFiles(olderThan age: TimeInterval, now: Date) {
         files.sweepStagingFiles { name, modified in
-            let ttl = name.hasPrefix(Self.stagingPrefix + Self.keyboardDictationStagingTag)
-                ? max(age, DictationProtocol.resultTTL) : age
-            return DictationProtocol.isFresh(modified, ttl: ttl, now: now)
+            if name.hasPrefix(Self.stagingPrefix + Self.keyboardDictationStagingTag), age < DictationProtocol.resultTTL {
+                return true
+            }
+            return modified.map { DictationProtocol.isFresh($0, ttl: age, now: now) } ?? false
         }
     }
 

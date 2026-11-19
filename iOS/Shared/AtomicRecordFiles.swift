@@ -52,16 +52,17 @@ struct AtomicRecordFiles: Sendable {
     /// Removes the staging files in `directory` that `isInFlight` does not keep, judged by their modification
     /// date. One whose date cannot be read is removed. Other files are never touched.
     func sweepStagingFiles(keeping isInFlight: (_ modified: Date) -> Bool) {
-        sweepStagingFiles { _, modified in isInFlight(modified) }
+        sweepStagingFiles { _, modified in modified.map(isInFlight) ?? false }
     }
 
-    /// As `sweepStagingFiles(keeping:)`, judged by each staging file's name as well as its modification date.
-    func sweepStagingFiles(keeping isInFlight: (_ name: String, _ modified: Date) -> Bool) {
+    /// As `sweepStagingFiles(keeping:)`, judged by each staging file's name as well as its modification date, which is
+    /// nil when it cannot be read.
+    func sweepStagingFiles(keeping isInFlight: (_ name: String, _ modified: Date?) -> Bool) {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
         for name in names where name.hasPrefix(Self.stagingPrefix) && name.hasSuffix(stagingSuffix) {
             let url = directory.appendingPathComponent(name, isDirectory: false)
             let modified = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
-            if let modified, isInFlight(name, modified) { continue }
+            if isInFlight(name, modified) { continue }
             try? FileManager.default.removeItem(at: url)
         }
     }
