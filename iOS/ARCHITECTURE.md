@@ -2148,7 +2148,8 @@ unchanged and always wins.
   - this instance's last in-keyboard dictation did not end with
     `captureUnavailable`;
   - `keyboard-dictation.json` does not hold an unfinished record (one with
-    no outcome) whose `processID` is not this keyboard process's (a random
+    no outcome) whose `processID` is known and is not this keyboard
+    process's (a random
     id each process makes once, in memory): a keyboard process left it
     unfinished, and the record cannot say why (it went away, perhaps for
     iOS's memory limit, or it was suspended before it could write). That
@@ -2160,11 +2161,12 @@ unchanged and always wins.
   While an in-keyboard dictation runs, Stop and Cancel act only on its
   attempt id, the one the bar showed; once it has ended they do nothing.
   The keyboard revokes its dictation on the first status it reads, by
-  notification or poll, in which the host owns the microphone. So both may
-  capture from the host's start until that status is published, read (at
-  most `KeyboardDictationClient.pollInterval`, 0.2 s, after it is written)
-  and the keyboard's capture is torn down; a status write the host must
-  retry at its next heartbeat lengthens that. The keyboard checks the
+  notification or by its poll every `KeyboardDictationClient.pollInterval`
+  (0.2 s) while iOS runs it, in which the host owns the microphone. So both
+  may capture from the host's start until that status is published (a
+  write the host must retry waits for its next heartbeat), until the
+  keyboard gets to read it, and until its capture is torn down. No bound
+  is promised. The keyboard checks the
   predicate again just before WebKit's microphone grant and before
   delivering text.
 - **Phases** (`KeyboardDictationMachine`, KeyboardCore; pure, tested, one
@@ -2319,8 +2321,16 @@ unchanged and always wins.
     outcome is unfinished.
 
   The record is written at each step and, while recording, at most once a
-  second when the least memory left or the warnings changed; the figures of
-  an `abandoned` record are the last ones written. Decoding takes a missing
+  second when the least memory left or the warnings changed. Only a tap
+  starts a record with a new attempt id. Every other write (a step, an
+  outcome, a later insertion, offer or drop) first reads the record and
+  replaces it only if it still holds that attempt's id, and an `abandoned`
+  rewrite only if it is still unfinished. The read and the rename are not
+  locked against another keyboard process: only one keyboard is visible
+  at a time, so losing a write needs a suspended keyboard to wake and
+  write in that instant, and the cost is one record. The steps and figures
+  of an `abandoned` record are those of the last write that succeeded, so
+  a step whose write failed does not show. Decoding takes a missing
   field as unknown. Never audio, text, or anything about the field or the
   app. Each
   in-keyboard dictation overwrites it; nothing else removes it. Its staging
@@ -4845,14 +4855,15 @@ merge (AGENTS.md).
 - **App:** privacy policy link; Report a bug draft and its no-email-app
   fallback; dictionary edits and "Find strength".
 - **In-keyboard dictation:** with Sorello quit (no session), dictate in
-  Notes, Messages and Mail: the first dictation after an install, then a
-  second in the same keyboard and one after switching apps; Stop, Cancel,
-  hiding the keyboard mid-recording, a dictation over a minute; the
-  microphone indicator only while recording; and after each of these,
-  before the next dictation (each overwrites the record), read Diagnostics
-  → Keyboard dictation (steps, footprint, memory left, times). Call an
-  `abandoned` record a memory termination only when iOS's own logs show
-  one. Starting a
+  Notes, Messages and Mail. Each dictation overwrites the record, and
+  opening Diagnostics hides the keyboard, which releases the model, so:
+  cold: the first dictation after an install, and one after switching
+  apps, each read in Diagnostics right after; warm: dictate once, then
+  again without hiding the keyboard, and read Diagnostics after the
+  second (it must say warm). Also Stop, Cancel, hiding the keyboard
+  mid-recording and a dictation over a minute, each read after; the
+  microphone indicator only while recording. Call an `abandoned` record a
+  memory termination only when iOS's own logs show one. Starting a
   session from the session control while one records (the host takes
   over). With the switch off, and with the microphone not yet allowed, the
   bounce as before. Ideally on iOS 26 and 27 and on iPhones with less
