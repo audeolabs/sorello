@@ -1698,9 +1698,9 @@ Notes).
     "Dictate in the keyboard" switch and the last `keyboard-dictation.json`,
     read when the screen appears: cold or warm, each step with its time,
     footprint and memory left, then the peak footprint, the least memory
-    left, the audio seconds, the preparation, stop-to-text and
-    stop-to-insertion times, stream or batch, the memory warnings and the
-    outcome
+    left, the audio seconds, the input's loudest and typical level, the
+    preparation, stop-to-text and stop-to-insertion times, stream or batch,
+    the memory warnings and the outcome
     ([In-keyboard dictation](#in-keyboard-dictation-experiment)).
 - **Self-test build** (`-D SORELLO_SELFTEST`, never in normal or App Store
   builds). Environment variables: `SORELLO_SELFTEST_AUDIO`,
@@ -2177,8 +2177,12 @@ unchanged and always wins.
   `transcribing` (stopped) → `idle` with the text, or with a failure. The top
   row shows them as the host's `starting`, `recording(level:startedAt:)`,
   `transcribing` and `error(code)`, so they look the same; levels come from
-  the keyboard's own samples. While one runs, the host's status does not
-  change the mode.
+  the keyboard's own samples, through the host's meter with its window 15 dB
+  lower (`LevelMeter.keyboardCapture`: gate -60 dBFS, the peak's floor
+  -45 dBFS), because WebKit's capture, with automatic gain off, is that much
+  quieter than the app's: on an iPhone 15 Pro a voice at arm's length stayed
+  under the host's -45 dBFS gate and the wave stayed flat. While one runs,
+  the host's status does not change the mode.
   - Capture is open only in `starting` and `recording`. Stop in `starting`
     cancels: nothing was heard. Stop in `recording` closes capture at once
     and seals the recording: the samples Swift had accepted before the stop
@@ -2320,7 +2324,9 @@ unchanged and always wins.
     lifetime, so a warm attempt may show an earlier attempt's peak, and
     WebKit's capture, which runs in its own process, is not in it) and the
     least memory left seen, sampled at every step and every converted chunk;
-  - the audio's seconds and the capture's sample rate; the model's
+  - the audio's seconds and the capture's sample rate; the input's loudest
+    and typical (median) level, each the RMS of one captured chunk in whole
+    dBFS, over the sealed recording; the model's
     preparation milliseconds; stop to text and stop to insertion in
     milliseconds; whether the text came from the stream or the batch;
   - memory warnings seen; the outcome: `text`, `noSpeech`, a failure,
