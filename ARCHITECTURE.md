@@ -1547,10 +1547,12 @@ and ship it. This section holds what concerns both apps.
 - **Shared modules.** The iPhone app uses `SpeechEngine`, `DictionaryKit`
   and `TextRules` as the Mac app does, and has no copy of what they hold.
   It links them as the static libraries of section 2. The app links
-  `SorelloSpeech`. The keyboard, which iOS allows little memory and which
-  never transcribes, links `SorelloText`: `TextRules`, and `DictionaryKit`
-  for the rules that notice a correction, so it cannot reach the model. It
-  has no dictionary to read: the entries are the app's alone. The Live
+  `SorelloSpeech`. The keyboard, which iOS allows little memory, links
+  `SorelloText`: `TextRules`, and `DictionaryKit` for the rules that
+  notice a correction, so it cannot reach the model. Only an experiment
+  build for internal testing links `SorelloSpeech` into the keyboard, for
+  in-keyboard dictation (`iOS/ARCHITECTURE.md`, "In-keyboard dictation").
+  It has no dictionary to read: the entries are the app's alone. The Live
   Activity links neither. A change to one of these modules is a change to
   both apps.
 - **Its own build.** The iPhone app's own code is not part of the
@@ -1574,7 +1576,10 @@ and ship it. This section holds what concerns both apps.
 - **No connection.** The iPhone app opens no network connection of any
   kind. The model's downloader is compiled for the Mac only (section 9),
   and the iPhone app's checks fail if one of its three executables names
-  a networking API.
+  a networking API. The one allowance is the keyboard of an experiment
+  build for internal testing, which may use a web view to capture audio
+  for in-keyboard dictation, locked to a page that reaches nothing
+  (`iOS/ARCHITECTURE.md`, "In-keyboard dictation").
 - **Names that stay.** The iPhone app is published under Audeo Labs
   identifiers, as a new app: it does not replace the LocalFlow app that
   TestFlight carried before, and nothing carries over from it. From its

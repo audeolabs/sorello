@@ -195,6 +195,19 @@ final class KeyboardViewController: UIInputViewController, KeyboardTextTarget {
         hasDictationKey = true
     }
 
+    #if SORELLO_KEYBOARD_DICTATION
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        // Hiding ends an in-keyboard dictation at once (ARCHITECTURE.md, "In-keyboard dictation (experiment)").
+        client.willHide()
+    }
+
+    override func didReceiveMemoryWarning() {
+        super.didReceiveMemoryWarning()
+        client.memoryWarning()
+    }
+    #endif
+
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         client.stop()

@@ -18,6 +18,7 @@ enum KeyboardMessagesTests {
             ("theWidthTipSaysWhatLandsOnTheWrongLine", testTheWidthTipSaysWhatLandsOnTheWrongLine),
             ("aVoiceNoteReadsAsANote", testAVoiceNoteReadsAsANote),
             ("anAddedWordSaysWhatHappened", testAnAddedWordSaysWhatHappened),
+            ("startThatDictatesInTheKeyboardSaysNothingAboutOpening", testStartThatDictatesInTheKeyboardSaysNothingAboutOpening),
         ]
     }
 
@@ -278,5 +279,26 @@ enum KeyboardMessagesTests {
             TestSupport.expect(line.hasSuffix(end), "\(line)")
             TestSupport.expect(line.count <= 90, "\(line) is long")
         }
+    }
+
+    /// When Start would dictate in the keyboard (ARCHITECTURE.md, "In-keyboard dictation (experiment)"), VoiceOver hears
+    /// "Start dictation, No session", and nothing shows or is said about opening Sorello, even after a failed launch.
+    private static func testStartThatDictatesInTheKeyboardSaysNothingAboutOpening() {
+        for failed in [false, true] {
+            TestSupport.expectEqual(KeyboardMessages.spokenStatus(mode: .hostUnavailable, status: nil, launcherFailed: failed,
+                                                                  now: Fixture.now, dictatesInKeyboard: true), "No session")
+            let title = KeyboardMessages.title(for: .hostUnavailable, launcherFailed: failed, dictatesInKeyboard: true)
+            TestSupport.expectEqual(title, "No session")
+            TestSupport.expectEqual(BarStatus(mode: .hostUnavailable, title: title, hint: nil, notice: nil, chipsShown: false), .none)
+        }
+        TestSupport.expectEqual(KeyboardMessages.capsuleAccessibilityLabel(for: .hostUnavailable), "Start dictation")
+        TestSupport.expectEqual(KeyboardMessages.islandAccessibilityValue(for: .hostUnavailable, detail: "No session", now: Fixture.now),
+                                "No session")
+        // Otherwise, as before.
+        TestSupport.expectEqual(KeyboardMessages.spokenStatus(mode: .hostUnavailable, status: nil, launcherFailed: false,
+                                                              now: Fixture.now), "No session. Start opens Sorello")
+        TestSupport.expectEqual(KeyboardMessages.title(for: .hostUnavailable, launcherFailed: false), "Start opens Sorello")
+        // Only Start without a session changes.
+        TestSupport.expectEqual(KeyboardMessages.title(for: .ready, launcherFailed: false, dictatesInKeyboard: true), "Ready to dictate")
     }
 }

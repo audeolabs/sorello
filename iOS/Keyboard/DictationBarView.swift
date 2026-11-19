@@ -255,7 +255,7 @@ struct DictationBarView: View {
                         // Just after Stop, Cancel slides into what was Stop: a quick second tap there must not cancel.
                         guard controls.acceptsCancel else { return }
                         onAction()
-                        client.cancelTapped()
+                        client.cancelTapped(shown: state)
                     } label: {
                         // The island's body draws it, budding out of the island (`IslandBody`); this takes the taps.
                         Color.clear
@@ -383,7 +383,7 @@ private struct Middle: View {
                 case .insertLast:
                     Chip(title: "Insert last", symbol: "text.insert", height: height) {
                         onAction()
-                        client.insertLastDictation()
+                        client.insertLastDictation(shown: state)
                     }
                     .accessibilityLabel("Insert last dictation")
                     .accessibilityIdentifier("sorello.insertLast")
@@ -778,9 +778,12 @@ private struct DictationIsland: View {
         Button {
             if state.mode.allowsDictation {
                 onAction()
-                if state.mode == .hostUnavailable { bounces += 1 }
-                if state.mode.isActiveCapture { onStop() }
-                client.micTapped()
+                // Only a tap that opens Sorello pops; one that dictates in the keyboard starts as with a session.
+                if state.mode == .hostUnavailable, !state.startDictatesInKeyboard { bounces += 1 }
+                // A host recording's Stop arms the tap guard at once, as before; an in-keyboard one only once the
+                // client has stopped the dictation the bar showed, so a stale Stop arms nothing.
+                if state.mode.isActiveCapture, state.localAttemptID == nil { onStop() }
+                if client.micTapped(shown: state) { onStop() }
             } else {
                 onUnavailable()
             }
@@ -1023,7 +1026,7 @@ private struct DictationIsland: View {
 
     private var accessibilityHint: String {
         switch state.mode {
-        case .hostUnavailable: return "Opens Sorello to start a session"
+        case .hostUnavailable: return state.startDictatesInKeyboard ? "" : "Opens Sorello to start a session"
         case .starting, .recording: return "Stops listening and inserts what you said"
         case .voiceNote: return "Stops the voice note and saves it"
         default: return ""

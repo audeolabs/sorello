@@ -64,6 +64,20 @@ KEYBOARD_PROFILE ?=
 ACTIVITY_PROFILE ?=
 BUILD_DIR ?= build/$(PLATFORM)
 SWIFT_FLAGS ?=
+# 1 compiles in-keyboard dictation (ARCHITECTURE.md, "In-keyboard dictation (experiment)") into the keyboard, which then
+# links SorelloSpeech and WebKit and states the app's microphone sentence, and into the app's Diagnostics. An
+# experiment build is for internal testing only, never for release; appstore-check refuses one unless the same
+# invocation sets KEYBOARD_DICTATION=1. 0, the default, builds the keyboard without it.
+KEYBOARD_DICTATION ?= 0
+ifeq ($(KEYBOARD_DICTATION),1)
+EXPERIMENT_SWIFT_FLAGS = -D SORELLO_KEYBOARD_DICTATION
+KEYBOARD_LIBRARY = SorelloSpeech
+else ifeq ($(KEYBOARD_DICTATION),0)
+EXPERIMENT_SWIFT_FLAGS =
+KEYBOARD_LIBRARY = SorelloText
+else
+$(error KEYBOARD_DICTATION must be 0 or 1)
+endif
 # Optional keychain holding the signing identity (device builds signed over SSH).
 CODESIGN_KEYCHAIN ?=
 CODESIGN_KEYCHAIN_FLAG = $(if $(strip $(CODESIGN_KEYCHAIN)),--keychain "$(CODESIGN_KEYCHAIN)")
@@ -189,7 +203,8 @@ HOST_TARGET ?= $(shell uname -m)-apple-macosx26.0
 
 # Sorello's shared modules (../ARCHITECTURE.md, section 13), built by SwiftPM from the package as two static
 # libraries: the app links SorelloSpeech (SpeechEngine, DictionaryKit, TextRules and DictationCore), the keyboard
-# SorelloText (TextRules, and DictionaryKit for its correction rules), and the Live Activity neither. Each target triple has a build directory of its own,
+# SorelloText (TextRules, and DictionaryKit for its correction rules; SorelloSpeech with KEYBOARD_DICTATION=1), and the
+# Live Activity neither. Each target triple has a build directory of its own,
 # $(PACKAGE_BUILD_DIR)/<triple>, built again whenever the package's manifest or a source of those modules changes, and
 # SwiftPM rebuilds only what changed. <triple>.bin-path records where SwiftPM put the libraries and their modules, as
 # SwiftPM says (--show-bin-path). The first build of a checkout fetches the package's one dependency, Sparkle, which
@@ -298,7 +313,7 @@ all: signing-requirements $(APP_SIGNATURE)
 binaries: $(APP_BINARY) $(KEYBOARD_BINARY) $(ACTIVITY_BINARY)
 
 # Rebuild when identifiers, flags, signing inputs or source lists change.
-CONFIGURATION = $(CHANNEL)|$(PLATFORM)|$(BUNDLE_ID)|$(APP_GROUP)|$(URL_SCHEME)|$(UNIVERSAL_LINK)|$(DISPLAY_NAME)|$(DEPLOYMENT_TARGET)|$(SDK_PATH)|$(SWIFT_OPTIMIZATION)|$(SWIFT_FLAGS)|$(CODESIGN_IDENTITY)|$(TEAM_ID)|$(APP_PROFILE)|$(KEYBOARD_PROFILE)|$(ACTIVITY_PROFILE)|$(ICON_SOURCE)|$(XCODE_BUILD)|$(SDK_BUILD)|$(BUILD_NUMBER)|$(APP_SOURCES)|$(KEYBOARD_SOURCES)|$(ACTIVITY_SOURCES)
+CONFIGURATION = $(CHANNEL)|$(PLATFORM)|$(BUNDLE_ID)|$(APP_GROUP)|$(URL_SCHEME)|$(UNIVERSAL_LINK)|$(DISPLAY_NAME)|$(DEPLOYMENT_TARGET)|$(SDK_PATH)|$(SWIFT_OPTIMIZATION)|$(SWIFT_FLAGS)|$(CODESIGN_IDENTITY)|$(TEAM_ID)|$(APP_PROFILE)|$(KEYBOARD_PROFILE)|$(ACTIVITY_PROFILE)|$(ICON_SOURCE)|$(XCODE_BUILD)|$(SDK_BUILD)|$(BUILD_NUMBER)|$(KEYBOARD_DICTATION)|$(APP_SOURCES)|$(KEYBOARD_SOURCES)|$(ACTIVITY_SOURCES)
 configuration:
 	@mkdir -p "$(OBJ_DIR)"
 	@printf '%s\n' "$(CONFIGURATION)" > "$(CONFIG_STAMP).tmp"
@@ -442,14 +457,15 @@ $(PACKAGE_BUILD_DIR)/%.bin-path: $(PACKAGE_BUILD_DIR)/%.inputs $(PACKAGE_SOURCES
 $(APP_BINARY): $(APP_SOURCES) $(PACKAGE) $(CONFIG_STAMP) $(LINKED_APP_ENTITLEMENTS) $(APPINTENTS_PROTOCOLS) Makefile
 	@mkdir -p "$(@D)"
 	@$(call write_const_values_map,$(APP_CONST_VALUES))
-	$(SWIFTC) $(SWIFT_COMMON_FLAGS) $(SWIFT_OPTIMIZATION) -module-name Sorello $(call const_values_flags,$(APP_CONST_VALUES)) \
+	$(SWIFTC) $(SWIFT_COMMON_FLAGS) $(SWIFT_OPTIMIZATION) $(EXPERIMENT_SWIFT_FLAGS) -module-name Sorello \
+		$(call const_values_flags,$(APP_CONST_VALUES)) \
 		$(call package_library,$(PACKAGE),SorelloSpeech) \
 		$(call embedded_entitlements,$(APP_ENTITLEMENTS)) -o "$@" $(APP_SOURCES)
 
 $(KEYBOARD_BINARY): $(KEYBOARD_SOURCES) $(PACKAGE) $(CONFIG_STAMP) $(LINKED_KEYBOARD_ENTITLEMENTS) Makefile
 	@mkdir -p "$(@D)"
-	$(SWIFTC) $(SWIFT_COMMON_FLAGS) $(SWIFT_OPTIMIZATION) $(KEYBOARD_SWIFT_FLAGS) $(KEYBOARD_LINK_FLAGS) \
-		$(call package_library,$(PACKAGE),SorelloText) \
+	$(SWIFTC) $(SWIFT_COMMON_FLAGS) $(SWIFT_OPTIMIZATION) $(EXPERIMENT_SWIFT_FLAGS) $(KEYBOARD_SWIFT_FLAGS) \
+		$(KEYBOARD_LINK_FLAGS) $(call package_library,$(PACKAGE),$(KEYBOARD_LIBRARY)) \
 		$(call embedded_entitlements,$(KEYBOARD_ENTITLEMENTS)) -o "$@" $(KEYBOARD_SOURCES)
 
 $(ACTIVITY_BINARY): $(ACTIVITY_SOURCES) $(CONFIG_STAMP) $(LINKED_ACTIVITY_ENTITLEMENTS) $(APPINTENTS_PROTOCOLS) Makefile
@@ -476,6 +492,11 @@ $(APP_SIGNATURE): $(APP_BINARY) $(KEYBOARD_BINARY) $(ACTIVITY_BINARY) $(APP_ENTI
 	@plutil -replace CFBundleURLTypes.0.CFBundleURLName -string "$(BUNDLE_ID)" "$(APP_BUNDLE)/Info.plist"
 	@plutil -replace CFBundleURLTypes.0.CFBundleURLSchemes -json '["$(URL_SCHEME)"]' "$(APP_BUNDLE)/Info.plist"
 	@$(call info_plist,Config/SorelloKeyboard-Info.plist,$(APPEX_BUNDLE)/Info.plist,$(KEYBOARD_BUNDLE_ID))
+ifeq ($(KEYBOARD_DICTATION),1)
+	@# The experiment's keyboard captures audio, so it states the app's microphone sentence.
+	@sentence=$$(plutil -extract NSMicrophoneUsageDescription raw -o - Config/Sorello-Info.plist) && \
+		plutil -replace NSMicrophoneUsageDescription -string "$$sentence" "$(APPEX_BUNDLE)/Info.plist"
+endif
 	@$(call info_plist_base,Config/SorelloActivity-Info.plist,$(ACTIVITY_APPEX_BUNDLE)/Info.plist,$(ACTIVITY_BUNDLE_ID))
 	@! grep -l '\$$(' "$(APP_BUNDLE)/Info.plist" "$(APPEX_BUNDLE)/Info.plist" "$(ACTIVITY_APPEX_BUNDLE)/Info.plist" || { echo "Unexpanded Info.plist placeholder" >&2; exit 1; }
 	@printf 'APPL????' > "$(APP_BUNDLE)/PkgInfo"
@@ -570,18 +591,26 @@ ipa: all
 # What App Store Connect needs, checked locally from the built app and .ipa
 # (scripts/check-appstore-bundle.sh); it never contacts Apple. Asked for with
 # ipa, it waits for the package, also under -j.
+# $(1): the .ipa to check. The checker's command, with this invocation's KEYBOARD_DICTATION.
+appstore_check = sh scripts/check-appstore-bundle.sh --app "$(APP_BUNDLE)" --ipa "$(1)" --bundle-id "$(BUNDLE_ID)" \
+	--app-group "$(APP_GROUP)" --url-scheme "$(URL_SCHEME)" --universal-link "$(UNIVERSAL_LINK)" \
+	--display-name "$(DISPLAY_NAME)" --team-id "$(TEAM_ID)" --pin ../Models/model.lock.json \
+	--model-notices ../Resources/ModelNotices --keyboard-dictation "$(KEYBOARD_DICTATION)"
+
 appstore-check: $(filter ipa,$(MAKECMDGOALS))
-	@sh scripts/check-appstore-bundle.sh --app "$(APP_BUNDLE)" --ipa "$(IPA)" --bundle-id "$(BUNDLE_ID)" \
-		--app-group "$(APP_GROUP)" --url-scheme "$(URL_SCHEME)" --universal-link "$(UNIVERSAL_LINK)" \
-		--display-name "$(DISPLAY_NAME)" --team-id "$(TEAM_ID)" --pin ../Models/model.lock.json \
-		--model-notices ../Resources/ModelNotices
+	@$(call appstore_check,$(IPA))
 
 # Apple's own checks, then the upload, with an App Store Connect API key
 # (ASC_KEY_ID, ASC_ISSUER_ID; the .p8 in ~/.appstoreconnect/private_keys). Both
-# send the .ipa to Apple, so neither runs as part of any other target.
+# send the .ipa to Apple, so neither runs as part of any other target. Each takes a private copy of the .ipa, runs the
+# App Store check on that copy with this invocation's KEYBOARD_DICTATION, stops if it fails, and sends that same copy,
+# so nothing written to $(IPA) meanwhile is sent unchecked.
 appstore-validate appstore-upload: appstore-check
 	@[ -n "$(ASC_KEY_ID)" ] && [ -n "$(ASC_ISSUER_ID)" ] || { echo "$@ needs ASC_KEY_ID and ASC_ISSUER_ID." >&2; exit 1; }
-	xcrun altool $(if $(filter appstore-upload,$@),--upload-package,--validate-app) "$(IPA)" -t ios \
+	@set -e; snapshot=$$(mktemp -d "$${TMPDIR:-/tmp}/sorello-upload.XXXXXX"); trap 'rm -rf "$$snapshot"' EXIT; \
+	cp "$(IPA)" "$$snapshot/Sorello.ipa"; \
+	$(call appstore_check,$$snapshot/Sorello.ipa); \
+	xcrun altool $(if $(filter appstore-upload,$@),--upload-package,--validate-app) "$$snapshot/Sorello.ipa" -t ios \
 		--api-key "$(ASC_KEY_ID)" --api-issuer "$(ASC_ISSUER_ID)"
 
 check: typecheck test lint check-binaries
@@ -595,8 +624,12 @@ typecheck: $(SIMULATOR_PACKAGE)
 	xcrun --sdk iphonesimulator swiftc $$flags -module-name Sorello $(APP_SOURCES); \
 	echo "Type-checking the app (self-test variant)"; \
 	xcrun --sdk iphonesimulator swiftc $$flags -D SORELLO_SELFTEST -module-name Sorello $(APP_SOURCES); \
+	echo "Type-checking the app (keyboard dictation experiment)"; \
+	xcrun --sdk iphonesimulator swiftc $$flags -D SORELLO_KEYBOARD_DICTATION -module-name Sorello $(APP_SOURCES); \
 	echo "Type-checking the keyboard"; \
 	xcrun --sdk iphonesimulator swiftc $$flags $(KEYBOARD_SWIFT_FLAGS) $(KEYBOARD_SOURCES); \
+	echo "Type-checking the keyboard (keyboard dictation experiment)"; \
+	xcrun --sdk iphonesimulator swiftc $$flags -D SORELLO_KEYBOARD_DICTATION $(KEYBOARD_SWIFT_FLAGS) $(KEYBOARD_SOURCES); \
 	echo "Type-checking the Live Activity"; \
 	xcrun --sdk iphonesimulator swiftc $$flags $(ACTIVITY_SWIFT_FLAGS) $(ACTIVITY_SOURCES)
 
@@ -608,7 +641,9 @@ ifeq ($(strip $(TEST_SOURCES)),)
 	@echo "No iOS host tests yet; skipping."
 else
 	@mkdir -p "$(HOST_BUILD_DIR)"
+	@# With the keyboard dictation experiment compiled in, so its pure parts are tested in every build.
 	xcrun --sdk macosx swiftc -swift-version 5 -parse-as-library -warnings-as-errors $(SWIFT_PARALLEL_FLAGS) \
+		-D SORELLO_KEYBOARD_DICTATION \
 		-sdk "$$(xcrun --sdk macosx --show-sdk-path)" -target $(HOST_TARGET) -module-name SorelloiOSTests \
 		$(call package_library,$(HOST_PACKAGE),SorelloSpeech) \
 		-o "$(HOST_BUILD_DIR)/SorelloiOSTests" $(SHARED_SOURCES) $(HOSTCORE_SOURCES) $(NOTESCORE_SOURCES) $(ACTIVITYCORE_SOURCES) $(KEYBOARDCORE_SOURCES) $(KEYBOARD_TEST_SOURCES) $(TEST_SOURCES)
@@ -620,12 +655,18 @@ lint:
 	@for script in scripts/*.sh; do sh -n "$$script" || exit 1; done
 
 # The three executables, built for the simulator, name no networking API, and the keyboard and the Live Activity hold
-# nothing of the shared modules they must not reach, nor of NotesCore (scripts/check-binaries.sh).
+# nothing of the shared modules they must not reach, nor of NotesCore (scripts/check-binaries.sh). Built and checked
+# both ways: without the keyboard dictation experiment, and with it, under its own rules.
 CHECK_BUILD_DIR = build/simulator
+EXPERIMENT_CHECK_BUILD_DIR = build/simulator-keyboard-dictation
 check-binaries:
-	@$(MAKE) --no-print-directory binaries PLATFORM=simulator CHANNEL=dev BUILD_DIR="$(CHECK_BUILD_DIR)"
+	@$(MAKE) --no-print-directory binaries PLATFORM=simulator CHANNEL=dev BUILD_DIR="$(CHECK_BUILD_DIR)" KEYBOARD_DICTATION=0
 	@sh scripts/check-binaries.sh "$(CHECK_BUILD_DIR)/obj/Sorello" "$(CHECK_BUILD_DIR)/obj/SorelloKeyboard" \
 		"$(CHECK_BUILD_DIR)/obj/SorelloActivity"
+	@$(MAKE) --no-print-directory binaries PLATFORM=simulator CHANNEL=dev BUILD_DIR="$(EXPERIMENT_CHECK_BUILD_DIR)" \
+		KEYBOARD_DICTATION=1
+	@sh scripts/check-binaries.sh --keyboard-dictation "$(EXPERIMENT_CHECK_BUILD_DIR)/obj/Sorello" \
+		"$(EXPERIMENT_CHECK_BUILD_DIR)/obj/SorelloKeyboard" "$(EXPERIMENT_CHECK_BUILD_DIR)/obj/SorelloActivity"
 
 SIM_DEVICE ?= Sorello-Smoke
 SIM_DEVICE_TYPE ?= iPhone 17 Pro
