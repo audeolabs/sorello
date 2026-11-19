@@ -2257,8 +2257,10 @@ unchanged and always wins.
   `Model/`, loaded where it lies with no store, on `.neuralEngine`, with an
   empty dictionary (the entries never leave the app, invariant 7).
   - Loading starts at the tap, beside capture, so preparation overlaps the
-    speech. Once the model is ready, a stream (`openStream` with no options:
-    nothing is retained for a correction) takes the samples heard so far,
+    speech. Once the model is ready, a stream (`openStream` with
+    `reportsProgress` only, so the record can mark `firstChunkDecoded`: the
+    reports' text is discarded unread, and nothing is retained for a
+    correction) takes the samples heard so far,
     once, and then each converted chunk up to the seal; a stop before the
     model is ready waits for it and finishes against the sealed recording.
     If the stream fails other than by cancellation, the same sealed
