@@ -21,8 +21,8 @@ final class KeyboardSpeech {
 
     private let modelDirectory: URL
     private var engine: SpeechEngine?
-    /// `engine` has prepared successfully and no release of it is queued: an attempt that uses it starts warm.
-    private var enginePrepared = false
+    /// Whether an attempt that uses `engine` starts warm (`KeyboardEngineWarmth`).
+    private var warmth = KeyboardEngineWarmth()
     /// Every attempt's end and every release, in order (`KeyboardWorkLine`).
     private let work = KeyboardWorkLine()
 
@@ -31,7 +31,7 @@ final class KeyboardSpeech {
     }
 
     /// An engine is loaded and prepared, and not on its way out: an attempt now starts warm.
-    var isWarm: Bool { engine != nil && enginePrepared }
+    var isWarm: Bool { warmth.isWarm }
 
     /// The engine for an attempt, once every earlier attempt's model work and every release asked for have ended: the
     /// loaded one, or a new one. Nil, making nothing, when the calling task was cancelled meanwhile.
@@ -41,13 +41,13 @@ final class KeyboardSpeech {
         let engine = SpeechEngine(modelDirectory: modelDirectory, storeDirectory: nil, compute: .neuralEngine,
                                   dictionary: { _ in .empty })
         self.engine = engine
-        enginePrepared = false
+        warmth.made(ObjectIdentifier(engine))
         return engine
     }
 
     /// `engine` prepared successfully.
     func prepared(_ engine: SpeechEngine) {
-        if self.engine === engine { enginePrepared = true }
+        warmth.prepared(ObjectIdentifier(engine))
     }
 
     /// An attempt ended: the next waits until `ended` is done and the engine's model work has drained.
@@ -62,14 +62,12 @@ final class KeyboardSpeech {
     /// Releases the engine and its model once any preparation or model work has ended. From now on a tap is cold.
     func release() {
         let engine = self.engine
-        enginePrepared = false
+        let identity = engine.map(ObjectIdentifier.init)
+        warmth.releaseRequested(identity)
         work.then { [weak self] in
             await engine?.waitUntilModelWorkEnds()
             // Only the engine this release was asked for; one made since stays.
-            if let self, self.engine === engine {
-                self.engine = nil
-                self.enginePrepared = false
-            }
+            if let self, self.warmth.released(identity) { self.engine = nil }
         }
     }
 }
