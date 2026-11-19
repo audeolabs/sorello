@@ -778,7 +778,8 @@ private struct DictationIsland: View {
         Button {
             if state.mode.allowsDictation {
                 onAction()
-                if state.mode == .hostUnavailable { bounces += 1 }
+                // Only a tap that opens Sorello pops; one that dictates in the keyboard starts as with a session.
+                if state.mode == .hostUnavailable, !state.startDictatesInKeyboard { bounces += 1 }
                 if state.mode.isActiveCapture { onStop() }
                 client.micTapped()
             } else {
@@ -1023,7 +1024,7 @@ private struct DictationIsland: View {
 
     private var accessibilityHint: String {
         switch state.mode {
-        case .hostUnavailable: return "Opens Sorello to start a session"
+        case .hostUnavailable: return state.startDictatesInKeyboard ? "" : "Opens Sorello to start a session"
         case .starting, .recording: return "Stops listening and inserts what you said"
         case .voiceNote: return "Stops the voice note and saves it"
         default: return ""

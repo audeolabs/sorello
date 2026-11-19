@@ -19,6 +19,8 @@ enum KeyboardMessages {
     static let modelLoadingCaption = "Model loading"
     /// VoiceOver's words for Start with no session (the bar shows Start's dot, still, instead of these words).
     static let noSessionSpoken = "No session. Start opens Sorello"
+    /// When Start dictates in the keyboard (ARCHITECTURE.md, "In-keyboard dictation (experiment)"): nothing about opening.
+    static let noSession = "No session"
     static let storeWriteFailed = "Couldn't reach Sorello"
 
     // Dictation corrections (ARCHITECTURE.md, "Dictation corrections"): the chip, and the notices of a word sent to the
@@ -60,8 +62,10 @@ enum KeyboardMessages {
     }
 
     /// `launcherFailed`: opening Sorello from this keyboard instance has failed before, so idle
-    /// guidance asks the user to open it instead of promising a tap will.
-    static func title(for mode: KeyboardMode, launcherFailed: Bool) -> String {
+    /// guidance asks the user to open it instead of promising a tap will. `dictatesInKeyboard`: Start would dictate in
+    /// the keyboard, so nothing is said about opening Sorello.
+    static func title(for mode: KeyboardMode, launcherFailed: Bool, dictatesInKeyboard: Bool = false) -> String {
+        if mode == .hostUnavailable, dictatesInKeyboard { return noSession }
         switch mode {
         case .needsFullAccess: return "Allow Full Access to dictate"
         case .configurationError: return "Sorello is not installed correctly"
@@ -115,7 +119,9 @@ enum KeyboardMessages {
     /// The status words the bar does not show, for VoiceOver, only from a live host: the session's time left in the
     /// menu's words, the model loading when the user dictates or preparing now, no session (Start opens Sorello), and
     /// the model still loading while recording. Nil where the bar's own words or the island's label say it all.
-    static func spokenStatus(mode: KeyboardMode, status: HostStatus?, launcherFailed: Bool, now: Date) -> String? {
+    static func spokenStatus(mode: KeyboardMode, status: HostStatus?, launcherFailed: Bool, now: Date,
+                             dictatesInKeyboard: Bool = false) -> String? {
+        if mode == .hostUnavailable, dictatesInKeyboard { return noSession }
         let live = status.flatMap { status -> HostStatus? in
             status.schema == DictationProtocol.schema && status.session == .active
                 && DictationProtocol.isFresh(status.heartbeatAt, ttl: DictationProtocol.livenessTimeout, now: now) ? status : nil

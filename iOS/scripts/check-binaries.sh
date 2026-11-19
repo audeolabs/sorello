@@ -39,9 +39,9 @@ network_libraries='/(CFNetwork|Network|WebKit)\.framework/|/libnetwork\.'
 # The experiment's keyboard: the same, but for its one web view.
 experiment_network_symbols='URLSession|NSURLConnection|NSURLDownload|NWConnection|NWListener|NWBrowser|NWEndpoint|_nw_[a-z]|CFSocket|CFStreamCreatePairWithSocket|CFHost|^_(socket|connect|getaddrinfo|gethostbyname|gethostbyname2)$'
 experiment_network_libraries='/(CFNetwork|Network)\.framework/|/libnetwork\.'
-# The WebKit types the experiment's keyboard may name: the web view, its configuration, its navigation and UI delegates
-# with what they are handed, the script message handler and its message, and the data store.
-web_view_types='WKWebView|WKWebViewConfiguration|WKPreferences|WKWebpagePreferences|WKAudiovisualMediaTypes|WKUserContentController|WKScriptMessage|WKScriptMessageHandler|WKNavigationDelegate|WKUIDelegate|WKNavigation|WKNavigationAction|WKNavigationActionPolicy|WKNavigationResponse|WKNavigationResponsePolicy|WKNavigationType|WKFrameInfo|WKSecurityOrigin|WKMediaCaptureType|WKPermissionDecision|WKWebsiteDataStore'
+# The WebKit types the experiment's keyboard may name: the web view (and its capture state), its configuration, its
+# navigation and UI delegates with what they are handed, the script message handler and its message, and the data store.
+web_view_types='WKWebView|WKWebViewConfiguration|WKPreferences|WKWebpagePreferences|WKAudiovisualMediaTypes|WKUserContentController|WKScriptMessage|WKScriptMessageHandler|WKNavigationDelegate|WKUIDelegate|WKNavigation|WKNavigationAction|WKNavigationActionPolicy|WKNavigationResponse|WKNavigationResponsePolicy|WKNavigationType|WKFrameInfo|WKSecurityOrigin|WKMediaCaptureType|WKMediaCaptureState|WKPermissionDecision|WKWindowFeatures|WKWebsiteDataStore'
 # A Swift symbol of a module carries the module's name with its length in front of it.
 speech='12SpeechEngine|13DictationCore'
 shared_modules="$speech|13DictionaryKit|9TextRules"
