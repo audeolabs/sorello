@@ -836,7 +836,7 @@ Applying the reconciler's actions:
   terminal and belongs to another `hostRunID`, it is published as failed with
   `.interrupted` before anything is reconciled. The core also deletes every
   result whose `hostRunID` is not its own or cannot be read, and every
-  staging file.
+  staging file but the keyboard's `.staging-kd-` ones (Staging sweeps).
 - **Generation fences.** Every asynchronous completion (startup, first
   buffer, transcription, background-task expiry) carries a `DictationTicket`,
   a session generation, an engine generation or a voice note's generation, and
@@ -2118,15 +2118,19 @@ unchanged and always wins.
   A build with the flag is uploaded for internal testing only and is never
   submitted for release: `make appstore-check` fails on an experiment build
   unless the same invocation sets `KEYBOARD_DICTATION=1`, so packaging one
-  is always deliberate, and prints which variant it checked. The person who
-  uploads one marks it in App Store Connect as for internal testing only
-  where Apple offers that.
+  is always deliberate, and prints which variant it checked.
+  `appstore-validate` and `appstore-upload` run that check on the exact
+  `.ipa` they hand to `altool`, with the invocation's own flag, and stop if
+  it fails. The person who uploads one gives it to internal tester groups
+  only, and marks it for internal testing only where App Store Connect
+  offers that; external testing and release use a build without the flag.
 - **Host owns the microphone** (`KeyboardDictationRoute.hostOwnsMicrophone`,
   pure, tested): one predicate, used both to refuse a start and to revoke a
   dictation that runs. It holds when the status is fresh and readable (the
   existing access and schema guards apply) and shows a session that is
-  active or starting, a voice note that is starting or recording (one that
-  is saving holds no microphone), or a dictation recording; or when this
+  active or starting, a voice note whose phase is `preparing` or
+  `recording` (one that is `saving` holds no microphone), or a dictation
+  recording; or when this
   instance wrote a `record` that is still fresh within `pendingRecordTTL`
   and that the host has not answered (a bounce in flight).
 - **Route** (`KeyboardDictationRoute`, KeyboardCore; pure, tested). Start
@@ -2144,19 +2148,25 @@ unchanged and always wins.
   - this instance's last in-keyboard dictation did not end with
     `captureUnavailable`;
   - `keyboard-dictation.json` does not hold an unfinished record (one with
-    no outcome) written by an earlier keyboard process: that keyboard went
-    away mid-dictation, for a reason the record cannot know (iOS's memory
-    limit is the likeliest). That one tap goes to the host. Before it, the
-    keyboard rewrites the record with the outcome `terminated`, keeping its
-    steps, so later taps try in the keyboard again; if the rewrite fails,
-    this keyboard instance still treats that record as handled.
+    no outcome) whose `processID` is not this keyboard process's (a random
+    id each process makes once, in memory): a keyboard process left it
+    unfinished, and the record cannot say why (it went away, perhaps for
+    iOS's memory limit, or it was suspended before it could write). That
+    one tap goes to the host. Before it, the keyboard rewrites the record
+    with the outcome `abandoned`, keeping its steps, so later taps try in
+    the keyboard again; if the rewrite fails, this keyboard process still
+    treats that record as handled.
 
   While an in-keyboard dictation runs, Stop and Cancel act only on its
   attempt id, the one the bar showed; once it has ended they do nothing.
-  The host's taking the microphone is noticed by the status observation and
-  the poll, so both may capture for up to `KeyboardDictationClient.pollInterval`
-  (0.2 s) plus the host's own start; the keyboard checks the predicate again
-  just before WebKit's microphone grant and before delivering text.
+  The keyboard revokes its dictation on the first status it reads, by
+  notification or poll, in which the host owns the microphone. So both may
+  capture from the host's start until that status is published, read (at
+  most `KeyboardDictationClient.pollInterval`, 0.2 s, after it is written)
+  and the keyboard's capture is torn down; a status write the host must
+  retry at its next heartbeat lengthens that. The keyboard checks the
+  predicate again just before WebKit's microphone grant and before
+  delivering text.
 - **Phases** (`KeyboardDictationMachine`, KeyboardCore; pure, tested, one
   state machine fed events, with a monotonic clock passed in). Each attempt
   has an in-memory id; every event carries the id it belongs to, and one for
@@ -2174,13 +2184,15 @@ unchanged and always wins.
     `transcribing` do nothing; Cancel still cancels.
   - At `DictationProtocol.maxDictationDuration` it stops as if tapped.
   - No audio within `KeyboardDictationTiming.startupTimeout` (5 s) of the
-    tap, and the web view unable to capture (`captureUnavailable`), end the
+    tap (a timer that counts only in `starting`), and the web view unable to capture (`captureUnavailable`), end the
     attempt and tear capture down, and then, only if the keyboard is still
     visible and the attempt's field binding still holds, go on as a host tap
     would ("Mic tap"), so the user is never stuck: nothing had been heard.
   - After the first audio, no well-formed chunk for
-    `KeyboardDictationTiming.audioGap` (2 s), or a malformed chunk, is
-    `captureLost`.
+    `KeyboardDictationTiming.audioGap` (2 s), a malformed chunk, or a track
+    that ends by itself is `captureLost`. These apply only while capture is
+    open: the stop that seals the recording cancels the gap timer, and
+    later chunks or track events are ignored.
   - No result within `KeyboardDictationTiming.finishTimeout` (120 s) of the
     stop fails it with `transcriptionFailed`.
   - Ends that revoke it at once, in any phase: Cancel; the keyboard hiding
@@ -2264,7 +2276,11 @@ unchanged and always wins.
     A bound text is inserted when the editing side is not busy; an unbound
     one is offered as "Insert last dictation" (the step `offered`). It is
     inserted at most once, and is dropped `resultTTL` after the text was
-    made, or when the keyboard hides.
+    made, or when the keyboard hides (the step `dropped`).
+  - The record's outcome is written when the text is ready (`text`, or
+    `noSpeech`), so a text that waits for the editing side or the chip is
+    already a finished record. Its later insertion, offer or drop adds a
+    step, and only while the record still has that attempt's id.
   - While one runs, the keyboard still reads host results as before but
     claims and inserts none until it ends; then, once the editing side is
     not busy, results are taken oldest first, and the chip offers the
@@ -2281,11 +2297,12 @@ unchanged and always wins.
   again at every step, so a keyboard that iOS terminates leaves the last step
   it reached. A failed write does not affect the dictation. It holds only
   numbers and fixed names:
-  - the tap's date, the iOS version and whether the engine was already
-    loaded (warm) or not (cold);
+  - the attempt's id and the writer's `processID` (random, in memory
+    only, naming nothing), the tap's date, the iOS version and whether the
+    engine was already loaded (warm) or not (cold);
   - the steps reached (`tapped`, `captureRequested`, `firstAudio`,
     `modelLoading`, `modelReady`, `firstChunkDecoded`, `stopped`,
-    `transcribed`, `inserted`, `offered`, `ended`), each with
+    `transcribed`, `inserted`, `offered`, `dropped`, `ended`), each with
     milliseconds since the tap (monotonic), the footprint
     (`phys_footprint`) and the memory iOS still allows
     (`os_proc_available_memory`), in MB;
@@ -2297,20 +2314,21 @@ unchanged and always wins.
   - the audio's seconds and the capture's sample rate; the model's
     preparation milliseconds; stop to text and stop to insertion in
     milliseconds; whether the text came from the stream or the batch;
-  - memory warnings seen; the outcome: `inserted`, `offered`, `noSpeech`,
-    a failure, `cancelled` or `terminated`, and none while it runs. A record
-    with no outcome is unfinished.
+  - memory warnings seen; the outcome: `text`, `noSpeech`, a failure,
+    `cancelled` or `abandoned`, and none while it runs. A record with no
+    outcome is unfinished.
 
   The record is written at each step and, while recording, at most once a
   second when the least memory left or the warnings changed; the figures of
-  a `terminated` record are the last ones written. Decoding takes a missing
+  an `abandoned` record are the last ones written. Decoding takes a missing
   field as unknown. Never audio, text, or anything about the field or the
   app. Each
   in-keyboard dictation overwrites it; nothing else removes it. Its staging
   files are named `.staging-kd-<UUID>.tmp`; the host's launch sweep leaves
   them, and the age sweep removes them after `resultTTL`. The app shows it
-  in Diagnostics. A `terminated` record says only that the keyboard went
-  away during that step; iOS's own logs say why.
+  in Diagnostics. An `abandoned` record says only that its keyboard process
+  stopped writing during that step; whether iOS ended it for its memory is
+  for iOS's own logs (Settings → Privacy & Security → Analytics & Improvements → Analytics Data) to say.
 - **Switch.** `keyboardDictationEnabled`, on by default, is "Dictate in the
   keyboard" in Diagnostics; the keyboard reads it when it appears.
 
@@ -2535,7 +2553,7 @@ every other point of the bar
   | Ready, session on | Start, heartbeat (lit with Reduce Motion) | "Start dictation, Session ends in N min if idle" |
   | Ready, model released | Start, heartbeat (lit) | "…if idle. Model loads when you dictate" |
   | Model preparing (idle) | Start, dot breathing (lit) | "Start dictation, Preparing model. Session ends in N min if idle" |
-  | No session | Start, dot still (unlit) | "Start dictation, No session. Start opens Sorello" |
+  | No session | Start, dot still (unlit) | "Start dictation, No session. Start opens Sorello" ("Start dictation, No session" when Start dictates in the keyboard) |
   | No session, launcher failed or declined | Start, dot still (unlit); "Open Sorello to start a session" | the middle's words |
   | Starting | dimmed recording row | "Stop dictation, Starting" |
   | Recording | the wave and time | "Stop dictation, Recording, 5 seconds" (". Model loading") |
@@ -3235,7 +3253,7 @@ dictation hears it (`DictationCorrectionWatch`, pure, tested; owned by
 `EditingCore`). The app decides what is saved
 ([Custom dictionary](#custom-dictionary), Words from corrections).
 
-- **The watch.** Inserting a dictation (automatically or by the chip) starts
+- **The watch.** Inserting a host's dictation (automatically or by the chip) starts
   a watch on it, replacing any earlier one, when the keyboard has Full
   Access, the result does not press Return, and its trimmed text is not empty
   and within DictionaryKit's bounds (4096 bytes and 200 words; DESIGN §1.5.1).
@@ -4670,7 +4688,8 @@ app reads only the count. The models are fixed.
    cancels a dictation in progress and admits none until unlock, and lets a
    voice note go on; the session ends at idle expiry. In the keyboard,
    capture runs only from the user's mic tap to Stop, Cancel, the maximum
-   duration, the keyboard hiding or the host taking the microphone,
+   duration, the keyboard hiding or the first status it reads in which the
+   host owns the microphone,
    whichever comes first, only while the keyboard is visible, and never
    after the dictation it belongs to has ended ([In-keyboard dictation](#in-keyboard-dictation-experiment)).
 7. Custom dictionary entries live only in the host app's own `UserDefaults`,
@@ -4829,8 +4848,11 @@ merge (AGENTS.md).
   Notes, Messages and Mail: the first dictation after an install, then a
   second in the same keyboard and one after switching apps; Stop, Cancel,
   hiding the keyboard mid-recording, a dictation over a minute; the
-  microphone indicator only while recording; then read Diagnostics →
-  Keyboard dictation (steps, footprint, memory left, times). Starting a
+  microphone indicator only while recording; and after each of these,
+  before the next dictation (each overwrites the record), read Diagnostics
+  → Keyboard dictation (steps, footprint, memory left, times). Call an
+  `abandoned` record a memory termination only when iOS's own logs show
+  one. Starting a
   session from the session control while one records (the host takes
   over). With the switch off, and with the microphone not yet allowed, the
   bounce as before. Ideally on iOS 26 and 27 and on iPhones with less
