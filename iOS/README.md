@@ -31,6 +31,7 @@ Run from the repository root (or `make <target>` inside `iOS/`):
 make -C iOS                      # build/simulator/Sorello.app, no model
 make -C iOS SORELLO_MODEL_DIR=/path/to/model     # with the model in Sorello.app/Model/
 make -C iOS SWIPE_BUNDLE_DIR=/path/to/swipe-bundle  # with swipe typing in SorelloKeyboard.appex/Swipe/
+make -C iOS KEYBOARD_DICTATION=1 # the keyboard dictation experiment, for internal testing only
 make -C iOS check                # simulator type-check, host tests, lint, the executables' check
 ```
 
@@ -38,7 +39,12 @@ The app contains `PlugIns/SorelloKeyboard.appex` and
 `PlugIns/SorelloActivity.appex` (the session's Live Activity). The app links
 `SorelloSpeech` (`SpeechEngine`, `DictionaryKit`, `TextRules` and
 `DictationCore`), the keyboard `SorelloText` (`TextRules` and `DictionaryKit`) and the Live
-Activity neither. SwiftPM builds both libraries for each target triple in
+Activity neither. With `KEYBOARD_DICTATION=1` the keyboard links `SorelloSpeech`
+and WebKit instead and dictates by itself while no session runs
+([ARCHITECTURE.md](ARCHITECTURE.md), "In-keyboard dictation (experiment)"),
+and Diagnostics shows its last record. Such a build goes to internal testers
+only, never to release: `appstore-check` refuses it unless the same command
+sets `KEYBOARD_DICTATION=1`. `make -C iOS check` checks the keyboard both ways. SwiftPM builds both libraries for each target triple in
 `build/package/<triple>/`, and again when the package's manifest or a source
 of those modules changes; the host tests link the Mac's build.
 
@@ -340,6 +346,12 @@ make -C iOS appstore-upload "${STORE[@]}" ASC_KEY_ID=<key id> ASC_ISSUER_ID=<iss
     chosen as the build chooses it, exactly the files its manifest lists, each
     matching its SHA-256, with the pin and the model's notices beside it
   - that no self-test code is present
+  - which keyboard it is, and says so: the standard one, or the keyboard
+    dictation experiment's, which fails unless the same command sets
+    `KEYBOARD_DICTATION=1` (and then states the app's microphone sentence);
+    `appstore-validate` and `appstore-upload` run this check on the `.ipa`
+    they send, with their own `KEYBOARD_DICTATION`, and stop if it fails. An
+    experiment build goes to internal tester groups only
   - that no executable names a networking API, and that the keyboard and the
     Live Activity hold nothing of the shared modules they must not reach
     (`scripts/check-binaries.sh`, which `make -C iOS check` also runs on the

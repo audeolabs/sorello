@@ -6,19 +6,24 @@
 # Associated Domains entitlement, the Live Activity extension without any
 # capability, no self-test code, the model the pin lists for iOS with the pin
 # and the model's notices beside it, and executables that name no networking
-# API (check-binaries.sh).
+# API (check-binaries.sh). It says which keyboard it found: the standard one, or
+# the keyboard dictation experiment's (KEYBOARD_DICTATION=1), which is for
+# internal testing only and fails here unless --keyboard-dictation 1 asks for
+# it; each is held to its own rules.
 # It reads only the bundle, the pin and the notices; it never uploads or
 # contacts Apple.
 #
 # Usage: check-appstore-bundle.sh --app PATH --bundle-id ID --app-group GROUP
 #          --url-scheme SCHEME --universal-link URL --display-name NAME
 #          --team-id TEAM --pin PATH --model-notices DIR [--ipa PATH]
+#          [--keyboard-dictation 0|1]
 # With --ipa, every check runs on the app inside the .ipa, which is what Apple
 # receives; it must hold the same build as --app. Prints every failure and
 # exits 1 if there is any.
 set -u
 
 app= bundle_id= app_group= url_scheme= universal_link= display_name= team_id= pin= model_notices= ipa=
+keyboard_dictation=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --app) app=$2 ;;
@@ -31,6 +36,7 @@ while [ $# -gt 0 ]; do
         --pin) pin=$2 ;;
         --model-notices) model_notices=$2 ;;
         --ipa) ipa=$2 ;;
+        --keyboard-dictation) keyboard_dictation=$2 ;;
         *) echo "Unknown option: $1" >&2; exit 2 ;;
     esac
     shift 2 || { echo "Missing value for $1" >&2; exit 2; }
@@ -39,6 +45,10 @@ for required in app bundle_id app_group url_scheme universal_link display_name t
     eval "value=\$$required"
     [ -n "$value" ] || { echo "Missing --$(echo "$required" | tr _ -)" >&2; exit 2; }
 done
+case "$keyboard_dictation" in
+    0|1) ;;
+    *) echo "--keyboard-dictation must be 0 or 1: $keyboard_dictation" >&2; exit 2 ;;
+esac
 case "$universal_link" in
     https://?*/?*) ;;
     *) echo "--universal-link must be an https URL with a path: $universal_link" >&2; exit 2 ;;
@@ -341,7 +351,23 @@ for binary in "$app/Sorello" "$appex/SorelloKeyboard" "$activity/SorelloActivity
 done
 # No networking API in any executable; the keyboard and the Live Activity hold
 # only what they may of the shared modules, and nothing of the notes.
-sh "$(dirname "$0")/check-binaries.sh" "$app/Sorello" "$appex/SorelloKeyboard" "$activity/SorelloActivity" \
+# The keyboard dictation experiment's keyboard holds the speech engine or links
+# WebKit, and states a microphone sentence: any of these makes it the experiment.
+if xcrun nm "$appex/SorelloKeyboard" 2>/dev/null | grep -qE '12SpeechEngine|13DictationCore' ||
+    xcrun otool -L "$appex/SorelloKeyboard" 2>/dev/null | grep -q '/WebKit\.framework/' ||
+    [ -n "$(value "$keyboard_plist" NSMicrophoneUsageDescription)" ]; then
+    echo "Variant: keyboard dictation experiment (KEYBOARD_DICTATION=1), for internal testing only, never for release"
+    [ "$keyboard_dictation" = 1 ] ||
+        fail "keyboard: this is a keyboard dictation experiment build, for internal testing only; check it with KEYBOARD_DICTATION=1 to package it deliberately"
+    [ "$(value "$keyboard_plist" NSMicrophoneUsageDescription)" = "$(value "$app_plist" NSMicrophoneUsageDescription)" ] ||
+        fail "keyboard: NSMicrophoneUsageDescription is not the app's sentence"
+    binaries_variant=--keyboard-dictation
+else
+    echo "Variant: standard keyboard (no keyboard dictation experiment)"
+    [ "$keyboard_dictation" = 0 ] || fail "keyboard: KEYBOARD_DICTATION=1 was asked for, but this keyboard is the standard one"
+    binaries_variant=
+fi
+sh "$(dirname "$0")/check-binaries.sh" $binaries_variant "$app/Sorello" "$appex/SorelloKeyboard" "$activity/SorelloActivity" \
     > "$work/binaries.txt" 2>&1 || { grep '^FAIL:' "$work/binaries.txt"; fail "the executables' checks failed (above)"; }
 junk=$(find "$app" \( -name .DS_Store -o -name '*.xcent' -o -name '*.der' -o -name '__MACOSX' \) -print | head -5)
 [ -z "$junk" ] || fail "app contains build leftovers: $junk"
