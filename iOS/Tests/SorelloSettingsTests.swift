@@ -13,6 +13,7 @@ enum SorelloSettingsTests {
             ("fieldLayoutChoicesAreContentFreeAndBounded", testFieldLayoutChoicesAreContentFreeAndBounded),
             ("typingSwitchesAreOnByDefaultAndStoreOff", testTypingSwitchesAreOnByDefaultAndStoreOff),
             ("leftHandedIsOffByDefaultAndStoresOn", testLeftHandedIsOffByDefaultAndStoresOn),
+            ("keyboardDictationIsOnByDefaultAndStoresOff", testKeyboardDictationIsOnByDefaultAndStoresOff),
         ]
     }
 
@@ -206,6 +207,21 @@ enum SorelloSettingsTests {
             TestSupport.expect(!SorelloSettings(defaults: defaults).leftHanded, "left-handed not stored off")
             defaults.set("yes", forKey: "leftHanded")
             TestSupport.expect(!settings.leftHanded, "a string reads as on")
+        }
+    }
+
+    private static func testKeyboardDictationIsOnByDefaultAndStoresOff() {
+        withSettings { settings, defaults in
+            TestSupport.expect(settings.keyboardDictationEnabled, "keyboard dictation is off by default")
+            settings.keyboardDictationEnabled = false
+            TestSupport.expect(!SorelloSettings(defaults: defaults).keyboardDictationEnabled, "the switch did not store off")
+            TestSupport.expectEqual(defaults.object(forKey: "keyboardDictationEnabled") as? Bool, false)
+            TestSupport.expect(settings.leftHanded == false && settings.hapticsEnabled, "the switch changed another setting")
+            // A malformed value reads as the default.
+            defaults.set("no", forKey: "keyboardDictationEnabled")
+            TestSupport.expect(settings.keyboardDictationEnabled, "a string reads as off")
+            defaults.set([1], forKey: "keyboardDictationEnabled")
+            TestSupport.expect(settings.keyboardDictationEnabled, "an array reads as off")
         }
     }
 }

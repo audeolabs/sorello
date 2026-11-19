@@ -608,7 +608,9 @@ ifeq ($(strip $(TEST_SOURCES)),)
 	@echo "No iOS host tests yet; skipping."
 else
 	@mkdir -p "$(HOST_BUILD_DIR)"
+	@# With the keyboard dictation experiment compiled in, so its pure parts are tested in every build.
 	xcrun --sdk macosx swiftc -swift-version 5 -parse-as-library -warnings-as-errors $(SWIFT_PARALLEL_FLAGS) \
+		-D SORELLO_KEYBOARD_DICTATION \
 		-sdk "$$(xcrun --sdk macosx --show-sdk-path)" -target $(HOST_TARGET) -module-name SorelloiOSTests \
 		$(call package_library,$(HOST_PACKAGE),SorelloSpeech) \
 		-o "$(HOST_BUILD_DIR)/SorelloiOSTests" $(SHARED_SOURCES) $(HOSTCORE_SOURCES) $(NOTESCORE_SOURCES) $(ACTIVITYCORE_SOURCES) $(KEYBOARDCORE_SOURCES) $(KEYBOARD_TEST_SOURCES) $(TEST_SOURCES)

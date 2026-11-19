@@ -24,6 +24,7 @@ struct SorelloSettings {
         static let softKeyEdgesEnabled = "softKeyEdgesEnabled"
         static let autocorrectEnabled = "autocorrectEnabled"
         static let leftHanded = "leftHanded"
+        static let keyboardDictationEnabled = "keyboardDictationEnabled"
     }
 
     /// Remembered field layout choices, at most this many.
@@ -158,6 +159,13 @@ struct SorelloSettings {
     var leftHanded: Bool {
         get { defaults.object(forKey: Key.leftHanded) as? Bool ?? false }
         nonmutating set { defaults.set(newValue, forKey: Key.leftHanded) }
+    }
+
+    /// In-keyboard dictation (ARCHITECTURE.md, "In-keyboard dictation (experiment)"), on by default. Only an experiment
+    /// build's keyboard reads it, when it appears.
+    var keyboardDictationEnabled: Bool {
+        get { bool(Key.keyboardDictationEnabled) }
+        nonmutating set { defaults.set(newValue, forKey: Key.keyboardDictationEnabled) }
     }
 
     private static func isFingerprintKey(_ key: String) -> Bool {

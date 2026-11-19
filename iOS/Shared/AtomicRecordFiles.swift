@@ -27,17 +27,17 @@ struct AtomicRecordFiles: Sendable {
         #endif
     }
 
-    /// A new staging name in `directory`: `.staging-<UUID>` followed by `stagingSuffix`.
-    func makeStagingURL() -> URL {
-        directory.appendingPathComponent("\(Self.stagingPrefix)\(UUID().uuidString)\(stagingSuffix)", isDirectory: false)
+    /// A new staging name in `directory`: `.staging-`, then `tag`, a UUID and `stagingSuffix`.
+    func makeStagingURL(tag: String = "") -> URL {
+        directory.appendingPathComponent("\(Self.stagingPrefix)\(tag)\(UUID().uuidString)\(stagingSuffix)", isDirectory: false)
     }
 
     /// Replaces the file at `url`, in `directory`, with `data`: creates the directory if needed, writes a new
-    /// staging file with `protection` and renames it over `url`. On failure the staging file is removed and the
-    /// error rethrown.
-    func write(_ data: Data, to url: URL, protection: Data.WritingOptions) throws {
+    /// staging file with `protection` (its name tagged with `stagingTag`) and renames it over `url`. On failure the
+    /// staging file is removed and the error rethrown.
+    func write(_ data: Data, to url: URL, protection: Data.WritingOptions, stagingTag: String = "") throws {
         try createDirectoryIfNeeded()
-        let staging = makeStagingURL()
+        let staging = makeStagingURL(tag: stagingTag)
         do {
             try data.write(to: staging, options: [.withoutOverwriting, protection])
             guard rename(staging.path, url.path) == 0 else {
@@ -52,11 +52,16 @@ struct AtomicRecordFiles: Sendable {
     /// Removes the staging files in `directory` that `isInFlight` does not keep, judged by their modification
     /// date. One whose date cannot be read is removed. Other files are never touched.
     func sweepStagingFiles(keeping isInFlight: (_ modified: Date) -> Bool) {
+        sweepStagingFiles { _, modified in isInFlight(modified) }
+    }
+
+    /// As `sweepStagingFiles(keeping:)`, judged by each staging file's name as well as its modification date.
+    func sweepStagingFiles(keeping isInFlight: (_ name: String, _ modified: Date) -> Bool) {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
         for name in names where name.hasPrefix(Self.stagingPrefix) && name.hasSuffix(stagingSuffix) {
             let url = directory.appendingPathComponent(name, isDirectory: false)
             let modified = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
-            if let modified, isInFlight(modified) { continue }
+            if let modified, isInFlight(name, modified) { continue }
             try? FileManager.default.removeItem(at: url)
         }
     }

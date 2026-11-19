@@ -8,6 +8,7 @@ struct SorelloIOSTests {
             ("SorelloConfiguration", SorelloConfigurationTests.tests),
             ("DictationProtocol", DictationProtocolTests.tests),
             ("SharedDictationStore", SharedDictationStoreTests.tests),
+            ("KeyboardDictationRecord", KeyboardDictationRecordTests.tests),
             ("AtomicRecordFiles", AtomicRecordFilesTests.tests),
             ("HostReconciler", HostReconcilerTests.tests),
             ("HostRunRecovery", HostRunRecoveryTests.tests),

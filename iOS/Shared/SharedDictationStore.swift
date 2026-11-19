@@ -132,8 +132,14 @@ struct SharedDictationStore: Sendable {
     /// that dies between writing and renaming leaves one behind, and a result's may hold a transcript.
     /// The host passes 0 during run recovery, before it writes anything, to remove them at any age.
     /// Other callers keep a long age so they never pull an in-flight write from under the other process.
+    /// The keyboard's `.staging-kd-` files hold no content and may belong to a keyboard writing now: whatever `age`,
+    /// they are kept while fresh within `resultTTL` ("Files", Staging sweeps).
     func purgeStagingFiles(olderThan age: TimeInterval, now: Date) {
-        files.sweepStagingFiles { DictationProtocol.isFresh($0, ttl: age, now: now) }
+        files.sweepStagingFiles { name, modified in
+            let ttl = name.hasPrefix(Self.stagingPrefix + Self.keyboardDictationStagingTag)
+                ? max(age, DictationProtocol.resultTTL) : age
+            return DictationProtocol.isFresh(modified, ttl: ttl, now: now)
+        }
     }
 
     // MARK: The added word (ARCHITECTURE.md, "Files", One added word)
@@ -197,12 +203,62 @@ struct SharedDictationStore: Sendable {
         return errno == ENOENT ? .absent : .failed
     }
 
+    // MARK: In-keyboard dictation (ARCHITECTURE.md, "In-keyboard dictation (experiment)", Record)
+
+    /// Tags the staging files of `keyboard-dictation.json`, which the launch sweep leaves.
+    static let keyboardDictationStagingTag = "kd-"
+
+    #if SORELLO_KEYBOARD_DICTATION
+    func readKeyboardDictation() -> StoreRead<KeyboardDictationRecord> { read(at: keyboardDictationURL) }
+
+    /// The tap's write, which starts a record with a new attempt id over the last dictation's. Class C: it holds no
+    /// content.
+    func writeKeyboardDictation(_ record: KeyboardDictationRecord) throws {
+        try write(record.sanitized, to: keyboardDictationURL, protection: .completeFileProtectionUntilFirstUserAuthentication,
+                  stagingTag: Self.keyboardDictationStagingTag)
+    }
+
+    enum RecordReplacement: Equatable, Sendable {
+        case written
+        /// The record holds another attempt's id, or is `abandoned`, or is gone: it was left as it was.
+        case skipped
+        case failed
+    }
+
+    /// Every write after the tap's: reads the record and replaces it with `record` only if `mayReplace` allows, for
+    /// `record`'s attempt. Not locked against another keyboard process (only one keyboard is visible at a time).
+    @discardableResult
+    func replaceKeyboardDictation(_ record: KeyboardDictationRecord) -> RecordReplacement {
+        guard let attemptID = record.attemptID,
+              KeyboardDictationRecord.mayReplace(readKeyboardDictation(), forAttempt: attemptID) else { return .skipped }
+        return (try? writeKeyboardDictation(record)) == nil ? .failed : .written
+    }
+
+    enum AbandonedRecord: Equatable, Sendable {
+        /// No unfinished record of another process.
+        case none
+        /// There was one: rewritten as `abandoned`, or (`rewritten` false) the rewrite failed.
+        case found(rewritten: Bool)
+    }
+
+    /// The route's check at a tap: a record left unfinished by another keyboard process is rewritten with the outcome
+    /// `abandoned`, keeping its steps, only while it is still unfinished.
+    func abandonUnfinishedKeyboardDictation(notWrittenBy processID: UUID) -> AbandonedRecord {
+        guard var record = readKeyboardDictation().value, record.isUnfinished(byAnotherProcessThan: processID) else {
+            return .none
+        }
+        record.markAbandoned()
+        return .found(rewritten: (try? writeKeyboardDictation(record)) != nil)
+    }
+    #endif
+
     // MARK: Files
 
     var intentURL: URL { directory.appendingPathComponent("intent.json", isDirectory: false) }
     var presenceURL: URL { directory.appendingPathComponent("presence.json", isDirectory: false) }
     var statusURL: URL { directory.appendingPathComponent("status.json", isDirectory: false) }
     var addedWordURL: URL { directory.appendingPathComponent("added-word.json", isDirectory: false) }
+    var keyboardDictationURL: URL { directory.appendingPathComponent("keyboard-dictation.json", isDirectory: false) }
 
     func resultURL(for requestID: UUID) -> URL {
         directory.appendingPathComponent("result-\(requestID.uuidString).json", isDirectory: false)
@@ -263,11 +319,12 @@ struct SharedDictationStore: Sendable {
 
     /// Writes a uniquely named staging file next to the destination, then renames it over the
     /// destination: a reader sees the old or the new record, never part of one (`AtomicRecordFiles`).
-    private func write<Record: Encodable>(_ record: Record, to url: URL, protection: Data.WritingOptions) throws {
+    private func write<Record: Encodable>(_ record: Record, to url: URL, protection: Data.WritingOptions,
+                                          stagingTag: String = "") throws {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .secondsSince1970
         encoder.outputFormatting = .sortedKeys
         let data = try encoder.encode(record)
-        try files.write(data, to: url, protection: protection)
+        try files.write(data, to: url, protection: protection, stagingTag: stagingTag)
     }
 }
