@@ -15,6 +15,7 @@ import Testing
         #expect(paths.dictionaryFile.path == "/synthetic/root/dictionary.json")
         #expect(paths.historyDirectory.path == "/synthetic/root/history")
         #expect(paths.modelsDirectory.path == "/synthetic/root/Models")
+        #expect(paths.screenNotesDirectory.path == "/synthetic/root/ScreenNotes")
     }
 
     @Test(arguments: ["", ".", "..", "com/example", "../escape", "a\0b"])

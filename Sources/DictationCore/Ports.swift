@@ -73,10 +73,15 @@ public enum ShortcutBinding: Codable, Hashable, Sendable {
 
     /// The default Hold to Talk shortcut.
     public static let function = ShortcutBinding.modifiers([.function])
+    /// The default Screen Note shortcut, ⌥⇧S (the ANSI S key, 1).
+    public static let screenNote = ShortcutBinding.key(code: 1, modifiers: [.option, .shift])
 }
 
 public enum ShortcutAction: String, Codable, CaseIterable, Hashable, Sendable {
     case holdToTalk, tapToToggle, pasteAgain
+    /// Starts or finishes a screen note (ARCHITECTURE.md, section 14). Given to the shortcut adapter only while
+    /// screen notes are on.
+    case screenNote
 }
 
 /// How a hold ended.
@@ -102,6 +107,10 @@ public enum TriggerEvent: Sendable, Equatable {
     /// The session was locked or switched to another user, or the Mac is about to sleep. Whatever the shortcut
     /// mode, a recording stops here and nothing resumes by itself afterwards.
     case systemInterrupted
+    /// The Screen Note shortcut. Not the session's: the app takes it before the session (ARCHITECTURE.md, section 14).
+    case screenNotePressed
+    /// ⌘Z. Not the session's: it undoes a screen note's last mark while one records, and is consumed only then.
+    case undoPressed
 }
 
 /// Receives triggers on the main actor, in the order they happened.

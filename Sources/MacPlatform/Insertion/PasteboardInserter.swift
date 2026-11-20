@@ -76,6 +76,18 @@ public final class PasteboardInserter: TextInserting {
 
     /// Returns once every transaction asked for so far has finished, including its Return and its restore. The app
     /// awaits this before it quits, so a clipboard waiting to be put back is not lost.
+    /// Takes a turn on the clipboard between insertions, for a write of the caller's own (a screen note's copy), so
+    /// it never lands between an insertion's write and its paste or its restore. Returns false, without a turn, if the
+    /// calling task is cancelled while it waits. Every turn taken is given back with `endClipboardWrite`.
+    public func beginClipboardWrite() async -> Bool {
+        await line.enter()
+    }
+
+    /// Gives back the turn `beginClipboardWrite` took.
+    public func endClipboardWrite() async {
+        await line.leave()
+    }
+
     public func waitUntilIdle() async {
         await line.waitUntilIdle()
     }

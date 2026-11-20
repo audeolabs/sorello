@@ -94,7 +94,8 @@ nonisolated public struct StatusMenuRow: Equatable, Sendable {
         rows.append(StatusMenuRow(id: .separator(1), kind: .separator))
         rows.append(StatusMenuRow(id: .shortcutsHeading, kind: .heading, title: String(localized: "Shortcuts")))
         let notSet = String(localized: "Not set")
-        for kind in ShortcutKind.allCases {
+        // Screen Note is listed only while it has keys, which it has only while screen notes are on.
+        for kind in ShortcutKind.allCases where kind != .screenNote || shortcuts[kind] != nil {
             let keys = shortcuts[kind]
             let spoken = keys?.spokenLabel ?? notSet
             rows.append(StatusMenuRow(

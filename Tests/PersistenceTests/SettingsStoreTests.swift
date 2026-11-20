@@ -26,6 +26,8 @@ import Testing
         #expect(settings.microphoneID == nil)
         #expect(settings.avoidBluetoothMicrophone)
         #expect(!settings.setupCompleted)
+        #expect(!settings.screenNotes, "screen notes are off by default")
+        #expect(settings.screenNoteShortcut == .key(code: 1, modifiers: [.option, .shift]))
     }
 
     @Test func everySettingSurvivesARelaunch() throws {
@@ -48,6 +50,8 @@ import Testing
         settings.microphoneID = "synthetic-microphone"
         settings.avoidBluetoothMicrophone = false
         settings.setupCompleted = true
+        settings.screenNotes = true
+        settings.screenNoteShortcut = toggle
 
         let reopened = SettingsStore(defaults: suite.defaults)
         #expect(reopened.holdToTalkShortcut == .modifiers([.rightOption]))
@@ -65,6 +69,8 @@ import Testing
         #expect(reopened.microphoneID == "synthetic-microphone")
         #expect(!reopened.avoidBluetoothMicrophone)
         #expect(reopened.setupCompleted)
+        #expect(reopened.screenNotes)
+        #expect(reopened.screenNoteShortcut == toggle)
     }
 
     @Test func aRemovedShortcutStaysRemoved() throws {

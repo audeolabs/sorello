@@ -14,6 +14,13 @@ nonisolated protocol AppSpeech: SpeechTranscribing, CorrectionEngine {
     /// Transcribes files with this engine, by the path the `sorello` command takes too (ARCHITECTURE.md, section 5,
     /// "Transcribing a file"). `modelFitsThisMac` tells a model not yet downloaded from no model for this Mac at all.
     func fileTranscriber(modelFitsThisMac: Bool) -> any FileTranscribing
+    /// A file's words with their times in it, for a screen note's narration (ARCHITECTURE.md, section 14).
+    func transcribeWords(file: URL) async throws(FileSpeechFailure) -> [TimedWord]
+}
+
+extension AppSpeech {
+    /// An engine that cannot place words in time transcribes none.
+    func transcribeWords(file: URL) async throws(FileSpeechFailure) -> [TimedWord] { throw .failed }
 }
 
 extension SpeechEngine: AppSpeech {

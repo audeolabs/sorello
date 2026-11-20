@@ -44,11 +44,12 @@ let package = Package(
 
         // macOS.
         .target(name: "SorelloUI", dependencies: ["DesignCore"], swiftSettings: mainActor),
-        .target(name: "MacPlatform", dependencies: ["DictationCore", "DictionaryKit"], swiftSettings: strict),
+        .target(name: "MacPlatform", dependencies: ["DictationCore", "DictionaryKit", "DesignCore", "ScreenNotes"],
+                swiftSettings: strict),
         .target(
             name: "SorelloApp",
             dependencies: ["DictationCore", "TextRules", "DictionaryKit", "DesignCore", "SpeechEngine", "Persistence",
-                           "FileTranscription", "SorelloUI", "MacPlatform",
+                           "FileTranscription", "SorelloUI", "MacPlatform", "ScreenNotes",
                            .product(name: "Sparkle", package: "Sparkle")],
             swiftSettings: mainActor
         ),
@@ -84,7 +85,7 @@ let package = Package(
         .testTarget(name: "SorelloAppTests",
                     dependencies: ["SorelloApp", "DictationCore", "TextRules", "DictionaryKit", "DesignCore",
                                    "SpeechEngine", "Persistence", "FileTranscription", "SorelloUI", "MacPlatform",
-                                   "TestSupport"],
+                                   "ScreenNotes", "TestSupport"],
                     swiftSettings: strict),
     ],
     swiftLanguageModes: [.v6]

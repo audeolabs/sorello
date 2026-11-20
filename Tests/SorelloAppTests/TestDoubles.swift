@@ -69,6 +69,16 @@ final class FakeSpeech: AppSpeech {
     private let fits = Mutex<[Bool]>([])
     var fileTranscribersMade: [Bool] { fits.withLock { $0 } }
 
+    /// What a screen note's narration is heard as.
+    var timedWords: Result<[TimedWord], FileSpeechFailure> {
+        get { state.withLock { $0.timedWords } }
+        set { state.withLock { $0.timedWords = newValue } }
+    }
+
+    func transcribeWords(file: URL) async throws(FileSpeechFailure) -> [TimedWord] {
+        try state.withLock { $0.timedWords }.get()
+    }
+
     func fileTranscriber(modelFitsThisMac: Bool) -> any FileTranscribing {
         fits.withLock { $0.append(modelFitsThisMac) }
         return files
@@ -89,6 +99,7 @@ final class FakeSpeech: AppSpeech {
 
     private struct State {
         var transcript = "hello world"
+        var timedWords: Result<[TimedWord], FileSpeechFailure> = .success([])
         var opened: [SpeechStreamOptions] = []
         var released: [UInt64] = []
         var discards = 0
