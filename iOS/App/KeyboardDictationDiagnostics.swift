@@ -65,6 +65,7 @@ private struct RecordRows: View {
         LabeledContent("Peak (keyboard process)", value: KeyboardDictationLabels.megabytes(record.peakFootprintMB))
         LabeledContent("Least memory left", value: KeyboardDictationLabels.megabytes(record.leastAvailableMB))
         LabeledContent("Audio", value: KeyboardDictationLabels.audio(seconds: record.audioSeconds, rate: record.captureSampleRate))
+        LabeledContent("Microphone", value: record.captureInput.map { $0 == .builtIn ? "iPhone" : "Other" } ?? "—")
         LabeledContent("Input level", value: KeyboardDictationLabels.inputLevel(loudest: record.inputLoudestDBFS,
                                                                               typical: record.inputTypicalDBFS))
         LabeledContent("Preparation", value: KeyboardDictationLabels.milliseconds(record.preparationMilliseconds))

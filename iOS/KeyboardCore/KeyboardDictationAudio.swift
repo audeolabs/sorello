@@ -107,8 +107,8 @@ struct StreamingResampler: Sendable {
 /// Only well-formed chunks of at most `maxChunkDuration`, in order, at one rate, are audio; anything else is malformed.
 struct CaptureMessageReader: Sendable {
     enum Message: Equatable, Sendable {
-        /// One chunk, mono, at `rate`.
-        case audio(samples: [Float], rate: Double)
+        /// One chunk, mono, at `rate`, and the microphone the page believed it recorded from, if it said.
+        case audio(samples: [Float], rate: Double, input: KeyboardDictationRecord.CaptureInput? = nil)
         /// The page could not capture (getUserMedia refused or failed).
         case failed
         /// A track ended by itself.
@@ -133,6 +133,13 @@ struct CaptureMessageReader: Sendable {
               let rate = Self.number(message["rate"]), rate == rate.rounded(), Self.rateRange.contains(rate),
               self.rate == nil || self.rate == rate, let encoded = message["pcm"] as? String
         else { return .malformed }
+        var input: KeyboardDictationRecord.CaptureInput?
+        if let mic = message["mic"] {
+            guard let word = mic as? String, let named = KeyboardDictationRecord.CaptureInput(rawValue: word) else {
+                return .malformed
+            }
+            input = named
+        }
         // At most `maxChunkDuration` of samples, judged on the text before anything is decoded.
         let maxBytes = 2 * Int((rate * KeyboardDictationTiming.maxChunkDuration).rounded(.down))
         guard encoded.utf8.count <= (maxBytes + 2) / 3 * 4, let data = Data(base64Encoded: encoded),
@@ -147,7 +154,7 @@ struct CaptureMessageReader: Sendable {
                 samples[index] = Float(value) / 32_768
             }
         }
-        return .audio(samples: samples, rate: rate)
+        return .audio(samples: samples, rate: rate, input: input)
     }
 
     private static func number(_ value: Any?) -> Double? {

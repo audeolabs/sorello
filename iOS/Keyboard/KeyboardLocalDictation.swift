@@ -33,10 +33,19 @@ final class KeyboardLocalDictation {
     private let store: SharedDictationStore
     private let speech: KeyboardSpeech
     private let hooks: Hooks
-    /// Always `CapturePage.html` in the keyboard; a verification harness, never the keyboard, passes a synthetic source.
-    private let capturePage: String
+    /// Nil in the keyboard, which takes the page for "Use iPhone microphone" at each tap; a verification harness, never
+    /// the keyboard, passes a synthetic source.
+    private let capturePageOverride: String?
+    /// The page the current attempt's capture loads, chosen at its tap.
+    private var capturePage = CapturePage.html
     private var machine = KeyboardDictationMachine()
     private var capture: WebAudioCapture?
+    /// The held microphone (ARCHITECTURE.md, "In-keyboard dictation (experiment)", Capture, Held microphone): a capture
+    /// opened before the tap, posting nothing until the tap's dictation takes it. Its token names it to its own grants.
+    private var heldCapture: WebAudioCapture?
+    private var heldToken: UUID?
+    /// A held capture reported something since the keyboard appeared: no holding again until it next appears.
+    private(set) var heldCaptureReported = false
     private var pipeline: KeyboardAudioPipeline?
     private var transcription: KeyboardTranscription?
     private var meter: LevelMeter?
@@ -49,9 +58,9 @@ final class KeyboardLocalDictation {
     private var stoppedAt: TimeInterval?
     private var schedule = KeyboardDictationRecordSchedule()
 
-    init(store: SharedDictationStore, modelDirectory: URL, hooks: Hooks, capturePage: String = CapturePage.html) {
+    init(store: SharedDictationStore, modelDirectory: URL, hooks: Hooks, capturePage: String? = nil) {
         self.store = store
-        self.capturePage = capturePage
+        capturePageOverride = capturePage
         speech = KeyboardSpeech(modelDirectory: modelDirectory)
         self.hooks = hooks
     }
@@ -59,6 +68,12 @@ final class KeyboardLocalDictation {
     private static var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
 
     var isRunning: Bool { machine.isRunning }
+    /// The held microphone is open.
+    var isHolding: Bool { heldCapture != nil }
+    /// When a dictation's capture last closed, on the monotonic clock; nil if none has.
+    private(set) var captureClosedAt: TimeInterval?
+    /// A dictation's capture is open: it is starting or recording.
+    var isCapturing: Bool { machine.isCaptureOpen }
     var runningAttemptID: UUID? { machine.runningAttemptID }
     var lastEndedCaptureUnavailable: Bool { machine.lastEndedCaptureUnavailable }
     /// The top row's mode for it, or nil when the host's applies.
@@ -70,7 +85,10 @@ final class KeyboardLocalDictation {
 
     // MARK: Inputs
 
-    func start(documentID: UUID?) {
+    /// `useBuiltInMicrophone`: the shared setting, read at this tap (ARCHITECTURE.md, "In-keyboard dictation
+    /// (experiment)", Capture).
+    func start(documentID: UUID?, useBuiltInMicrophone: Bool) {
+        capturePage = capturePageOverride ?? CapturePage.page(useBuiltInMicrophone: useBuiltInMicrophone)
         handle(.tap(attempt: UUID(), documentID: documentID))
     }
 
@@ -84,8 +102,39 @@ final class KeyboardLocalDictation {
 
     func cancel(_ attemptID: UUID) { handle(.cancel(attempt: attemptID)) }
 
+    /// Opens or closes the held microphone, as `KeyboardMicrophoneHold.shouldHold` judged at this pass. Never while a
+    /// dictation's capture is open, and never with a harness's page.
+    func hold(_ shouldHold: Bool) {
+        guard shouldHold, !machine.isCaptureOpen, !heldCaptureReported, capturePageOverride == nil else { return releaseHold() }
+        guard heldCapture == nil, let container = hooks.container() else { return }
+        let token = UUID()
+        let held = WebAudioCapture(
+            page: CapturePage.heldMicrophoneHTML,
+            mayGrantMicrophone: { [weak self] in
+                guard let self else { return false }
+                return heldToken == token && !machine.isCaptureOpen && !hooks.hostOwnsMicrophone()
+            },
+            // Held, the page posts nothing; anything it reports ends the hold until the keyboard next appears.
+            onMessage: { [weak self] _ in
+                guard let self, heldToken == token else { return }
+                heldCaptureReported = true
+                releaseHold()
+            })
+        heldCapture = held
+        heldToken = token
+        held.open(in: container)
+    }
+
+    private func releaseHold() {
+        heldCapture?.close()
+        heldCapture = nil
+        heldToken = nil
+    }
+
     /// The keyboard is hiding: the dictation ends, its text goes, and the engine is released once its work has ended.
     func hide() {
+        releaseHold()
+        heldCaptureReported = false
         handle(.hide)
         timer?.invalidate()
         timer = nil
@@ -161,8 +210,7 @@ final class KeyboardLocalDictation {
         case .loadModel(let id):
             loadModel(id)
         case .seal(let id):
-            capture?.close()
-            capture = nil
+            closeCapture()
             pipeline?.seal { [weak self] seconds, rate in
                 Task { @MainActor in self?.sealed(id, seconds: seconds, rate: rate) }
             }
@@ -189,13 +237,22 @@ final class KeyboardLocalDictation {
         self.pipeline = pipeline
         meter = nil
         inputLevels = KeyboardInputLevels()
-        let capture = WebAudioCapture(
-            page: capturePage,
-            mayGrantMicrophone: { [weak self] in
-                guard let self else { return false }
-                return machine.runningAttemptID == id && machine.isCaptureOpen && !hooks.hostOwnsMicrophone()
-            },
-            onMessage: { [weak self] message in self?.received(message, for: id) })
+        let mayGrantMicrophone: () -> Bool = { [weak self] in
+            guard let self else { return false }
+            return machine.runningAttemptID == id && machine.isCaptureOpen && !hooks.hostOwnsMicrophone()
+        }
+        let onMessage: (CaptureMessageReader.Message) -> Void = { [weak self] message in self?.received(message, for: id) }
+        // The held microphone chose the iPhone's as the built-in page would: the tap's dictation takes it and records
+        // from now on (from when its page has loaded). Otherwise the hold goes first: a new capture needs its microphone.
+        if let held = heldCapture, held.isOpen, capturePage == CapturePage.builtInMicrophoneHTML {
+            heldCapture = nil
+            heldToken = nil
+            held.handOver(mayGrantMicrophone: mayGrantMicrophone, onMessage: onMessage)
+            capture = held
+            return
+        }
+        releaseHold()
+        let capture = WebAudioCapture(page: capturePage, mayGrantMicrophone: mayGrantMicrophone, onMessage: onMessage)
         self.capture = capture
         guard let container = hooks.container() else {
             DispatchQueue.main.async { [weak self] in self?.handle(.captureFailed(attempt: id)) }
@@ -216,7 +273,7 @@ final class KeyboardLocalDictation {
     private func received(_ message: CaptureMessageReader.Message, for id: UUID) {
         guard machine.runningAttemptID == id, machine.isCaptureOpen else { return }
         switch message {
-        case let .audio(samples, rate):
+        case let .audio(samples, rate, input):
             var meter = self.meter ?? LevelMeter.keyboardCapture(sampleRate: rate)
             meter.update(with: samples)
             // The machine judges the clock first: a chunk after the maximum duration or the audio gap finds capture
@@ -227,6 +284,7 @@ final class KeyboardLocalDictation {
                 Task { @MainActor in self?.converted(id) }
             }) else { handle(.captureFailed(attempt: id)); return }
             self.meter = meter
+            if let input { record?.captureInput = input }
             inputLevels.add(samples, rate: rate)
             hooks.level(meter.level)
         case .failed, .ended, .malformed:
@@ -279,13 +337,19 @@ final class KeyboardLocalDictation {
 
     /// Every end: capture torn down at once, the recording dropped, the transcription cancelled.
     private func tearDown() {
-        capture?.close()
-        capture = nil
+        closeCapture()
         pipeline?.cancel()
         pipeline = nil
         if let transcription { speech.attemptEnding(after: transcription.cancel()) }
         transcription = nil
         meter = nil
+    }
+
+    private func closeCapture() {
+        guard let capture else { return }
+        capture.close()
+        self.capture = nil
+        captureClosedAt = Self.now
     }
 
     // MARK: The record

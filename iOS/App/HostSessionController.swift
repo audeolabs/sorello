@@ -71,6 +71,9 @@ final class HostSessionController: ObservableObject, SessionControlHandling, Voi
         let sharedSettings = configuration.flatMap(SorelloSettings.init(configuration:))
         self.store = store
         settings = SharedSettingsModel(settings: sharedSettings)
+        // The keyboard's own capture follows "Use iPhone microphone" through the shared copy (ARCHITECTURE.md, "Capture",
+        // Microphone choice).
+        sharedSettings?.useBuiltInMicrophone = preferences.useBuiltInMicrophone
         noteRunFormatter = sharedSettings.map(NoteRunText.formatter(settings:))
         guard let configuration, let store, let sharedSettings else {
             core = nil
@@ -254,12 +257,13 @@ final class HostSessionController: ObservableObject, SessionControlHandling, Voi
         _ = transcriber.releaseIfIdle()
     }
 
-    /// "Use iPhone microphone". Stored and recorded as desired now; the session applies it at the next
-    /// start, at once when changed in the foreground during a session, or when the app next arrives in
-    /// the foreground. Until then routing keeps the applied choice (`MicrophoneRouter`).
+    /// "Use iPhone microphone". Stored, copied to the shared settings for the keyboard's own capture, and recorded as
+    /// desired now; the session applies it at the next start, at once when changed in the foreground during a session,
+    /// or when the app next arrives in the foreground. Until then routing keeps the applied choice (`MicrophoneRouter`).
     func setUseBuiltInMicrophone(_ value: Bool) {
         guard value != preferences.useBuiltInMicrophone else { return }
         preferences.useBuiltInMicrophone = value
+        settings.settings?.useBuiltInMicrophone = value
         (core?.capture as? MicrophoneCapture)?.router.setDesired(value)
         core?.captureSettingsChanged()
     }

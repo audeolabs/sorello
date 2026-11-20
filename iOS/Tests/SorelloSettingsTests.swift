@@ -14,6 +14,7 @@ enum SorelloSettingsTests {
             ("typingSwitchesAreOnByDefaultAndStoreOff", testTypingSwitchesAreOnByDefaultAndStoreOff),
             ("leftHandedIsOffByDefaultAndStoresOn", testLeftHandedIsOffByDefaultAndStoresOn),
             ("keyboardDictationIsOnByDefaultAndStoresOff", testKeyboardDictationIsOnByDefaultAndStoresOff),
+            ("builtInMicrophoneIsOnByDefaultAndStoresOff", testBuiltInMicrophoneIsOnByDefaultAndStoresOff),
         ]
     }
 
@@ -222,6 +223,22 @@ enum SorelloSettingsTests {
             TestSupport.expect(settings.keyboardDictationEnabled, "a string reads as off")
             defaults.set([1], forKey: "keyboardDictationEnabled")
             TestSupport.expect(settings.keyboardDictationEnabled, "an array reads as off")
+        }
+    }
+
+    /// The app's copy of "Use iPhone microphone", for the keyboard's own capture.
+    private static func testBuiltInMicrophoneIsOnByDefaultAndStoresOff() {
+        withSettings { settings, defaults in
+            TestSupport.expect(settings.useBuiltInMicrophone, "the iPhone microphone is not the default")
+            settings.useBuiltInMicrophone = false
+            TestSupport.expect(!SorelloSettings(defaults: defaults).useBuiltInMicrophone, "off was not stored")
+            TestSupport.expectEqual(defaults.object(forKey: "useBuiltInMicrophone") as? Bool, false)
+            TestSupport.expect(settings.keyboardDictationEnabled && settings.hapticsEnabled, "the choice changed another setting")
+            settings.useBuiltInMicrophone = true
+            TestSupport.expect(SorelloSettings(defaults: defaults).useBuiltInMicrophone, "on was not stored")
+            // A malformed value reads as the default.
+            defaults.set("no", forKey: "useBuiltInMicrophone")
+            TestSupport.expect(settings.useBuiltInMicrophone, "a string reads as off")
         }
     }
 }
