@@ -318,7 +318,13 @@ final class ScreenNoteCoordinator {
                               platform: ScreenNotePlatform,
                               words: @Sendable (URL) async throws(FileSpeechFailure) -> [TimedWord],
                               clipboard: any ClipboardTurns) async throws -> URL {
-        try await recording.finish()
+        do {
+            try await recording.finish()
+        } catch {
+            // A movie that did not close cleanly (the stream or its file stopped by itself) is made into a note if it
+            // can be read: whether it can is the movie's to say.
+            Diagnostics.record("screenNote.finishedUncleanly")
+        }
         guard let folder = current.folder else { throw ScreenRecordingFailure.failed }
         let movieFile = folder.appendingPathComponent(ScreenNote.Files.recording)
         let movie = try await platform.renderer.inspect(movieFile)

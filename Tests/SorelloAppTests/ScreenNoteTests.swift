@@ -63,13 +63,21 @@ final class FakeRecording: NoteRecordingSession {
 
     private let state = Mutex(State())
     let startedAt: TimeInterval?
+    /// The movie does not close cleanly, as when the stream stopped by itself.
+    let finishFails: Bool
     var finishes: Int { state.withLock { $0.finishes } }
     var cancels: Int { state.withLock { $0.cancels } }
 
-    init(startedAt: TimeInterval) { self.startedAt = startedAt }
+    init(startedAt: TimeInterval, finishFails: Bool = false) {
+        self.startedAt = startedAt
+        self.finishFails = finishFails
+    }
 
     func onInterrupted(_ handler: @escaping @Sendable () -> Void) { state.withLock { $0.interrupted = handler } }
-    func finish() async throws(ScreenRecordingFailure) { state.withLock { $0.finishes += 1 } }
+    func finish() async throws(ScreenRecordingFailure) {
+        state.withLock { $0.finishes += 1 }
+        if finishFails { throw .failed }
+    }
     func cancel() async { state.withLock { $0.cancels += 1 } }
     /// As the stream stopping by itself.
     func interrupt() { state.withLock { $0.interrupted }?() }
@@ -88,6 +96,9 @@ final class FakeRecorder: NoteRecorderStarting {
         var starts: [Start] = []
         var recordings: [FakeRecording] = []
         var fails = false
+        var finishFails = false
+        var holds = false
+        var held: [CheckedContinuation<Void, Never>] = []
     }
 
     private let state = Mutex(State())
@@ -98,12 +109,36 @@ final class FakeRecorder: NoteRecorderStarting {
         get { state.withLock { $0.fails } }
         set { state.withLock { $0.fails = newValue } }
     }
+    var finishFails: Bool {
+        get { state.withLock { $0.finishFails } }
+        set { state.withLock { $0.finishFails = newValue } }
+    }
+    /// Starting waits for `release()`, as a slow ScreenCaptureKit start does.
+    func hold() { state.withLock { $0.holds = true } }
+    var waiting: Int { state.withLock { $0.held.count } }
+
+    func release() {
+        let held = state.withLock { state in
+            state.holds = false
+            defer { state.held = [] }
+            return state.held
+        }
+        for waiter in held { waiter.resume() }
+    }
 
     init(clock: ManualClock) { self.clock = clock }
 
     func startRecording(display: NoteDisplay, file: URL, narrate: Bool, microphone: String?)
         async throws(ScreenRecordingFailure) -> any NoteRecordingSession {
-        let recording = FakeRecording(startedAt: clock.now)
+        await withCheckedContinuation { continuation in
+            let now = state.withLock { state -> Bool in
+                guard state.holds else { return true }
+                state.held.append(continuation)
+                return false
+            }
+            if now { continuation.resume() }
+        }
+        let recording = FakeRecording(startedAt: clock.now, finishFails: finishFails)
         let fails = state.withLock { state in
             state.starts.append(Start(display: display, file: file, narrate: narrate, microphone: microphone))
             if !state.fails { state.recordings.append(recording) }
@@ -566,6 +601,32 @@ struct ScreenNoteTests {
         await fixture.startNote()
         fixture.notes.recorder.last?.interrupt()
         await eventually { fixture.store.latest() != nil }
+    }
+
+    @Test func aMovieThatDidNotCloseCleanlyIsStillMadeIntoANote() async throws {
+        let fixture = try Fixture()
+        fixture.notes.recorder.finishFails = true
+        await fixture.startNote()
+        fixture.notes.recorder.last?.interrupt()
+        await eventually { fixture.coordinator.phase == .idle }
+        #expect(fixture.store.latest() != nil)
+        #expect(fixture.notes.copied.count == 1)
+    }
+
+    @Test func cancellingWhileTheRecordingStartsStopsItWhenItArrivesAndLeavesNothing() async throws {
+        let fixture = try Fixture()
+        fixture.notes.recorder.hold()
+        fixture.press()
+        await eventually { fixture.notes.recorder.waiting == 1 }
+        #expect(fixture.coordinator.phase == .starting)
+        #expect(fixture.app.relay.handle(.cancelPressed, at: fixture.clock.now))
+        #expect(fixture.coordinator.phase == .idle)
+        fixture.notes.recorder.release()
+        await eventually { fixture.notes.recorder.last?.cancels == 1 }
+        let notes = fixture.app.paths.screenNotesDirectory.path
+        await eventually { ((try? FileManager.default.contentsOfDirectory(atPath: notes)) ?? []).isEmpty }
+        #expect(fixture.notes.ink.shownOn.isEmpty, "it never showed as recording")
+        #expect(fixture.coordinator.notice == nil)
     }
 
     @Test func tenMinutesFinishTheNote() async throws {

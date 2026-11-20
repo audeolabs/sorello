@@ -65,6 +65,8 @@ public struct ScreenNoteRecorder: Sendable {
         // A note cancelled while the content was read never starts the stream.
         guard !Task.isCancelled else { throw .failed }
         let own = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
+        // The pill and the ink overlay are left out through the app; the overlay is also never shared.
+        if own.isEmpty { Diagnostics.record("screenNote.ownWindowsNotFound") }
         let filter = SCContentFilter(display: target, excludingApplications: own, exceptingWindows: [])
 
         let configuration = SCStreamConfiguration()

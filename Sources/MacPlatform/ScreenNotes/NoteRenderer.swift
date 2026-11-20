@@ -39,9 +39,10 @@ public struct NoteRenderer: Sendable {
     public func inspect(_ movie: URL) async throws(NoteRenderingFailure) -> NoteMovie {
         let asset = AVURLAsset(url: movie)
         do {
-            let duration = try await asset.load(.duration)
             guard let video = try await asset.loadTracks(withMediaType: .video).first else { throw NoteRenderingFailure.unreadable }
-            let (natural, transform) = try await video.load(.naturalSize, .preferredTransform)
+            // The video's own length: the narration may run on after the last frame, and a keyframe needs a frame.
+            let (natural, transform, range) = try await video.load(.naturalSize, .preferredTransform, .timeRange)
+            let duration = range.end
             let size = natural.applying(transform)
             let audio = try await asset.loadTracks(withMediaType: .audio)
             return NoteMovie(duration: max(duration.seconds, 0), size: CGSize(width: abs(size.width), height: abs(size.height)),
@@ -72,7 +73,14 @@ public struct NoteRenderer: Sendable {
             do {
                 decoded = try await generator.image(at: time).image
             } catch {
-                throw .unreadable
+                // Not exactly there (the last moments of a stream can lack a frame): the nearest frame before it.
+                generator.requestedTimeToleranceBefore = CMTime(value: 1, timescale: 2)
+                defer { generator.requestedTimeToleranceBefore = .zero }
+                do {
+                    decoded = try await generator.image(at: time).image
+                } catch {
+                    throw .unreadable
+                }
             }
             let drawing = note.drawing(of: index)
             guard let image = Self.marked(decoded, strokes: drawing.strokes, pins: drawing.pins) else { throw .writeFailed }

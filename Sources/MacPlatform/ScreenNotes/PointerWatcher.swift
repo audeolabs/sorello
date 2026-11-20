@@ -22,6 +22,11 @@ public final class PointerWatcher {
 
     public init() {}
 
+    /// Whether these modifiers draw: ⇧ alone. ⇧ with ⌘, ⌥ or ⌃ is a shortcut being pressed, as ⌥⇧S is to finish.
+    nonisolated public static func drawsInk(_ flags: NSEvent.ModifierFlags) -> Bool {
+        flags.intersection([.shift, .command, .option, .control]) == .shift
+    }
+
     /// Starts reading for `display`. `startedAt` is the note's zero, as `ProcessInfo.systemUptime`.
     public func start(display: NoteDisplay, startedAt: TimeInterval, handler: @escaping @MainActor (PointerEvent) -> Void) {
         stop()
@@ -31,7 +36,7 @@ public final class PointerWatcher {
         let timer = Timer(timeInterval: Self.interval, repeats: true) { _ in
             MainActor.assumeIsolated { [weak self] in
                 guard let self else { return }
-                let point = local(NSEvent.mouseLocation), shift = NSEvent.modifierFlags.contains(.shift)
+                let point = local(NSEvent.mouseLocation), shift = Self.drawsInk(NSEvent.modifierFlags)
                 if let last = self.last, last.point == point, last.shift == shift { return }
                 self.last = (point, shift)
                 handler(.moved(point, time: now(), shift: shift))
@@ -39,14 +44,15 @@ public final class PointerWatcher {
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
-        // A click is placed and timed by its own event, which may be delivered after the pointer has moved on. A
-        // global monitor's event has its place on the screen; a local one's is in its window. Its timestamp is
-        // seconds since startup, the note's clock.
+        // A click is placed and timed by its own event, which may be delivered after the pointer has moved on: a global
+        // monitor's event has its place on the screen, and its timestamp is seconds since startup, the note's clock.
+        // Only other apps' clicks are heard (Sorello's own windows, the pill among them, are not in the recording),
+        // and a press off the recorded display is not part of the note.
         let button: @MainActor (NSEvent) -> Void = { event in
-            let onScreen = event.window.map { $0.convertPoint(toScreen: event.locationInWindow) } ?? event.locationInWindow
-            let point = local(onScreen), time = event.timestamp - startedAt
+            let point = local(event.locationInWindow), time = event.timestamp - startedAt
             if event.type == .leftMouseDown {
-                handler(.buttonDown(point, time: time, shift: event.modifierFlags.contains(.shift)))
+                guard frame.contains(event.locationInWindow) else { return }
+                handler(.buttonDown(point, time: time, shift: Self.drawsInk(event.modifierFlags)))
             } else {
                 handler(.buttonUp(point, time: time))
             }
@@ -54,10 +60,6 @@ public final class PointerWatcher {
         if let global = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp], handler: { event in
             MainActor.assumeIsolated { button(event) }
         }) { monitors.append(global) }
-        if let localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp], handler: { event in
-            MainActor.assumeIsolated { button(event) }
-            return event
-        }) { monitors.append(localMonitor) }
     }
 
     public func stop() {

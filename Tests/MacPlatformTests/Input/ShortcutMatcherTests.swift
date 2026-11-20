@@ -1,3 +1,4 @@
+import AppKit
 import Carbon.HIToolbox
 import DictationCore
 import MacPlatform
@@ -557,6 +558,17 @@ struct RecordingTests {
 
 @Suite("Screen notes' keys")
 struct ScreenNoteKeyTests {
+    @Test("Only ⇧ alone draws ink: ⇧ with another modifier is a shortcut, such as ⌥⇧S")
+    @MainActor
+    func inkModifier() {
+        #expect(PointerWatcher.drawsInk([.shift]))
+        #expect(PointerWatcher.drawsInk([.shift, .capsLock]))
+        #expect(!PointerWatcher.drawsInk([.shift, .option]))
+        #expect(!PointerWatcher.drawsInk([.shift, .command]))
+        #expect(!PointerWatcher.drawsInk([.shift, .control]))
+        #expect(!PointerWatcher.drawsInk([]))
+    }
+
     @Test("The Screen Note shortcut is delivered as its own trigger and consumed")
     func screenNote() {
         var keys = Keyboard([.screenNote: .screenNote])

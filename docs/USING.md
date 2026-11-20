@@ -164,7 +164,7 @@ screen; Sorello then asks for Screen Recording, which it needs for nothing else.
 Press ⌥⇧S (change it on the Shortcuts screen) and Sorello records the screen you're pointing at, with your voice if
 it may use the microphone. Talk, click around, and:
 
-- hold ⇧ and move the pointer to draw in red; let go of ⇧ to end the stroke;
+- hold ⇧ (on its own) and move the pointer to draw in red; let go of ⇧ to end the stroke;
 - ⇧-click to drop a numbered pin;
 - press ⌘Z to take back the last stroke or pin.
 
@@ -173,8 +173,8 @@ contact sheet of them all, `summary.md` with what you said beside each keyframe,
 the contact sheet go on the clipboard: paste into a terminal for the summary, or into an app that takes images for
 the sheet. Show on the pill opens the note's folder. Escape, or Cancel on the pill, throws a note away.
 
-Notes are kept on this Mac, in Sorello's folder in Application Support, and only the newest 20. Sorello sends them
-nowhere.
+Each note's folder also keeps the recording itself, `recording.mov`, so notes can take some room. They are kept on
+this Mac, in Sorello's folder in Application Support, and only the newest 20. Sorello sends them nowhere.
 
 ## When something is wrong
 

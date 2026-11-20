@@ -1213,7 +1213,9 @@ A reviewer checks every change against these.
    the user starts, and only when screen notes are on. Sorello never asks
    for Screen Recording but when the user turns screen notes on. A note
    is kept on the Mac; Sorello sends it nowhere. The window list, other
-   apps' titles and the clipboard's contents are never read for it.
+   apps' titles and the clipboard's contents are never kept or used for it:
+   ScreenCaptureKit's list of what is on screen is read only to find the
+   display and leave Sorello's own windows out of the recording.
 
 `scripts/check-rules.sh` is a lint for the first two and for module
 purity. It catches the obvious mistakes; it does not prove the invariants.
@@ -1657,15 +1659,16 @@ and ship it. This section holds what concerns both apps.
 
 A *screen note* shows an AI agent a problem instead of describing it. The
 user presses a shortcut, talks, clicks around and draws on the screen,
-then presses it again. Sorello turns what was recorded into a small folder
+then presses it again. Sorello turns what was recorded into a folder
 an agent can read: numbered keyframes with the marks drawn on them, one
 contact sheet of them all, the narration transcribed by Sorello's own
 model and placed in time beside what was clicked and drawn, and a
 manifest. The contact sheet and the summary go on the clipboard. Screen
 notes are written from this section; no code is taken from another app.
 
-They are for the Mac only. Nothing here is in a neutral module the iPhone
-app links, and the iPhone app has no screen notes.
+They are for the Mac only, and the iPhone app has no screen notes. The one
+part in a module the iPhone app links is `SpeechEngine`'s
+`transcribeWords(file:)`, which it does not call.
 
 ### Turning them on
 
@@ -1733,7 +1736,8 @@ While a note records, Sorello reads the pointer and the modifier keys
 without taking any input from the app underneath: clicks, drags and
 scrolls go to it as usual.
 
-- **Ink.** While ⇧ is held, moving the pointer draws a red stroke
+- **Ink.** While ⇧ alone is held (not with ⌘, ⌥ or ⌃, as in ⌥⇧S), moving
+  the pointer draws a red stroke
   (marker, section 8) on a transparent overlay over the display, which
   never takes the mouse. Releasing ⇧ ends the stroke. A stroke under
   12 pt long is not ink. A stroke ends when ⇧ is released, at the place
@@ -1744,9 +1748,11 @@ scrolls go to it as usual.
   moved less than 12 pt and lasted less than 1 s. The overlay shows a
   brief ring there. A click later in the same hold is part of the
   drawing.
-- **Clicks.** Any other left click is recorded with its place and time,
-  a ⇧-press too long or too far for a pin included, unless its hold drew
-  ink. It is not drawn.
+- **Clicks.** Any other left click on the recorded display, in another
+  app, is recorded with its place and time, a ⇧-press too long or too far
+  for a pin included, unless its hold drew ink. It is not drawn. Clicks
+  on another display, and in Sorello's own windows (which the recording
+  leaves out), are not part of the note.
 - **Undo.** ⌘Z while a note records removes its last stroke or pin, which
   then appears nowhere. The shortcut adapter consumes ⌘Z only then
   (`undoPressed`, which the session never sees); otherwise ⌘Z goes on to
@@ -1802,6 +1808,12 @@ builds it, in this order:
    text), the strokes (number, start, end and points as time, x and y),
    the pins (number, time, x, y), the clicks (time, x, y), and whether
    there was narration.
+
+The folder also keeps `recording.mov`, the screen and the narration as
+they were recorded, so an agent can take more frames from it. A movie
+that did not close cleanly, because the stream or its file stopped by
+itself, is still made into a note if it can be read. Keyframes are
+decoded from the video's own length, which the narration may outlast.
 
 Then the clipboard gets one item with the summary as text and the contact
 sheet as a PNG, written between insertions (section 6, "Text
