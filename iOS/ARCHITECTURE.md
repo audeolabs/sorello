@@ -2255,7 +2255,17 @@ unchanged and always wins.
     is not the built-in microphone and exactly one input's label names the
     iPhone or the iPad as a word (iOS labels it "iPhone Microphone"), it
     stops that track and asks for that input by its `deviceId`, which makes
-    WebKit request it as the preferred input. With no input matching it
+    WebKit request it as the preferred input. A track named for the iPhone
+    is not yet proof: WebKit names the first track from its list of inputs
+    before iOS has settled the route, and renames it a few tenths of a
+    second later (seen on an iPhone with Bluetooth headphones: "iPhone
+    Microphone" became the headphones about 0.3 s after the grant). So when
+    the track names the iPhone and another input is listed, the page keeps
+    the track unrecorded and reads its label again every
+    `sorelloSettleStep` (100 ms) for up to `sorelloSettleLimit` (1.5 s),
+    switching as above as soon as the label names something else, and
+    recording with the track if it still names the iPhone at the limit.
+    With only the iPhone listed it records at once. With no input matching it
     records with the first track; if the second request fails, it asks
     once more as the first time and records with what that gives. Labels are read only
     inside the page and never posted, and no audio is posted before the

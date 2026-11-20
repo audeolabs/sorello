@@ -25,7 +25,8 @@ enum CapturePage {
     static let html = opening + "var sorelloPreferBuiltIn = false;\n" + script
 
     /// Records from the iPhone's microphone when iOS chose another input and exactly one input's label names the iPhone
-    /// or iPad as a word; otherwise as `html`. Labels are read only here and never posted.
+    /// or iPad as a word; otherwise as `html`. A first track named for the iPhone, with another input listed, is watched
+    /// for up to 1.5 s for WebKit to rename it once the route settles. Labels are read only here and never posted.
     static let builtInMicrophoneHTML = opening + "var sorelloPreferBuiltIn = true;\n" + script
 
     private static let opening = #"""
@@ -115,24 +116,42 @@ enum CapturePage {
     // iOS labels its own microphone "iPhone Microphone" (in English), naming the device as a word.
     var sorelloBuiltInLabel = /(^|[^A-Za-z])(iPhone|iPad)([^A-Za-z]|$)/;
 
-    // The first track is kept, unrecorded, while the inputs are listed, so a stop meanwhile stops it. Asking for the
-    // iPhone's microphone by its id makes WebKit request it as the preferred input.
+    // WebKit names the first track from its list of inputs before iOS settles the route, then renames it.
+    var sorelloSettleStep = 100;
+    var sorelloSettleLimit = 1500;
+
+    // Asking for the iPhone's microphone by its id makes WebKit request it as the preferred input.
+    function sorelloSwitch(media, deviceId) {
+      sorelloStopTracks(media);
+      sorelloMedia = null;
+      sorelloAsk(deviceId).then(sorelloStart, function () {
+        if (!sorelloStopped) { sorelloAsk(null).then(sorelloStart, sorelloFailed); }
+      });
+    }
+
+    function sorelloSettle(media, track, deviceId, waited) {
+      if (sorelloStopped) { return; }
+      if (!sorelloBuiltInLabel.test(track.label)) { sorelloSwitch(media, deviceId); return; }
+      if (waited >= sorelloSettleLimit) { sorelloStart(media); return; }
+      setTimeout(function () { sorelloSettle(media, track, deviceId, waited + sorelloSettleStep); }, sorelloSettleStep);
+    }
+
+    // The first track is kept, unrecorded, while the inputs are listed and its name settles, so a stop meanwhile
+    // stops it.
     function sorelloChoose(media) {
       if (sorelloStopped) { sorelloStopTracks(media); return; }
       var track = media.getAudioTracks()[0];
-      if (!sorelloPreferBuiltIn || !track || sorelloBuiltInLabel.test(track.label)) { sorelloStart(media); return; }
+      if (!sorelloPreferBuiltIn || !track) { sorelloStart(media); return; }
       sorelloMedia = media;
       navigator.mediaDevices.enumerateDevices().then(function (devices) {
         if (sorelloStopped) { return; }
-        var builtIn = devices.filter(function (device) {
-          return device.kind === "audioinput" && device.deviceId && sorelloBuiltInLabel.test(device.label);
-        });
-        if (builtIn.length !== 1) { sorelloStart(media); return; }
-        sorelloStopTracks(media);
-        sorelloMedia = null;
-        sorelloAsk(builtIn[0].deviceId).then(sorelloStart, function () {
-          if (!sorelloStopped) { sorelloAsk(null).then(sorelloStart, sorelloFailed); }
-        });
+        var inputs = devices.filter(function (device) { return device.kind === "audioinput" && device.deviceId; });
+        var builtIn = inputs.filter(function (device) { return sorelloBuiltInLabel.test(device.label); });
+        if (builtIn.length !== 1 || (inputs.length === 1 && sorelloBuiltInLabel.test(track.label))) {
+          sorelloStart(media);
+          return;
+        }
+        sorelloSettle(media, track, builtIn[0].deviceId, 0);
       }, function () {
         if (!sorelloStopped) { sorelloStart(media); }
       });

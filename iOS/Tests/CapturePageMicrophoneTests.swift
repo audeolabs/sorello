@@ -11,10 +11,12 @@ enum CapturePageMicrophoneTests {
             ("systemPageTakesTheInputIOSChooses", testSystemPageTakesTheInputIOSChooses),
             ("builtInPageSwitchesFromHeadphonesToTheIPhone", testBuiltInPageSwitchesFromHeadphonesToTheIPhone),
             ("builtInPageKeepsTheIPhoneWhenIOSChoseIt", testBuiltInPageKeepsTheIPhoneWhenIOSChoseIt),
+            ("builtInPageWaitsForWebKitToRenameTheTrack", testBuiltInPageWaitsForWebKitToRenameTheTrack),
             ("builtInPageRecordsWhatItHasWithoutOneIPhoneInput", testBuiltInPageRecordsWhatItHasWithoutOneIPhoneInput),
             ("builtInPageAsksAgainWhenTheIPhoneIsRefused", testBuiltInPageAsksAgainWhenTheIPhoneIsRefused),
             ("builtInPageFailsWhenEveryRequestIsRefused", testBuiltInPageFailsWhenEveryRequestIsRefused),
             ("stopWhileChoosingRecordsNothing", testStopWhileChoosingRecordsNothing),
+            ("stopWhileTheNameSettlesRecordsNothing", testStopWhileTheNameSettlesRecordsNothing),
             ("builtInPageReachesNothingOutsideIt", testBuiltInPageReachesNothingOutsideIt),
         ]
     }
@@ -57,9 +59,37 @@ enum CapturePageMicrophoneTests {
     }
 
     private static func testBuiltInPageKeepsTheIPhoneWhenIOSChoseIt() {
+        // Only the iPhone listed: nothing else could be recording, so it records at once.
+        let alone = Run(page: CapturePage.builtInMicrophoneHTML, devices: [iPhone], systemChoice: iPhone)
+        TestSupport.expectEqual(alone.requestedDevices, [nil])
+        TestSupport.expectEqual(alone.recordingFrom, iPhone.label)
+        TestSupport.expectEqual(alone.recordingStartedAt, 0)
+        // Headphones listed too: the name is watched for 1.5 s, and still naming the iPhone, it records that track.
         let run = Run(page: CapturePage.builtInMicrophoneHTML, devices: [iPhone, headset], systemChoice: iPhone)
         TestSupport.expectEqual(run.requestedDevices, [nil])
         TestSupport.expectEqual(run.recordingFrom, iPhone.label)
+        TestSupport.expect((1500 ... 1600).contains(run.recordingStartedAt ?? -1),
+                           "recording started at \(run.recordingStartedAt.map(String.init) ?? "never") ms, not at the 1.5 s limit")
+        TestSupport.expect(run.audioPosted, "the page posts no audio after the limit")
+    }
+
+    /// Seen on an iPhone with Bluetooth headphones: WebKit named the first track "iPhone Microphone" while iOS routed
+    /// the headphones' microphone, and renamed it about 0.3 s after the grant.
+    private static func testBuiltInPageWaitsForWebKitToRenameTheTrack() {
+        for headphones in [airPods, headset] {
+            let run = Run(page: CapturePage.builtInMicrophoneHTML, devices: [iPhone, headphones], systemChoice: iPhone,
+                          renamed: (to: headphones.label, atMilliseconds: 300))
+            TestSupport.expectEqual(run.requestedDevices, [nil, iPhone.id])
+            TestSupport.expectEqual(run.recordingFrom, iPhone.label)
+            TestSupport.expectEqual(run.liveTracks, [iPhone.label])
+            TestSupport.expect((300 ... 400).contains(run.recordingStartedAt ?? -1),
+                               "recording started at \(run.recordingStartedAt.map(String.init) ?? "never") ms, not just after the rename")
+            TestSupport.expect(!run.postedText.contains(headphones.label), "the page posted a device's label")
+        }
+        // A rename after the limit is not waited for.
+        let late = Run(page: CapturePage.builtInMicrophoneHTML, devices: [iPhone, airPods], systemChoice: iPhone,
+                       renamed: (to: airPods.label, atMilliseconds: 2500))
+        TestSupport.expectEqual(late.requestedDevices, [nil])
     }
 
     private static func testBuiltInPageRecordsWhatItHasWithoutOneIPhoneInput() {
@@ -103,6 +133,15 @@ enum CapturePageMicrophoneTests {
         TestSupport.expectEqual(listing.liveTracks, [])
         TestSupport.expectEqual(listing.recordingFrom, nil)
         TestSupport.expect(!listing.failed && !listing.audioPosted, "a stopped page posted")
+    }
+
+    private static func testStopWhileTheNameSettlesRecordsNothing() {
+        let run = Run(page: CapturePage.builtInMicrophoneHTML, devices: [iPhone, airPods], systemChoice: iPhone,
+                      renamed: (to: airPods.label, atMilliseconds: 600), stopAtMilliseconds: 300)
+        TestSupport.expectEqual(run.requestedDevices, [nil])
+        TestSupport.expectEqual(run.liveTracks, [])
+        TestSupport.expectEqual(run.recordingFrom, nil)
+        TestSupport.expect(!run.failed && !run.audioPosted, "a stopped page posted")
     }
 
     /// The same checks as `CapturePage.html`'s (`KeyboardDictationAudioTests`), and its posts carry only fixed kinds.
@@ -149,9 +188,14 @@ enum CapturePageMicrophoneTests {
         var audioPosted = false
         var failed = false
         var postedText = ""
+        /// Milliseconds of the harness's clock when the page made its audio context, nil if it never did.
+        var recordingStartedAt: Int?
 
+        /// `renamed`: WebKit renames the first track that long after the page starts. `stopAtMilliseconds`: Swift
+        /// stops the page then.
         init(page: String, devices: [Device], systemChoice: Device, refused: Set<String> = [],
-             refuseSystemAfterFirst: Bool = false, stopAfterFirstGrant: Bool = false) {
+             refuseSystemAfterFirst: Bool = false, stopAfterFirstGrant: Bool = false,
+             renamed: (to: String, atMilliseconds: Int)? = nil, stopAtMilliseconds: Int? = nil) {
             guard let context = JSContext() else {
                 TestSupport.expect(false, "JavaScriptCore made no context")
                 return
@@ -164,12 +208,15 @@ enum CapturePageMicrophoneTests {
                 "refused": Array(refused),
                 "refuseSystemAfterFirst": refuseSystemAfterFirst,
                 "stopAfterFirstGrant": stopAfterFirstGrant,
+                "renameTo": renamed?.to ?? NSNull(),
+                "renameAt": renamed?.atMilliseconds ?? NSNull(),
+                "stopAt": stopAtMilliseconds ?? NSNull(),
             ]
             context.setObject(config, forKeyedSubscript: "harnessConfig" as NSString)
             context.evaluateScript(Self.standIns)
             context.evaluateScript(Self.script(of: page))
-            // Promise jobs run as each evaluation ends; a few rounds settle every chain the page starts.
-            for _ in 0 ..< 20 { context.evaluateScript("harnessTick();") }
+            // Promise jobs run as each evaluation ends. Each tick moves the clock 10 ms; 3 s settles every chain.
+            for _ in 0 ..< 300 { context.evaluateScript("harnessTick();") }
             context.evaluateScript("harnessDeliverAudio();")
             if let exception { TestSupport.expect(false, "the page threw: \(exception)") }
             let result = context.evaluateScript("JSON.stringify(harnessResult())")?.toString() ?? "{}"
@@ -185,6 +232,7 @@ enum CapturePageMicrophoneTests {
             audioPosted = posts.contains { $0["kind"] as? String == "audio" }
             failed = posts.contains { $0["kind"] as? String == "failed" }
             postedText = object["postedText"] as? String ?? ""
+            recordingStartedAt = object["startedAt"] as? Int
         }
 
         private static func script(of page: String) -> String {
@@ -200,6 +248,13 @@ enum CapturePageMicrophoneTests {
         var harnessTracks = [];
         var harnessPosts = [];
         var harnessContexts = [];
+        var harnessNow = 0;
+        var harnessTimers = [];
+        var harnessStartedAt = null;
+
+        function setTimeout(callback, delay) {
+          harnessTimers.push({ at: harnessNow + delay, callback: callback });
+        }
 
         function harnessStream(label) {
           var track = { label: label, stopped: false, onended: null, stop: function () { this.stopped = true; } };
@@ -240,6 +295,7 @@ enum CapturePageMicrophoneTests {
           this.processor = null;
           this.closed = false;
           harnessContexts.push(this);
+          if (harnessStartedAt === null) { harnessStartedAt = harnessNow; }
         }
         AudioContext.prototype.createMediaStreamSource = function (media) {
           this.source = { media: media, connect: function () {}, disconnect: function () {} };
@@ -255,7 +311,16 @@ enum CapturePageMicrophoneTests {
         // A browser's; JavaScriptCore has none. The encoding is `KeyboardDictationAudioTests`' concern.
         function btoa(text) { return "AAAA"; }
 
-        function harnessTick() {}
+        function harnessTick() {
+          harnessNow += 10;
+          if (harnessConfig.renameAt !== null && harnessNow === harnessConfig.renameAt && harnessTracks.length > 0) {
+            harnessTracks[0].label = harnessConfig.renameTo;
+          }
+          if (harnessConfig.stopAt !== null && harnessNow === harnessConfig.stopAt) { sorelloStop(); }
+          var due = harnessTimers.filter(function (t) { return t.at <= harnessNow; });
+          harnessTimers = harnessTimers.filter(function (t) { return t.at > harnessNow; });
+          due.forEach(function (t) { t.callback(); });
+        }
 
         function harnessLive() {
           return harnessContexts.filter(function (c) { return !c.closed && c.source; });
@@ -282,7 +347,8 @@ enum CapturePageMicrophoneTests {
             recordingFrom: recordingFrom,
             liveTracks: harnessTracks.filter(function (t) { return !t.stopped; }).map(function (t) { return t.label; }),
             posts: harnessPosts.map(function (p) { return { kind: p.kind }; }),
-            postedText: JSON.stringify(harnessPosts)
+            postedText: JSON.stringify(harnessPosts),
+            startedAt: harnessStartedAt
           };
         }
         """#
