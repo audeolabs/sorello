@@ -57,15 +57,21 @@ public struct ScreenNote: Equatable, Sendable {
     /// What is drawn on keyframe `index`: the strokes and pins of its span, and every stroke still in progress at its
     /// time, cut at that time.
     public func drawing(of index: Int) -> (strokes: [Stroke], pins: [Pin]) {
-        let own = content(of: index)
+        Self.drawing(of: index, in: keyframes, strokes: marks.strokes, pins: marks.pins)
+    }
+
+    /// `drawing(of:)` for keyframes and marks read back from a manifest.
+    public static func drawing(of index: Int, in keyframes: [Keyframe], strokes all: [Stroke],
+                               pins: [Pin]) -> (strokes: [Stroke], pins: [Pin]) {
+        let span = KeyframePlanner.span(of: index, in: keyframes)
         let time = keyframes[index].time
-        var strokes = own.strokes
-        for stroke in marks.strokes where stroke.start <= time && stroke.end > time {
+        var strokes = all.filter { span.contains($0.end) }
+        for stroke in all where stroke.start <= time && stroke.end > time {
             guard !strokes.contains(where: { $0.number == stroke.number }) else { continue }
             let points = stroke.points.filter { $0.t <= time }
             if points.count >= 2 { strokes.append(Stroke(number: stroke.number, points: points)) }
         }
-        return (strokes.sorted { $0.number < $1.number }, own.pins)
+        return (strokes.sorted { $0.number < $1.number }, pins.filter { span.contains($0.time) })
     }
 
     /// A place as whole pixels of a keyframe.

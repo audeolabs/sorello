@@ -1,6 +1,7 @@
 import DictationCore
 import DictionaryKit
 import Foundation
+import Synchronization
 
 /// One piece of a pasted sequence (ARCHITECTURE.md, section 14, "Pasting a note").
 public enum PastePiece: Sendable, Equatable {
@@ -43,9 +44,12 @@ public final class PasteboardInserter: TextInserting {
     public static let returnDelay: TimeInterval = 0.08
     /// Step 7: how long after the paste the previous clipboard is put back, so the app has read the paste first.
     public static let restoreDelay: TimeInterval = 1
-    /// In a sequence, how long after a text's paste, and after an image's, the next piece is written, so the app has
-    /// taken each piece, in order, before the next (ARCHITECTURE.md, section 14, "Pasting a note").
-    public static let textPieceDelay: TimeInterval = 0.3
+    /// In a sequence, how long after a piece's paste the next waits for something to read it, at most
+    /// (ARCHITECTURE.md, section 14, "Pasting a note").
+    public static let pieceReadLimit: TimeInterval = 1
+    /// In a sequence, how long after a text's read, and after an image's, the next piece is written, so the app has
+    /// placed each piece, in order, before the next.
+    public static let textPieceDelay: TimeInterval = 0.05
     public static let imagePieceDelay: TimeInterval = 0.8
 
     private static let guardedModifiers: ModifierFlags = [.command, .option, .control, .shift]
@@ -233,6 +237,7 @@ public final class PasteboardInserter: TextInserting {
 
         for piece in pieces {
             if Task.isCancelled { return ending(.stopped(pasted: pasted, why: .cancelled)) }
+            let read = PieceRead()
             let content = switch piece {
             case .text(let text): [PasteboardRepresentation(type: ClipboardTransaction.textType, data: Data(text.utf8))]
             case .png(let data): [PasteboardRepresentation(type: ClipboardTransaction.pngType, data: data)]
@@ -242,12 +247,13 @@ public final class PasteboardInserter: TextInserting {
                     // Someone else's copy is on the clipboard now: it is theirs, and nothing is put back over it.
                     return (.stopped(pasted: pasted, why: .clipboardChanged), nil)
                 }
-                guard let next = current.replacing(with: content) else {
+                guard let next = current.replacing(with: content, onRead: read.mark) else {
                     return (.stopped(pasted: pasted, why: .failed), nil)
                 }
                 clipboard = next
             } else {
-                guard let first = ClipboardTransaction.write(content, to: pasteboard, restoring: restoring) else {
+                guard let first = ClipboardTransaction.write(content, to: pasteboard, restoring: restoring,
+                                                             onRead: read.mark) else {
                     return (.stopped(pasted: pasted, why: .failed), nil)
                 }
                 clipboard = first
@@ -255,7 +261,8 @@ public final class PasteboardInserter: TextInserting {
             // Held keys are checked only before the first piece: the window server can go on reporting the Command of
             // the sequence's own last paste as held, and a key the user presses meanwhile does not change the keys
             // posted, which carry exactly Command.
-            switch await post(.paste, app: app, fieldConfirmed: true, checkingModifiers: pasted == 0) {
+            switch await post(.paste, app: app, fieldConfirmed: true, checkingModifiers: pasted == 0,
+                              beforePosting: read.arm) {
             case .cancelled: return ending(.stopped(pasted: pasted, why: .cancelled))
             case .blocked(let reason): return ending(.stopped(pasted: pasted, why: .blocked(reason)))
             case .eventsUnavailable: return ending(.stopped(pasted: pasted, why: .failed))
@@ -264,13 +271,32 @@ public final class PasteboardInserter: TextInserting {
                 lastPaste = at
             }
             guard pasted < pieces.count else { break }
+            let limit = at(lastPaste) + Self.pieceReadLimit
+            while !read.isRead, clock.now < limit {
+                do { try await clock.sleep(for: min(Self.modifierPollInterval, limit - clock.now)) } catch { break }
+            }
+            let image: Double = if case .png = piece { 1 } else { 0 }
+            Diagnostics.record(read.isRead ? "insertion.piece.read" : "insertion.piece.unread",
+                               ["ms": ((clock.now - at(lastPaste)) * 1000).rounded(), "image": image])
             if case .png = piece {
-                await sleep(until: at(lastPaste) + Self.imagePieceDelay)
+                await sleep(until: clock.now + Self.imagePieceDelay)
             } else {
-                await sleep(until: at(lastPaste) + Self.textPieceDelay)
+                await sleep(until: clock.now + Self.textPieceDelay)
             }
         }
         return ending(.pasted)
+    }
+
+    /// Whether a piece of a sequence has been read since its paste was posted. A read before then, such as a
+    /// clipboard manager's as the piece is written, does not count.
+    private final class PieceRead: Sendable {
+        private let state = Mutex((armed: false, read: false))
+
+        var isRead: Bool { state.withLock { $0.read } }
+
+        @Sendable func arm() { state.withLock { $0.armed = true } }
+
+        @Sendable func mark() { state.withLock { if $0.armed { $0.read = true } } }
     }
 
     private func at(_ time: TimeInterval?) -> TimeInterval { time ?? clock.now }
@@ -366,11 +392,13 @@ public final class PasteboardInserter: TextInserting {
 
     /// Checks everything that can be checked synchronously and posts the key in the same main-actor turn, so nothing
     /// can change between the last check and the post. A cancelled caller posts nothing.
-    private func post(_ key: Key, app: Int32?, fieldConfirmed: Bool, checkingModifiers: Bool = true) async -> Posting {
+    private func post(_ key: Key, app: Int32?, fieldConfirmed: Bool, checkingModifiers: Bool = true,
+                      beforePosting: (@Sendable () -> Void)? = nil) async -> Posting {
         await MainActor.run { [self] in
             if Task.isCancelled { return .cancelled }
             if let reason = blockingReason(checkingModifiers: checkingModifiers) { return .blocked(reason) }
             guard let app, frontmost.frontmostProcessID() == app, fieldConfirmed else { return .blocked(.targetChanged) }
+            beforePosting?()
             let posted = switch key {
             case .paste: keys.post(key: pasteKey(), modifiers: .command)
             case .returnKey: keys.post(key: KeyCode.returnKey, modifiers: [])

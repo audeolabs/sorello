@@ -49,14 +49,15 @@ public struct ClipboardTransaction: Sendable {
         write(textContent(text), to: pasteboard, restoring: restoring)
     }
 
-    /// `write(_:to:restoring:)` for one item of any types: a piece of a pasted sequence.
+    /// `write(_:to:restoring:)` for one item of any types: a piece of a pasted sequence. With `onRead`, the data is
+    /// given only when an app asks for it, and `onRead` runs the first time one does.
     public static func write(_ content: [PasteboardRepresentation], to pasteboard: any PasteboardAccess,
-                             restoring: Bool) -> ClipboardTransaction? {
+                             restoring: Bool, onRead: (@Sendable () -> Void)? = nil) -> ClipboardTransaction? {
         let snapshot = restoring ? takeSnapshot(of: pasteboard) : nil
         let ownChangeCount = pasteboard.clear()
         let transaction = ClipboardTransaction(pasteboard: pasteboard, content: content, snapshot: snapshot,
                                                ownChangeCount: ownChangeCount)
-        guard pasteboard.write(items(for: content, transient: snapshot != nil)) else {
+        guard put(items(for: content, transient: snapshot != nil), on: pasteboard, onRead: onRead) else {
             transaction.restore()
             return nil
         }
@@ -68,13 +69,14 @@ public struct ClipboardTransaction: Sendable {
 
     /// Writes `content` in place of what this transaction wrote, keeping the same copy to put back: the next piece of
     /// a sequence. Returns nil, writing nothing, when someone else has written to the pasteboard since; and nil when
-    /// the system refused the write, after putting the copy back.
-    public func replacing(with content: [PasteboardRepresentation]) -> ClipboardTransaction? {
+    /// the system refused the write, after putting the copy back. `onRead` is as for `write`.
+    public func replacing(with content: [PasteboardRepresentation],
+                          onRead: (@Sendable () -> Void)? = nil) -> ClipboardTransaction? {
         guard isCurrent else { return nil }
         let ownChangeCount = pasteboard.clear()
         let next = ClipboardTransaction(pasteboard: pasteboard, content: content, snapshot: snapshot,
                                         ownChangeCount: ownChangeCount)
-        guard pasteboard.write(Self.items(for: content, transient: snapshot != nil)) else {
+        guard Self.put(Self.items(for: content, transient: snapshot != nil), on: pasteboard, onRead: onRead) else {
             next.restore()
             return nil
         }
@@ -106,6 +108,12 @@ public struct ClipboardTransaction: Sendable {
             _ = pasteboard.write(snapshot)
         }
         return false
+    }
+
+    private static func put(_ items: [PasteboardItemData], on pasteboard: any PasteboardAccess,
+                            onRead: (@Sendable () -> Void)?) -> Bool {
+        guard let onRead else { return pasteboard.write(items) }
+        return pasteboard.writeOnDemand(items, onRead: onRead)
     }
 
     private static func textContent(_ text: String) -> [PasteboardRepresentation] {
