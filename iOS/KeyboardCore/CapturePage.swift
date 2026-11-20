@@ -80,6 +80,9 @@ enum CapturePage {
 
     function sorelloStart(media) {
       if (sorelloStopped) { sorelloStopTracks(media); return; }
+      // A track can end before recording starts, while the page waits for its name to settle.
+      var ended = media.getAudioTracks().some(function (track) { return track.readyState === "ended"; });
+      if (ended) { sorelloStopTracks(media); sorelloMedia = null; sorelloPost({ kind: "ended" }); return; }
       sorelloMedia = media;
       media.getAudioTracks().forEach(function (track) {
         track.onended = function () { if (!sorelloStopped) { sorelloPost({ kind: "ended" }); } };
@@ -131,6 +134,7 @@ enum CapturePage {
 
     function sorelloSettle(media, track, deviceId, waited) {
       if (sorelloStopped) { return; }
+      if (track.readyState === "ended") { sorelloStart(media); return; }
       if (!sorelloBuiltInLabel.test(track.label)) { sorelloSwitch(media, deviceId); return; }
       if (waited >= sorelloSettleLimit) { sorelloStart(media); return; }
       setTimeout(function () { sorelloSettle(media, track, deviceId, waited + sorelloSettleStep); }, sorelloSettleStep);

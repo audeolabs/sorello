@@ -2265,6 +2265,9 @@ unchanged and always wins.
     `sorelloSettleStep` (100 ms) for up to `sorelloSettleLimit` (1.5 s),
     switching as above as soon as the label names something else, and
     recording with the track if it still names the iPhone at the limit.
+    A track that ended before recording starts, in that wait or any other,
+    is reported as `ended`, the same as one that ends while recording, and
+    nothing is recorded.
     With only the iPhone listed it records at once. With no input matching it
     records with the first track; if the second request fails, it asks
     once more as the first time and records with what that gives. Labels are read only

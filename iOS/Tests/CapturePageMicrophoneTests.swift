@@ -17,6 +17,7 @@ enum CapturePageMicrophoneTests {
             ("builtInPageFailsWhenEveryRequestIsRefused", testBuiltInPageFailsWhenEveryRequestIsRefused),
             ("stopWhileChoosingRecordsNothing", testStopWhileChoosingRecordsNothing),
             ("stopWhileTheNameSettlesRecordsNothing", testStopWhileTheNameSettlesRecordsNothing),
+            ("trackEndingWhileTheNameSettlesIsReported", testTrackEndingWhileTheNameSettlesIsReported),
             ("builtInPageReachesNothingOutsideIt", testBuiltInPageReachesNothingOutsideIt),
         ]
     }
@@ -173,6 +174,17 @@ enum CapturePageMicrophoneTests {
         }
     }
 
+    /// Headphones disconnecting, or a call taking the microphone, while the page waits: Swift hears `ended`, and
+    /// nothing records an ended track.
+    private static func testTrackEndingWhileTheNameSettlesIsReported() {
+        let run = Run(page: CapturePage.builtInMicrophoneHTML, devices: [iPhone, airPods], systemChoice: iPhone,
+                      endedAtMilliseconds: 300)
+        TestSupport.expectEqual(run.requestedDevices, [nil])
+        TestSupport.expectEqual(run.endedPosts, 1)
+        TestSupport.expectEqual(run.recordingFrom, nil)
+        TestSupport.expect(!run.audioPosted, "the page recorded an ended track")
+    }
+
     // MARK: Running a page
 
     struct Device {
@@ -190,12 +202,14 @@ enum CapturePageMicrophoneTests {
         var postedText = ""
         /// Milliseconds of the harness's clock when the page made its audio context, nil if it never did.
         var recordingStartedAt: Int?
+        var endedPosts = 0
 
         /// `renamed`: WebKit renames the first track that long after the page starts. `stopAtMilliseconds`: Swift
         /// stops the page then.
         init(page: String, devices: [Device], systemChoice: Device, refused: Set<String> = [],
              refuseSystemAfterFirst: Bool = false, stopAfterFirstGrant: Bool = false,
-             renamed: (to: String, atMilliseconds: Int)? = nil, stopAtMilliseconds: Int? = nil) {
+             renamed: (to: String, atMilliseconds: Int)? = nil, stopAtMilliseconds: Int? = nil,
+             endedAtMilliseconds: Int? = nil) {
             guard let context = JSContext() else {
                 TestSupport.expect(false, "JavaScriptCore made no context")
                 return
@@ -211,6 +225,7 @@ enum CapturePageMicrophoneTests {
                 "renameTo": renamed?.to ?? NSNull(),
                 "renameAt": renamed?.atMilliseconds ?? NSNull(),
                 "stopAt": stopAtMilliseconds ?? NSNull(),
+                "endAt": endedAtMilliseconds ?? NSNull(),
             ]
             context.setObject(config, forKeyedSubscript: "harnessConfig" as NSString)
             context.evaluateScript(Self.standIns)
@@ -233,6 +248,7 @@ enum CapturePageMicrophoneTests {
             failed = posts.contains { $0["kind"] as? String == "failed" }
             postedText = object["postedText"] as? String ?? ""
             recordingStartedAt = object["startedAt"] as? Int
+            endedPosts = posts.filter { $0["kind"] as? String == "ended" }.count
         }
 
         private static func script(of page: String) -> String {
@@ -257,7 +273,8 @@ enum CapturePageMicrophoneTests {
         }
 
         function harnessStream(label) {
-          var track = { label: label, stopped: false, onended: null, stop: function () { this.stopped = true; } };
+          var track = { label: label, readyState: "live", stopped: false, onended: null,
+                        stop: function () { this.stopped = true; this.readyState = "ended"; } };
           harnessTracks.push(track);
           var stream = { getTracks: function () { return [track]; }, getAudioTracks: function () { return [track]; } };
           return stream;
@@ -317,6 +334,12 @@ enum CapturePageMicrophoneTests {
             harnessTracks[0].label = harnessConfig.renameTo;
           }
           if (harnessConfig.stopAt !== null && harnessNow === harnessConfig.stopAt) { sorelloStop(); }
+          if (harnessConfig.endAt !== null && harnessNow === harnessConfig.endAt && harnessTracks.length > 0) {
+            var ending = harnessTracks[0];
+            ending.readyState = "ended";
+            ending.stopped = true;
+            if (ending.onended) { ending.onended(); }
+          }
           var due = harnessTimers.filter(function (t) { return t.at <= harnessNow; });
           harnessTimers = harnessTimers.filter(function (t) { return t.at > harnessNow; });
           due.forEach(function (t) { t.callback(); });
