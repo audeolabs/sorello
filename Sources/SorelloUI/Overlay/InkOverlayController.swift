@@ -76,20 +76,7 @@ public final class InkOverlayController {
     /// on that display, except in a circle around the pointer, and reports each to `touch`.
     public func show(on frame: CGRect, touch: (@MainActor (InkTouch) -> Void)? = nil) {
         hide()
-        let panel = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
-                            defer: false)
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        // Taking fingers, the window is left to the system's rule that a click or touch on a clear pixel goes through
-        // to what is underneath: the catcher's faint fill takes them, and its hole around the pointer lets the
-        // pointer through.
-        if touch == nil { panel.ignoresMouseEvents = true }
-        // Just under the pill's controls (OverlayPanel), so a finger can press them.
-        panel.level = .statusBar
-        panel.sharingType = .none
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        panel.hidesOnDeactivate = false
+        let panel = Self.panel(over: frame, takingFingers: touch != nil)
         let view = InkView(frame: CGRect(origin: .zero, size: frame.size), clock: clock)
         panel.contentView = view
         if let touch {
@@ -117,6 +104,26 @@ public final class InkOverlayController {
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
+    }
+
+    /// The overlay's window over `frame`: clear, never shared or recorded, on every Space. Taking no fingers it
+    /// ignores the mouse and is over everything on the display, an open menu included.
+    static func panel(over frame: CGRect, takingFingers: Bool) -> NSPanel {
+        let panel = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
+                            defer: false)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        // Taking fingers, the window is left to the system's rule that a click or touch on a clear pixel goes through
+        // to what is underneath: the catcher's faint fill takes them, and its hole around the pointer lets the
+        // pointer through.
+        if !takingFingers { panel.ignoresMouseEvents = true }
+        // Taking fingers, it is just under the pill's controls (OverlayPanel), so a finger can press them.
+        panel.level = takingFingers ? .statusBar : .screenSaver
+        panel.sharingType = .none
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        panel.hidesOnDeactivate = false
+        return panel
     }
 
     public func update(_ scene: InkScene) {

@@ -1773,7 +1773,8 @@ one input it does take (below, "Touch").
   goes to the app too. The pointer is not moved by a touch. The overlay
   sits just under the pill's controls, so a finger can press them. A
   finger's touch is not a click of the note, and on a display without
-  touch nothing changes.
+  touch nothing changes: the overlay takes nothing and stays over
+  everything on the display, an open menu included.
 - **Undo.** ⌘Z while a note records removes its last stroke or pin, which
   then appears nowhere. The shortcut adapter consumes ⌘Z only then
   (`undoPressed`, which the session never sees); otherwise ⌘Z goes on to
