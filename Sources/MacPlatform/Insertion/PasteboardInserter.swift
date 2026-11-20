@@ -252,7 +252,10 @@ public final class PasteboardInserter: TextInserting {
                 }
                 clipboard = first
             }
-            switch await post(.paste, app: app, fieldConfirmed: true) {
+            // Held keys are checked only before the first piece: the window server can go on reporting the Command of
+            // the sequence's own last paste as held, and a key the user presses meanwhile does not change the keys
+            // posted, which carry exactly Command.
+            switch await post(.paste, app: app, fieldConfirmed: true, checkingModifiers: pasted == 0) {
             case .cancelled: return ending(.stopped(pasted: pasted, why: .cancelled))
             case .blocked(let reason): return ending(.stopped(pasted: pasted, why: .blocked(reason)))
             case .eventsUnavailable: return ending(.stopped(pasted: pasted, why: .failed))
@@ -345,11 +348,12 @@ public final class PasteboardInserter: TextInserting {
         !keys.modifiersDown().intersection(Self.guardedModifiers).isEmpty
     }
 
-    /// Why nothing may be posted now, whatever the target: the session, Accessibility, or a held modifier.
-    private func blockingReason() -> ClipboardReason? {
+    /// Why nothing may be posted now, whatever the target: the session, Accessibility, or (with `checkingModifiers`)
+    /// a held modifier.
+    private func blockingReason(checkingModifiers: Bool = true) -> ClipboardReason? {
         if !session.isAvailable() { return .screenLocked }
         if !keys.mayPost() { return .accessibilityMissing }
-        if modifiersAreDown() { return .modifiersStillDown }
+        if checkingModifiers, modifiersAreDown() { return .modifiersStillDown }
         return nil
     }
 
@@ -362,10 +366,10 @@ public final class PasteboardInserter: TextInserting {
 
     /// Checks everything that can be checked synchronously and posts the key in the same main-actor turn, so nothing
     /// can change between the last check and the post. A cancelled caller posts nothing.
-    private func post(_ key: Key, app: Int32?, fieldConfirmed: Bool) async -> Posting {
+    private func post(_ key: Key, app: Int32?, fieldConfirmed: Bool, checkingModifiers: Bool = true) async -> Posting {
         await MainActor.run { [self] in
             if Task.isCancelled { return .cancelled }
-            if let reason = blockingReason() { return .blocked(reason) }
+            if let reason = blockingReason(checkingModifiers: checkingModifiers) { return .blocked(reason) }
             guard let app, frontmost.frontmostProcessID() == app, fieldConfirmed else { return .blocked(.targetChanged) }
             let posted = switch key {
             case .paste: keys.post(key: pasteKey(), modifiers: .command)

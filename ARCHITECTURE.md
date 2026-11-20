@@ -1855,7 +1855,10 @@ sequence of pastes, one piece at a time:
    no dictation's paste lands inside it. It waits for the shortcut's
    modifiers to come up, as an insertion does, and pastes nothing while
    the session is unavailable, Accessibility is missing or a modifier is
-   still held after 1 s.
+   still held after 1 s. Held keys are checked only then: after its
+   first paste the system can go on reporting the Command of the
+   sequence's own Command-V as held, and the keys it posts carry exactly
+   Command whatever the user holds.
 3. **Each piece** is written to the clipboard, marked transient, and
    pasted with Command-V into the app that was in front when the
    sequence began. The next piece is written 0.3 s after a text's paste
@@ -1864,12 +1867,13 @@ sequence of pastes, one piece at a time:
 4. **Stopping.** If the app in front changes, the clipboard changes under
    it (someone else wrote to it), or the user presses Escape or Cancel on
    the pill, the sequence stops before the next piece: what was pasted
-   stays, and the pill says it stopped and why: "Stopped pasting: a key
-   was still held", "…: the app in front changed", "…: something else
-   was copied", "…: Sorello needs Accessibility", "…: the screen
-   locked", or "Stopped pasting the screen note" after Escape or Cancel.
-   If the clipboard refused a piece or a key could not be posted, it says
-   "Couldn't paste the screen note".
+   stays, and the pill says it stopped and why: "Stopped pasting: the
+   app in front changed", "…: something else was copied", "…: Sorello
+   needs Accessibility", "…: the screen locked", or "Stopped pasting the
+   screen note" after Escape or Cancel. A key still held before the first
+   piece gives "…: a key was still held". If the clipboard refused a
+   piece or a key could not be posted, it says "Couldn't paste the screen
+   note".
 5. **The clipboard** is put back 1 s after the last paste, under the same
    guards and the same setting ("Restore the clipboard") as an insertion.
 

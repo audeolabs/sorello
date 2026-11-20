@@ -102,6 +102,15 @@ import Testing
         #expect(h.log.posts.first == Self.paste(at: PasteboardInserter.modifierPollInterval))
     }
 
+    /// After the first paste the system can report the sequence's own Command as held; that stops nothing.
+    @Test func aKeyReportedHeldAfterTheFirstPasteDoesNotStopTheSequence() async {
+        let h = Harness()
+        let keys = h.keys
+        h.keys.update { $0.onPost = { _ in keys.update { $0.modifiers = [.command] } } }
+        #expect(await drive(start(h), clock: h.clock) == .pasted)
+        #expect(h.log.posts.count == Self.pieces.count)
+    }
+
     @Test func aCancelledSequenceStopsBeforeTheNextPieceAndPutsTheClipboardBack() async {
         let h = Harness()
         let task = start(h)
