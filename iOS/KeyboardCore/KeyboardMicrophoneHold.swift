@@ -16,6 +16,8 @@ enum KeyboardMicrophoneHold {
         var bluetoothHeadphones: Bool
         /// A dictation's capture is open (it is starting or recording); one that transcribes does not count.
         var dictationCapturing: Bool
+        /// Since a dictation's capture last closed, on a monotonic clock; nil if none has.
+        var secondsSinceCaptureClosed: TimeInterval?
         /// A held capture reported something since the keyboard appeared.
         var heldCaptureReported: Bool
         /// Another app plays audio (`AVAudioSession.isOtherAudioPlaying`): keeps a hold from opening, not one open.
@@ -33,7 +35,12 @@ enum KeyboardMicrophoneHold {
         conditions.visible && conditions.tapDictatesInKeyboard && conditions.useBuiltInMicrophone
             && conditions.bluetoothHeadphones && !conditions.dictationCapturing && !conditions.heldCaptureReported
             && (conditions.holding || !conditions.otherAudioPlaying)
+            && (conditions.secondsSinceCaptureClosed.map { $0 >= reopenDelay } ?? true)
     }
+
+    /// How long after a dictation's capture closes the hold waits: WebKit is still tearing it down, and music it
+    /// interrupted may be resuming.
+    static let reopenDelay: TimeInterval = 1
 
     static func bluetoothHeadphones(in outputs: [Output]) -> Bool {
         outputs.contains { $0 != .other }

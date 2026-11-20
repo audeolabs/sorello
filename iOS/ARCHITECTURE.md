@@ -2248,12 +2248,16 @@ unchanged and always wins.
     keyboard holds the microphone (`KeyboardMicrophoneHold.shouldHold`,
     KeyboardCore; pure, tested): the keyboard is visible and not hiding, a
     tap would dictate in the keyboard (`KeyboardDictationRoute.decide`,
-    read as each pass reads it, also while a dictation transcribes), the shared `useBuiltInMicrophone` read on
+    read as each pass reads it, from the host's state whenever no
+    dictation's capture is open, so also while a dictation transcribes or
+    shows its failure), the shared `useBuiltInMicrophone` read on
     when the keyboard appeared (it changes only in the app, while the
     keyboard is hidden), Bluetooth headphones are in the route (the audio session's current
     route has a Bluetooth A2DP, LE or hands-free output; read only) or were
     within the last `KeyboardMicrophoneHold.headphonesGrace` (1 s), no
-    dictation's capture is open, and, for a hold about to open, no other
+    dictation's capture is open or closed less than
+    `KeyboardMicrophoneHold.reopenDelay` (1 s) ago, and, for a hold about
+    to open, no other
     app is playing audio (`AVAudioSession.isOtherAudioPlaying`; read
     only), because holding puts the headphones in hands-free mode: music
     or a podcast would pause or drop to call quality as the keyboard
@@ -2263,7 +2267,11 @@ unchanged and always wins.
     it could open and close the hold over and over. A dictation that has stopped recording
     and transcribes does not keep the hold off, so the next hold is
     choosing its input while the text is made, and a second dictation
-    soon after the first finds it ready. The grace is there because each switch to the iPhone's
+    soon after the first finds it ready. The reopen delay is there because
+    WebKit is still tearing the closed capture down, and an app whose
+    audio the dictation interrupted may be resuming: a hold opened at once
+    could fail on the closing capture, ending holding until the keyboard
+    next appears, or keep that music from resuming. The grace is there because each switch to the iPhone's
     microphone sends the output through the iPhone's receiver for about a
     tenth of a second (seen on an iPhone 15 Pro with AirPods Max): a hold
     that let go then opened again and switched again, about once a second.

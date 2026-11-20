@@ -9,12 +9,14 @@ enum KeyboardMicrophoneHoldTests {
             ("onlyBluetoothOutputsAreHeadphones", testOnlyBluetoothOutputsAreHeadphones),
             ("headphonesStayForTheGrace", testHeadphonesStayForTheGrace),
             ("otherAudioKeepsAHoldFromOpeningOnly", testOtherAudioKeepsAHoldFromOpeningOnly),
+            ("aClosedCaptureKeepsTheHoldOffForTheDelay", testAClosedCaptureKeepsTheHoldOffForTheDelay),
         ]
     }
 
     private static let good = KeyboardMicrophoneHold.Conditions(
         visible: true, tapDictatesInKeyboard: true, useBuiltInMicrophone: true, bluetoothHeadphones: true,
-        dictationCapturing: false, heldCaptureReported: false, otherAudioPlaying: false, holding: false)
+        dictationCapturing: false, secondsSinceCaptureClosed: nil, heldCaptureReported: false, otherAudioPlaying: false,
+        holding: false)
 
     private static func testHoldsWhenEverythingHolds() {
         TestSupport.expect(KeyboardMicrophoneHold.shouldHold(good), "the keyboard does not hold the microphone")
@@ -60,6 +62,17 @@ enum KeyboardMicrophoneHoldTests {
         // Every other condition still ends an open hold.
         held.bluetoothHeadphones = false
         TestSupport.expect(!KeyboardMicrophoneHold.shouldHold(held), "an open hold stays without headphones")
+    }
+
+    /// Right after a dictation's capture closes, WebKit is still tearing it down and music it interrupted may be
+    /// resuming: the hold waits `reopenDelay`.
+    private static func testAClosedCaptureKeepsTheHoldOffForTheDelay() {
+        TestSupport.expectEqual(KeyboardMicrophoneHold.reopenDelay, 1)
+        var conditions = good
+        for (seconds, holds) in [(0.0, false), (0.5, false), (0.99, false), (1.0, true), (30.0, true)] {
+            conditions.secondsSinceCaptureClosed = seconds
+            TestSupport.expectEqual(KeyboardMicrophoneHold.shouldHold(conditions), holds)
+        }
     }
 
     /// Each switch to the iPhone's microphone sends the output through the receiver for about a tenth of a second; the

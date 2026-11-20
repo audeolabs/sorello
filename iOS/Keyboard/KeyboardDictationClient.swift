@@ -553,7 +553,9 @@ final class KeyboardDictationClient: ObservableObject {
         var conditions = KeyboardMicrophoneHold.Conditions(
             visible: isVisible && !hiding, tapDictatesInKeyboard: tapDictatesInKeyboard,
             useBuiltInMicrophone: useBuiltInMicrophone, bluetoothHeadphones: false,
-            dictationCapturing: local?.isCapturing == true, heldCaptureReported: local?.heldCaptureReported == true,
+            dictationCapturing: local?.isCapturing == true,
+            secondsSinceCaptureClosed: local?.captureClosedAt.map { ProcessInfo.processInfo.systemUptime - $0 },
+            heldCaptureReported: local?.heldCaptureReported == true,
             otherAudioPlaying: false, holding: local?.isHolding == true)
         if conditions.visible, tapDictatesInKeyboard, useBuiltInMicrophone, !conditions.dictationCapturing,
            !conditions.heldCaptureReported {
@@ -723,10 +725,10 @@ final class KeyboardDictationClient: ObservableObject {
                 access: access, status: status, intent: intent, instanceID: instanceID, now: now,
                 conditions: routeConditions(unfinishedRecord: unhandledUnfinishedRecord(in: store) != nil)) == .keyboard
         }
-        // A dictation that transcribes does not keep the hold off: the route as the host's state decides it.
+        // A dictation that transcribes or shows its failure does not keep the hold off: the route as the host's state
+        // decides it, whenever no dictation's capture is open.
         var holdTapDictatesInKeyboard = startDictatesInKeyboard
-        if local?.isRunning == true, local?.isCapturing == false, keyboardDictationEnabled, access == .fullAccess,
-           let store {
+        if local?.isCapturing != true, keyboardDictationEnabled, access == .fullAccess, let store {
             holdTapDictatesInKeyboard = KeyboardDictationRoute.decide(
                 access: access, status: status, intent: intent, instanceID: instanceID, now: now,
                 conditions: routeConditions(unfinishedRecord: unhandledUnfinishedRecord(in: store) != nil)) == .keyboard

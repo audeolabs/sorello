@@ -70,6 +70,8 @@ final class KeyboardLocalDictation {
     var isRunning: Bool { machine.isRunning }
     /// The held microphone is open.
     var isHolding: Bool { heldCapture != nil }
+    /// When a dictation's capture last closed, on the monotonic clock; nil if none has.
+    private(set) var captureClosedAt: TimeInterval?
     /// A dictation's capture is open: it is starting or recording.
     var isCapturing: Bool { machine.isCaptureOpen }
     var runningAttemptID: UUID? { machine.runningAttemptID }
@@ -208,8 +210,7 @@ final class KeyboardLocalDictation {
         case .loadModel(let id):
             loadModel(id)
         case .seal(let id):
-            capture?.close()
-            capture = nil
+            closeCapture()
             pipeline?.seal { [weak self] seconds, rate in
                 Task { @MainActor in self?.sealed(id, seconds: seconds, rate: rate) }
             }
@@ -336,13 +337,19 @@ final class KeyboardLocalDictation {
 
     /// Every end: capture torn down at once, the recording dropped, the transcription cancelled.
     private func tearDown() {
-        capture?.close()
-        capture = nil
+        closeCapture()
         pipeline?.cancel()
         pipeline = nil
         if let transcription { speech.attemptEnding(after: transcription.cancel()) }
         transcription = nil
         meter = nil
+    }
+
+    private func closeCapture() {
+        guard let capture else { return }
+        capture.close()
+        self.capture = nil
+        captureClosedAt = Self.now
     }
 
     // MARK: The record
