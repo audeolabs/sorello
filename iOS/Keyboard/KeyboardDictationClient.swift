@@ -726,9 +726,10 @@ final class KeyboardDictationClient: ObservableObject {
                 conditions: routeConditions(unfinishedRecord: unhandledUnfinishedRecord(in: store) != nil)) == .keyboard
         }
         // A dictation that transcribes or shows its failure does not keep the hold off: the route as the host's state
-        // decides it, whenever no dictation's capture is open.
+        // decides it, whenever no dictation's capture is open (with the host's mode shown, as just decided above).
         var holdTapDictatesInKeyboard = startDictatesInKeyboard
-        if local?.isCapturing != true, keyboardDictationEnabled, access == .fullAccess, let store {
+        if local?.isCapturing != true, mode != .hostUnavailable, keyboardDictationEnabled, access == .fullAccess,
+           let store {
             holdTapDictatesInKeyboard = KeyboardDictationRoute.decide(
                 access: access, status: status, intent: intent, instanceID: instanceID, now: now,
                 conditions: routeConditions(unfinishedRecord: unhandledUnfinishedRecord(in: store) != nil)) == .keyboard
