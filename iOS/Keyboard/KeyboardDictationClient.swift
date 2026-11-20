@@ -548,13 +548,14 @@ final class KeyboardDictationClient: ObservableObject {
     }
 
     /// The held microphone (ARCHITECTURE.md, "In-keyboard dictation (experiment)", Capture, Held microphone), judged at
-    /// every pass. The route is read only while the keyboard is visible with "Use iPhone microphone" on.
+    /// every pass. The route is read only when everything else holds.
     private func updateHeldMicrophone(tapDictatesInKeyboard: Bool) {
         var conditions = KeyboardMicrophoneHold.Conditions(
             visible: isVisible && !hiding, tapDictatesInKeyboard: tapDictatesInKeyboard,
             useBuiltInMicrophone: useBuiltInMicrophone, bluetoothHeadphones: false,
             dictationRunning: local?.isRunning == true, heldCaptureReported: local?.heldCaptureReported == true)
-        if conditions.visible, useBuiltInMicrophone, !conditions.heldCaptureReported {
+        if conditions.visible, tapDictatesInKeyboard, useBuiltInMicrophone, !conditions.dictationRunning,
+           !conditions.heldCaptureReported {
             conditions.bluetoothHeadphones = headphones.observe(
                 KeyboardMicrophoneHold.bluetoothHeadphones(in: Self.routeOutputs()), at: ProcessInfo.processInfo.systemUptime)
         }

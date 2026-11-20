@@ -2262,11 +2262,12 @@ unchanged and always wins.
     makes no audio processing, so holds no samples, until Swift runs
     `CapturePage.recordScript`. Meanwhile iOS shows its microphone
     indicator and the headphones are in hands-free mode. The tap's
-    dictation takes the held capture once its page has loaded and runs the
-    record script, so it records from the tap: no audio from before the
-    tap is ever posted. If the record script fails, the capture reports
-    `failed`. A held page that has not loaded yet is closed instead, and
-    the dictation opens its own capture as without a hold. The hold ends as soon as a condition stops holding, and when
+    dictation takes the held capture and runs the record script, at once
+    or, if the page has not loaded yet, as soon as it has. It records from
+    the tap: no audio from before the tap is ever posted. If the record
+    script fails, the capture reports `failed`. At the record script, the
+    page resumes its audio context if iOS suspended or interrupted it
+    while held (a call, Siri, another app's audio). The hold ends as soon as a condition stops holding, and when
     the held capture reports anything (`failed`, `ended`, or a chunk it
     should not have posted), after which the keyboard does not hold again
     until it next appears. A dictation's capture is never held: it closes

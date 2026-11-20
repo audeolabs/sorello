@@ -28,7 +28,9 @@ final class WebAudioCapture: NSObject, WKNavigationDelegate, WKUIDelegate {
     private var initialResponseAllowed = false
     private(set) var isOpen = false
     /// The page has loaded, so its script, `sorelloRecord` included, is defined.
-    private(set) var isLoaded = false
+    private var isLoaded = false
+    /// Handed over before the page loaded: the record script runs once it has.
+    private var recordPending = false
 
     init(page: String = CapturePage.html, mayGrantMicrophone: @escaping () -> Bool,
          onMessage: @escaping (CaptureMessageReader.Message) -> Void) {
@@ -60,12 +62,18 @@ final class WebAudioCapture: NSObject, WKNavigationDelegate, WKUIDelegate {
         webView.loadHTMLString(page, baseURL: CapturePage.baseURL)
     }
 
-    /// The tap's dictation takes a held capture whose page has loaded: its grants and messages are the attempt's from
-    /// now on, and the page records from now on (`CapturePage.recordScript`). A record script that fails is `failed`.
+    /// The tap's dictation takes a held capture: its grants and messages are the attempt's from now on, and the page
+    /// records from now on (`CapturePage.recordScript`), or from when it has loaded. A record script that fails is
+    /// `failed`.
     func handOver(mayGrantMicrophone: @escaping () -> Bool, onMessage: @escaping (CaptureMessageReader.Message) -> Void) {
-        guard isOpen, isLoaded, let webView else { return }
+        guard isOpen else { return }
         self.mayGrantMicrophone = mayGrantMicrophone
         self.onMessage = onMessage
+        if isLoaded { runRecordScript() } else { recordPending = true }
+    }
+
+    private func runRecordScript() {
+        guard let webView else { return }
         webView.evaluateJavaScript(CapturePage.recordScript) { [weak self, weak webView] _, error in
             guard error != nil, let self, let webView else { return }
             failed(webView)
@@ -116,7 +124,12 @@ final class WebAudioCapture: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        if webView === self.webView, isOpen { isLoaded = true }
+        guard webView === self.webView, isOpen else { return }
+        isLoaded = true
+        if recordPending {
+            recordPending = false
+            runRecordScript()
+        }
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {

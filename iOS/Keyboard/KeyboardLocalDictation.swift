@@ -237,9 +237,9 @@ final class KeyboardLocalDictation {
             return machine.runningAttemptID == id && machine.isCaptureOpen && !hooks.hostOwnsMicrophone()
         }
         let onMessage: (CaptureMessageReader.Message) -> Void = { [weak self] message in self?.received(message, for: id) }
-        // The held microphone chose the iPhone's as the built-in page would: the tap's dictation takes it, once its page
-        // has loaded, and records from now on. Otherwise the hold goes first: a new capture needs the microphone it has.
-        if let held = heldCapture, held.isOpen, held.isLoaded, capturePage == CapturePage.builtInMicrophoneHTML {
+        // The held microphone chose the iPhone's as the built-in page would: the tap's dictation takes it and records
+        // from now on (from when its page has loaded). Otherwise the hold goes first: a new capture needs its microphone.
+        if let held = heldCapture, held.isOpen, capturePage == CapturePage.builtInMicrophoneHTML {
             heldCapture = nil
             heldToken = nil
             held.handOver(mayGrantMicrophone: mayGrantMicrophone, onMessage: onMessage)

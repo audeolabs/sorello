@@ -22,6 +22,7 @@ enum CapturePageMicrophoneTests {
             ("heldPageSwitchesWithoutPosting", testHeldPageSwitchesWithoutPosting),
             ("heldPagePostsFromTheRecordScript", testHeldPagePostsFromTheRecordScript),
             ("heldPageStoppedBeforeTheTapPostsNothing", testHeldPageStoppedBeforeTheTapPostsNothing),
+            ("heldPageResumesAudioInterruptedWhileHeld", testHeldPageResumesAudioInterruptedWhileHeld),
         ]
     }
 
@@ -248,6 +249,16 @@ enum CapturePageMicrophoneTests {
         TestSupport.expect(!run.audioPosted && !run.failed, "a held page stopped before the tap posted")
     }
 
+    /// A call, Siri or another app's audio can interrupt the held page's audio context without ending its track; the
+    /// tap resumes it, so the dictation hears the voice instead of waiting out the startup timeout.
+    private static func testHeldPageResumesAudioInterruptedWhileHeld() {
+        let run = Run(page: CapturePage.heldMicrophoneHTML, devices: [iPhone, airPods], systemChoice: airPods,
+                      recordAtMilliseconds: 2000, interruptedAtMilliseconds: 1500)
+        TestSupport.expectEqual(run.recordingFrom, iPhone.label)
+        TestSupport.expect(run.audioPosted, "the held page posted no audio after an interruption")
+        TestSupport.expect((run.firstAudioPostAt ?? -1) >= 2000, "the held page posted before the tap")
+    }
+
     // MARK: Running a page
 
     struct Device {
@@ -278,7 +289,8 @@ enum CapturePageMicrophoneTests {
         init(page: String, devices: [Device], systemChoice: Device, refused: Set<String> = [],
              refuseSystemAfterFirst: Bool = false, stopAfterFirstGrant: Bool = false,
              renamed: (to: String, atMilliseconds: Int)? = nil, stopAtMilliseconds: Int? = nil,
-             endedAtMilliseconds: Int? = nil, recordAtMilliseconds: Int? = nil) {
+             endedAtMilliseconds: Int? = nil, recordAtMilliseconds: Int? = nil,
+             interruptedAtMilliseconds: Int? = nil) {
             guard let context = JSContext() else {
                 TestSupport.expect(false, "JavaScriptCore made no context")
                 return
@@ -296,6 +308,7 @@ enum CapturePageMicrophoneTests {
                 "stopAt": stopAtMilliseconds ?? NSNull(),
                 "endAt": endedAtMilliseconds ?? NSNull(),
                 "recordAt": recordAtMilliseconds ?? NSNull(),
+                "interruptAt": interruptedAtMilliseconds ?? NSNull(),
             ]
             context.setObject(config, forKeyedSubscript: "harnessConfig" as NSString)
             context.evaluateScript(Self.standIns)
@@ -405,7 +418,7 @@ enum CapturePageMicrophoneTests {
           this.processor = { onaudioprocess: null, connect: function () {}, disconnect: function () {} };
           return this.processor;
         };
-        AudioContext.prototype.resume = function () {};
+        AudioContext.prototype.resume = function () { this.state = "running"; };
         AudioContext.prototype.close = function () { this.closed = true; };
 
         // A browser's; JavaScriptCore has none. The encoding is `KeyboardDictationAudioTests`' concern.
@@ -417,6 +430,9 @@ enum CapturePageMicrophoneTests {
             harnessTracks[0].label = harnessConfig.renameTo;
           }
           if (harnessConfig.stopAt !== null && harnessNow === harnessConfig.stopAt) { sorelloStop(); }
+          if (harnessConfig.interruptAt !== null && harnessNow === harnessConfig.interruptAt) {
+            harnessContexts.forEach(function (c) { c.state = "interrupted"; });
+          }
           if (harnessConfig.recordAt !== null && harnessNow === harnessConfig.recordAt) { sorelloRecord(); }
           if (harnessConfig.endAt !== null && harnessNow === harnessConfig.endAt && harnessTracks.length > 0) {
             var ending = harnessTracks[0];
@@ -437,7 +453,8 @@ enum CapturePageMicrophoneTests {
 
         function harnessDeliverAudio() {
           harnessLive().forEach(function (c) {
-            if (c.processor && c.processor.onaudioprocess) {
+            // Only a running context renders.
+            if (c.state === "running" && c.processor && c.processor.onaudioprocess) {
               var samples = new Float32Array(256);
               c.processor.onaudioprocess({ inputBuffer: { getChannelData: function () { return samples; } } });
             }

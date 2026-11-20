@@ -103,12 +103,13 @@ enum CapturePage {
       });
       var context = new AudioContext();
       sorelloContext = context;
-      if (context.state === "suspended") { context.resume(); }
       if (!sorelloHeld) { sorelloConnect(context, media); }
     }
 
-    // Each chunk is posted, its sequence starting at 0.
+    // Each chunk is posted, its sequence starting at 0. A context iOS suspended or interrupted while held (a call, Siri,
+    // another app's audio) is resumed.
     function sorelloConnect(context, media) {
+      if (context.state !== "running") { context.resume(); }
       var size = 4096;
       while (size / context.sampleRate > 0.25 && size > 256) { size = size / 2; }
       var source = context.createMediaStreamSource(media);
