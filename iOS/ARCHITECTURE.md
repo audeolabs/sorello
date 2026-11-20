@@ -2253,12 +2253,15 @@ unchanged and always wins.
     route has a Bluetooth A2DP, LE or hands-free output; read only), and no
     dictation runs. Holding opens a capture with
     `CapturePage.heldMicrophoneHTML`, which chooses the input exactly as
-    the built-in microphone page does and runs Web Audio, but posts no
-    audio until Swift runs `CapturePage.recordScript`. Meanwhile iOS shows
-    its microphone indicator and the headphones are in hands-free mode.
-    The tap's dictation takes the held capture and runs the record script,
-    so it records from the tap: no audio from before the tap is ever
-    posted. The hold ends as soon as a condition stops holding, and when
+    the built-in microphone page does and starts its audio context, but
+    makes no audio processing, so holds no samples, until Swift runs
+    `CapturePage.recordScript`. Meanwhile iOS shows its microphone
+    indicator and the headphones are in hands-free mode. The tap's
+    dictation takes the held capture once its page has loaded and runs the
+    record script, so it records from the tap: no audio from before the
+    tap is ever posted. If the record script fails, the capture reports
+    `failed`. A held page that has not loaded yet is closed instead, and
+    the dictation opens its own capture as without a hold. The hold ends as soon as a condition stops holding, and when
     the held capture reports anything (`failed`, `ended`, or a chunk it
     should not have posted), after which the keyboard does not hold again
     until it next appears. A dictation's capture is never held: it closes

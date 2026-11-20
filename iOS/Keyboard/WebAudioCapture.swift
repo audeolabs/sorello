@@ -27,6 +27,8 @@ final class WebAudioCapture: NSObject, WKNavigationDelegate, WKUIDelegate {
     private var initialLoadAllowed = false
     private var initialResponseAllowed = false
     private(set) var isOpen = false
+    /// The page has loaded, so its script, `sorelloRecord` included, is defined.
+    private(set) var isLoaded = false
 
     init(page: String = CapturePage.html, mayGrantMicrophone: @escaping () -> Bool,
          onMessage: @escaping (CaptureMessageReader.Message) -> Void) {
@@ -58,13 +60,16 @@ final class WebAudioCapture: NSObject, WKNavigationDelegate, WKUIDelegate {
         webView.loadHTMLString(page, baseURL: CapturePage.baseURL)
     }
 
-    /// The tap's dictation takes a held capture: its grants and messages are the attempt's from now on, and the page
-    /// posts audio from now on (`CapturePage.recordScript`).
+    /// The tap's dictation takes a held capture whose page has loaded: its grants and messages are the attempt's from
+    /// now on, and the page records from now on (`CapturePage.recordScript`). A record script that fails is `failed`.
     func handOver(mayGrantMicrophone: @escaping () -> Bool, onMessage: @escaping (CaptureMessageReader.Message) -> Void) {
-        guard isOpen, let webView else { return }
+        guard isOpen, isLoaded, let webView else { return }
         self.mayGrantMicrophone = mayGrantMicrophone
         self.onMessage = onMessage
-        webView.evaluateJavaScript(CapturePage.recordScript, completionHandler: nil)
+        webView.evaluateJavaScript(CapturePage.recordScript) { [weak self, weak webView] _, error in
+            guard error != nil, let self, let webView else { return }
+            failed(webView)
+        }
     }
 
     /// Stops every track and the audio context, and tears the web view down at once; nothing it posts later is read.
@@ -108,6 +113,10 @@ final class WebAudioCapture: NSObject, WKNavigationDelegate, WKUIDelegate {
             && navigationResponse.isForMainFrame && navigationResponse.response.url == CapturePage.baseURL
         if initial { initialResponseAllowed = true }
         decisionHandler(initial ? .allow : .cancel)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if webView === self.webView, isOpen { isLoaded = true }
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {

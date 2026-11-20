@@ -202,7 +202,9 @@ enum CapturePageMicrophoneTests {
             let run = Run(page: CapturePage.heldMicrophoneHTML, devices: [iPhone, headphones], systemChoice: headphones)
             TestSupport.expectEqual(run.requestedDevices, [nil, iPhone.id])
             TestSupport.expectEqual(run.liveTracks, [iPhone.label])
-            TestSupport.expectEqual(run.recordingFrom, iPhone.label)
+            // Held, nothing processes the iPhone's track: no samples wait to be posted.
+            TestSupport.expectEqual(run.recordingFrom, nil)
+            TestSupport.expectEqual(run.processorsMade, 0)
             TestSupport.expect(!run.audioPosted, "the held page posted audio before the tap")
             TestSupport.expect(run.postedText == "[]", "the held page posted before the tap")
         }
@@ -224,6 +226,15 @@ enum CapturePageMicrophoneTests {
         TestSupport.expect((run.firstAudioPostAt ?? -1) >= 2000,
                            "the held page posted audio at \(run.firstAudioPostAt.map(String.init) ?? "never") ms, before the tap")
         TestSupport.expectEqual(run.firstAudioSequence, 0)
+        // Its audio processing is made at the record script, so no buffer holds samples from before the tap.
+        TestSupport.expectEqual(run.processorsMadeAt, [2000])
+        // A record script while the page still chooses: it records once the iPhone is chosen.
+        let early = Run(page: CapturePage.heldMicrophoneHTML, devices: [iPhone, airPods], systemChoice: iPhone,
+                        renamed: (to: airPods.label, atMilliseconds: 300), recordAtMilliseconds: 100)
+        TestSupport.expectEqual(early.requestedDevices, [nil, iPhone.id])
+        TestSupport.expectEqual(early.recordingFrom, iPhone.label)
+        TestSupport.expectEqual(early.processorsMadeAt, [300])
+        TestSupport.expectEqual(early.firstAudioSequence, 0)
         // The other pages post from the start.
         let cold = Run(page: CapturePage.builtInMicrophoneHTML, devices: [iPhone, airPods], systemChoice: airPods)
         TestSupport.expect((cold.firstAudioPostAt ?? .max) < 1000, "the built-in page waited for a record script")
@@ -258,6 +269,9 @@ enum CapturePageMicrophoneTests {
         /// Milliseconds of the harness's clock at the first audio post, and that post's sequence number.
         var firstAudioPostAt: Int?
         var firstAudioSequence: Int?
+        /// Milliseconds of the harness's clock at which the page made each audio processor.
+        var processorsMadeAt: [Int] = []
+        var processorsMade: Int { processorsMadeAt.count }
 
         /// `renamed`: WebKit renames the first track that long after the page starts. `stopAtMilliseconds`: Swift
         /// stops the page then.
@@ -307,6 +321,7 @@ enum CapturePageMicrophoneTests {
             endedPosts = posts.filter { $0["kind"] as? String == "ended" }.count
             firstAudioPostAt = object["firstAudioAt"] as? Int
             firstAudioSequence = object["firstAudioSeq"] as? Int
+            processorsMadeAt = object["processorsMadeAt"] as? [Int] ?? []
         }
 
         private static func script(of page: String) -> String {
@@ -384,7 +399,9 @@ enum CapturePageMicrophoneTests {
           this.source = { media: media, connect: function () {}, disconnect: function () {} };
           return this.source;
         };
+        var harnessProcessorsMadeAt = [];
         AudioContext.prototype.createScriptProcessor = function () {
+          harnessProcessorsMadeAt.push(harnessNow);
           this.processor = { onaudioprocess: null, connect: function () {}, disconnect: function () {} };
           return this.processor;
         };
@@ -442,7 +459,8 @@ enum CapturePageMicrophoneTests {
             postedText: JSON.stringify(harnessPosts),
             startedAt: harnessStartedAt,
             firstAudioAt: harnessFirstAudioAt,
-            firstAudioSeq: harnessFirstAudioSeq
+            firstAudioSeq: harnessFirstAudioSeq,
+            processorsMadeAt: harnessProcessorsMadeAt
           };
         }
         """#

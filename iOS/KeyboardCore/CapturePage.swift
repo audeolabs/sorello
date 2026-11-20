@@ -62,9 +62,12 @@ enum CapturePage {
       media.getTracks().forEach(function (track) { track.onended = null; track.stop(); });
     }
 
-    // The tap, in a held page: audio is posted from here on, its sequence starting at 0.
+    // The tap, in a held page: its audio processing is made now, so it holds nothing from before; or, while the page
+    // still chooses its input, as soon as it has chosen.
     function sorelloRecord() {
+      if (!sorelloHeld) { return; }
       sorelloHeld = false;
+      if (sorelloContext && sorelloMedia && !sorelloStopped) { sorelloConnect(sorelloContext, sorelloMedia); }
     }
 
     function sorelloStop() {
@@ -100,13 +103,19 @@ enum CapturePage {
       });
       var context = new AudioContext();
       sorelloContext = context;
+      if (context.state === "suspended") { context.resume(); }
+      if (!sorelloHeld) { sorelloConnect(context, media); }
+    }
+
+    // Each chunk is posted, its sequence starting at 0.
+    function sorelloConnect(context, media) {
       var size = 4096;
       while (size / context.sampleRate > 0.25 && size > 256) { size = size / 2; }
       var source = context.createMediaStreamSource(media);
       var processor = context.createScriptProcessor(size, 1, 1);
       var sequence = 0;
       processor.onaudioprocess = function (event) {
-        if (sorelloStopped || sorelloHeld) { return; }
+        if (sorelloStopped) { return; }
         sorelloPost({ kind: "audio", seq: sequence, rate: context.sampleRate,
                       pcm: sorelloEncode(event.inputBuffer.getChannelData(0)) });
         sequence += 1;
@@ -114,7 +123,6 @@ enum CapturePage {
       source.connect(processor);
       processor.connect(context.destination);
       sorelloNodes = [source, processor];
-      if (context.state === "suspended") { context.resume(); }
     }
 
     function sorelloFailed() {
