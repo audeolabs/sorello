@@ -27,6 +27,7 @@ final class TriggerRelay: TriggerHandling {
     func handle(_ trigger: TriggerEvent, at time: TimeInterval) -> Bool {
         switch trigger {
         case .screenNotePressed: return notes?.pressed(at: time) ?? false
+        case .pasteScreenNotePressed: return notes?.paste() ?? false
         case .undoPressed: return notes?.undo() ?? false
         default: break
         }

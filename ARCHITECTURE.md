@@ -174,8 +174,8 @@ spoken, one insertion at a time.
   `reinsertion(replayID, outcome)`, `timer(timerID)`,
   `microphoneAccess(access)`, `engine(readiness)`.
 
-`screenNotePressed` and `undoPressed` are triggers too, but not the
-session's: the app takes them before the session does (section 14), and
+`screenNotePressed`, `pasteScreenNotePressed` and `undoPressed` are
+triggers too, but not the session's: the app takes them before the session does (section 14), and
 `reduce` ignores them.
 
 ### Effects
@@ -652,8 +652,9 @@ same file with the same dictionary and rules gives the same text in both.
   screen.
 - Escape is delivered as `cancelPressed` and consumed only when `handle`
   returns true.
-- The Screen Note action (section 14) is a key binding like the others,
-  given to the adapter only while screen notes are on. ⌘Z is delivered as
+- The Screen Note and Paste Screen Note actions (section 14) are key
+  bindings like the others, given to the adapter only while screen notes
+  are on. ⌘Z is delivered as
   `undoPressed`, and consumed only when `handle` returns true, which it
   does only while a note records.
 - Events Sorello posts itself carry a fixed tag and are ignored by the tap.
@@ -1663,7 +1664,9 @@ then presses it again. Sorello turns what was recorded into a folder
 an agent can read: numbered keyframes with the marks drawn on them, one
 contact sheet of them all, the narration transcribed by Sorello's own
 model and placed in time beside what was clicked and drawn, and a
-manifest. The contact sheet and the summary go on the clipboard. Screen
+manifest. The contact sheet and the summary go on the clipboard, and a
+second shortcut pastes the note into a chat as its frames with plain text
+between them. Screen
 notes are written from this section; no code is taken from another app.
 
 They are for the Mac only, and the iPhone app has no screen notes. The one
@@ -1673,10 +1676,11 @@ part in a module the iPhone app links is `SpeechEngine`'s
 ### Turning them on
 
 - **Off by default.** General has a card, Screen notes, with one switch,
-  "Record screen notes". While it is off, the shortcut does nothing (the
-  shortcut adapter is not given its binding), the Shortcuts screen does
-  not show it, and no screen-recording API is called. The menu lists the
-  shortcut only while it has keys, so only while screen notes are on.
+  "Record screen notes". While it is off, the two shortcuts (Screen Note
+  and Paste Screen Note) do nothing (the shortcut adapter is not given
+  their bindings), the Shortcuts screen does not show them, and no
+  screen-recording API is called. The menu lists them only while they
+  have keys, so only while screen notes are on.
 - **The permission.** Screen notes need Screen Recording. Under the
   switch, the line "Requires Screen Recording permission" is shown while
   the switch is off or the permission is not granted, and not otherwise.
@@ -1695,7 +1699,8 @@ part in a module the iPhone app links is `SpeechEngine`'s
   with them, whether screen notes are on or off, so turning them on never
   gives two actions one shortcut. If another action already had ⌥⇧S
   before screen notes existed, it keeps it, and turning screen notes on
-  leaves Screen Note without a shortcut for the user to choose. Its press is `screenNotePressed`, which the session never
+  leaves Screen Note without a shortcut for the user to choose. Paste
+  Screen Note (⌥⇧V, "Pasting a note" below) is treated the same way. Its press is `screenNotePressed`, which the session never
   sees: the app takes it before the session (`TriggerRelay`).
 - **Start.** A press with no note recording starts one on the display
   under the pointer. If the permission is not granted, nothing is
@@ -1830,6 +1835,44 @@ images pastes the sheet, with the narration under its frames. The pill says "Scr
 which reveals the folder in the Finder, for 4 s. If building fails, the
 folder is deleted and the pill shows "Couldn't make the screen note".
 
+### Pasting a note
+
+A chat that takes images keeps only the image when one paste holds both
+an image and text, so one ⌘V cannot give an agent the frames with the
+narration between them. Paste Screen Note, a fifth action that defaults
+to ⌥⇧V (`pasteScreenNotePressed`, taken by the app before the session),
+pastes the newest finished note at the cursor of the app in front as a
+sequence of pastes, one piece at a time:
+
+1. **The pieces** come from the note's `note.json`, so a note made before
+   Sorello was last opened pastes too. First a line of text: the note's
+   length, how many keyframes it has and its folder, where `summary.md`
+   has the marks and their places. Then for each keyframe, in order, its
+   number and time, and what was said in its span as in the summary,
+   followed by its frame (`frames/frame-NN.png`, as a PNG).
+2. **Its turn.** The sequence takes one turn on the clipboard between
+   insertions (section 6, "Text insertion") and holds it to the end, so
+   no dictation's paste lands inside it. It waits for the shortcut's
+   modifiers to come up, as an insertion does, and pastes nothing while
+   the session is unavailable, Accessibility is missing or a modifier is
+   still held after 1 s.
+3. **Each piece** is written to the clipboard, marked transient, and
+   pasted with Command-V into the app that was in front when the
+   sequence began. The next piece is written 0.3 s after a text's paste
+   and 0.8 s after an image's, so the app has taken each one, in order,
+   before the next. No field is read.
+4. **Stopping.** If the app in front changes, the clipboard changes under
+   it (someone else wrote to it), or the user presses Escape or Cancel on
+   the pill, the sequence stops before the next piece: what was pasted
+   stays, and the pill says it stopped.
+5. **The clipboard** is put back 1 s after the last paste, under the same
+   guards and the same setting ("Restore the clipboard") as an insertion.
+
+While it pastes, the pill shows "Pasting screen note…" with Cancel. A
+press while a note is recording does nothing; a press while one is being
+made pastes it once it is made. With no finished note, the pill says
+"No screen note to paste" for 4 s.
+
 ### Where notes are kept
 
 Under `Application Support/<bundle id>/ScreenNotes/`, one folder per note,
@@ -1843,12 +1886,12 @@ clearing the Run Log does not delete them.
 
 | Module | Holds |
 |---|---|
-| `ScreenNotes` (pure, Mac only) | The marks' rules (`InkTracker`), `KeyframePlanner`, the spans, the summary, the manifest, the contact sheet's layout |
+| `ScreenNotes` (pure, Mac only) | The marks' rules (`InkTracker`), `KeyframePlanner`, the spans, the summary, the manifest, the contact sheet's layout, the pieces a note is pasted as |
 | `SpeechEngine` | `transcribeWords(file:)`: a file's words with their times |
 | `Persistence` | `ScreenNoteStore`: the folders, their names and how many are kept |
-| `MacPlatform` | The screen recorder (ScreenCaptureKit), the pointer and modifier reader, the frame renderer, the permission |
+| `MacPlatform` | The screen recorder (ScreenCaptureKit), the pointer and modifier reader, the frame renderer, the permission; `PasteboardInserter` pastes a sequence of pieces |
 | `SorelloUI` | The ink overlay, which draws the strokes and pins it is given |
-| `SorelloApp` | `ScreenNoteCoordinator`: the note's states (idle, recording, building), the pill's notices, the clipboard |
+| `SorelloApp` | `ScreenNoteCoordinator`: the note's states (idle, starting, recording, building, pasting), the pill's notices, the clipboard |
 
 `ScreenNotes` imports only Foundation and CoreGraphics types, like the
 pure modules of section 2, and is linked only by the Mac app.

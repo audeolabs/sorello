@@ -7,9 +7,9 @@ import ScreenNotes
 import SorelloUI
 import SpeechEngine
 
-/// Screen notes' one state machine (ARCHITECTURE.md, section 14): idle, starting, recording, building. It takes the
-/// Screen Note shortcut, ⌘Z and an Escape the session did not want, records through the platform, tracks the marks,
-/// and builds the note when it finishes. What it shows goes to the pill as the app's own notice, `notice`.
+/// Screen notes' one state machine (ARCHITECTURE.md, section 14): idle, starting, recording, building, pasting. It
+/// takes the Screen Note and Paste Screen Note shortcuts, ⌘Z and an Escape the session did not want, records through
+/// the platform, tracks the marks, builds the note when it finishes, and pastes the newest note when asked. What it shows goes to the pill as the app's own notice, `notice`.
 @MainActor
 @Observable
 final class ScreenNoteCoordinator {
@@ -25,6 +25,8 @@ final class ScreenNoteCoordinator {
         case starting
         case recording
         case building
+        /// Pasting the newest note as a sequence.
+        case pasting
     }
 
     /// The notice's actions.
@@ -50,6 +52,10 @@ final class ScreenNoteCoordinator {
     @ObservationIgnored private let clipboard: any ClipboardTurns
     /// Making the note, which quitting lets finish.
     @ObservationIgnored private var building: Task<Void, Never>?
+    /// Pasting a note, which Escape, Cancel and quitting stop.
+    @ObservationIgnored private var pasting: Task<Void, Never>?
+    /// Paste Screen Note was pressed while the note was being made: it is pasted once made.
+    @ObservationIgnored private var pasteWhenMade = false
     @ObservationIgnored private var ids = NoteNoticeID()
 
     /// The note in progress.
@@ -121,7 +127,24 @@ final class ScreenNoteCoordinator {
             guard let current, time - current.pressedAt >= Self.finishGuard else { return false }
             finish()
             return true
-        case .starting, .building:
+        case .starting, .building, .pasting:
+            return false
+        }
+    }
+
+    /// The Paste Screen Note shortcut: pastes the newest finished note at the cursor, or the one being made once it is
+    /// made. Returns whether it did something.
+    @discardableResult
+    func paste() -> Bool {
+        guard settings.screenNotes else { return false }
+        switch phase {
+        case .idle:
+            pasteLatest()
+            return true
+        case .building:
+            pasteWhenMade = true
+            return true
+        case .starting, .recording, .pasting:
             return false
         }
     }
@@ -137,6 +160,11 @@ final class ScreenNoteCoordinator {
     /// Escape the session did not want, or Cancel on the pill: throws the note away. Returns whether there was one.
     @discardableResult
     func cancel() -> Bool {
+        if phase == .pasting, let pasting {
+            // It stops before its next piece; its own ending says so.
+            pasting.cancel()
+            return true
+        }
         guard phase == .starting || phase == .recording, let current else { return false }
         current.cancelled = true
         current.starting?.cancel()
@@ -163,8 +191,11 @@ final class ScreenNoteCoordinator {
     /// folder is gone. A note being made is waited for, so it finishes if the quit gives it time.
     func quitting() async {
         cancel()
+        pasteWhenMade = false
         await cleanup?.value
         await building?.value
+        pasting?.cancel()
+        await pasting?.value
     }
 
     /// A notice's action was clicked.
@@ -303,13 +334,67 @@ final class ScreenNoteCoordinator {
                 show(text: String(localized: "Screen note copied"), symbol: "doc.on.clipboard.fill", tone: .information,
                      actions: [.init(id: Action.show, title: String(localized: "Show"))], linger: Self.resultLinger)
                 Diagnostics.record("screenNote.made")
+                if pasteWhenMade {
+                    pasteWhenMade = false
+                    pasteLatest()
+                }
             } catch {
+                pasteWhenMade = false
                 if let folder = current.folder { store.delete(folder) }
                 self.current = nil
                 phase = .idle
                 failed()
             }
         }
+    }
+
+    // MARK: - Pasting
+
+    /// Pastes the newest finished note as its pieces (ARCHITECTURE.md, section 14, "Pasting a note").
+    private func pasteLatest() {
+        phase = .pasting
+        show(text: String(localized: "Pasting screen note…"), symbol: "doc.on.clipboard", tone: .information,
+             actions: [.init(id: Action.cancel, title: String(localized: "Cancel"))])
+        let store = self.store, clipboard = self.clipboard, restoring = settings.restoreClipboard
+        pasting = Task {
+            defer { pasting = nil }
+            let pieces = await Task.detached { Self.pieces(of: store.latest()) }.value
+            guard let pieces else {
+                phase = .idle
+                show(text: String(localized: "No screen note to paste"), symbol: "doc.on.clipboard", tone: .information,
+                     actions: [], linger: Self.resultLinger)
+                return
+            }
+            let outcome = await clipboard.pasteSequence(pieces, restoring: restoring)
+            phase = .idle
+            switch outcome {
+            case .pasted:
+                show(nil)
+                Diagnostics.record("screenNote.pasted")
+            case .stopped:
+                show(text: String(localized: "Stopped pasting the screen note"), symbol: "exclamationmark.triangle.fill",
+                     tone: .error, actions: [], linger: Self.resultLinger)
+                Diagnostics.record("screenNote.pasteStopped")
+            }
+        }
+    }
+
+    /// A finished note's pieces with each frame's image read from its folder; nil without a note, or when its
+    /// manifest or a frame cannot be read.
+    nonisolated private static func pieces(of folder: URL?) -> [PastePiece]? {
+        guard let folder,
+              let data = try? Data(contentsOf: folder.appendingPathComponent(ScreenNote.Files.manifest)),
+              let manifest = try? JSONDecoder().decode(NoteManifest.self, from: data) else { return nil }
+        var pieces: [PastePiece] = []
+        for piece in manifest.pieces(folder: folder.path) {
+            switch piece {
+            case .text(let text): pieces.append(.text(text))
+            case .frame(let file):
+                guard let image = try? Data(contentsOf: folder.appendingPathComponent(file)) else { return nil }
+                pieces.append(.png(image))
+            }
+        }
+        return pieces
     }
 
     /// Finishes the movie and makes the note in its folder: the narration, the keyframes, the images, the summary and

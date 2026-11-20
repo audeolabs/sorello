@@ -276,7 +276,7 @@ private struct Step {
     /// Returns whether the trigger acted.
     mutating func trigger(_ trigger: TriggerEvent, at time: TimeInterval) -> Bool {
         // Screen notes' triggers are not the session's (ARCHITECTURE.md, section 3, "Events"): they change nothing.
-        if trigger == .screenNotePressed || trigger == .undoPressed { return false }
+        if trigger == .screenNotePressed || trigger == .pasteScreenNotePressed || trigger == .undoPressed { return false }
         // Rule 5: every trigger uses up or clears the arm; a hold press may use it, a quick release may set it.
         let arm = state.tap
         state.tap = nil
@@ -299,7 +299,7 @@ private struct Step {
             return pasteAgain()
         case .systemInterrupted:
             return systemInterrupted()
-        case .screenNotePressed, .undoPressed:
+        case .screenNotePressed, .pasteScreenNotePressed, .undoPressed:
             return false
         }
     }

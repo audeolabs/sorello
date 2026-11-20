@@ -16,6 +16,8 @@ struct ScreenNotesPresentationTests {
         #expect(GeneralToggle.screenNotes.title == "Record screen notes")
         #expect(ShortcutKind.screenNote.title == "Screen Note")
         #expect(ShortcutKind.screenNote.canBeUnset)
+        #expect(ShortcutKind.pasteScreenNote.title == "Paste Screen Note")
+        #expect(ShortcutKind.pasteScreenNote.canBeUnset)
     }
 
     @Test func thePermissionLineShowsWhileOffOrNotGranted() {
@@ -42,5 +44,7 @@ struct ScreenNotesPresentationTests {
         #expect(titles([.holdToTalk: .function]) == ["Hold to Talk", "Tap to Toggle", "Paste Again"])
         #expect(titles([.holdToTalk: .function, .screenNote: keys])
             == ["Hold to Talk", "Tap to Toggle", "Paste Again", "Screen Note"])
+        #expect(titles([.holdToTalk: .function, .screenNote: keys, .pasteScreenNote: keys])
+            == ["Hold to Talk", "Tap to Toggle", "Paste Again", "Screen Note", "Paste Screen Note"])
     }
 }

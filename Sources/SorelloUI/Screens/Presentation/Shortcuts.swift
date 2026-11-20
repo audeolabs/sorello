@@ -145,13 +145,17 @@ nonisolated public struct KeyCombo: Hashable, Sendable {
     }
 }
 
-/// The actions a shortcut can be bound to. Screen Note is shown only while screen notes are on: a screen leaves out a
-/// kind it is given no state for.
+/// The actions a shortcut can be bound to. Screen Note and Paste Screen Note are shown only while screen notes are on:
+/// a screen leaves out a kind it is given no state for.
 nonisolated public enum ShortcutKind: CaseIterable, Hashable, Sendable {
     case holdToTalk
     case tapToToggle
     case pasteAgain
     case screenNote
+    case pasteScreenNote
+
+    /// Whether the kind is screen notes', shown only while they are on.
+    public var isScreenNotes: Bool { self == .screenNote || self == .pasteScreenNote }
 
     /// The action's name.
     public var title: String {
@@ -160,6 +164,7 @@ nonisolated public enum ShortcutKind: CaseIterable, Hashable, Sendable {
         case .tapToToggle: String(localized: "Tap to Toggle")
         case .pasteAgain: String(localized: "Paste Again")
         case .screenNote: String(localized: "Screen Note")
+        case .pasteScreenNote: String(localized: "Paste Screen Note")
         }
     }
 

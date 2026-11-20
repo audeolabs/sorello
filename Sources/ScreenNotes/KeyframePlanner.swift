@@ -139,6 +139,12 @@ public enum KeyframePlanner {
         return phrases
     }
 
+    /// The phrases keyframe `index` owns: those whose last word is in its span, in order.
+    public static func phrases(of index: Int, in keyframes: [Keyframe], words: [NoteWord]) -> [[NoteWord]] {
+        let span = span(of: index, in: keyframes)
+        return phrases(words).filter { span.contains($0.last!.time) }
+    }
+
     /// Where each phrase ends: after its last word, and never after the next word starts.
     static func phraseEnds(_ words: [NoteWord]) -> [Double] {
         let phrases = phrases(words)

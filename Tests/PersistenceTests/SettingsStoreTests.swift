@@ -28,6 +28,7 @@ import Testing
         #expect(!settings.setupCompleted)
         #expect(!settings.screenNotes, "screen notes are off by default")
         #expect(settings.screenNoteShortcut == .key(code: 1, modifiers: [.option, .shift]))
+        #expect(settings.pasteScreenNoteShortcut == .key(code: 9, modifiers: [.option, .shift]), "⌥⇧V")
     }
 
     @Test func everySettingSurvivesARelaunch() throws {

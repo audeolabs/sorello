@@ -75,11 +75,13 @@ extension WindowModels {
             // Off means the screen is no longer recorded: a note recording now is thrown away.
             if !on { app.notes?.cancel() }
             // Turning screen notes on is the one time Sorello asks for Screen Recording (ARCHITECTURE.md, section 14).
-            // A shortcut another action already had before screen notes existed stays that action's: Screen Note is
-            // then left without one, for the user to choose.
-            if on, let binding = settings.screenNoteShortcut,
-               ShortcutValidation.problem(with: binding, for: .screenNote, among: settings.storedShortcutBindings) != nil {
-                settings.screenNoteShortcut = nil
+            // A shortcut another action already had before screen notes existed stays that action's: screen notes'
+            // action is then left without one, for the user to choose.
+            for action in [ShortcutAction.screenNote, .pasteScreenNote] where on {
+                if let binding = settings.shortcut(for: action),
+                   ShortcutValidation.problem(with: binding, for: action, among: settings.storedShortcutBindings) != nil {
+                    settings.setShortcut(nil, for: action)
+                }
             }
             if on, let permission = app.screenNotes?.permission, !permission.isGranted {
                 app.live.screenRecordingGranted = permission.request()

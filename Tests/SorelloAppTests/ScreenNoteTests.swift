@@ -293,6 +293,12 @@ struct ScreenNoteTests {
         @discardableResult
         func press() -> Bool { app.relay.handle(.screenNotePressed, at: clock.now) }
 
+        /// Presses Paste Screen Note.
+        @discardableResult
+        func pastePress() -> Bool { app.relay.handle(.pasteScreenNotePressed, at: clock.now) }
+
+        var inserter: FakeInserter { harness.inserter }
+
         /// Presses the shortcut and waits until the note records.
         func startNote() async {
             press()
@@ -313,6 +319,7 @@ struct ScreenNoteTests {
         let fixture = try Fixture(on: false)
         #expect(fixture.app.settings.shortcutBindings[.screenNote] == nil)
         #expect(fixture.harness.shortcuts.bindings.last?[.screenNote] == nil)
+        #expect(fixture.harness.shortcuts.bindings.last?[.pasteScreenNote] == nil)
         #expect(!fixture.press())
         #expect(fixture.notes.recorder.starts.isEmpty)
         #expect(fixture.notes.permission.requests == 0)
@@ -322,6 +329,7 @@ struct ScreenNoteTests {
         let fixture = try Fixture(on: false)
         fixture.app.settings.screenNotes = true
         await eventually { fixture.harness.shortcuts.bindings.last?[.screenNote] == .screenNote }
+        #expect(fixture.harness.shortcuts.bindings.last?[.pasteScreenNote] == .pasteScreenNote)
     }
 
     @Test func turningTheSwitchOnAsksForTheScreenOnceAndOnlyThen() async throws {
@@ -364,6 +372,15 @@ struct ScreenNoteTests {
         fixture.harness.windows.setToggle(.screenNotes, true)
         #expect(fixture.app.settings.tapToToggleShortcut == .screenNote)
         #expect(fixture.app.settings.screenNoteShortcut == nil)
+    }
+
+    @Test func turningOnLeavesPasteScreenNotesShortcutToAnActionThatHadIt() async throws {
+        let fixture = try Fixture(on: false)
+        fixture.app.settings.pasteAgainShortcut = .pasteScreenNote
+        fixture.harness.windows.setToggle(.screenNotes, true)
+        #expect(fixture.app.settings.pasteAgainShortcut == .pasteScreenNote)
+        #expect(fixture.app.settings.pasteScreenNoteShortcut == nil)
+        #expect(fixture.app.settings.screenNoteShortcut == .screenNote)
     }
 
     @Test func quittingStopsTheNoteEvenWhileAnInsertionHoldsTheQuit() async throws {
@@ -540,6 +557,88 @@ struct ScreenNoteTests {
         #expect(AppComposition.pill(session: nil, suggestion: nil, note: note, noteInProgress: false)
             == (.notice(note), false))
         #expect(AppComposition.pill(session: nil, suggestion: nil, note: nil, noteInProgress: false) == (.hidden, false))
+    }
+
+    // MARK: - Pasting a note
+
+    @Test func pasteScreenNotePastesTheNewestNoteAsTextAndFramesInTurn() async throws {
+        let fixture = try Fixture()
+        fixture.harness.speech.timedWords = .success([TimedWord(text: "This", time: 2),
+                                                      TimedWord(text: "breaks.", time: 2.4)])
+        await fixture.startNote()
+        await fixture.finishNote()
+        let note = try #require(fixture.notes.renderer.rendered.last)
+
+        #expect(fixture.pastePress())
+        await eventually { fixture.inserter.sequences.count == 1 && fixture.coordinator.phase == .idle }
+        let pieces = try #require(fixture.inserter.sequences.first)
+        #expect(pieces.count == 2 * note.keyframes.count)
+        for (index, piece) in pieces.enumerated() {
+            switch piece {
+            case .text: #expect(index.isMultiple(of: 2))
+            case .png: #expect(!index.isMultiple(of: 2))
+            }
+        }
+        guard case .text(let first) = pieces.first else { return }
+        #expect(first.hasPrefix("Screen note, 0:10, \(note.keyframes.count) keyframes, in "))
+        #expect(pieces.contains { if case .text(let text) = $0 { text.contains("This breaks.") } else { false } })
+    }
+
+    @Test func pasteScreenNoteDoesNothingWhileScreenNotesAreOff() async throws {
+        let fixture = try Fixture(on: false)
+        #expect(!fixture.pastePress())
+        #expect(fixture.inserter.sequences.isEmpty)
+    }
+
+    @Test func withNoNoteThePillSaysSo() async throws {
+        let fixture = try Fixture()
+        #expect(fixture.pastePress())
+        await eventually { fixture.coordinator.notice?.text == "No screen note to paste" }
+        #expect(fixture.inserter.sequences.isEmpty)
+    }
+
+    @Test func aPressWhileANoteIsMadePastesItOnceItIsMade() async throws {
+        let fixture = try Fixture()
+        await fixture.startNote()
+        fixture.notes.renderer.hold()
+        fixture.clock.advance(by: 1)
+        fixture.press()
+        await eventually { fixture.coordinator.phase == .building }
+        #expect(fixture.pastePress())
+        #expect(fixture.inserter.sequences.isEmpty)
+        fixture.notes.renderer.release()
+        await eventually { fixture.inserter.sequences.count == 1 && fixture.coordinator.phase == .idle }
+    }
+
+    @Test func aPressWhileANoteRecordsDoesNothing() async throws {
+        let fixture = try Fixture()
+        await fixture.startNote()
+        #expect(!fixture.pastePress())
+        #expect(fixture.coordinator.phase == .recording)
+    }
+
+    @Test func escapeStopsAPasteUnderWay() async throws {
+        let fixture = try Fixture()
+        await fixture.startNote()
+        await fixture.finishNote()
+        fixture.inserter.holdSequence()
+        fixture.pastePress()
+        await eventually { fixture.coordinator.phase == .pasting }
+        #expect(fixture.coordinator.notice?.text == "Pasting screen note…")
+        #expect(fixture.app.relay.handle(.cancelPressed, at: fixture.clock.now))
+        fixture.inserter.releaseSequence()
+        await eventually { fixture.coordinator.phase == .idle }
+        #expect(fixture.coordinator.notice?.text == "Stopped pasting the screen note")
+    }
+
+    @Test func aSequenceThatStopsSaysSo() async throws {
+        let fixture = try Fixture()
+        await fixture.startNote()
+        await fixture.finishNote()
+        fixture.inserter.sequenceOutcome = .stopped(pasted: 3, why: .blocked(.targetChanged))
+        fixture.pastePress()
+        await eventually { fixture.coordinator.phase == .idle && fixture.inserter.sequences.count == 1 }
+        #expect(fixture.coordinator.notice?.text == "Stopped pasting the screen note")
     }
 
     // MARK: - The note

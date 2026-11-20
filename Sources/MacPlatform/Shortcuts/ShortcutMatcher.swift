@@ -74,7 +74,7 @@ public struct ShortcutMatcher: Sendable {
     private var hold: Hold?
     private var recorder: Recorder?
 
-    private static let order: [ShortcutAction] = [.holdToTalk, .tapToToggle, .pasteAgain, .screenNote]
+    private static let order: [ShortcutAction] = [.holdToTalk, .tapToToggle, .pasteAgain, .screenNote, .pasteScreenNote]
 
     public init(bindings: [ShortcutAction: ShortcutBinding]) {
         self.bindings = bindings
@@ -175,6 +175,7 @@ public struct ShortcutMatcher: Sendable {
         case .tapToToggle: _ = deliver(.togglePressed)
         case .pasteAgain: _ = deliver(.pasteAgainPressed)
         case .screenNote: _ = deliver(.screenNotePressed)
+        case .pasteScreenNote: _ = deliver(.pasteScreenNotePressed)
         }
         return Response(consume: true)
     }
@@ -238,6 +239,7 @@ public struct ShortcutMatcher: Sendable {
             case .tapToToggle: _ = deliver(.togglePressed)
             case .pasteAgain: _ = deliver(.pasteAgainPressed)
             case .screenNote: _ = deliver(.screenNotePressed)
+            case .pasteScreenNote: _ = deliver(.pasteScreenNotePressed)
             }
         }
         return Response(consume: consume)

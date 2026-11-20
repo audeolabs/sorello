@@ -48,7 +48,7 @@ public struct ScreenNote: Equatable, Sendable {
     public func content(of index: Int) -> Content {
         let span = KeyframePlanner.span(of: index, in: keyframes)
         return Content(keyframe: keyframes[index],
-                       phrases: KeyframePlanner.phrases(words).filter { span.contains($0.last!.time) },
+                       phrases: KeyframePlanner.phrases(of: index, in: keyframes, words: words),
                        strokes: marks.strokes.filter { span.contains($0.end) },
                        pins: marks.pins.filter { span.contains($0.time) },
                        clicks: marks.clicks.filter { span.contains($0.time) })

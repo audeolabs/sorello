@@ -127,6 +127,34 @@ public struct NoteManifest: Codable, Equatable, Sendable {
     }
 }
 
+/// One piece of a note pasted into a chat (ARCHITECTURE.md, section 14, "Pasting a note").
+public enum NotePiece: Equatable, Sendable {
+    case text(String)
+    /// A keyframe's image, by its path inside the note's folder.
+    case frame(String)
+}
+
+extension NoteManifest {
+    /// The note as it is pasted: a line about it, then each keyframe's number, time and what was said in its span,
+    /// followed by its frame. `folder` is the note's folder.
+    public func pieces(folder: String) -> [NotePiece] {
+        let count = keyframes.count
+        var pieces: [NotePiece] = []
+        var lead = "Screen note, \(ScreenNote.clock(duration)), \(count) keyframe\(count == 1 ? "" : "s"), in \(folder) "
+            + "(\(ScreenNote.Files.summary) there has the marks and where they are).\n\n"
+        for index in keyframes.indices {
+            let keyframe = keyframes[index]
+            let said = KeyframePlanner.phrases(of: index, in: keyframes, words: words)
+                .map { $0.map(\.text).joined(separator: " ") }.joined(separator: " ")
+            let label = "\(keyframe.number) · \(ScreenNote.clock(keyframe.time))"
+            pieces.append(.text(lead + (said.isEmpty ? label : "\(label): \(said)") + "\n"))
+            pieces.append(.frame(keyframe.file))
+            lead = "\n\n"
+        }
+        return pieces
+    }
+}
+
 /// Where each keyframe goes on the contact sheet: a grid, in order, at most `columns` across, each `cellWidth` wide
 /// with its label under it and its caption, what was said, under that; a row is as tall as its tallest caption
 /// (ARCHITECTURE.md, section 14, "The note", step 4). Pixels, from the sheet's top left.

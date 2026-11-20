@@ -96,7 +96,7 @@ public struct ShortcutsScreen: View {
         ScreenPage(String(localized: "Shortcuts")) {
             CardGroup(String(localized: "Dictation")) {
                 Card {
-                    ForEach(ShortcutKind.allCases.filter { $0 != .screenNote || model.recorders[$0] != nil },
+                    ForEach(ShortcutKind.allCases.filter { !$0.isScreenNotes || model.recorders[$0] != nil },
                             id: \.self) { kind in
                         ShortcutRecorderRow(kind, state: model.recorder(kind), actions: model.recorderActions)
                     }

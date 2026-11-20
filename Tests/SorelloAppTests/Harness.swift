@@ -58,6 +58,10 @@ final class FakeInserter: AppInserting {
         var holdsClipboard = false
         var clipboardWaiters: [CheckedContinuation<Void, Never>] = []
         var clipboardWrites = 0
+        var sequences: [[PastePiece]] = []
+        var sequenceOutcome: PasteSequenceOutcome = .pasted
+        var holdsSequence = false
+        var sequenceWaiters: [CheckedContinuation<Void, Never>] = []
     }
 
     private let state = Mutex(State())
@@ -113,6 +117,40 @@ final class FakeInserter: AppInserting {
     }
 
     func endClipboardWrite() async {}
+
+    /// Every sequence asked to be pasted, in order.
+    var sequences: [[PastePiece]] { state.withLock { $0.sequences } }
+    /// What a sequence that is not cancelled returns.
+    var sequenceOutcome: PasteSequenceOutcome {
+        get { state.withLock { $0.sequenceOutcome } }
+        set { state.withLock { $0.sequenceOutcome = newValue } }
+    }
+
+    /// A sequence pastes until `releaseSequence()`, as a long one would.
+    func holdSequence() { state.withLock { $0.holdsSequence = true } }
+
+    func releaseSequence() {
+        let waiting = state.withLock { state in
+            state.holdsSequence = false
+            defer { state.sequenceWaiters = [] }
+            return state.sequenceWaiters
+        }
+        for waiter in waiting { waiter.resume() }
+    }
+
+    func pasteSequence(_ pieces: [PastePiece], restoring: Bool) async -> PasteSequenceOutcome {
+        state.withLock { $0.sequences.append(pieces) }
+        await withCheckedContinuation { continuation in
+            let now = state.withLock { state -> Bool in
+                guard state.holdsSequence else { return true }
+                state.sequenceWaiters.append(continuation)
+                return false
+            }
+            if now { continuation.resume() }
+        }
+        if Task.isCancelled { return .stopped(pasted: 0, why: .cancelled) }
+        return sequenceOutcome
+    }
 
     func waitUntilIdle() async {
         let stuck = state.withLock { state in

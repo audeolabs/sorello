@@ -579,6 +579,16 @@ struct ScreenNoteKeyTests {
         #expect(keys.take() == [.screenNotePressed])
     }
 
+    @Test("The Paste Screen Note shortcut is delivered as its own trigger and consumed")
+    func pasteScreenNote() {
+        var keys = Keyboard([.screenNote: .screenNote, .pasteScreenNote: .pasteScreenNote])
+        keys.press(.leftOption)
+        keys.press(.leftShift)
+        #expect(keys.down(kVK_ANSI_V).consume)
+        #expect(keys.up(kVK_ANSI_V).consume)
+        #expect(keys.take() == [.pasteScreenNotePressed])
+    }
+
     @Test("⌘Z is undoPressed, consumed only when the handler undid something")
     func undo() {
         var keys = Keyboard([:])

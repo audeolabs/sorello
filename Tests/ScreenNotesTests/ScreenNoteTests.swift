@@ -181,6 +181,34 @@ import Testing
         #expect(captions.filter { !$0.isEmpty } == ["Open settings.", "This toggle."])
     }
 
+    /// Section 14, "Pasting a note": a line about the note, then each keyframe's number, time and narration
+    /// followed by its frame, in order, read back from the manifest.
+    @Test func aNotePastesAsALineThenEachKeyframesTextAndFrame() throws {
+        let words = [NoteWord(time: 1, text: "Open"), NoteWord(time: 1.4, text: "settings."),
+                     NoteWord(time: 6.2, text: "This"), NoteWord(time: 6.6, text: "toggle.")]
+        let note = Self.note(marks: NoteMarks(strokes: [Self.stroke]), words: words)
+        let manifest = try JSONDecoder().decode(NoteManifest.self, from: note.manifest())
+        let pieces = manifest.pieces(folder: "/notes/one")
+        #expect(pieces.count == 2 * note.keyframes.count)
+        var texts: [String] = []
+        for (index, keyframe) in note.keyframes.enumerated() {
+            guard case .text(let text) = pieces[2 * index] else {
+                Issue.record("piece \(2 * index) is not text")
+                continue
+            }
+            texts.append(text)
+            #expect(text.contains("\(keyframe.number) · \(ScreenNote.clock(keyframe.time))"))
+            #expect(pieces[2 * index + 1] == .frame(keyframe.file))
+        }
+        #expect(texts.first?.hasPrefix("Screen note, 0:20, \(note.keyframes.count) keyframes, in /notes/one") == true)
+        for index in note.keyframes.indices {
+            let said = note.content(of: index).said
+            if !said.isEmpty { #expect(texts[index].contains(said)) }
+        }
+        #expect(texts.filter { $0.contains("This toggle.") }.count == 1)
+        #expect(texts.filter { $0.contains("Open settings.") }.count == 1)
+    }
+
     @Test func timesReadAsMinutesAndSeconds() {
         #expect(ScreenNote.clock(0) == "0:00")
         #expect(ScreenNote.clock(65.9) == "1:05")
