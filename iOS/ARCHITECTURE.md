@@ -2405,8 +2405,10 @@ unchanged and always wins.
     least memory left seen, sampled at every step and every converted chunk;
   - the audio's seconds and the capture's sample rate; the microphone
     (`captureInput`: `builtIn` or `other`), which the page decides from
-    the recorded track's label (whether it names the iPhone or the iPad as
-    a word) and posts with each chunk as one of those two fixed words, so
+    the recorded track's label as it stands at each chunk (whether it
+    names the iPhone or the iPad as a word; WebKit may rename the track
+    after recording began) and posts with each chunk as one of those two
+    fixed words, the record keeping the last, so
     the label never leaves the page: what the page believed it recorded
     from, not iOS's route; the input's loudest
     and typical (median) level, each the RMS of one captured chunk in whole

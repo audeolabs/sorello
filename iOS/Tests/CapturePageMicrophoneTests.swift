@@ -47,6 +47,10 @@ enum CapturePageMicrophoneTests {
         TestSupport.expectEqual(run.audioMics, ["other"])
         TestSupport.expectEqual(Run(page: CapturePage.html, devices: [iPhone, headset], systemChoice: iPhone).audioMics,
                                 ["builtIn"])
+        // WebKit renames the track after recording began: the chunks follow the name, so the record keeps the corrected one.
+        let renamed = Run(page: CapturePage.html, devices: [iPhone, airPods], systemChoice: iPhone,
+                          renamed: (to: airPods.label, atMilliseconds: 300))
+        TestSupport.expectEqual(renamed.audioMics, ["builtIn", "other"])
     }
 
     private static func testBuiltInPageSwitchesFromHeadphonesToTheIPhone() {
