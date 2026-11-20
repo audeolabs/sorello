@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import MacPlatform
+import Synchronization
 import Testing
 
 /// Putting the text on the clipboard and the previous contents back, against a fake pasteboard and, once, a real
@@ -183,6 +184,28 @@ import Testing
         #expect(written.types?.contains(NSPasteboard.PasteboardType(ClipboardTransaction.transientType)) == true)
         #expect(transaction.restore())
         #expect(pasteboard.readItems(byteLimit: .max) == .items(original))
+    }
+
+    /// Section 14, "Pasting a note", step 3: a piece's data is given when it is asked for, and the first read is
+    /// reported, once.
+    @Test func dataWrittenOnDemandIsGivenWhenReadAndTheReadIsReported() throws {
+        let name = NSPasteboard.Name("com.audeolabs.sorello.tests.\(UUID().uuidString)")
+        defer { NSPasteboard(name: name).releaseGlobally() }
+        let pasteboard = SystemPasteboard(NSPasteboard(name: name))
+        let reads = Mutex(0)
+        _ = pasteboard.clear()
+        let onRead: @Sendable () -> Void = { reads.withLock { $0 += 1 } }
+        let written = pasteboard.writeOnDemand([PasteboardItemData([
+            PasteboardRepresentation(type: ClipboardTransaction.textType, data: Data("Invented words".utf8)),
+            PasteboardRepresentation(type: ClipboardTransaction.transientType, data: Data()),
+        ])], onRead: onRead)
+        #expect(written)
+        #expect(reads.withLock { $0 } == 0)
+        let reader = NSPasteboard(name: name)
+        #expect(reader.types?.contains(NSPasteboard.PasteboardType(ClipboardTransaction.transientType)) == true)
+        #expect(reader.string(forType: .string) == "Invented words")
+        #expect(reader.string(forType: .string) == "Invented words")
+        #expect(reads.withLock { $0 } == 1)
     }
 
     @Test func doesNotRestoreOverAnotherWriter() throws {

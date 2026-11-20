@@ -51,6 +51,9 @@ public protocol PasteboardAccess: Sendable {
     func clear() -> Int
     /// Adds items to the pasteboard just cleared. Returns false when the system refused them.
     func write(_ items: [PasteboardItemData]) -> Bool
+    /// `write`, but each type's data is given only when an app asks for it, and `onRead` runs the first time any of
+    /// it is. An empty type, such as a marker, is written at once and is not a read.
+    func writeOnDemand(_ items: [PasteboardItemData], onRead: @escaping @Sendable () -> Void) -> Bool
 }
 
 /// A `PasteboardAccess` over an `NSPasteboard`: the general pasteboard in the app, a uniquely named one in tests.
@@ -106,4 +109,59 @@ public final class SystemPasteboard: PasteboardAccess {
             return pasteboard.writeObjects(objects)
         }
     }
+
+    public func writeOnDemand(_ items: [PasteboardItemData], onRead: @escaping @Sendable () -> Void) -> Bool {
+        let writable = items.filter { !$0.representations.isEmpty }
+        guard !writable.isEmpty else { return true }
+        let provider = OnDemandData(onRead: onRead)
+        return pasteboard.withLock { pasteboard in
+            let objects = writable.map { item in
+                let object = NSPasteboardItem()
+                var onDemand: [NSPasteboard.PasteboardType] = []
+                for representation in item.representations {
+                    let type = NSPasteboard.PasteboardType(representation.type)
+                    if representation.data.isEmpty {
+                        object.setData(representation.data, forType: type)
+                    } else {
+                        provider.offer(representation.data, as: type)
+                        onDemand.append(type)
+                    }
+                }
+                if !onDemand.isEmpty { object.setDataProvider(provider, forTypes: onDemand) }
+                return object
+            }
+            return pasteboard.writeObjects(objects)
+        }
+    }
+}
+
+/// Gives the data of items written on demand when an app asks for it, and reports the first time one does. The
+/// pasteboard holds it until the items are replaced.
+private final class OnDemandData: NSObject, NSPasteboardItemDataProvider, Sendable {
+    private struct State {
+        var data: [NSPasteboard.PasteboardType: Data] = [:]
+        var onRead: (@Sendable () -> Void)?
+    }
+
+    private let state: Mutex<State>
+
+    init(onRead: @escaping @Sendable () -> Void) {
+        state = Mutex(State(onRead: onRead))
+    }
+
+    func offer(_ data: Data, as type: NSPasteboard.PasteboardType) {
+        state.withLock { $0.data[type] = data }
+    }
+
+    func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem, provideDataForType type: NSPasteboard.PasteboardType) {
+        let (data, onRead) = state.withLock { state in
+            let onRead = state.onRead
+            state.onRead = nil
+            return (state.data[type], onRead)
+        }
+        if let data { item.setData(data, forType: type) }
+        onRead?()
+    }
+
+    func pasteboardFinishedWithDataProvider(_ pasteboard: NSPasteboard) {}
 }

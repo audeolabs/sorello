@@ -33,8 +33,15 @@ import Testing
         _ = await drive(Task { await inserter.waitUntilIdle() }, clock: h.clock)
     }
 
-    @Test func pastesEachPieceInOrderWaitingAfterEachThenPutsTheClipboardBack() async {
+    /// The app in front reads each piece as its paste arrives.
+    static func appReadsEachPaste(_ h: Harness) {
+        let pasteboard = h.pasteboard
+        h.keys.update { $0.onPost = { _ in pasteboard.appReads() } }
+    }
+
+    @Test func pastesEachPieceInOrderOnceTheLastWasReadThenPutsTheClipboardBack() async {
         let h = Harness()
+        Self.appReadsEachPaste(h)
         let outcome = await drive(start(h), clock: h.clock)
         #expect(outcome == .pasted)
         let afterText = PasteboardInserter.textPieceDelay, afterImage = PasteboardInserter.imagePieceDelay
@@ -48,6 +55,25 @@ import Testing
         h.clock.advance(to: last + PasteboardInserter.restoreDelay)
         await h.idle()
         #expect(h.pasteboard.items == PasteboardInserterTests.original)
+    }
+
+    @Test func aPieceNothingReadsIsWaitedForOnlyUpToTheLimit() async {
+        let h = Harness()
+        #expect(await drive(start(h, [.png(Self.image), .text("Two")]), clock: h.clock) == .pasted)
+        #expect(h.log.posts == [
+            Self.paste(at: 0), Self.paste(at: PasteboardInserter.pieceReadLimit + PasteboardInserter.imagePieceDelay),
+        ])
+    }
+
+    @Test func aReadBeforeThePasteDoesNotCountForIt() async {
+        let h = Harness()
+        let pasteboard = h.pasteboard
+        // Something reads each piece as it is written, before its paste.
+        h.pasteboard.update { $0.onWrite = { pasteboard.appReads() } }
+        #expect(await drive(start(h, [.text("One"), .text("Two")]), clock: h.clock) == .pasted)
+        #expect(h.log.posts == [
+            Self.paste(at: 0), Self.paste(at: PasteboardInserter.pieceReadLimit + PasteboardInserter.textPieceDelay),
+        ])
     }
 
     @Test func withoutRestoringTheLastPieceStaysPlainly() async {
