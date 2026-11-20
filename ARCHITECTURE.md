@@ -49,12 +49,16 @@ two apps share and what keeps them apart.
   the Transcribe screen of Sorello's main window or with the `sorello`
   command in a terminal. Both give the same text for the same file (section 5,
   "Transcribing a file").
+- **Screen notes.** When the user turns them on, a shortcut records the
+  screen, the narration and marks drawn over it, and makes a folder an AI
+  agent can read: keyframes, a contact sheet, a time-aligned transcript
+  and a manifest (section 14). Off by default.
 - **Stay current.** Once a day Sorello checks whether a newer version is
   out, and Check for Updates… in the menu checks at once. A newer version
   is installed only when the user chooses Install (section 6, "Updates").
 
 Not in 0.0.1, and not planned: translation, cloud transcription, LLM
-cleanup, screen capture.
+cleanup.
 
 ## 2. Modules
 
@@ -70,13 +74,14 @@ Sendable` without a comment that says which lock or queue makes it safe.
 | `SpeechEngine` | neutral | `DictationCore`, `DictionaryKit` | The model's pin, download and store, feature front end, Core ML encoder, decoder, chunked streaming |
 | `Persistence` | neutral | `DictationCore`, `TextRules` | Settings, macros, Run Log |
 | `SorelloUI` | macOS UI | `DesignCore` | The pill, its overlay window, every screen and control |
-| `MacPlatform` | macOS | `DictationCore`, `DictionaryKit` | Shortcuts, audio capture, text insertion, Accessibility reads, permissions |
+| `MacPlatform` | macOS | `DictationCore`, `DictionaryKit`, `DesignCore`, `ScreenNotes` | Shortcuts, audio capture, text insertion, Accessibility reads, permissions, screen notes' recorder and renderer |
 | `SorelloApp` | macOS | all of the above, and Sparkle | Composition: builds the objects, connects them, owns windows and the menu bar item, and updates the app |
 | `Sorello` | executable | `SorelloApp` | `@main` only |
 | `SorelloSnapshots` | executable | `SorelloUI` | Renders every pill state and screen to PNG files |
 | `FileTranscription` | neutral | `SpeechEngine`, `TextRules`, `DictationCore` | Transcribing one file: reading it, the engine, the text rules, progress. The one path the Transcribe screen and the `sorello` command both take |
 | `SorelloCommand` | macOS | `FileTranscription`, `SpeechEngine`, `Persistence`, `DictionaryKit`, `TextRules`, `DictationCore` | The `sorello` command: its arguments, finding its app and that app's model and saved rules, its output and exit status |
 | `sorello-command` | executable | `SorelloCommand` | `main` only. Shipped in the app as `Contents/Helpers/sorello` (section 10, "The command") |
+| `ScreenNotes` | pure, Mac only | nothing | Screen notes' rules: marks, keyframes, the summary and the manifest (section 14) |
 | `sorello-transcribe` | executable | `SpeechEngine` | For verification only, never shipped: transcribes files with a model bundle given directly, and downloads the model as the app does |
 
 Rules the compiler enforces through the package graph:
@@ -168,6 +173,10 @@ spoken, one insertion at a time.
 - `transcript(id, result)`, `insertion(id, report)`,
   `reinsertion(replayID, outcome)`, `timer(timerID)`,
   `microphoneAccess(access)`, `engine(readiness)`.
+
+`screenNotePressed` and `undoPressed` are triggers too, but not the
+session's: the app takes them before the session does (section 14), and
+`reduce` ignores them.
 
 ### Effects
 
@@ -643,6 +652,10 @@ same file with the same dictionary and rules gives the same text in both.
   screen.
 - Escape is delivered as `cancelPressed` and consumed only when `handle`
   returns true.
+- The Screen Note action (section 14) is a key binding like the others,
+  given to the adapter only while screen notes are on. ⌘Z is delivered as
+  `undoPressed`, and consumed only when `handle` returns true, which it
+  does only while a note records.
 - Events Sorello posts itself carry a fixed tag and are ignored by the tap.
 - The shortcut recorder in Settings reads the next key or modifier set from
   the same tap. While it records, shortcut matches deliver no triggers.
@@ -874,6 +887,9 @@ moved or written over, and its store works without it until it opens.
   retry, like one that hears nothing or fails, leaves the entry as it
   was.
 
+- **Screen notes**: `ScreenNotes/`, one folder per note, the newest 20
+  (section 14).
+
 ## 8. Look and motion
 
 Sorello follows the iPhone app. Its windows and the pill are always dark.
@@ -892,6 +908,7 @@ menu-bar item is the one exception: it is the system's own (see Windows).
 | card | `#0F1A1C` | Rows and cards |
 | pill | `#09090A` | The pill and primary buttons, edged `#6E6E70` at 0.5 pt (1 pt with Increase Contrast) |
 | toggle | `#3FD17A` | A switch that is on |
+| marker | `#FF3B30` | A screen note's ink and pins, over the screen and on its keyframes |
 
 Display text (window titles, onboarding headlines, the app's name) is
 Urbanist, the typeface of the Audeo Labs site, set as the site sets its
@@ -1177,9 +1194,10 @@ A reviewer checks every change against these.
    only in its two verification modes, `--self-test` and `--snapshots`,
    which report on synthetic recordings to the person who ran them.
 3. In storage Sorello manages, audio and transcripts exist only in the Run
-   Log. A file transcribed on the Transcribe screen or by the
+   Log and in screen notes (section 14), which the user turns on and makes
+   one at a time. A file transcribed on the Transcribe screen or by the
    command is read where it is, and its text is held in memory only
-   (section 5, "Transcribing a file"). Clearing it deletes them and makes the app forget the last
+   (section 5, "Transcribing a file"). Clearing the Run Log deletes its own and makes the app forget the last
    dictation and any audio kept for a correction suggestion. What a
    destination app, a backup or a clipboard manager keeps is outside
    Sorello's control.
@@ -1191,6 +1209,11 @@ A reviewer checks every change against these.
 5. The clipboard snapshot lives in memory for about a second.
 6. Fixtures and tests contain only synthetic audio (`say`) and invented
    text.
+7. The screen is recorded only while a screen note records, which only
+   the user starts, and only when screen notes are on. Sorello never asks
+   for Screen Recording but when the user turns screen notes on. A note
+   is kept on the Mac; Sorello sends it nowhere. The window list, other
+   apps' titles and the clipboard's contents are never read for it.
 
 `scripts/check-rules.sh` is a lint for the first two and for module
 purity. It catches the obvious mistakes; it does not prove the invariants.
@@ -1487,6 +1510,17 @@ the model the app has downloaded, whether the app is running or not.
   release build, but it cannot run on the Apple silicon Macs Sorello is
   built on. What it does differently, the fallback, is proved there with
   `--cpu`. That the app runs on an Intel Mac is checked by hand on one.
+- Screen notes: `ScreenNotes` is tested against this document with
+  invented marks and words; `ScreenNoteStore` in a temporary directory;
+  `transcribeWords(file:)` with the fake model, as a file is; and the
+  coordinator through fakes of the recorder, the renderer, the engine,
+  the clipboard and the pill. `Sorello --self-test --screen-note <dir>`
+  records the display for three seconds while it draws a stroke and a pin
+  of its own, makes the note in `<dir>` with the app's engine and
+  renderer, and prints its summary; it needs Screen Recording, so it is
+  run by hand. With `--movie <file>` it makes the note from that movie in
+  place of a recording, which needs no permission. That a note's keyframes show what was on screen, with the
+  marks in place, is checked by looking at them.
 - What tests cannot show is checked by hand on a Mac, on the installed
   build: grant, deny and revoke each permission; rebuild and relaunch;
   hold, double tap, toggle, cancel and Paste Again into a native text
@@ -1618,3 +1652,183 @@ and ship it. This section holds what concerns both apps.
   merged. Signed builds, and uploads to App Store Connect, are made by
   hand on a Mac that has the certificates, as `iOS/README.md` describes.
   An upload is the owner's decision.
+
+## 14. Screen notes
+
+A *screen note* shows an AI agent a problem instead of describing it. The
+user presses a shortcut, talks, clicks around and draws on the screen,
+then presses it again. Sorello turns what was recorded into a small folder
+an agent can read: numbered keyframes with the marks drawn on them, one
+contact sheet of them all, the narration transcribed by Sorello's own
+model and placed in time beside what was clicked and drawn, and a
+manifest. The contact sheet and the summary go on the clipboard. Screen
+notes are written from this section; no code is taken from another app.
+
+They are for the Mac only. Nothing here is in a neutral module the iPhone
+app links, and the iPhone app has no screen notes.
+
+### Turning them on
+
+- **Off by default.** General has a card, Screen notes, with one switch,
+  "Record screen notes". While it is off, the shortcut does nothing (the
+  shortcut adapter is not given its binding), the Shortcuts screen does
+  not show it, and no screen-recording API is called. The menu lists the
+  shortcut only while it has keys, so only while screen notes are on.
+- **The permission.** Screen notes need Screen Recording. Under the
+  switch, the line "Requires Screen Recording permission" is shown while
+  the switch is off or the permission is not granted, and not otherwise.
+  Turning the switch on while the permission is not granted asks for it
+  (`CGRequestScreenCaptureAccess`, which shows the system's prompt or
+  System Settings); turning it on is the user's request. Nothing else
+  asks for it: setup never mentions it, and no launch, shortcut or
+  window asks by itself. Whether it is granted is read without asking
+  (`CGPreflightScreenCaptureAccess`) when the General screen is built and
+  whenever the app becomes active.
+
+### Recording
+
+- **The shortcut.** A fourth action, Screen Note, defaults to ⌥⇧S. It is
+  a key binding like the others (section 6, "Shortcuts") and is validated
+  with them, whether screen notes are on or off, so turning them on never
+  gives two actions one shortcut. If another action already had ⌥⇧S
+  before screen notes existed, it keeps it, and turning screen notes on
+  leaves Screen Note without a shortcut for the user to choose. Its press is `screenNotePressed`, which the session never
+  sees: the app takes it before the session (`TriggerRelay`).
+- **Start.** A press with no note recording starts one on the display
+  under the pointer. If the permission is not granted, nothing is
+  recorded and the pill shows "Screen notes need Screen Recording
+  permission" with Open Settings, which opens that pane of System
+  Settings. A press while a note is being built starts nothing.
+- **What is recorded.** The whole display, at most 2560 pixels on its
+  long edge, at up to 30 frames a second, with the pointer, through
+  ScreenCaptureKit, into `recording.mov` in the note's folder. Sorello's
+  own windows (the pill and the ink overlay) are left out of it. The
+  narration is recorded into the same file from the microphone a
+  dictation would use (section 6, "Audio capture"), but only when
+  microphone access is granted; without it the note has no narration and
+  its summary says so. The microphone is not asked for here.
+- **Finish.** The shortcut pressed again, 0.4 s or more after the start,
+  or Finish on the pill, finishes the note. A press sooner is ignored, so
+  a double press does not make an empty note. A note that reaches 10
+  minutes finishes by itself. If the display goes away or the stream
+  stops with an error, the note finishes with what was recorded.
+- **Cancel.** While a note records, Escape cancels it when the session
+  had nothing to cancel (the session sees Escape first, section 3, rule
+  6), and so do Cancel on the pill, turning screen notes off, and quitting
+  Sorello, which waits for the recording to stop and the folder to go. A
+  cancelled note's folder is deleted and nothing is copied. Once a note
+  is finished it is made: nothing cancels a note being made, and quitting
+  lets it finish if it can within the time a quit allows.
+- **Dictation meanwhile.** A dictation can be made during a note; the
+  two do not affect each other. The pill shows the dictation while there
+  is one, and the note again after.
+- **The pill.** While a note records, the pill shows the app's own
+  notice "Recording screen note", with Finish and Cancel, until the note
+  ends. It does not expire. Only the session's own content shows over it;
+  a dictionary suggestion showing when a note starts is withdrawn.
+
+### Marks
+
+While a note records, Sorello reads the pointer and the modifier keys
+without taking any input from the app underneath: clicks, drags and
+scrolls go to it as usual.
+
+- **Ink.** While ⇧ is held, moving the pointer draws a red stroke
+  (marker, section 8) on a transparent overlay over the display, which
+  never takes the mouse. Releasing ⇧ ends the stroke. A stroke under
+  12 pt long is not ink. A stroke ends when ⇧ is released, at the place
+  the pointer last was. On screen each stroke fades away 1.5 s after it
+  ends; in the note it stays.
+- **Pins.** A click made while ⇧ is held, before that hold has drawn any
+  ink, drops a numbered pin where the button went down, if the press
+  moved less than 12 pt and lasted less than 1 s. The overlay shows a
+  brief ring there. A click later in the same hold is part of the
+  drawing.
+- **Clicks.** Any other left click is recorded with its place and time,
+  a ⇧-press too long or too far for a pin included, unless its hold drew
+  ink. It is not drawn.
+- **Undo.** ⌘Z while a note records removes its last stroke or pin, which
+  then appears nowhere. The shortcut adapter consumes ⌘Z only then
+  (`undoPressed`, which the session never sees); otherwise ⌘Z goes on to
+  a shortcut bound to it, if any, and to the app in front as usual. ⌘Z is matched by key position (the ANSI Z key).
+- **Coordinates.** Marks are stored as fractions of the display, from its
+  top left, so they land in the same place on a keyframe of any size.
+  Times are seconds from the start of `recording.mov`.
+
+### The note
+
+When a note finishes, the pill shows "Making screen note…" while Sorello
+builds it, in this order:
+
+1. **Narration.** The soundtrack of `recording.mov` is transcribed by the
+   speech engine with word times (section 5). For this it is not
+   compacted, so each word's time is its time in the recording; the text
+   may differ slightly from a dictation of the same audio. The words get
+   the dictionary's casing and no text rule. If the model is not ready it
+   waits for it, as a file does; if there is none, or it fails, the note
+   is made without a transcript and its summary says why.
+2. **Keyframes** are chosen by `KeyframePlanner`, a pure function of the
+   note's length, its marks, its clicks and its words:
+   - a moment just after each stroke ends and each pin drops, and 0.3 s
+     after each click, so the frame shows what the click did;
+   - the end of each sentence of the narration;
+   - the first moment and the last;
+   - moments closer than 1.5 s are one, the keyframe of the highest
+     priority (ink and pins, then clicks, then speech, then the rest)
+     standing for them;
+   - a gap of more than 10 s with nothing in it gets evenly spaced
+     keyframes, so no stretch of the note goes unseen;
+   - at most 16. Over that, the lowest priority go first, and among
+     equals the one closest to a neighbour; the first and the last are
+     always kept, so a note always shows how it began and how it ended.
+   Each keyframe owns the time from halfway to the one before it to
+   halfway to the one after. The marks and clicks in that span are its
+   own, and so is each sentence of the narration whose last word is in
+   it: a sentence is never split between keyframes.
+3. **Frames.** Each keyframe is the recording's frame at its time,
+   decoded at full size, with the strokes and pins of its span, and every
+   stroke still in progress at its time, drawn on it in marker red, pins
+   as numbered dots. It is `frames/frame-NN.png`, numbered from 01.
+4. **Contact sheet.** `contact-sheet.png` puts the keyframes in a grid,
+   in order, at most four across and 640 px wide each, each labelled
+   with its number and time.
+5. **Summary.** `summary.md`, for an agent: what the folder is and where,
+   the note's date and length, then one section per keyframe with its
+   time, its file, what was said in its span (quoted) and its marks and
+   clicks, each with its time and its place in pixels of that keyframe.
+6. **Manifest.** `note.json`: a `version`, the note's start date and
+   length, the display's size in points and the frames' in pixels, the
+   keyframes (number, time, file, why it was chosen), the words (time and
+   text), the strokes (number, start, end and points as time, x and y),
+   the pins (number, time, x, y), the clicks (time, x, y), and whether
+   there was narration.
+
+Then the clipboard gets one item with the summary as text and the contact
+sheet as a PNG, written between insertions (section 6, "Text
+insertion"), never between a dictation's write and its paste or restore, so a terminal pastes the summary and an app that takes
+images pastes the sheet. The pill says "Screen note copied" with Show,
+which reveals the folder in the Finder, for 4 s. If building fails, the
+folder is deleted and the pill shows "Couldn't make the screen note".
+
+### Where notes are kept
+
+Under `Application Support/<bundle id>/ScreenNotes/`, one folder per note,
+named by its start time (`2026-11-19-140312`), readable by the user only.
+The newest 20 are kept; when a note is finished the older ones are
+deleted. At launch, a folder without `note.json`, left by a note that
+never finished, is deleted. Notes are not part of the Run Log, and
+clearing the Run Log does not delete them.
+
+### Where the code is
+
+| Module | Holds |
+|---|---|
+| `ScreenNotes` (pure, Mac only) | The marks' rules (`InkTracker`), `KeyframePlanner`, the spans, the summary, the manifest, the contact sheet's layout |
+| `SpeechEngine` | `transcribeWords(file:)`: a file's words with their times |
+| `Persistence` | `ScreenNoteStore`: the folders, their names and how many are kept |
+| `MacPlatform` | The screen recorder (ScreenCaptureKit), the pointer and modifier reader, the frame renderer, the permission |
+| `SorelloUI` | The ink overlay, which draws the strokes and pins it is given |
+| `SorelloApp` | `ScreenNoteCoordinator`: the note's states (idle, recording, building), the pill's notices, the clipboard |
+
+`ScreenNotes` imports only Foundation and CoreGraphics types, like the
+pure modules of section 2, and is linked only by the Mac app.
