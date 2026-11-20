@@ -15,6 +15,8 @@ enum CapturePage {
     static let handlerName = "sorelloCapture"
     /// What Swift runs to stop it: every track and the audio context.
     static let stopScript = "sorelloStop();"
+    /// What Swift runs at the tap in a held page: it posts audio from then on.
+    static let recordScript = "sorelloRecord();"
 
     /// The page for the shared `useBuiltInMicrophone`, read at the tap.
     static func page(useBuiltInMicrophone: Bool) -> String {
@@ -22,12 +24,16 @@ enum CapturePage {
     }
 
     /// Records from the input iOS chooses, Bluetooth hands-free included.
-    static let html = opening + "var sorelloPreferBuiltIn = false;\n" + script
+    static let html = opening + "var sorelloPreferBuiltIn = false;\nvar sorelloHeld = false;\n" + script
 
     /// Records from the iPhone's microphone when iOS chose another input and exactly one input's label names the iPhone
     /// or iPad as a word; otherwise as `html`. A first track named for the iPhone, with another input listed, is watched
     /// for up to 1.5 s for WebKit to rename it once the route settles. Labels are read only here and never posted.
-    static let builtInMicrophoneHTML = opening + "var sorelloPreferBuiltIn = true;\n" + script
+    static let builtInMicrophoneHTML = opening + "var sorelloPreferBuiltIn = true;\nvar sorelloHeld = false;\n" + script
+
+    /// The held microphone's page (Held microphone): chooses the input as `builtInMicrophoneHTML` does and runs Web Audio
+    /// while the keyboard is up, but posts no audio until `recordScript`.
+    static let heldMicrophoneHTML = opening + "var sorelloPreferBuiltIn = true;\nvar sorelloHeld = true;\n" + script
 
     private static let opening = #"""
     <!doctype html>
@@ -54,6 +60,11 @@ enum CapturePage {
 
     function sorelloStopTracks(media) {
       media.getTracks().forEach(function (track) { track.onended = null; track.stop(); });
+    }
+
+    // The tap, in a held page: audio is posted from here on, its sequence starting at 0.
+    function sorelloRecord() {
+      sorelloHeld = false;
     }
 
     function sorelloStop() {
@@ -95,7 +106,7 @@ enum CapturePage {
       var processor = context.createScriptProcessor(size, 1, 1);
       var sequence = 0;
       processor.onaudioprocess = function (event) {
-        if (sorelloStopped) { return; }
+        if (sorelloStopped || sorelloHeld) { return; }
         sorelloPost({ kind: "audio", seq: sequence, rate: context.sampleRate,
                       pcm: sorelloEncode(event.inputBuffer.getChannelData(0)) });
         sequence += 1;

@@ -2226,18 +2226,45 @@ unchanged and always wins.
     `modelFailed` and `transcriptionFailed`; the next tap routes afresh. The
     last two show nothing.
 - **Capture** (`Keyboard/WebAudioCapture.swift`). A hidden `WKWebView`,
-  1×1 pt and fully transparent, made for one dictation, added to the
-  keyboard's view, and removed with its message handler when the dictation
-  ends.
+  1×1 pt and fully transparent, made for one dictation (or for the held
+  microphone below, which a dictation then takes), added to the keyboard's
+  view, and removed with its message handler when the dictation ends.
   - Its page is one fixed string compiled into the keyboard, loaded with
     `loadHTMLString` under the base URL `https://capture.sorello.invalid/`:
     an `https` origin, so the page is a secure context that may call
     `getUserMedia`, under a reserved top-level domain that never resolves.
     Nothing is interpolated into it, and nothing of the field, the text or
-    the settings is ever sent into the web view, beyond which of the two
-    fixed pages it is: `CapturePage.html`, where iOS chooses the input, or
+    the settings is ever sent into the web view, beyond which of the three
+    fixed pages it is: `CapturePage.html`, where iOS chooses the input,
     `CapturePage.builtInMicrophoneHTML`, chosen at the tap while the shared
-    `useBuiltInMicrophone` reads on.
+    `useBuiltInMicrophone` reads on, or `CapturePage.heldMicrophoneHTML`
+    (below). The only scripts Swift runs in it are the fixed
+    `CapturePage.stopScript` and `CapturePage.recordScript`.
+  - **Held microphone.** With Bluetooth headphones connected, iOS records
+    from the headphones first and the switch to the iPhone takes most of a
+    second (0.74–1.03 s from the tap on an iPhone 15 Pro with AirPods
+    Max), so the first words were lost. So while all of these hold, the
+    keyboard holds the microphone (`KeyboardMicrophoneHold.shouldHold`,
+    KeyboardCore; pure, tested): the keyboard is visible and not hiding, a
+    tap would dictate in the keyboard (`KeyboardDictationRoute.decide`,
+    read as each pass reads it), the shared `useBuiltInMicrophone` read on
+    when the keyboard appeared (it changes only in the app, while the
+    keyboard is hidden), Bluetooth headphones are in the route (the audio session's current
+    route has a Bluetooth A2DP, LE or hands-free output; read only), and no
+    dictation runs. Holding opens a capture with
+    `CapturePage.heldMicrophoneHTML`, which chooses the input exactly as
+    the built-in microphone page does and runs Web Audio, but posts no
+    audio until Swift runs `CapturePage.recordScript`. Meanwhile iOS shows
+    its microphone indicator and the headphones are in hands-free mode.
+    The tap's dictation takes the held capture and runs the record script,
+    so it records from the tap: no audio from before the tap is ever
+    posted. The hold ends as soon as a condition stops holding, and when
+    the held capture reports anything (`failed`, `ended`, or a chunk it
+    should not have posted), after which the keyboard does not hold again
+    until it next appears. A dictation's capture is never held: it closes
+    when the dictation ends, and the hold then opens a new one if the
+    conditions still hold. The microphone grant to a held capture also
+    asks that the host does not own the microphone.
   - The page's Content-Security-Policy is `default-src 'none'` plus only
     what its inline script needs (`'unsafe-inline'`, and `blob:` for a
     worklet if it uses one). Its script uses only `getUserMedia`, Web Audio
@@ -2287,7 +2314,8 @@ unchanged and always wins.
     it, and dropped when its dictation ends. Nothing is written to disk.
   - Stop and every end stop every track and the audio context, and the web
     view is torn down; iOS's microphone indicator goes with it.
-  - The keyboard does not touch the audio session.
+  - The keyboard does not touch the audio session; it only reads the
+    current route's outputs for the held microphone.
 - **Transcription.** The keyboard's `SpeechEngine` over the app's
   `Model/`, loaded where it lies with no store, on `.neuralEngine`, with an
   empty dictionary (the entries never leave the app, invariant 7).
@@ -4915,7 +4943,11 @@ merge (AGENTS.md).
   bounce as before. With wired and with Bluetooth headphones connected:
   "Use iPhone microphone" on records from the iPhone (speak into it with
   the headphones' microphone covered), off records from the headphones.
-  Ideally on iOS 26 and 27 and on iPhones with less
+  With Bluetooth headphones and the choice on, iOS's microphone indicator
+  shows from the keyboard's appearance until it hides, a word spoken right
+  after the tap is transcribed, nothing said before the tap is, and the
+  indicator goes when the headphones disconnect or the choice is turned
+  off. Ideally on iOS 26 and 27 and on iPhones with less
   memory as well; until then, say which were tried.
 - **Voice notes:** making the vault (Face ID or the passcode as the
   fallback; without a passcode, nothing is made); the recovery code, and

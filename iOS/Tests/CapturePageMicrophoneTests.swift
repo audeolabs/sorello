@@ -19,6 +19,9 @@ enum CapturePageMicrophoneTests {
             ("stopWhileTheNameSettlesRecordsNothing", testStopWhileTheNameSettlesRecordsNothing),
             ("trackEndingWhileTheNameSettlesIsReported", testTrackEndingWhileTheNameSettlesIsReported),
             ("builtInPageReachesNothingOutsideIt", testBuiltInPageReachesNothingOutsideIt),
+            ("heldPageSwitchesWithoutPosting", testHeldPageSwitchesWithoutPosting),
+            ("heldPagePostsFromTheRecordScript", testHeldPagePostsFromTheRecordScript),
+            ("heldPageStoppedBeforeTheTapPostsNothing", testHeldPageStoppedBeforeTheTapPostsNothing),
         ]
     }
 
@@ -30,7 +33,8 @@ enum CapturePageMicrophoneTests {
     private static func testPageFollowsTheChoice() {
         TestSupport.expectEqual(CapturePage.page(useBuiltInMicrophone: true), CapturePage.builtInMicrophoneHTML)
         TestSupport.expectEqual(CapturePage.page(useBuiltInMicrophone: false), CapturePage.html)
-        TestSupport.expect(CapturePage.html != CapturePage.builtInMicrophoneHTML, "the two pages are the same")
+        let pages = [CapturePage.html, CapturePage.builtInMicrophoneHTML, CapturePage.heldMicrophoneHTML]
+        TestSupport.expectEqual(Set(pages).count, 3)
     }
 
     private static func testSystemPageTakesTheInputIOSChooses() {
@@ -147,7 +151,14 @@ enum CapturePageMicrophoneTests {
 
     /// The same checks as `CapturePage.html`'s (`KeyboardDictationAudioTests`), and its posts carry only fixed kinds.
     private static func testBuiltInPageReachesNothingOutsideIt() {
-        let page = CapturePage.builtInMicrophoneHTML.lowercased()
+        for page in [CapturePage.builtInMicrophoneHTML, CapturePage.heldMicrophoneHTML] { checkReachesNothingOutside(page) }
+        let held = CapturePage.heldMicrophoneHTML.lowercased()
+        TestSupport.expect(held.contains("function " + CapturePage.recordScript.lowercased().replacingOccurrences(of: ";", with: "")
+            .replacingOccurrences(of: "()", with: "(")), "the held page has no record function")
+    }
+
+    private static func checkReachesNothingOutside(_ source: String) {
+        let page = source.lowercased()
         let forbidden = [
             "fetch", "xmlhttprequest", "xhr", "websocket", "rtcpeerconnection", "rtcdatachannel", "eventsource", "beacon",
             "localstorage", "sessionstorage", "indexeddb", "caches", "cookie", "storage", "frame", "window", "open(",
@@ -185,6 +196,47 @@ enum CapturePageMicrophoneTests {
         TestSupport.expect(!run.audioPosted, "the page recorded an ended track")
     }
 
+    /// The held page chooses the iPhone while the keyboard is up, and posts nothing until the tap.
+    private static func testHeldPageSwitchesWithoutPosting() {
+        for headphones in [airPods, headset] {
+            let run = Run(page: CapturePage.heldMicrophoneHTML, devices: [iPhone, headphones], systemChoice: headphones)
+            TestSupport.expectEqual(run.requestedDevices, [nil, iPhone.id])
+            TestSupport.expectEqual(run.liveTracks, [iPhone.label])
+            TestSupport.expectEqual(run.recordingFrom, iPhone.label)
+            TestSupport.expect(!run.audioPosted, "the held page posted audio before the tap")
+            TestSupport.expect(run.postedText == "[]", "the held page posted before the tap")
+        }
+        // A name WebKit corrects later is waited for, as on the built-in page.
+        let renamed = Run(page: CapturePage.heldMicrophoneHTML, devices: [iPhone, airPods], systemChoice: iPhone,
+                          renamed: (to: airPods.label, atMilliseconds: 300))
+        TestSupport.expectEqual(renamed.requestedDevices, [nil, iPhone.id])
+        TestSupport.expect(!renamed.audioPosted, "the held page posted audio before the tap")
+    }
+
+    /// From the record script on, the page posts as a page that recorded from the tap: its first chunk is the first of
+    /// the sequence, and none came from before.
+    private static func testHeldPagePostsFromTheRecordScript() {
+        let run = Run(page: CapturePage.heldMicrophoneHTML, devices: [iPhone, airPods], systemChoice: airPods,
+                      recordAtMilliseconds: 2000)
+        TestSupport.expectEqual(run.requestedDevices, [nil, iPhone.id])
+        TestSupport.expectEqual(run.recordingFrom, iPhone.label)
+        TestSupport.expect(run.audioPosted, "the held page posted no audio after the record script")
+        TestSupport.expect((run.firstAudioPostAt ?? -1) >= 2000,
+                           "the held page posted audio at \(run.firstAudioPostAt.map(String.init) ?? "never") ms, before the tap")
+        TestSupport.expectEqual(run.firstAudioSequence, 0)
+        // The other pages post from the start.
+        let cold = Run(page: CapturePage.builtInMicrophoneHTML, devices: [iPhone, airPods], systemChoice: airPods)
+        TestSupport.expect((cold.firstAudioPostAt ?? .max) < 1000, "the built-in page waited for a record script")
+    }
+
+    private static func testHeldPageStoppedBeforeTheTapPostsNothing() {
+        let run = Run(page: CapturePage.heldMicrophoneHTML, devices: [iPhone, airPods], systemChoice: airPods,
+                      stopAtMilliseconds: 1500, recordAtMilliseconds: 2000)
+        TestSupport.expectEqual(run.liveTracks, [])
+        TestSupport.expectEqual(run.recordingFrom, nil)
+        TestSupport.expect(!run.audioPosted && !run.failed, "a held page stopped before the tap posted")
+    }
+
     // MARK: Running a page
 
     struct Device {
@@ -203,13 +255,16 @@ enum CapturePageMicrophoneTests {
         /// Milliseconds of the harness's clock when the page made its audio context, nil if it never did.
         var recordingStartedAt: Int?
         var endedPosts = 0
+        /// Milliseconds of the harness's clock at the first audio post, and that post's sequence number.
+        var firstAudioPostAt: Int?
+        var firstAudioSequence: Int?
 
         /// `renamed`: WebKit renames the first track that long after the page starts. `stopAtMilliseconds`: Swift
         /// stops the page then.
         init(page: String, devices: [Device], systemChoice: Device, refused: Set<String> = [],
              refuseSystemAfterFirst: Bool = false, stopAfterFirstGrant: Bool = false,
              renamed: (to: String, atMilliseconds: Int)? = nil, stopAtMilliseconds: Int? = nil,
-             endedAtMilliseconds: Int? = nil) {
+             endedAtMilliseconds: Int? = nil, recordAtMilliseconds: Int? = nil) {
             guard let context = JSContext() else {
                 TestSupport.expect(false, "JavaScriptCore made no context")
                 return
@@ -226,6 +281,7 @@ enum CapturePageMicrophoneTests {
                 "renameAt": renamed?.atMilliseconds ?? NSNull(),
                 "stopAt": stopAtMilliseconds ?? NSNull(),
                 "endAt": endedAtMilliseconds ?? NSNull(),
+                "recordAt": recordAtMilliseconds ?? NSNull(),
             ]
             context.setObject(config, forKeyedSubscript: "harnessConfig" as NSString)
             context.evaluateScript(Self.standIns)
@@ -249,6 +305,8 @@ enum CapturePageMicrophoneTests {
             postedText = object["postedText"] as? String ?? ""
             recordingStartedAt = object["startedAt"] as? Int
             endedPosts = posts.filter { $0["kind"] as? String == "ended" }.count
+            firstAudioPostAt = object["firstAudioAt"] as? Int
+            firstAudioSequence = object["firstAudioSeq"] as? Int
         }
 
         private static func script(of page: String) -> String {
@@ -302,7 +360,15 @@ enum CapturePageMicrophoneTests {
           }
         } };
 
-        var webkit = { messageHandlers: { sorelloCapture: { postMessage: function (message) { harnessPosts.push(message); } } } };
+        var harnessFirstAudioAt = null;
+        var harnessFirstAudioSeq = null;
+        var webkit = { messageHandlers: { sorelloCapture: { postMessage: function (message) {
+          if (message.kind === "audio" && harnessFirstAudioAt === null) {
+            harnessFirstAudioAt = harnessNow;
+            harnessFirstAudioSeq = message.seq;
+          }
+          harnessPosts.push(message);
+        } } } };
 
         function AudioContext() {
           this.sampleRate = 48000;
@@ -334,6 +400,7 @@ enum CapturePageMicrophoneTests {
             harnessTracks[0].label = harnessConfig.renameTo;
           }
           if (harnessConfig.stopAt !== null && harnessNow === harnessConfig.stopAt) { sorelloStop(); }
+          if (harnessConfig.recordAt !== null && harnessNow === harnessConfig.recordAt) { sorelloRecord(); }
           if (harnessConfig.endAt !== null && harnessNow === harnessConfig.endAt && harnessTracks.length > 0) {
             var ending = harnessTracks[0];
             ending.readyState = "ended";
@@ -343,6 +410,8 @@ enum CapturePageMicrophoneTests {
           var due = harnessTimers.filter(function (t) { return t.at <= harnessNow; });
           harnessTimers = harnessTimers.filter(function (t) { return t.at > harnessNow; });
           due.forEach(function (t) { t.callback(); });
+          // A buffer of audio every 100 ms to whatever records.
+          if (harnessNow % 100 === 0) { harnessDeliverAudio(); }
         }
 
         function harnessLive() {
@@ -371,7 +440,9 @@ enum CapturePageMicrophoneTests {
             liveTracks: harnessTracks.filter(function (t) { return !t.stopped; }).map(function (t) { return t.label; }),
             posts: harnessPosts.map(function (p) { return { kind: p.kind }; }),
             postedText: JSON.stringify(harnessPosts),
-            startedAt: harnessStartedAt
+            startedAt: harnessStartedAt,
+            firstAudioAt: harnessFirstAudioAt,
+            firstAudioSeq: harnessFirstAudioSeq
           };
         }
         """#

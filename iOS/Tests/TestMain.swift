@@ -14,6 +14,7 @@ struct SorelloIOSTests {
             ("KeyboardDictationMachine", KeyboardDictationMachineTests.tests),
             ("KeyboardDictationAudio", KeyboardDictationAudioTests.tests),
             ("CapturePageMicrophone", CapturePageMicrophoneTests.tests),
+            ("KeyboardMicrophoneHold", KeyboardMicrophoneHoldTests.tests),
             ("KeyboardWorkLine", KeyboardWorkLineTests.tests),
             ("KeyboardEngineWarmth", KeyboardEngineWarmthTests.tests),
             ("AtomicRecordFiles", AtomicRecordFilesTests.tests),

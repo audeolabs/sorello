@@ -40,6 +40,12 @@ final class KeyboardLocalDictation {
     private var capturePage = CapturePage.html
     private var machine = KeyboardDictationMachine()
     private var capture: WebAudioCapture?
+    /// The held microphone (ARCHITECTURE.md, "In-keyboard dictation (experiment)", Capture, Held microphone): a capture
+    /// opened before the tap, posting nothing until the tap's dictation takes it. Its token names it to its own grants.
+    private var heldCapture: WebAudioCapture?
+    private var heldToken: UUID?
+    /// A held capture reported something since the keyboard appeared: no holding again until it next appears.
+    private(set) var heldCaptureReported = false
     private var pipeline: KeyboardAudioPipeline?
     private var transcription: KeyboardTranscription?
     private var meter: LevelMeter?
@@ -90,8 +96,39 @@ final class KeyboardLocalDictation {
 
     func cancel(_ attemptID: UUID) { handle(.cancel(attempt: attemptID)) }
 
+    /// Opens or closes the held microphone, as `KeyboardMicrophoneHold.shouldHold` judged at this pass. Never while a
+    /// dictation runs, and never with a harness's page.
+    func hold(_ shouldHold: Bool) {
+        guard shouldHold, !machine.isRunning, !heldCaptureReported, capturePageOverride == nil else { return releaseHold() }
+        guard heldCapture == nil, let container = hooks.container() else { return }
+        let token = UUID()
+        let held = WebAudioCapture(
+            page: CapturePage.heldMicrophoneHTML,
+            mayGrantMicrophone: { [weak self] in
+                guard let self else { return false }
+                return heldToken == token && !machine.isRunning && !hooks.hostOwnsMicrophone()
+            },
+            // Held, the page posts nothing; anything it reports ends the hold until the keyboard next appears.
+            onMessage: { [weak self] _ in
+                guard let self, heldToken == token else { return }
+                heldCaptureReported = true
+                releaseHold()
+            })
+        heldCapture = held
+        heldToken = token
+        held.open(in: container)
+    }
+
+    private func releaseHold() {
+        heldCapture?.close()
+        heldCapture = nil
+        heldToken = nil
+    }
+
     /// The keyboard is hiding: the dictation ends, its text goes, and the engine is released once its work has ended.
     func hide() {
+        releaseHold()
+        heldCaptureReported = false
         handle(.hide)
         timer?.invalidate()
         timer = nil
@@ -195,13 +232,22 @@ final class KeyboardLocalDictation {
         self.pipeline = pipeline
         meter = nil
         inputLevels = KeyboardInputLevels()
-        let capture = WebAudioCapture(
-            page: capturePage,
-            mayGrantMicrophone: { [weak self] in
-                guard let self else { return false }
-                return machine.runningAttemptID == id && machine.isCaptureOpen && !hooks.hostOwnsMicrophone()
-            },
-            onMessage: { [weak self] message in self?.received(message, for: id) })
+        let mayGrantMicrophone: () -> Bool = { [weak self] in
+            guard let self else { return false }
+            return machine.runningAttemptID == id && machine.isCaptureOpen && !hooks.hostOwnsMicrophone()
+        }
+        let onMessage: (CaptureMessageReader.Message) -> Void = { [weak self] message in self?.received(message, for: id) }
+        // The held microphone chose the iPhone's as the built-in page would: the tap's dictation takes it and records
+        // from now on. A capture of another page needs the microphone the hold has, so the hold goes first.
+        if let held = heldCapture, held.isOpen, capturePage == CapturePage.builtInMicrophoneHTML {
+            heldCapture = nil
+            heldToken = nil
+            held.handOver(mayGrantMicrophone: mayGrantMicrophone, onMessage: onMessage)
+            capture = held
+            return
+        }
+        releaseHold()
+        let capture = WebAudioCapture(page: capturePage, mayGrantMicrophone: mayGrantMicrophone, onMessage: onMessage)
         self.capture = capture
         guard let container = hooks.container() else {
             DispatchQueue.main.async { [weak self] in self?.handle(.captureFailed(attempt: id)) }

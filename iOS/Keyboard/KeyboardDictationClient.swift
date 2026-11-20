@@ -119,6 +119,8 @@ final class KeyboardDictationClient: ObservableObject {
     /// `keyboardDictationEnabled` and the app's microphone permission, read when the keyboard appears and at a tap.
     private var keyboardDictationEnabled = false
     private var microphoneGranted = false
+    /// The shared `useBuiltInMicrophone`, read when the keyboard appears, for the held microphone; a tap reads it afresh.
+    private var useBuiltInMicrophone = true
     /// The app's `Model/bundle.json` is readable from the keyboard, as of when the keyboard appeared.
     private var modelCarried = false
     /// Set from `viewWillDisappear` until the keyboard appears again: no in-keyboard dictation starts meanwhile.
@@ -161,6 +163,7 @@ final class KeyboardDictationClient: ObservableObject {
             #if SORELLO_KEYBOARD_DICTATION
             keyboardDictationEnabled = settings?.keyboardDictationEnabled ?? false
             microphoneGranted = AVAudioApplication.shared.recordPermission == .granted
+            useBuiltInMicrophone = settings?.useBuiltInMicrophone ?? true
             modelCarried = KeyboardSpeech.carriedModel() != nil
             hiding = false
             #endif
@@ -541,6 +544,36 @@ final class KeyboardDictationClient: ObservableObject {
         return made
     }
 
+    /// The held microphone (ARCHITECTURE.md, "In-keyboard dictation (experiment)", Capture, Held microphone), judged at
+    /// every pass. The route is read only when everything else holds.
+    private func updateHeldMicrophone(tapDictatesInKeyboard: Bool) {
+        var conditions = KeyboardMicrophoneHold.Conditions(
+            visible: isVisible && !hiding, tapDictatesInKeyboard: tapDictatesInKeyboard,
+            useBuiltInMicrophone: useBuiltInMicrophone, bluetoothHeadphones: false,
+            dictationRunning: local?.isRunning == true, heldCaptureReported: local?.heldCaptureReported == true)
+        if conditions.visible, tapDictatesInKeyboard, useBuiltInMicrophone, !conditions.dictationRunning,
+           !conditions.heldCaptureReported {
+            conditions.bluetoothHeadphones = KeyboardMicrophoneHold.bluetoothHeadphones(in: Self.routeOutputs())
+        }
+        if KeyboardMicrophoneHold.shouldHold(conditions) {
+            localDictation()?.hold(true)
+        } else {
+            local?.hold(false)
+        }
+    }
+
+    /// The audio session's current route's outputs: read only, never configured.
+    private static func routeOutputs() -> [KeyboardMicrophoneHold.Output] {
+        AVAudioSession.sharedInstance().currentRoute.outputs.map { port in
+            switch port.portType {
+            case .bluetoothA2DP: return .bluetoothA2DP
+            case .bluetoothLE: return .bluetoothLE
+            case .bluetoothHFP: return .bluetoothHFP
+            default: return .other
+            }
+        }
+    }
+
     /// A chunk of the in-keyboard recording: one bar of the wave.
     private func heardLocally(_ level: Float) {
         levels.append(level)
@@ -681,6 +714,7 @@ final class KeyboardDictationClient: ObservableObject {
                 access: access, status: status, intent: intent, instanceID: instanceID, now: now,
                 conditions: routeConditions(unfinishedRecord: unhandledUnfinishedRecord(in: store) != nil)) == .keyboard
         }
+        updateHeldMicrophone(tapDictatesInKeyboard: startDictatesInKeyboard)
         #else
         let mode = KeyboardPresenter.shownMode(KeyboardPresenter.mode(access: access, status: status, intent: intent, now: now),
                                                bouncedRequestID: bouncedRequestID, intent: intent, status: status)
