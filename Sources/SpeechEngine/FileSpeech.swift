@@ -11,6 +11,17 @@ public enum FileSpeechProgress: Sendable, Equatable {
     case transcribing(read: TimeInterval, length: TimeInterval)
 }
 
+/// One word of a file and when it starts, in seconds of the file's own time (`SpeechEngine.transcribeWords(file:)`).
+public struct TimedWord: Sendable, Equatable {
+    public var text: String
+    public var time: TimeInterval
+
+    public init(text: String, time: TimeInterval) {
+        self.text = text
+        self.time = time
+    }
+}
+
 /// Why the engine could not transcribe a file. Content-free: nothing here names the file or carries what it holds.
 public enum FileSpeechFailure: Error, Sendable, Equatable {
     /// The file is not there, is a directory, or may not be read.
