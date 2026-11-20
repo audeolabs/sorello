@@ -55,6 +55,13 @@ final class FakeInserter: AppInserting {
         var idleWaits = 0
         var neverIdle = false
         var stuck: [CheckedContinuation<Void, Never>] = []
+        var holdsClipboard = false
+        var clipboardWaiters: [CheckedContinuation<Void, Never>] = []
+        var clipboardWrites = 0
+        var sequences: [[PastePiece]] = []
+        var sequenceOutcome: PasteSequenceOutcome = .pasted
+        var holdsSequence = false
+        var sequenceWaiters: [CheckedContinuation<Void, Never>] = []
     }
 
     private let state = Mutex(State())
@@ -80,6 +87,69 @@ final class FakeInserter: AppInserting {
     var neverIdle: Bool {
         get { state.withLock { $0.neverIdle } }
         set { state.withLock { $0.neverIdle = newValue } }
+    }
+
+    /// An insertion holding the clipboard: a write of the app's own waits for `releaseClipboard()`.
+    func holdClipboard() { state.withLock { $0.holdsClipboard = true } }
+
+    func releaseClipboard() {
+        let waiting = state.withLock { state in
+            state.holdsClipboard = false
+            defer { state.clipboardWaiters = [] }
+            return state.clipboardWaiters
+        }
+        for waiter in waiting { waiter.resume() }
+    }
+
+    var clipboardWrites: Int { state.withLock { $0.clipboardWrites } }
+
+    func beginClipboardWrite() async -> Bool {
+        await withCheckedContinuation { continuation in
+            let now = state.withLock { state -> Bool in
+                guard state.holdsClipboard else { return true }
+                state.clipboardWaiters.append(continuation)
+                return false
+            }
+            if now { continuation.resume() }
+        }
+        state.withLock { $0.clipboardWrites += 1 }
+        return true
+    }
+
+    func endClipboardWrite() async {}
+
+    /// Every sequence asked to be pasted, in order.
+    var sequences: [[PastePiece]] { state.withLock { $0.sequences } }
+    /// What a sequence that is not cancelled returns.
+    var sequenceOutcome: PasteSequenceOutcome {
+        get { state.withLock { $0.sequenceOutcome } }
+        set { state.withLock { $0.sequenceOutcome = newValue } }
+    }
+
+    /// A sequence pastes until `releaseSequence()`, as a long one would.
+    func holdSequence() { state.withLock { $0.holdsSequence = true } }
+
+    func releaseSequence() {
+        let waiting = state.withLock { state in
+            state.holdsSequence = false
+            defer { state.sequenceWaiters = [] }
+            return state.sequenceWaiters
+        }
+        for waiter in waiting { waiter.resume() }
+    }
+
+    func pasteSequence(_ pieces: [PastePiece], restoring: Bool) async -> PasteSequenceOutcome {
+        state.withLock { $0.sequences.append(pieces) }
+        await withCheckedContinuation { continuation in
+            let now = state.withLock { state -> Bool in
+                guard state.holdsSequence else { return true }
+                state.sequenceWaiters.append(continuation)
+                return false
+            }
+            if now { continuation.resume() }
+        }
+        if Task.isCancelled { return .stopped(pasted: 0, why: .cancelled) }
+        return sequenceOutcome
     }
 
     func waitUntilIdle() async {
@@ -247,7 +317,7 @@ final class Harness {
     let shortcuts = FakeShortcuts()
     let login = FakeLoginItem()
     let pill = FakePill()
-    let clock = ManualClock()
+    let clock: ManualClock
     let system = SystemLog()
     let app: AppComposition
     let windows: WindowModels
@@ -264,7 +334,9 @@ final class Harness {
          thirdPartyNotices: URL? = nil,
          compute: SpeechCompute = .neuralEngine, download: FakeDownload? = nil, readiness: EngineReadiness = .ready,
          microphone: any MicrophoneAuthorizing = GrantedMicrophone(), updater: FakeUpdater? = nil,
-         microphones: any MicrophoneListing = FakeMicrophones()) {
+         microphones: any MicrophoneListing = FakeMicrophones(), screenNotes: ScreenNotePlatform? = nil,
+         clock: ManualClock = ManualClock()) {
+        self.clock = clock
         speech = FakeSpeech(compute: compute, readiness: readiness)
         let info = AppInfo(name: "Sorello Test", version: "0.0.1", build: "1", modelDirectory: model,
                            modelName: model.flatMap(AppInfo.modelName(in:)), thirdPartyNotices: thirdPartyNotices,
@@ -280,7 +352,7 @@ final class Harness {
         let speech = self.speech
         app = AppComposition(info: info, storage: AppStorage(paths: AppPaths(root: directory), defaults: defaults),
                              platform: platform, speech: { _ in speech }, download: download, updater: updater,
-                             pill: pill, levels: LevelFeed())
+                             pill: pill, levels: LevelFeed(), screenNotes: screenNotes)
         windows = WindowModels(app: app)
     }
 

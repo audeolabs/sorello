@@ -43,6 +43,9 @@ public struct AppPaths: Sendable, Equatable {
     /// Where the speech engine keeps its copy of the model, so Core ML's compiled cache survives app updates.
     public var modelsDirectory: URL { root.appendingPathComponent("Models", isDirectory: true) }
 
+    /// Screen notes, one folder each (`ScreenNoteStore`, ARCHITECTURE.md, section 14).
+    public var screenNotesDirectory: URL { root.appendingPathComponent("ScreenNotes", isDirectory: true) }
+
     /// Creates `root` if it is missing and makes it readable by the user only. Called once at launch, before any
     /// store writes; each store also creates the directory it writes into.
     public func prepare() throws {

@@ -9,8 +9,28 @@ import Observation
 // permission. `AppPlatform.system()` gives the real adapters; nothing else in the app constructs them.
 
 /// The insertion adapter, and the wait the app does before it quits so a clipboard waiting to be put back is not lost.
-protocol AppInserting: TextInserting {
+protocol AppInserting: TextInserting, ClipboardTurns {
     func waitUntilIdle() async
+}
+
+/// A turn on the clipboard between insertions, for a write that must not land in the middle of one (a screen note's
+/// copy and its pasted sequence, ARCHITECTURE.md, section 14).
+protocol ClipboardTurns: Sendable {
+    /// Returns false, without a turn, when the calling task is cancelled while it waits.
+    func beginClipboardWrite() async -> Bool
+    func endClipboardWrite() async
+    /// Pastes `pieces` one after another at the cursor, in a turn of its own.
+    func pasteSequence(_ pieces: [PastePiece], restoring: Bool) async -> PasteSequenceOutcome
+}
+
+extension ClipboardTurns {
+    /// An inserter with no line of its own has nothing to wait for.
+    func beginClipboardWrite() async -> Bool { true }
+    func endClipboardWrite() async {}
+    /// One that cannot paste pastes nothing.
+    func pasteSequence(_ pieces: [PastePiece], restoring: Bool) async -> PasteSequenceOutcome {
+        .stopped(pasted: 0, why: .failed)
+    }
 }
 
 extension PasteboardInserter: AppInserting {}

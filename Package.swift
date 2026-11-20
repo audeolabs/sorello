@@ -35,6 +35,8 @@ let package = Package(
         .target(name: "TextRules", swiftSettings: strict),
         .target(name: "DictionaryKit", swiftSettings: strict),
         .target(name: "DesignCore", swiftSettings: strict),
+        // Screen notes' rules, pure but for the Mac app only (ARCHITECTURE.md, section 14).
+        .target(name: "ScreenNotes", swiftSettings: strict),
         .target(name: "SpeechEngine", dependencies: ["DictationCore", "DictionaryKit"], swiftSettings: strict),
         .target(name: "Persistence", dependencies: ["DictationCore", "TextRules"], swiftSettings: strict),
         .target(name: "FileTranscription", dependencies: ["SpeechEngine", "TextRules", "DictationCore"],
@@ -42,11 +44,12 @@ let package = Package(
 
         // macOS.
         .target(name: "SorelloUI", dependencies: ["DesignCore"], swiftSettings: mainActor),
-        .target(name: "MacPlatform", dependencies: ["DictationCore", "DictionaryKit"], swiftSettings: strict),
+        .target(name: "MacPlatform", dependencies: ["DictationCore", "DictionaryKit", "DesignCore", "ScreenNotes"],
+                swiftSettings: strict),
         .target(
             name: "SorelloApp",
             dependencies: ["DictationCore", "TextRules", "DictionaryKit", "DesignCore", "SpeechEngine", "Persistence",
-                           "FileTranscription", "SorelloUI", "MacPlatform",
+                           "FileTranscription", "SorelloUI", "MacPlatform", "ScreenNotes",
                            .product(name: "Sparkle", package: "Sparkle")],
             swiftSettings: mainActor
         ),
@@ -66,6 +69,7 @@ let package = Package(
         .testTarget(name: "TextRulesTests", dependencies: ["TextRules", "TestSupport"], swiftSettings: strict),
         .testTarget(name: "DictionaryKitTests", dependencies: ["DictionaryKit", "TestSupport"], swiftSettings: strict),
         .testTarget(name: "DesignCoreTests", dependencies: ["DesignCore", "TestSupport"], swiftSettings: strict),
+        .testTarget(name: "ScreenNotesTests", dependencies: ["ScreenNotes"], swiftSettings: strict),
         .testTarget(name: "SpeechEngineTests", dependencies: ["SpeechEngine", "DictionaryKit", "DictationCore", "TestSupport"],
                     resources: [.copy("Fixtures")], swiftSettings: strict),
         .testTarget(name: "PersistenceTests", dependencies: ["Persistence", "DictationCore", "TextRules", "TestSupport"], swiftSettings: strict),
@@ -81,7 +85,7 @@ let package = Package(
         .testTarget(name: "SorelloAppTests",
                     dependencies: ["SorelloApp", "DictationCore", "TextRules", "DictionaryKit", "DesignCore",
                                    "SpeechEngine", "Persistence", "FileTranscription", "SorelloUI", "MacPlatform",
-                                   "TestSupport"],
+                                   "ScreenNotes", "TestSupport"],
                     swiftSettings: strict),
     ],
     swiftLanguageModes: [.v6]

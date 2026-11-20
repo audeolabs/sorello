@@ -62,6 +62,8 @@ public enum Palette {
     public static let ink = RGB(1, 1, 1)
     /// A switch that is on: aurora a shade deeper, so the white knob stays crisp.
     public static let toggle = RGB(hex: 0x3FD17A)
+    /// A screen note's ink and pins, over the screen and on its keyframes (ARCHITECTURE.md, section 14).
+    public static let marker = RGB(hex: 0xFF3B30)
 
     /// Secondary text is `ink` at this opacity.
     public static let secondaryInkAlpha = 0.6

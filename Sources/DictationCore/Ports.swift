@@ -73,10 +73,23 @@ public enum ShortcutBinding: Codable, Hashable, Sendable {
 
     /// The default Hold to Talk shortcut.
     public static let function = ShortcutBinding.modifiers([.function])
+    /// The default Screen Note shortcut, ⌥⇧S (the ANSI S key, 1).
+    public static let screenNote = ShortcutBinding.key(code: 1, modifiers: [.option, .shift])
+    /// The default Paste Screen Note shortcut, ⌥⇧V (the ANSI V key, 9).
+    public static let pasteScreenNote = ShortcutBinding.key(code: 9, modifiers: [.option, .shift])
 }
 
 public enum ShortcutAction: String, Codable, CaseIterable, Hashable, Sendable {
     case holdToTalk, tapToToggle, pasteAgain
+    /// Starts or finishes a screen note (ARCHITECTURE.md, section 14). Given to the shortcut adapter only while
+    /// screen notes are on.
+    case screenNote
+    /// Pastes the newest screen note as its frames with text between them (ARCHITECTURE.md, section 14, "Pasting a
+    /// note"). Given to the shortcut adapter only while screen notes are on.
+    case pasteScreenNote
+
+    /// Whether the action is screen notes', and so works only while they are on.
+    public var isScreenNotes: Bool { self == .screenNote || self == .pasteScreenNote }
 }
 
 /// How a hold ended.
@@ -102,6 +115,12 @@ public enum TriggerEvent: Sendable, Equatable {
     /// The session was locked or switched to another user, or the Mac is about to sleep. Whatever the shortcut
     /// mode, a recording stops here and nothing resumes by itself afterwards.
     case systemInterrupted
+    /// The Screen Note shortcut. Not the session's: the app takes it before the session (ARCHITECTURE.md, section 14).
+    case screenNotePressed
+    /// The Paste Screen Note shortcut. Not the session's either.
+    case pasteScreenNotePressed
+    /// ⌘Z. Not the session's: it undoes a screen note's last mark while one records, and is consumed only then.
+    case undoPressed
 }
 
 /// Receives triggers on the main actor, in the order they happened.

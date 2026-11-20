@@ -12,6 +12,8 @@ public enum KeyCode {
     public static let delete = UInt16(kVK_Delete)
     public static let forwardDelete = UInt16(kVK_ForwardDelete)
     public static let function = UInt16(kVK_Function)
+    /// The key in the Z position, for ⌘Z while a screen note records.
+    public static let z = UInt16(kVK_ANSI_Z)
 
     /// The physical modifier key a code belongs to, or nil for any other key.
     public static func modifierKey(for code: UInt16) -> ModifierKey? {

@@ -111,12 +111,14 @@ public extension SettingRow where Accessory == EmptyView {
 public struct ToggleRow: View {
     private let title: String
     private let symbol: String?
+    private let detail: String?
     @Binding private var isOn: Bool
 
-    /// A switch row bound to `isOn`.
-    public init(_ title: String, symbol: String? = nil, isOn: Binding<Bool>) {
+    /// A switch row bound to `isOn`, with `detail` under its title when there is something the title cannot say.
+    public init(_ title: String, symbol: String? = nil, detail: String? = nil, isOn: Binding<Bool>) {
         self.title = title
         self.symbol = symbol
+        self.detail = detail
         _isOn = isOn
     }
 
@@ -124,7 +126,7 @@ public struct ToggleRow: View {
         Toggle(isOn: $isOn) {
             HStack(spacing: Metrics.glyphGap) {
                 if let symbol { RowGlyph(symbol) }
-                RowWords(title: title, detail: nil)
+                RowWords(title: title, detail: detail)
             }
         }
         .toggleStyle(.sorello)

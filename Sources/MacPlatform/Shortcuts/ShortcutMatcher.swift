@@ -18,6 +18,8 @@ import Foundation
 /// - Escape, with any modifiers, is `cancelPressed`, and is consumed only if the handler says it cancelled
 ///   something. It never counts as a chord's second key, so Escape during a fresh hold cancels it
 ///   rather than abandoning it.
+/// - ⌘Z is `undoPressed`, and is consumed only if the handler says it undid something (a screen note's mark);
+///   otherwise it goes on to any binding it has, and then to the app in front.
 /// - While recording a binding for Settings, nothing triggers; the keys pressed are captured and consumed.
 public struct ShortcutMatcher: Sendable {
     /// How soon after a modifier-only hold starts another key turns it into a chord.
@@ -72,7 +74,7 @@ public struct ShortcutMatcher: Sendable {
     private var hold: Hold?
     private var recorder: Recorder?
 
-    private static let order: [ShortcutAction] = [.holdToTalk, .tapToToggle, .pasteAgain]
+    private static let order: [ShortcutAction] = [.holdToTalk, .tapToToggle, .pasteAgain, .screenNote, .pasteScreenNote]
 
     public init(bindings: [ShortcutAction: ShortcutBinding]) {
         self.bindings = bindings
@@ -156,6 +158,10 @@ public struct ShortcutMatcher: Sendable {
         }
 
         let flags = ModifierFlags(event.modifiers)
+        if code == KeyCode.z, flags == .command, deliver(.undoPressed) {
+            consumedKeys.insert(code)
+            return Response(consume: true)
+        }
         guard let action = Self.order.first(where: { bindings[$0] == .key(code: code, modifiers: flags) }) else {
             return Response(consume: false)
         }
@@ -168,6 +174,8 @@ public struct ShortcutMatcher: Sendable {
             }
         case .tapToToggle: _ = deliver(.togglePressed)
         case .pasteAgain: _ = deliver(.pasteAgainPressed)
+        case .screenNote: _ = deliver(.screenNotePressed)
+        case .pasteScreenNote: _ = deliver(.pasteScreenNotePressed)
         }
         return Response(consume: true)
     }
@@ -230,6 +238,8 @@ public struct ShortcutMatcher: Sendable {
                 }
             case .tapToToggle: _ = deliver(.togglePressed)
             case .pasteAgain: _ = deliver(.pasteAgainPressed)
+            case .screenNote: _ = deliver(.screenNotePressed)
+            case .pasteScreenNote: _ = deliver(.pasteScreenNotePressed)
             }
         }
         return Response(consume: consume)

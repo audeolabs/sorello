@@ -34,6 +34,8 @@ final class LiveState {
     var retryingIDs: Set<String> = []
     /// The speech model's download, as it last reported; nil in a copy that has no pin to download from.
     var modelDownload: ModelDownloadState?
+    /// Whether Sorello may record the screen, as last read, for screen notes.
+    var screenRecordingGranted = false
 }
 
 /// What the windows ask the app shell to do: show a window or one of its sheets, or quit.
@@ -77,6 +79,10 @@ final class AppComposition {
     let pill: any PillPresenting
     let live = LiveState()
     let relay: TriggerRelay
+    /// Screen notes; nil in a build of the graph given no platform for them, as the tests' and self-tests' are.
+    let notes: ScreenNoteCoordinator?
+    /// Their adapters.
+    let screenNotes: ScreenNotePlatform?
     /// What the windows ask of the shell; the shell fills it in.
     var navigation = Navigation()
 
@@ -95,7 +101,7 @@ final class AppComposition {
     init(info: AppInfo, storage: AppStorage, platform: AppPlatform,
          speech makeSpeech: (DictionaryStore) -> any AppSpeech, download: (any ModelDownloading)? = nil,
          updater: (any Updating)? = nil, modelFitsThisMac: Bool = true, pill: any PillPresenting,
-         levels: LevelFeed) {
+         levels: LevelFeed, screenNotes: ScreenNotePlatform? = nil) {
         self.info = info
         self.updater = updater
         defaults = storage.defaults
@@ -151,6 +157,21 @@ final class AppComposition {
             })
         self.corrections = corrections
         relay.observer = { [weak corrections] in corrections?.triggerArrived($0) }
+        self.screenNotes = screenNotes
+        let noteStore = ScreenNoteStore(directory: storage.paths.screenNotesDirectory), noteClock = platform.clock
+        let notes = screenNotes.map { notePlatform in
+            ScreenNoteCoordinator(
+                settings: settings, store: noteStore, platform: notePlatform, clock: noteClock,
+                words: { file async throws(FileSpeechFailure) in try await speech.transcribeWords(file: file) },
+                microphone: { [weak runtime] in
+                    let device = MicrophoneChoice.resolve(live.microphones, chosenID: settings.microphoneID,
+                                                          avoidBluetooth: settings.avoidBluetoothMicrophone)
+                    return (runtime?.state.microphone == .granted, device?.device.id)
+                },
+                clipboard: platform.inserter)
+        }
+        self.notes = notes
+        relay.notes = notes
 
         frontmost.onRead = { [weak runtime, weak corrections] app in
             guard let id = runtime?.state.capture.live?.id else { return }
@@ -166,7 +187,11 @@ final class AppComposition {
         let clock = platform.clock
         pill.onStop = { [weak runtime] in runtime?.handle(.pillStopClicked, at: clock.now) }
         pill.onCancel = { [weak runtime] in runtime?.handle(.pillCancelClicked, at: clock.now) }
-        pill.onNoticeAction = { [weak corrections] notice, action in
+        pill.onNoticeAction = { [weak corrections, weak notes] notice, action in
+            if NoteNoticeID.owns(notice) {
+                notes?.noticeAction(action)
+                return
+            }
             guard AppNoticeID.isAppNotice(notice) else { return }
             corrections?.noticeAction(notice, action: action)
         }
@@ -179,6 +204,8 @@ final class AppComposition {
         started = true
         live.accessibilityTrusted = platform.accessibility.isTrusted
         live.microphones = platform.microphones.current()
+        live.screenRecordingGranted = screenNotes?.permission.isGranted ?? false
+        notes?.start()
         let history = self.history
         watching.append(Task { await history.load() })
         runtime.start()
@@ -207,6 +234,7 @@ final class AppComposition {
     func becameActive() {
         runtime.refreshMicrophoneAccess()
         live.accessibilityTrusted = platform.accessibility.isTrusted
+        live.screenRecordingGranted = screenNotes?.permission.isGranted ?? false
         platform.shortcuts.start()
         platform.loginItem.refresh()
     }
@@ -225,9 +253,12 @@ final class AppComposition {
         // way is never retracted; it finishes, and its clipboard is restored, before the wait below returns.
         runtime.handle(.cancelPressed, at: platform.clock.now)
         runtime.handle(.cancelPressed, at: platform.clock.now)
-        // Whichever comes first: the inserter idle, or the limit. The inserter's wait cannot be cancelled, so it is
+        // Whichever comes first: the inserter idle and a screen note still recording stopped and deleted (one being
+        // made finishes if it can before the app is gone), or the limit. Neither wait can be cancelled, so they are
         // left behind rather than waited for.
-        let inserter = platform.inserter
+        let inserter = platform.inserter, notes = self.notes
+        // At once, whatever the inserter is doing: the screen stops being recorded now.
+        notes?.cancel()
         let clock = platform.clock
         let first = FirstOnly()
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
@@ -235,7 +266,9 @@ final class AppComposition {
                 if first.claim() { continuation.resume() }
             }
             Task {
-                await inserter.waitUntilIdle()
+                async let idle: Void = inserter.waitUntilIdle()
+                await notes?.quitting()
+                await idle
                 finish()
             }
             Task {
@@ -249,17 +282,15 @@ final class AppComposition {
 
     private func follow() {
         let runtime = self.runtime, corrections = self.corrections, pill = self.pill, settings = self.settings
-        // The pill: the session's content first; the app's own notice only when the session shows nothing.
+        let notes = self.notes
+        // The pill: the session's content first; the app's own notices only when the session shows nothing, a
+        // suggestion before a screen note's.
         following.append(Following {
             let session = runtime.pill
-            if session != .hidden {
-                corrections.preempt()
-                pill.show(PillDisplay(session))
-            } else if let notice = corrections.notice {
-                pill.show(.notice(notice))
-            } else {
-                pill.show(.hidden)
-            }
+            let choice = Self.pill(session: session == .hidden ? nil : PillDisplay(session), suggestion: corrections.notice,
+                                   note: notes?.notice, noteInProgress: notes.map { $0.phase != .idle } ?? false)
+            if choice.preemptsSuggestion { corrections.preempt() }
+            pill.show(choice.display)
         })
         // The shortcuts the monitor matches follow the settings.
         let shortcuts = platform.shortcuts
@@ -277,6 +308,18 @@ final class AppComposition {
             defer { suggestionsOn = on }
             if suggestionsOn && !on { corrections.suggestionsTurnedOff() }
         })
+    }
+
+    /// What the pill shows, first of: the session's content; a screen note's notice while one records or is made;
+    /// a dictionary suggestion; a screen note's other notices; nothing. The session's content and a note in progress
+    /// withdraw a suggestion.
+    nonisolated static func pill(session: PillDisplay?, suggestion: PillDisplay.Notice?, note: PillDisplay.Notice?,
+                                 noteInProgress: Bool) -> (display: PillDisplay, preemptsSuggestion: Bool) {
+        if let session { return (session, true) }
+        if noteInProgress, let note { return (.notice(note), true) }
+        if let suggestion { return (.notice(suggestion), false) }
+        if let note { return (.notice(note), false) }
+        return (.hidden, false)
     }
 
     /// Follows the download: once it has put the model in the store, the engine is asked to prepare and the

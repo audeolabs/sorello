@@ -14,6 +14,8 @@ extension ShortcutKind {
         case .holdToTalk: self = .holdToTalk
         case .tapToToggle: self = .tapToToggle
         case .pasteAgain: self = .pasteAgain
+        case .screenNote: self = .screenNote
+        case .pasteScreenNote: self = .pasteScreenNote
         }
     }
 
@@ -23,13 +25,28 @@ extension ShortcutKind {
         case .holdToTalk: .holdToTalk
         case .tapToToggle: .tapToToggle
         case .pasteAgain: .pasteAgain
+        case .screenNote: .screenNote
+        case .pasteScreenNote: .pasteScreenNote
         }
     }
 }
 
 extension SettingsStore {
-    /// Every action that has a shortcut, as the monitor takes them. An action the user cleared is absent.
+    /// Every action that has a shortcut, as the monitor takes them. An action the user cleared is absent, and so are
+    /// screen notes' two while screen notes are off (ARCHITECTURE.md, section 14).
     var shortcutBindings: [ShortcutAction: ShortcutBinding] {
+        var bindings: [ShortcutAction: ShortcutBinding] = [:]
+        for action in ShortcutAction.allCases where !action.isScreenNotes || screenNotes {
+            if let binding = shortcut(for: action) { bindings[action] = binding }
+        }
+        return bindings
+    }
+}
+
+extension SettingsStore {
+    /// Every action that has a shortcut, screen notes' even while screen notes are off: what a new binding is checked
+    /// against, so turning screen notes on never gives two actions one shortcut.
+    var storedShortcutBindings: [ShortcutAction: ShortcutBinding] {
         var bindings: [ShortcutAction: ShortcutBinding] = [:]
         for action in ShortcutAction.allCases {
             if let binding = shortcut(for: action) { bindings[action] = binding }
