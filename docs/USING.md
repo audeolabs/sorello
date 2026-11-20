@@ -175,8 +175,9 @@ summary, or into an app that takes images for the sheet. Show on the pill opens 
 
 To give a chat the frames with what you said between them, click where you'd type and press ⌥⇧V (Paste Screen
 Note). Sorello pastes the newest note there one piece at a time: a line about the note, then each keyframe's time
-and words followed by its image. Chats that take images keep only the image when one paste holds both, which is
-why it is pasted in pieces. Keep that app in front until the pill's "Pasting screen note…" goes away; Escape stops
+and words followed by its image. If you drew on the screen, only the frames you drew on are pasted, with the
+other keyframes' words still in place. Chats that take images keep only the image when one paste holds both, which
+is why it is pasted in pieces. Keep that app in front until the pill's "Pasting screen note…" goes away; Escape stops
 it. Both shortcuts can be changed on the Shortcuts screen.
 
 Each note's folder also keeps the recording itself, `recording.mov`, so notes can take some room. They are kept on

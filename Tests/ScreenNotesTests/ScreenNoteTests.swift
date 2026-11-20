@@ -181,14 +181,23 @@ import Testing
         #expect(captions.filter { !$0.isEmpty } == ["Open settings.", "This toggle."])
     }
 
-    /// Section 14, "Pasting a note": a line about the note, then each keyframe's number, time and narration
-    /// followed by its frame, in order, read back from the manifest.
-    @Test func aNotePastesAsALineThenEachKeyframesTextAndFrame() throws {
-        let words = [NoteWord(time: 1, text: "Open"), NoteWord(time: 1.4, text: "settings."),
-                     NoteWord(time: 6.2, text: "This"), NoteWord(time: 6.6, text: "toggle.")]
-        let note = Self.note(marks: NoteMarks(strokes: [Self.stroke]), words: words)
-        let manifest = try JSONDecoder().decode(NoteManifest.self, from: note.manifest())
-        let pieces = manifest.pieces(folder: "/notes/one")
+    static let narration = [NoteWord(time: 1, text: "Open"), NoteWord(time: 1.4, text: "settings."),
+                            NoteWord(time: 6.2, text: "This"), NoteWord(time: 6.6, text: "toggle.")]
+
+    static func pieces(of note: ScreenNote) throws -> [NotePiece] {
+        try JSONDecoder().decode(NoteManifest.self, from: note.manifest()).pieces(folder: "/notes/one")
+    }
+
+    static func texts(_ pieces: [NotePiece]) -> [String] {
+        pieces.compactMap { if case .text(let text) = $0 { text } else { nil } }
+    }
+
+    /// Section 14, "Pasting a note": with nothing drawn, a line about the note, then each keyframe's number, time and
+    /// narration followed by its frame, in order, read back from the manifest.
+    @Test func aNoteWithNothingDrawnPastesEveryKeyframesTextAndFrame() throws {
+        let note = Self.note(marks: NoteMarks(clicks: [Click(time: 4, x: 0.5, y: 0.5)]), words: Self.narration)
+        #expect(note.keyframes.indices.allSatisfy { note.drawing(of: $0).strokes.isEmpty && note.drawing(of: $0).pins.isEmpty })
+        let pieces = try Self.pieces(of: note)
         #expect(pieces.count == 2 * note.keyframes.count)
         var texts: [String] = []
         for (index, keyframe) in note.keyframes.enumerated() {
@@ -207,6 +216,40 @@ import Testing
         }
         #expect(texts.filter { $0.contains("This toggle.") }.count == 1)
         #expect(texts.filter { $0.contains("Open settings.") }.count == 1)
+    }
+
+    /// With something drawn, only the keyframes drawn on bring their frames; every keyframe's text is still there, in
+    /// order, and texts next to each other are one piece.
+    @Test func aNoteWithDrawingPastesOnlyTheFramesDrawnOn() throws {
+        let pin = Pin(number: 1, time: 15, x: 0.5, y: 0.5)
+        let note = Self.note(marks: NoteMarks(strokes: [Self.stroke], pins: [pin]), words: Self.narration)
+        let drawn = note.keyframes.indices.filter {
+            !note.drawing(of: $0).strokes.isEmpty || !note.drawing(of: $0).pins.isEmpty
+        }
+        #expect(drawn.count == 2)
+        #expect(drawn.count < note.keyframes.count)
+        let pieces = try Self.pieces(of: note)
+        let frames = pieces.compactMap { if case .frame(let file) = $0 { file } else { nil } }
+        #expect(frames == drawn.map { note.keyframes[$0].file })
+        for (a, b) in zip(pieces, pieces.dropFirst()) {
+            if case .text = a, case .text = b { Issue.record("two texts next to each other") }
+        }
+        let all = Self.texts(pieces).joined()
+        var from = all.startIndex
+        for keyframe in note.keyframes {
+            let label = "\(keyframe.number) · \(ScreenNote.clock(keyframe.time))"
+            let found = try #require(all.range(of: label, range: from..<all.endIndex), "\(label) in order")
+            from = found.upperBound
+        }
+        #expect(all.contains("Open settings."))
+        #expect(all.contains("This toggle."))
+        // Each frame follows the text that ends with its own keyframe's line.
+        for (offset, piece) in pieces.enumerated() {
+            guard case .frame(let file) = piece, offset > 0, case .text(let before) = pieces[offset - 1] else { continue }
+            let keyframe = try #require(note.keyframes.first { $0.file == file })
+            let lastLine = before.split(separator: "\n").last.map(String.init) ?? ""
+            #expect(lastLine.hasPrefix("\(keyframe.number) · "))
+        }
     }
 
     @Test func timesReadAsMinutesAndSeconds() {

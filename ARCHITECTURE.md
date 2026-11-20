@@ -1849,7 +1849,12 @@ sequence of pastes, one piece at a time:
    length, how many keyframes it has and its folder, where `summary.md`
    has the marks and their places. Then for each keyframe, in order, its
    number and time, and what was said in its span as in the summary,
-   followed by its frame (`frames/frame-NN.png`, as a PNG).
+   followed by its frame (`frames/frame-NN.png`, as a PNG). When
+   something is drawn on some keyframes (a stroke or a pin, as on their
+   frames), only those keyframes are followed by their frames: the
+   others give their text alone, and texts that end up next to each
+   other are one piece. A note with nothing drawn on it pastes every
+   frame.
 2. **Its turn.** The sequence takes one turn on the clipboard between
    insertions (section 6, "Text insertion") and holds it to the end, so
    no dictation's paste lands inside it. It waits for the shortcut's

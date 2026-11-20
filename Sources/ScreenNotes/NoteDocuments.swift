@@ -136,21 +136,29 @@ public enum NotePiece: Equatable, Sendable {
 
 extension NoteManifest {
     /// The note as it is pasted: a line about it, then each keyframe's number, time and what was said in its span,
-    /// followed by its frame. `folder` is the note's folder.
+    /// followed by its frame. When some keyframes are drawn on, only theirs are followed by their frames, and the
+    /// texts between are joined. `folder` is the note's folder.
     public func pieces(folder: String) -> [NotePiece] {
         let count = keyframes.count
+        let drawn = Set(keyframes.indices.filter { index in
+            let drawing = ScreenNote.drawing(of: index, in: keyframes, strokes: strokes, pins: pins)
+            return !drawing.strokes.isEmpty || !drawing.pins.isEmpty
+        })
         var pieces: [NotePiece] = []
-        var lead = "Screen note, \(ScreenNote.clock(duration)), \(count) keyframe\(count == 1 ? "" : "s"), in \(folder) "
+        var text = "Screen note, \(ScreenNote.clock(duration)), \(count) keyframe\(count == 1 ? "" : "s"), in \(folder) "
             + "(\(ScreenNote.Files.summary) there has the marks and where they are).\n\n"
         for index in keyframes.indices {
             let keyframe = keyframes[index]
             let said = KeyframePlanner.phrases(of: index, in: keyframes, words: words)
                 .map { $0.map(\.text).joined(separator: " ") }.joined(separator: " ")
             let label = "\(keyframe.number) · \(ScreenNote.clock(keyframe.time))"
-            pieces.append(.text(lead + (said.isEmpty ? label : "\(label): \(said)") + "\n"))
+            text += (said.isEmpty ? label : "\(label): \(said)") + "\n"
+            guard drawn.isEmpty || drawn.contains(index) else { continue }
+            pieces.append(.text(text))
             pieces.append(.frame(keyframe.file))
-            lead = "\n\n"
+            text = "\n\n"
         }
+        if pieces.isEmpty || text != "\n\n" { pieces.append(.text(text)) }
         return pieces
     }
 }
