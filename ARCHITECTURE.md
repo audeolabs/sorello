@@ -1765,16 +1765,19 @@ one input it does take (below, "Touch").
   lifted, under 12 pt not ink, shown and kept as ⇧ ink is; a tap that
   moves less than 12 pt and lasts less than 1 s drops a pin where it
   touched. Only one finger draws at a time; others are ignored. For
-  this the overlay takes the fingers on that display: it is filled with
-  the faintest colour that catches a touch (alpha 1/255), which cannot
-  be seen and, like the overlay, is not recorded. A circle 120 pt across
-  around the pointer is left clear, so the pointer's clicks, drags,
-  scrolls and hovering still go to the app underneath; a finger there
-  goes to the app too. The pointer is not moved by a touch. The overlay
-  sits just under the pill's controls, so a finger can press them. A
-  finger's touch is not a click of the note, and on a display without
-  touch nothing changes: the overlay takes nothing and stays over
-  everything on the display, an open menu included.
+  this a second window over that display, the catcher, takes the
+  fingers: it is filled with the faintest colour that catches a touch
+  (alpha 1/255), which cannot be seen and, like the overlay, is not
+  recorded. A circle 120 pt across around the pointer is left clear, so
+  the pointer's clicks, drags, scrolls and hovering still go to the app
+  underneath; a finger there goes to the app too. The pointer is not
+  moved by a touch. The catcher sits just under the pill's controls, so
+  a finger can press them, and under menus, which a finger opens and
+  uses as usual. The ink stays in the overlay, which takes nothing and
+  is over everything on the display, an open menu included, so ink
+  under the pointer never takes its clicks. A finger's touch is not a
+  click of the note, and on a display without touch there is no
+  catcher.
 - **Undo.** ⌘Z while a note records removes its last stroke or pin, which
   then appears nowhere. The shortcut adapter consumes ⌘Z only then
   (`undoPressed`, which the session never sees); otherwise ⌘Z goes on to

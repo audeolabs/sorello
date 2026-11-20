@@ -8,10 +8,10 @@ import Testing
 @Suite struct InkOverlayTests {
     static let frame = CGRect(x: 0, y: 0, width: 400, height: 300)
 
-    /// On a display without touch nothing changes: the overlay takes nothing and is over everything, an open menu
-    /// included.
-    @Test func withoutTouchTheOverlayTakesNothingAndIsOverEverything() {
-        let panel = InkOverlayController.panel(over: Self.frame, takingFingers: false)
+    /// The overlay that draws the ink takes nothing, on any display, and is over everything, an open menu included: ink
+    /// under the pointer never takes its clicks.
+    @Test func theInkTakesNothingAndIsOverEverything() {
+        let panel = InkOverlayController.inkPanel(over: Self.frame)
         #expect(panel.ignoresMouseEvents)
         #expect(panel.level == .screenSaver)
         #expect(panel.level.rawValue > NSWindow.Level.popUpMenu.rawValue)
@@ -19,13 +19,14 @@ import Testing
         #expect(panel.sharingType == .none)
     }
 
-    /// Taking fingers, it is left to take what lands on its fill, and it sits under the pill's controls, so a finger
-    /// can press them.
-    @Test func takingFingersTheOverlaySitsJustUnderThePillsControls() {
-        let panel = InkOverlayController.panel(over: Self.frame, takingFingers: true)
+    /// On a touch screen the catcher is left to take what lands on its fill, and it sits under the pill's controls, so a
+    /// finger can press them, and under menus.
+    @Test func theCatcherSitsJustUnderThePillsControlsAndUnderMenus() {
+        let panel = InkOverlayController.catcherPanel(over: Self.frame)
         let controls = OverlayPanel(interactive: true)
         #expect(!panel.ignoresMouseEvents)
         #expect(panel.level.rawValue == controls.level.rawValue - 1)
+        #expect(panel.level.rawValue < NSWindow.Level.popUpMenu.rawValue)
         #expect(!panel.canBecomeKey && !panel.canBecomeMain)
         #expect(panel.sharingType == .none)
     }

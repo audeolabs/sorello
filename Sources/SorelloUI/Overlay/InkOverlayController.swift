@@ -46,7 +46,8 @@ public enum InkTouch: Equatable, Sendable {
 
 /// A transparent window over one display that draws a note's ink and pins. It never takes the mouse or the keyboard,
 /// is never shared or recorded, and shows on every Space. A stroke fades 1.5 s after it ends; a pin shows as a ring
-/// that grows and fades. On a touch screen it takes fingers, everywhere but around the pointer, and reports them.
+/// that grows and fades. On a touch screen a second window under it takes fingers, everywhere but around the pointer,
+/// and reports them.
 @MainActor
 public final class InkOverlayController {
     /// The radius, in points, of the clear circle around the pointer through which it still reaches the apps.
@@ -62,6 +63,8 @@ public final class InkOverlayController {
 
     private var panel: NSPanel?
     private var view: InkView?
+    /// On a touch screen, the window that takes the fingers.
+    private var catcherPanel: NSPanel?
     private var catcher: TouchCatcher?
     private var timer: Timer?
     private var wasAnimating = false
@@ -72,18 +75,21 @@ public final class InkOverlayController {
         self.clock = clock
     }
 
-    /// Puts the overlay over `frame`, a display's frame in the global AppKit space. With `touch`, it takes the fingers
-    /// on that display, except in a circle around the pointer, and reports each to `touch`.
+    /// Puts the overlay over `frame`, a display's frame in the global AppKit space. With `touch`, a second window takes
+    /// the fingers on that display, except in a circle around the pointer, and reports each to `touch`.
     public func show(on frame: CGRect, touch: (@MainActor (InkTouch) -> Void)? = nil) {
         hide()
-        let panel = Self.panel(over: frame, takingFingers: touch != nil)
+        let panel = Self.inkPanel(over: frame)
         let view = InkView(frame: CGRect(origin: .zero, size: frame.size), clock: clock)
         panel.contentView = view
+        panel.setFrame(frame, display: false)
         if let touch {
             let clock = self.clock
-            let catcher = TouchCatcher(frame: view.bounds) { [weak view] recognizer in
-                guard let view else { return }
-                let point = recognizer.location(in: view), time = clock()
+            let catcherPanel = Self.catcherPanel(over: frame)
+            let catcher = TouchCatcher(frame: CGRect(origin: .zero, size: frame.size)) { recognizer, catcher in
+                // The catcher's places are from its bottom left; a touch is reported from the display's top left.
+                let place = recognizer.location(in: catcher)
+                let point = CGPoint(x: place.x, y: catcher.bounds.height - place.y), time = clock()
                 switch recognizer.state {
                 case .began: touch(.began(point, time: time))
                 case .changed: touch(.moved(point, time: time))
@@ -91,11 +97,12 @@ public final class InkOverlayController {
                 default: break
                 }
             }
-            catcher.autoresizingMask = [.width, .height]
-            view.addSubview(catcher)
+            catcherPanel.contentView = catcher
+            catcherPanel.setFrame(frame, display: false)
+            catcherPanel.orderFrontRegardless()
+            self.catcherPanel = catcherPanel
             self.catcher = catcher
         }
-        panel.setFrame(frame, display: false)
         panel.orderFrontRegardless()
         self.panel = panel
         self.view = view
@@ -106,20 +113,31 @@ public final class InkOverlayController {
         self.timer = timer
     }
 
-    /// The overlay's window over `frame`: clear, never shared or recorded, on every Space. Taking no fingers it
-    /// ignores the mouse and is over everything on the display, an open menu included.
-    static func panel(over frame: CGRect, takingFingers: Bool) -> NSPanel {
+    /// The window that draws the ink over `frame`: clear, never shared or recorded, on every Space, taking nothing, and
+    /// over everything on the display, an open menu included.
+    static func inkPanel(over frame: CGRect) -> NSPanel {
+        let panel = clearPanel(over: frame)
+        panel.ignoresMouseEvents = true
+        panel.level = .screenSaver
+        return panel
+    }
+
+    /// The window that takes the fingers on a touch screen. It is left to the system's rule that a click or touch on a
+    /// clear pixel goes through to what is underneath: the catcher's faint fill takes them, and its hole around the
+    /// pointer lets the pointer through. Just under the pill's controls (OverlayPanel), so a finger can press them,
+    /// and under menus.
+    static func catcherPanel(over frame: CGRect) -> NSPanel {
+        let panel = clearPanel(over: frame)
+        panel.level = .statusBar
+        return panel
+    }
+
+    private static func clearPanel(over frame: CGRect) -> NSPanel {
         let panel = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
                             defer: false)
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        // Taking fingers, the window is left to the system's rule that a click or touch on a clear pixel goes through
-        // to what is underneath: the catcher's faint fill takes them, and its hole around the pointer lets the
-        // pointer through.
-        if !takingFingers { panel.ignoresMouseEvents = true }
-        // Taking fingers, it is just under the pill's controls (OverlayPanel), so a finger can press them.
-        panel.level = takingFingers ? .statusBar : .screenSaver
         panel.sharingType = .none
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.hidesOnDeactivate = false
@@ -138,13 +156,17 @@ public final class InkOverlayController {
         panel?.orderOut(nil)
         panel = nil
         view = nil
+        catcherPanel?.orderOut(nil)
+        catcherPanel = nil
         catcher = nil
     }
 
     /// Redraws while something fades or pulses, and once more as the last of it ends, so nothing is left half faded.
     /// Keeps the catcher's hole where the pointer is.
     private func tick() {
-        if let catcher, let panel { catcher.clear(around: panel.convertPoint(fromScreen: NSEvent.mouseLocation)) }
+        if let catcher, let catcherPanel {
+            catcher.clear(around: catcherPanel.convertPoint(fromScreen: NSEvent.mouseLocation))
+        }
         guard let view else { return }
         let animating = view.isAnimating
         if animating || wasAnimating { view.needsDisplay = true }
@@ -216,9 +238,9 @@ private final class InkView: NSView {
 private final class TouchCatcher: NSView {
     private let shape = CAShapeLayer()
     private var hole: CGPoint?
-    private let report: @MainActor (NSPressGestureRecognizer) -> Void
+    private let report: @MainActor (NSPressGestureRecognizer, TouchCatcher) -> Void
 
-    init(frame: CGRect, report: @escaping @MainActor (NSPressGestureRecognizer) -> Void) {
+    init(frame: CGRect, report: @escaping @MainActor (NSPressGestureRecognizer, TouchCatcher) -> Void) {
         self.report = report
         super.init(frame: frame)
         shape.fillColor = NSColor.black.withAlphaComponent(InkOverlayController.catcherAlpha).cgColor
@@ -236,7 +258,7 @@ private final class TouchCatcher: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("Not used") }
 
-    @objc private func fingered(_ recognizer: NSPressGestureRecognizer) { report(recognizer) }
+    @objc private func fingered(_ recognizer: NSPressGestureRecognizer) { report(recognizer, self) }
 
     /// Leaves the circle around `point`, in the window's coordinates, clear.
     func clear(around point: CGPoint) {
