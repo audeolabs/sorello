@@ -1,10 +1,12 @@
 #if SORELLO_KEYBOARD_DICTATION
 import Foundation
 
-/// The keyboard's capture page (ARCHITECTURE.md, "In-keyboard dictation (experiment)", Capture): one fixed string,
-/// with nothing interpolated into it, loaded under an `https` origin of a reserved domain that never resolves. Its
-/// policy lets nothing load; its script uses only `getUserMedia`, Web Audio and the one message handler, posting mono
-/// 16-bit chunks of at most 0.25 s as base64. A host test reads this source for anything that could reach outside it.
+/// The keyboard's capture pages (ARCHITECTURE.md, "In-keyboard dictation (experiment)", Capture): two fixed strings,
+/// with nothing interpolated into them, loaded under an `https` origin of a reserved domain that never resolves. Their
+/// policy lets nothing load; their script uses only `getUserMedia`, Web Audio and the one message handler, posting mono
+/// 16-bit chunks of at most 0.25 s as base64. `html` records from the input iOS chooses; `builtInMicrophoneHTML`
+/// switches to the iPhone's own microphone when iOS chose another ("Use iPhone microphone"). Host tests read this
+/// source for anything that could reach outside it, and run its script.
 enum CapturePage {
     /// A secure context, so the page may call `getUserMedia`; `.invalid` never resolves.
     static let baseURL = URL(string: "https://capture.sorello.invalid/")!
@@ -14,7 +16,19 @@ enum CapturePage {
     /// What Swift runs to stop it: every track and the audio context.
     static let stopScript = "sorelloStop();"
 
-    static let html = #"""
+    /// The page for the shared `useBuiltInMicrophone`, read at the tap.
+    static func page(useBuiltInMicrophone: Bool) -> String {
+        useBuiltInMicrophone ? builtInMicrophoneHTML : html
+    }
+
+    /// Records from the input iOS chooses, Bluetooth hands-free included.
+    static let html = opening + "var sorelloPreferBuiltIn = false;\n" + script
+
+    /// Records from the iPhone's microphone when iOS chose another input and exactly one input's label names the iPhone
+    /// or iPad as a word; otherwise as `html`. Labels are read only here and never posted.
+    static let builtInMicrophoneHTML = opening + "var sorelloPreferBuiltIn = true;\n" + script
+
+    private static let opening = #"""
     <!doctype html>
     <html>
     <head>
@@ -24,6 +38,10 @@ enum CapturePage {
     <body>
     <script>
     "use strict";
+
+    """#
+
+    private static let script = #"""
     var sorelloStopped = false;
     var sorelloMedia = null;
     var sorelloContext = null;
@@ -84,10 +102,43 @@ enum CapturePage {
       if (context.state === "suspended") { context.resume(); }
     }
 
-    navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-      video: false
-    }).then(sorelloStart, function () { if (!sorelloStopped) { sorelloPost({ kind: "failed" }); } });
+    function sorelloFailed() {
+      if (!sorelloStopped) { sorelloPost({ kind: "failed" }); }
+    }
+
+    function sorelloAsk(deviceId) {
+      var audio = { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+      if (deviceId) { audio.deviceId = { exact: deviceId }; }
+      return navigator.mediaDevices.getUserMedia({ audio: audio, video: false });
+    }
+
+    // iOS labels its own microphone "iPhone Microphone" (in English), naming the device as a word.
+    var sorelloBuiltInLabel = /(^|[^A-Za-z])(iPhone|iPad)([^A-Za-z]|$)/;
+
+    // The first track is kept, unrecorded, while the inputs are listed, so a stop meanwhile stops it. Asking for the
+    // iPhone's microphone by its id makes WebKit request it as the preferred input.
+    function sorelloChoose(media) {
+      if (sorelloStopped) { sorelloStopTracks(media); return; }
+      var track = media.getAudioTracks()[0];
+      if (!sorelloPreferBuiltIn || !track || sorelloBuiltInLabel.test(track.label)) { sorelloStart(media); return; }
+      sorelloMedia = media;
+      navigator.mediaDevices.enumerateDevices().then(function (devices) {
+        if (sorelloStopped) { return; }
+        var builtIn = devices.filter(function (device) {
+          return device.kind === "audioinput" && device.deviceId && sorelloBuiltInLabel.test(device.label);
+        });
+        if (builtIn.length !== 1) { sorelloStart(media); return; }
+        sorelloStopTracks(media);
+        sorelloMedia = null;
+        sorelloAsk(builtIn[0].deviceId).then(sorelloStart, function () {
+          if (!sorelloStopped) { sorelloAsk(null).then(sorelloStart, sorelloFailed); }
+        });
+      }, function () {
+        if (!sorelloStopped) { sorelloStart(media); }
+      });
+    }
+
+    sorelloAsk(null).then(sorelloChoose, sorelloFailed);
     </script>
     </body>
     </html>

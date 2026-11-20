@@ -674,6 +674,7 @@ suite. Every boolean but `leftHanded` defaults to on.
 | `autocorrectEnabled` | Bool | [Word autocorrect](#word-autocorrect) ("Autocorrect" on Home) |
 | `leftHanded` | Bool; default off | the dictation controls mirrored to the bar's left ("Left-handed" on Home, [Top row](#top-row)) |
 | `keyboardDictationEnabled` | Bool | [In-keyboard dictation](#in-keyboard-dictation-experiment) ("Dictate in the keyboard" in Diagnostics) |
+| `useBuiltInMicrophone` | Bool | the app's copy of "Use iPhone microphone" ([Capture](#capture), Microphone choice), for [In-keyboard dictation](#in-keyboard-dictation-experiment) |
 
 Out-of-range or malformed values read as the default and are not written. No
 dictation history is stored; notes are the app's alone
@@ -908,8 +909,11 @@ synthetic source in self-test builds, a fake in tests.
   recording fails with `.audioSessionFailed`; a finished recording is still
   transcribed.
 - **Microphone choice** (`MicrophoneRoute`, pure, tested). "Use iPhone
-  microphone" is on by default and stored in the app's own `UserDefaults`,
-  not shared with the keyboard.
+  microphone" is on by default and stored in the app's own `UserDefaults`.
+  The app copies it to the shared setting `useBuiltInMicrophone` as it
+  starts and at every change, for the keyboard's own capture
+  ([In-keyboard dictation](#in-keyboard-dictation-experiment), Capture);
+  its own capture reads only its own copy.
   - The session is `.playAndRecord`. On: options
     `[.mixWithOthers, .defaultToSpeaker, .allowBluetoothA2DP]`, with no
     hands-free profile, and the built-in microphone is the preferred input
@@ -2230,7 +2234,10 @@ unchanged and always wins.
     an `https` origin, so the page is a secure context that may call
     `getUserMedia`, under a reserved top-level domain that never resolves.
     Nothing is interpolated into it, and nothing of the field, the text or
-    the settings is ever sent into the web view.
+    the settings is ever sent into the web view, beyond which of the two
+    fixed pages it is: `CapturePage.html`, where iOS chooses the input, or
+    `CapturePage.builtInMicrophoneHTML`, chosen at the tap while the shared
+    `useBuiltInMicrophone` reads on.
   - The page's Content-Security-Policy is `default-src 'none'` plus only
     what its inline script needs (`'unsafe-inline'`, and `blob:` for a
     worklet if it uses one). Its script uses only `getUserMedia`, Web Audio
@@ -2241,7 +2248,18 @@ unchanged and always wins.
     other navigation, new window and download. The data store is
     `WKWebsiteDataStore.nonPersistent()`.
   - The page calls `getUserMedia` for audio only (mono, echo cancellation,
-    noise suppression and automatic gain off). The UI delegate grants
+    noise suppression and automatic gain off). WebKit's capture lets iOS
+    choose the input, Bluetooth hands-free included, so headphones would
+    otherwise record. The built-in microphone page, once that first request
+    is granted, lists the audio inputs (`enumerateDevices`); when the track
+    is not the built-in microphone and exactly one input's label names the
+    iPhone or the iPad as a word (iOS labels it "iPhone Microphone"), it
+    stops that track and asks for that input by its `deviceId`, which makes
+    WebKit request it as the preferred input. With no input matching it
+    records with the first track; if the second request fails, it asks
+    once more as the first time and records with what that gives. Labels are read only
+    inside the page and never posted, and no audio is posted before the
+    choice is made. The UI delegate grants
     microphone capture only to the main frame of that origin in the web
     view of the dictation currently running, and denies the camera and
     every other request.
@@ -4881,7 +4899,10 @@ merge (AGENTS.md).
   memory termination only when iOS's own logs show one. Starting a
   session from the session control while one records (the host takes
   over). With the switch off, and with the microphone not yet allowed, the
-  bounce as before. Ideally on iOS 26 and 27 and on iPhones with less
+  bounce as before. With wired and with Bluetooth headphones connected:
+  "Use iPhone microphone" on records from the iPhone (speak into it with
+  the headphones' microphone covered), off records from the headphones.
+  Ideally on iOS 26 and 27 and on iPhones with less
   memory as well; until then, say which were tried.
 - **Voice notes:** making the vault (Face ID or the passcode as the
   fallback; without a passcode, nothing is made); the recovery code, and

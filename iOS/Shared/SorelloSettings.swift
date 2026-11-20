@@ -25,6 +25,7 @@ struct SorelloSettings {
         static let autocorrectEnabled = "autocorrectEnabled"
         static let leftHanded = "leftHanded"
         static let keyboardDictationEnabled = "keyboardDictationEnabled"
+        static let useBuiltInMicrophone = "useBuiltInMicrophone"
     }
 
     /// Remembered field layout choices, at most this many.
@@ -166,6 +167,13 @@ struct SorelloSettings {
     var keyboardDictationEnabled: Bool {
         get { bool(Key.keyboardDictationEnabled) }
         nonmutating set { defaults.set(newValue, forKey: Key.keyboardDictationEnabled) }
+    }
+
+    /// The app's copy of "Use iPhone microphone" (ARCHITECTURE.md, "Capture", Microphone choice), on by default. The app
+    /// writes it as it starts and at every change; only an experiment build's keyboard reads it, at a tap.
+    var useBuiltInMicrophone: Bool {
+        get { bool(Key.useBuiltInMicrophone) }
+        nonmutating set { defaults.set(newValue, forKey: Key.useBuiltInMicrophone) }
     }
 
     private static func isFingerprintKey(_ key: String) -> Bool {

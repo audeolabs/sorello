@@ -487,7 +487,8 @@ final class KeyboardDictationClient: ObservableObject {
         guard decision == .keyboard, let local = localDictation() else { return .host(status, intent) }
         // Another dictation's start ends the watch of the last one.
         target.dictationStarting()
-        local.start(documentID: target.documentID)
+        let settings = configuration.flatMap(SorelloSettings.init(configuration:))
+        local.start(documentID: target.documentID, useBuiltInMicrophone: settings?.useBuiltInMicrophone ?? true)
         playHaptic(.press)
         return .keyboard
     }

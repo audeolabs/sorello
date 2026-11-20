@@ -33,8 +33,11 @@ final class KeyboardLocalDictation {
     private let store: SharedDictationStore
     private let speech: KeyboardSpeech
     private let hooks: Hooks
-    /// Always `CapturePage.html` in the keyboard; a verification harness, never the keyboard, passes a synthetic source.
-    private let capturePage: String
+    /// Nil in the keyboard, which takes the page for "Use iPhone microphone" at each tap; a verification harness, never
+    /// the keyboard, passes a synthetic source.
+    private let capturePageOverride: String?
+    /// The page the current attempt's capture loads, chosen at its tap.
+    private var capturePage = CapturePage.html
     private var machine = KeyboardDictationMachine()
     private var capture: WebAudioCapture?
     private var pipeline: KeyboardAudioPipeline?
@@ -49,9 +52,9 @@ final class KeyboardLocalDictation {
     private var stoppedAt: TimeInterval?
     private var schedule = KeyboardDictationRecordSchedule()
 
-    init(store: SharedDictationStore, modelDirectory: URL, hooks: Hooks, capturePage: String = CapturePage.html) {
+    init(store: SharedDictationStore, modelDirectory: URL, hooks: Hooks, capturePage: String? = nil) {
         self.store = store
-        self.capturePage = capturePage
+        capturePageOverride = capturePage
         speech = KeyboardSpeech(modelDirectory: modelDirectory)
         self.hooks = hooks
     }
@@ -70,7 +73,10 @@ final class KeyboardLocalDictation {
 
     // MARK: Inputs
 
-    func start(documentID: UUID?) {
+    /// `useBuiltInMicrophone`: the shared setting, read at this tap (ARCHITECTURE.md, "In-keyboard dictation
+    /// (experiment)", Capture).
+    func start(documentID: UUID?, useBuiltInMicrophone: Bool) {
+        capturePage = capturePageOverride ?? CapturePage.page(useBuiltInMicrophone: useBuiltInMicrophone)
         handle(.tap(attempt: UUID(), documentID: documentID))
     }
 
