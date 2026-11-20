@@ -553,8 +553,8 @@ final class KeyboardDictationClient: ObservableObject {
         var conditions = KeyboardMicrophoneHold.Conditions(
             visible: isVisible && !hiding, tapDictatesInKeyboard: tapDictatesInKeyboard,
             useBuiltInMicrophone: useBuiltInMicrophone, bluetoothHeadphones: false,
-            dictationRunning: local?.isRunning == true, heldCaptureReported: local?.heldCaptureReported == true)
-        if conditions.visible, tapDictatesInKeyboard, useBuiltInMicrophone, !conditions.dictationRunning,
+            dictationCapturing: local?.isCapturing == true, heldCaptureReported: local?.heldCaptureReported == true)
+        if conditions.visible, tapDictatesInKeyboard, useBuiltInMicrophone, !conditions.dictationCapturing,
            !conditions.heldCaptureReported {
             conditions.bluetoothHeadphones = headphones.observe(
                 KeyboardMicrophoneHold.bluetoothHeadphones(in: Self.routeOutputs()), at: ProcessInfo.processInfo.systemUptime)
@@ -718,7 +718,15 @@ final class KeyboardDictationClient: ObservableObject {
                 access: access, status: status, intent: intent, instanceID: instanceID, now: now,
                 conditions: routeConditions(unfinishedRecord: unhandledUnfinishedRecord(in: store) != nil)) == .keyboard
         }
-        updateHeldMicrophone(tapDictatesInKeyboard: startDictatesInKeyboard)
+        // A dictation that transcribes does not keep the hold off: the route as the host's state decides it.
+        var holdTapDictatesInKeyboard = startDictatesInKeyboard
+        if local?.isRunning == true, local?.isCapturing == false, keyboardDictationEnabled, access == .fullAccess,
+           let store {
+            holdTapDictatesInKeyboard = KeyboardDictationRoute.decide(
+                access: access, status: status, intent: intent, instanceID: instanceID, now: now,
+                conditions: routeConditions(unfinishedRecord: unhandledUnfinishedRecord(in: store) != nil)) == .keyboard
+        }
+        updateHeldMicrophone(tapDictatesInKeyboard: holdTapDictatesInKeyboard)
         #else
         let mode = KeyboardPresenter.shownMode(KeyboardPresenter.mode(access: access, status: status, intent: intent, now: now),
                                                bouncedRequestID: bouncedRequestID, intent: intent, status: status)

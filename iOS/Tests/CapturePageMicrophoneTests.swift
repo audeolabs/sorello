@@ -43,6 +43,10 @@ enum CapturePageMicrophoneTests {
         TestSupport.expectEqual(run.requestedDevices, [nil])
         TestSupport.expectEqual(run.recordingFrom, headset.label)
         TestSupport.expect(run.audioPosted, "the page posts no audio")
+        // Each chunk says which microphone the page believes it records from, as a fixed word.
+        TestSupport.expectEqual(run.audioMics, ["other"])
+        TestSupport.expectEqual(Run(page: CapturePage.html, devices: [iPhone, headset], systemChoice: iPhone).audioMics,
+                                ["builtIn"])
     }
 
     private static func testBuiltInPageSwitchesFromHeadphonesToTheIPhone() {
@@ -54,6 +58,7 @@ enum CapturePageMicrophoneTests {
             TestSupport.expect(run.audioPosted, "the page posts no audio after switching")
             TestSupport.expect(!run.postedText.contains(headphones.label) && !run.postedText.contains(iPhone.label),
                                "the page posted a device's label")
+            TestSupport.expectEqual(run.audioMics, ["builtIn"])
         }
         // Another language's label still names the iPhone as a word.
         let french = Device(id: "built-in", label: "Micro de l’iPhone")
@@ -283,6 +288,8 @@ enum CapturePageMicrophoneTests {
         /// Milliseconds of the harness's clock at which the page made each audio processor.
         var processorsMadeAt: [Int] = []
         var processorsMade: Int { processorsMadeAt.count }
+        /// The distinct `mic` words of the audio posts.
+        var audioMics: [String] = []
 
         /// `renamed`: WebKit renames the first track that long after the page starts. `stopAtMilliseconds`: Swift
         /// stops the page then.
@@ -335,6 +342,7 @@ enum CapturePageMicrophoneTests {
             firstAudioPostAt = object["firstAudioAt"] as? Int
             firstAudioSequence = object["firstAudioSeq"] as? Int
             processorsMadeAt = object["processorsMadeAt"] as? [Int] ?? []
+            audioMics = object["audioMics"] as? [String] ?? []
         }
 
         private static func script(of page: String) -> String {
@@ -477,7 +485,10 @@ enum CapturePageMicrophoneTests {
             startedAt: harnessStartedAt,
             firstAudioAt: harnessFirstAudioAt,
             firstAudioSeq: harnessFirstAudioSeq,
-            processorsMadeAt: harnessProcessorsMadeAt
+            processorsMadeAt: harnessProcessorsMadeAt,
+            audioMics: harnessPosts.filter(function (p) { return p.kind === "audio"; })
+              .map(function (p) { return p.mic; })
+              .filter(function (m, i, all) { return all.indexOf(m) === i; })
           };
         }
         """#

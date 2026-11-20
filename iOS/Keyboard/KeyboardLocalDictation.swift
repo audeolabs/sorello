@@ -68,6 +68,8 @@ final class KeyboardLocalDictation {
     private static var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
 
     var isRunning: Bool { machine.isRunning }
+    /// A dictation's capture is open: it is starting or recording.
+    var isCapturing: Bool { machine.isCaptureOpen }
     var runningAttemptID: UUID? { machine.runningAttemptID }
     var lastEndedCaptureUnavailable: Bool { machine.lastEndedCaptureUnavailable }
     /// The top row's mode for it, or nil when the host's applies.
@@ -97,16 +99,16 @@ final class KeyboardLocalDictation {
     func cancel(_ attemptID: UUID) { handle(.cancel(attempt: attemptID)) }
 
     /// Opens or closes the held microphone, as `KeyboardMicrophoneHold.shouldHold` judged at this pass. Never while a
-    /// dictation runs, and never with a harness's page.
+    /// dictation's capture is open, and never with a harness's page.
     func hold(_ shouldHold: Bool) {
-        guard shouldHold, !machine.isRunning, !heldCaptureReported, capturePageOverride == nil else { return releaseHold() }
+        guard shouldHold, !machine.isCaptureOpen, !heldCaptureReported, capturePageOverride == nil else { return releaseHold() }
         guard heldCapture == nil, let container = hooks.container() else { return }
         let token = UUID()
         let held = WebAudioCapture(
             page: CapturePage.heldMicrophoneHTML,
             mayGrantMicrophone: { [weak self] in
                 guard let self else { return false }
-                return heldToken == token && !machine.isRunning && !hooks.hostOwnsMicrophone()
+                return heldToken == token && !machine.isCaptureOpen && !hooks.hostOwnsMicrophone()
             },
             // Held, the page posts nothing; anything it reports ends the hold until the keyboard next appears.
             onMessage: { [weak self] _ in
@@ -268,7 +270,7 @@ final class KeyboardLocalDictation {
     private func received(_ message: CaptureMessageReader.Message, for id: UUID) {
         guard machine.runningAttemptID == id, machine.isCaptureOpen else { return }
         switch message {
-        case let .audio(samples, rate):
+        case let .audio(samples, rate, input):
             var meter = self.meter ?? LevelMeter.keyboardCapture(sampleRate: rate)
             meter.update(with: samples)
             // The machine judges the clock first: a chunk after the maximum duration or the audio gap finds capture
@@ -279,6 +281,7 @@ final class KeyboardLocalDictation {
                 Task { @MainActor in self?.converted(id) }
             }) else { handle(.captureFailed(attempt: id)); return }
             self.meter = meter
+            if let input { record?.captureInput = input }
             inputLevels.add(samples, rate: rate)
             hooks.level(meter.level)
         case .failed, .ended, .malformed:

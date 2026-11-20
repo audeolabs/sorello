@@ -106,10 +106,12 @@ enum CapturePage {
       if (!sorelloHeld) { sorelloConnect(context, media); }
     }
 
-    // Each chunk is posted, its sequence starting at 0. A context iOS suspended or interrupted while held (a call, Siri,
-    // another app's audio) is resumed.
+    // Each chunk is posted, its sequence starting at 0, with whether the track's label names the iPhone, as one of two
+    // fixed words. A context iOS suspended or interrupted while held (a call, Siri, another app's audio) is resumed.
     function sorelloConnect(context, media) {
       if (context.state !== "running") { context.resume(); }
+      var track = media.getAudioTracks()[0];
+      var mic = track && sorelloBuiltInLabel.test(track.label) ? "builtIn" : "other";
       var size = 4096;
       while (size / context.sampleRate > 0.25 && size > 256) { size = size / 2; }
       var source = context.createMediaStreamSource(media);
@@ -117,7 +119,7 @@ enum CapturePage {
       var sequence = 0;
       processor.onaudioprocess = function (event) {
         if (sorelloStopped) { return; }
-        sorelloPost({ kind: "audio", seq: sequence, rate: context.sampleRate,
+        sorelloPost({ kind: "audio", seq: sequence, rate: context.sampleRate, mic: mic,
                       pcm: sorelloEncode(event.inputBuffer.getChannelData(0)) });
         sequence += 1;
       };

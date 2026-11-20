@@ -14,7 +14,8 @@ enum KeyboardMicrophoneHold {
         var useBuiltInMicrophone: Bool
         /// Bluetooth headphones are in the current route (`bluetoothHeadphones(in:)`).
         var bluetoothHeadphones: Bool
-        var dictationRunning: Bool
+        /// A dictation's capture is open (it is starting or recording); one that transcribes does not count.
+        var dictationCapturing: Bool
         /// A held capture reported something since the keyboard appeared.
         var heldCaptureReported: Bool
     }
@@ -26,7 +27,7 @@ enum KeyboardMicrophoneHold {
 
     static func shouldHold(_ conditions: Conditions) -> Bool {
         conditions.visible && conditions.tapDictatesInKeyboard && conditions.useBuiltInMicrophone
-            && conditions.bluetoothHeadphones && !conditions.dictationRunning && !conditions.heldCaptureReported
+            && conditions.bluetoothHeadphones && !conditions.dictationCapturing && !conditions.heldCaptureReported
     }
 
     static func bluetoothHeadphones(in outputs: [Output]) -> Bool {

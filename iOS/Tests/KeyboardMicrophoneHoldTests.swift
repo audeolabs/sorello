@@ -13,7 +13,7 @@ enum KeyboardMicrophoneHoldTests {
 
     private static let good = KeyboardMicrophoneHold.Conditions(
         visible: true, tapDictatesInKeyboard: true, useBuiltInMicrophone: true, bluetoothHeadphones: true,
-        dictationRunning: false, heldCaptureReported: false)
+        dictationCapturing: false, heldCaptureReported: false)
 
     private static func testHoldsWhenEverythingHolds() {
         TestSupport.expect(KeyboardMicrophoneHold.shouldHold(good), "the keyboard does not hold the microphone")
@@ -25,7 +25,7 @@ enum KeyboardMicrophoneHoldTests {
             ("a tap that goes to the host", { $0.tapDictatesInKeyboard = false }),
             ("\"Use iPhone microphone\" off", { $0.useBuiltInMicrophone = false }),
             ("no Bluetooth headphones", { $0.bluetoothHeadphones = false }),
-            ("a dictation running", { $0.dictationRunning = true }),
+            ("a dictation's capture open", { $0.dictationCapturing = true }),
             ("a held capture that reported since the keyboard appeared", { $0.heldCaptureReported = true }),
         ]
         for (name, change) in changes {

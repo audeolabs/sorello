@@ -1702,7 +1702,8 @@ Notes).
     "Dictate in the keyboard" switch and the last `keyboard-dictation.json`,
     read when the screen appears: cold or warm, each step with its time,
     footprint and memory left, then the peak footprint, the least memory
-    left, the audio seconds, the input's loudest and typical level, the
+    left, the audio seconds, the microphone ("iPhone" or "Other"), the
+    input's loudest and typical level, the
     preparation, stop-to-text and stop-to-insertion times, stream or batch,
     the memory warnings and the outcome
     ([In-keyboard dictation](#in-keyboard-dictation-experiment)).
@@ -2247,12 +2248,15 @@ unchanged and always wins.
     keyboard holds the microphone (`KeyboardMicrophoneHold.shouldHold`,
     KeyboardCore; pure, tested): the keyboard is visible and not hiding, a
     tap would dictate in the keyboard (`KeyboardDictationRoute.decide`,
-    read as each pass reads it), the shared `useBuiltInMicrophone` read on
+    read as each pass reads it, also while a dictation transcribes), the shared `useBuiltInMicrophone` read on
     when the keyboard appeared (it changes only in the app, while the
     keyboard is hidden), Bluetooth headphones are in the route (the audio session's current
     route has a Bluetooth A2DP, LE or hands-free output; read only) or were
     within the last `KeyboardMicrophoneHold.headphonesGrace` (1 s), and no
-    dictation runs. The grace is there because each switch to the iPhone's
+    dictation's capture is open. A dictation that has stopped recording
+    and transcribes does not keep the hold off, so the next hold is
+    choosing its input while the text is made, and a second dictation
+    soon after the first finds it ready. The grace is there because each switch to the iPhone's
     microphone sends the output through the iPhone's receiver for about a
     tenth of a second (seen on an iPhone 15 Pro with AirPods Max): a hold
     that let go then opened again and switched again, about once a second.
@@ -2271,8 +2275,8 @@ unchanged and always wins.
     the held capture reports anything (`failed`, `ended`, or a chunk it
     should not have posted), after which the keyboard does not hold again
     until it next appears. A dictation's capture is never held: it closes
-    when the dictation ends, and the hold then opens a new one if the
-    conditions still hold. The microphone grant to a held capture also
+    at the stop (or the dictation's end), and the hold then opens a new
+    one if the conditions still hold. The microphone grant to a held capture also
     asks that the host does not own the microphone.
   - The page's Content-Security-Policy is `default-src 'none'` plus only
     what its inline script needs (`'unsafe-inline'`, and `blob:` for a
@@ -2392,7 +2396,12 @@ unchanged and always wins.
     lifetime, so a warm attempt may show an earlier attempt's peak, and
     WebKit's capture, which runs in its own process, is not in it) and the
     least memory left seen, sampled at every step and every converted chunk;
-  - the audio's seconds and the capture's sample rate; the input's loudest
+  - the audio's seconds and the capture's sample rate; the microphone
+    (`captureInput`: `builtIn` or `other`), which the page decides from
+    the recorded track's label (whether it names the iPhone or the iPad as
+    a word) and posts with each chunk as one of those two fixed words, so
+    the label never leaves the page: what the page believed it recorded
+    from, not iOS's route; the input's loudest
     and typical (median) level, each the RMS of one captured chunk in whole
     dBFS, over the sealed recording; the model's
     preparation milliseconds; stop to text and stop to insertion in
