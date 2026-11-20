@@ -136,13 +136,15 @@ public enum NotePiece: Equatable, Sendable {
 
 extension NoteManifest {
     /// The note as it is pasted: a line about it, then each keyframe's number, time and what was said in its span,
-    /// followed by its frame. When some keyframes are drawn on, only theirs are followed by their frames, and the
-    /// texts between are joined. `folder` is the note's folder.
+    /// followed by its frame. When some keyframes have marks of their own, only theirs are followed by their frames,
+    /// and the texts between are joined. `folder` is the note's folder.
     public func pieces(folder: String) -> [NotePiece] {
         let count = keyframes.count
+        // A keyframe's own marks: a stroke that ends or a pin dropped in its span. One that only shows a stroke still
+        // being drawn shows less than the keyframe where it ends.
         let drawn = Set(keyframes.indices.filter { index in
-            let drawing = ScreenNote.drawing(of: index, in: keyframes, strokes: strokes, pins: pins)
-            return !drawing.strokes.isEmpty || !drawing.pins.isEmpty
+            let span = KeyframePlanner.span(of: index, in: keyframes)
+            return strokes.contains { span.contains($0.end) } || pins.contains { span.contains($0.time) }
         })
         var pieces: [NotePiece] = []
         var text = "Screen note, \(ScreenNote.clock(duration)), \(count) keyframe\(count == 1 ? "" : "s"), in \(folder) "

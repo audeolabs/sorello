@@ -1849,12 +1849,12 @@ sequence of pastes, one piece at a time:
    length, how many keyframes it has and its folder, where `summary.md`
    has the marks and their places. Then for each keyframe, in order, its
    number and time, and what was said in its span as in the summary,
-   followed by its frame (`frames/frame-NN.png`, as a PNG). When
-   something is drawn on some keyframes (a stroke or a pin, as on their
-   frames), only those keyframes are followed by their frames: the
-   others give their text alone, and texts that end up next to each
-   other are one piece. A note with nothing drawn on it pastes every
-   frame.
+   followed by its frame (`frames/frame-NN.png`, as a PNG). When some
+   keyframes have marks of their own (a stroke that ends or a pin
+   dropped in their span), only those keyframes are followed by their
+   frames: the others give their text alone, even one that shows a
+   stroke still being drawn, and texts that end up next to each other
+   are one piece. A note with no strokes or pins pastes every frame.
 2. **Its turn.** The sequence takes one turn on the clipboard between
    insertions (section 6, "Text insertion") and holds it to the end, so
    no dictation's paste lands inside it. It waits for the shortcut's
@@ -1869,9 +1869,10 @@ sequence of pastes, one piece at a time:
    sequence began. Its data is given when an app asks for it rather than
    when it is written, so Sorello sees the paste being read. The next
    piece is written once this one has been read, or 1 s after its paste
-   if nothing reads it, and then 0.05 s more after a text or 0.2 s more
+   if nothing reads it, and then 0.05 s more after a text or 0.8 s more
    after an image, so the app has placed each one, in order, before the
-   next. A read by any app after the paste counts; one before it, as a
+   next: a chat can take most of a second to place an image, and a text
+   pasted sooner lands before it. A read by any app after the paste counts; one before it, as a
    clipboard manager might make, does not. No field is read.
 4. **Stopping.** If the app in front changes, the clipboard changes under
    it (someone else wrote to it), or the user presses Escape or Cancel on

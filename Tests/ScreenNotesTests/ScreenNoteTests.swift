@@ -218,14 +218,17 @@ import Testing
         #expect(texts.filter { $0.contains("Open settings.") }.count == 1)
     }
 
-    /// With something drawn, only the keyframes drawn on bring their frames; every keyframe's text is still there, in
-    /// order, and texts next to each other are one piece.
-    @Test func aNoteWithDrawingPastesOnlyTheFramesDrawnOn() throws {
+    /// The keyframes with marks of their own: a stroke that ends or a pin dropped in their span.
+    static func marked(_ note: ScreenNote) -> [Int] {
+        note.keyframes.indices.filter { !note.content(of: $0).strokes.isEmpty || !note.content(of: $0).pins.isEmpty }
+    }
+
+    /// With marks, only the keyframes with marks of their own bring their frames; every keyframe's text is still there,
+    /// in order, and texts next to each other are one piece.
+    @Test func aNoteWithMarksPastesOnlyTheFramesWithMarksOfTheirOwn() throws {
         let pin = Pin(number: 1, time: 15, x: 0.5, y: 0.5)
         let note = Self.note(marks: NoteMarks(strokes: [Self.stroke], pins: [pin]), words: Self.narration)
-        let drawn = note.keyframes.indices.filter {
-            !note.drawing(of: $0).strokes.isEmpty || !note.drawing(of: $0).pins.isEmpty
-        }
+        let drawn = Self.marked(note)
         #expect(drawn.count == 2)
         #expect(drawn.count < note.keyframes.count)
         let pieces = try Self.pieces(of: note)
@@ -250,6 +253,23 @@ import Testing
             let lastLine = before.split(separator: "\n").last.map(String.init) ?? ""
             #expect(lastLine.hasPrefix("\(keyframe.number) · "))
         }
+    }
+
+    /// A keyframe taken while a stroke is still being drawn shows it half drawn; only the keyframe where it ends
+    /// brings its frame.
+    @Test func aKeyframeShowingAStrokeInProgressBringsNoFrame() throws {
+        let long = Stroke(number: 1, points: [TimedPoint(t: 2, x: 0.2, y: 0.2), TimedPoint(t: 3, x: 0.3, y: 0.3),
+                                              TimedPoint(t: 5, x: 0.4, y: 0.4), TimedPoint(t: 9, x: 0.6, y: 0.2)])
+        let words = [NoteWord(time: 3.6, text: "Look"), NoteWord(time: 4, text: "here.")]
+        let note = Self.note(marks: NoteMarks(strokes: [long]), words: words)
+        let halfDrawn = try #require(note.keyframes.indices.first {
+            !note.drawing(of: $0).strokes.isEmpty && note.content(of: $0).strokes.isEmpty
+        }, "a keyframe while the stroke is drawn")
+        let pieces = try Self.pieces(of: note)
+        let frames = pieces.compactMap { if case .frame(let file) = $0 { file } else { nil } }
+        #expect(frames == Self.marked(note).map { note.keyframes[$0].file })
+        #expect(frames.count == 1)
+        #expect(!frames.contains(note.keyframes[halfDrawn].file))
     }
 
     @Test func timesReadAsMinutesAndSeconds() {

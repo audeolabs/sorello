@@ -50,7 +50,7 @@ public final class PasteboardInserter: TextInserting {
     /// In a sequence, how long after a text's read, and after an image's, the next piece is written, so the app has
     /// placed each piece, in order, before the next.
     public static let textPieceDelay: TimeInterval = 0.05
-    public static let imagePieceDelay: TimeInterval = 0.2
+    public static let imagePieceDelay: TimeInterval = 0.8
 
     private static let guardedModifiers: ModifierFlags = [.command, .option, .control, .shift]
 
