@@ -53,7 +53,8 @@ extension PointerWatcher: PointerWatching {}
 /// The ink overlay.
 @MainActor
 protocol InkPresenting: AnyObject {
-    func show(on frame: CGRect)
+    /// With `touch`, the overlay takes fingers on the display and reports them there.
+    func show(on frame: CGRect, touch: (@MainActor (InkTouch) -> Void)?)
     func update(_ scene: InkScene)
     func hide()
 }

@@ -12,11 +12,14 @@ public struct NoteDisplay: Sendable, Equatable {
     public var id: CGDirectDisplayID
     public var frame: CGRect
     public var scale: CGFloat
+    /// Whether it takes touch, so a finger can draw on it.
+    public var takesTouch: Bool
 
-    public init(id: CGDirectDisplayID, frame: CGRect, scale: CGFloat) {
+    public init(id: CGDirectDisplayID, frame: CGRect, scale: CGFloat, takesTouch: Bool = false) {
         self.id = id
         self.frame = frame
         self.scale = scale
+        self.takesTouch = takesTouch
     }
 
     /// The display the pointer is on now, or the main one.
@@ -27,7 +30,10 @@ public struct NoteDisplay: Sendable, Equatable {
         guard let screen,
               let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
         else { return nil }
-        return NoteDisplay(id: number.uint32Value, frame: screen.frame, scale: screen.backingScaleFactor)
+        var takesTouch = false
+        if #available(macOS 27, *) { takesTouch = screen.touchCapabilities.contains(.multiTouch) }
+        return NoteDisplay(id: number.uint32Value, frame: screen.frame, scale: screen.backingScaleFactor,
+                           takesTouch: takesTouch)
     }
 }
 

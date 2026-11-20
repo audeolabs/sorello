@@ -166,6 +166,8 @@ it may use the microphone. Talk, click around, and:
 
 - hold ⇧ (on its own) and move the pointer to draw in red; let go of ⇧ to end the stroke;
 - ⇧-click to drop a numbered pin;
+- on a Mac with a touch screen, draw with a finger and tap to drop a pin, no ⇧ needed. The pointer still clicks
+  through to your apps, and a finger right next to the pointer goes to the app too;
 - press ⌘Z to take back the last stroke or pin.
 
 Press ⌥⇧S again, or Finish on the pill, and Sorello makes the note: a few keyframes with your marks drawn on them, a

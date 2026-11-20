@@ -1739,12 +1739,13 @@ part in a module the iPhone app links is `SpeechEngine`'s
 
 While a note records, Sorello reads the pointer and the modifier keys
 without taking any input from the app underneath: clicks, drags and
-scrolls go to it as usual.
+scrolls go to it as usual. On a display that takes touch, a finger is the
+one input it does take (below, "Touch").
 
 - **Ink.** While ⇧ alone is held (not with ⌘, ⌥ or ⌃, as in ⌥⇧S), moving
   the pointer draws a red stroke
   (marker, section 8) on a transparent overlay over the display, which
-  never takes the mouse. Releasing ⇧ ends the stroke. A stroke under
+  never takes the mouse (only a finger, below). Releasing ⇧ ends the stroke. A stroke under
   12 pt long is not ink. A stroke ends when ⇧ is released, at the place
   the pointer last was. On screen each stroke fades away 1.5 s after it
   ends; in the note it stays.
@@ -1758,6 +1759,21 @@ scrolls go to it as usual.
   for a pin included, unless its hold drew ink. It is not drawn. Clicks
   on another display, and in Sorello's own windows (which the recording
   leaves out), are not part of the note.
+- **Touch.** When the recorded display takes touch
+  (`NSScreen.touchCapabilities` has multi-touch), a finger draws there
+  without ⇧. A finger drag is a stroke from where it touched to where it
+  lifted, under 12 pt not ink, shown and kept as ⇧ ink is; a tap that
+  moves less than 12 pt and lasts less than 1 s drops a pin where it
+  touched. Only one finger draws at a time; others are ignored. For
+  this the overlay takes the fingers on that display: it is filled with
+  the faintest colour that catches a touch (alpha 1/255), which cannot
+  be seen and, like the overlay, is not recorded. A circle 120 pt across
+  around the pointer is left clear, so the pointer's clicks, drags,
+  scrolls and hovering still go to the app underneath; a finger there
+  goes to the app too. The pointer is not moved by a touch. The overlay
+  sits just under the pill's controls, so a finger can press them. A
+  finger's touch is not a click of the note, and on a display without
+  touch nothing changes.
 - **Undo.** ⌘Z while a note records removes its last stroke or pin, which
   then appears nowhere. The shortcut adapter consumes ⌘Z only then
   (`undoPressed`, which the session never sees); otherwise ⌘Z goes on to
