@@ -341,6 +341,13 @@ public actor SpeechEngine: SpeechTranscribing {
         // The dictionary as it is when the file starts, as the text rules are: an edit made while the model prepares
         // is not used for this file.
         let snapshot = dictionary(nil)
+        try await waitForModel(progress: progress)
+        return try await pull(open, snapshot: snapshot, progress: progress)
+    }
+
+    /// Returns once preparation has succeeded, as a file waits for it: without starting a new attempt after one has
+    /// failed, and at once when the calling task is cancelled.
+    private nonisolated func waitForModel(progress: @Sendable (FileSpeechProgress) -> Void) async throws(FileSpeechFailure) {
         switch preparation.outcome {
         case .ready?:
             break
@@ -351,7 +358,29 @@ public actor SpeechEngine: SpeechTranscribing {
             guard let readiness = await preparationOutcome() else { throw .cancelled }
             if case .failed(let failure) = readiness { throw .engineUnavailable(failure) }
         }
-        return try await pull(open, snapshot: snapshot, progress: progress)
+    }
+
+    /// A file's words, each with the time it starts in the file (ARCHITECTURE.md, section 14, "The note"): a screen
+    /// note's narration. The file is opened, waits for the model and is read as `transcribe(file:progress:)` does,
+    /// with the dictionary's words that apply everywhere, but its silence is not compacted, so each word's time is its
+    /// time in the file. The words get the dictionary's casing.
+    public nonisolated func transcribeWords(file: URL) async throws(FileSpeechFailure) -> [TimedWord] {
+        do {
+            _ = try AudioFileSource(contentsOf: file)
+        } catch {
+            throw error == .cannotOpen ? .cannotOpen : .unreadable
+        }
+        return try await transcribeWords(open: { () throws(AudioFileFailure) -> any AudioPieceSource in
+            try AudioFileSource(contentsOf: file)
+        })
+    }
+
+    /// The words of the audio `open` makes, as `transcribeWords(file:)` gives a file's.
+    nonisolated func transcribeWords(open: @escaping AudioSourceOpener) async throws(FileSpeechFailure) -> [TimedWord] {
+        guard !Task.isCancelled else { throw .cancelled }
+        let snapshot = dictionary(nil)
+        try await waitForModel(progress: { _ in })
+        return try await pullWords(open, snapshot: snapshot)
     }
 
     /// How the preparation in progress ends, starting the first attempt if none was ever made, or nil as soon as the
@@ -400,6 +429,30 @@ public actor SpeechEngine: SpeechTranscribing {
             }
             progress(.transcribing(read: length, length: length))
             return CasingRestorer.apply(raw, entries: snapshot.entries)
+        } catch {
+            throw Self.fileFailure(error)
+        }
+    }
+
+    /// Reads the source `open` makes into chunks that are not compacted, and returns its words with their times.
+    private func pullWords(_ open: AudioSourceOpener, snapshot: DictionarySnapshot) async throws(FileSpeechFailure)
+        -> [TimedWord] {
+        guard let model else { throw .failed }
+        let bias = graphs.graph(for: snapshot) { BiasGraph.build(entries: snapshot.entries, encoder: model.encoder) }
+        let check: () throws -> Void = { if Task.isCancelled { throw TranscriptionError.cancelled } }
+        do {
+            let work = StreamWork(id: 0, snapshot: snapshot, bias: bias, retainsAudio: false)
+            work.transcription = .uncompacted()
+            _ = try await read(open(), into: work, model: model, check: check) {}
+            let heard = work.transcription.words
+            // Casing is restored over the whole transcript, so an entry of several words is found across them; it
+            // keeps the words as they are unless it changes how many there are, which casing never does.
+            let cased = CasingRestorer.apply(heard.map(\.text).joined(separator: " "), entries: snapshot.entries)
+                .split(separator: " ").map(String.init)
+            let texts = cased.count == heard.count ? cased : heard.map(\.text)
+            return zip(heard, texts).map { word, text in
+                TimedWord(text: text, time: Double(word.start) / Double(SpeechCore.sampleRate))
+            }
         } catch {
             throw Self.fileFailure(error)
         }

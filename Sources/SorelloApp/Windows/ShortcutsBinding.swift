@@ -19,11 +19,11 @@ extension WindowModels {
         shortcuts.openKeyboardSettings = { if let pane = SettingsPane.keyboard { app.platform.system.open(pane) } }
     }
 
-    /// Every action's recorder as it stands.
+    /// Every action's recorder as it stands; screen notes' only while screen notes are on.
     func recorders() -> [ShortcutKind: ShortcutRecorderState] {
         let formatter = self.formatter
         var recorders: [ShortcutKind: ShortcutRecorderState] = [:]
-        for kind in ShortcutKind.allCases {
+        for kind in ShortcutKind.allCases where !kind.isScreenNotes || app.settings.screenNotes {
             recorders[kind] = ShortcutRecorderState(
                 keys: app.settings.shortcut(for: kind.action).map { KeyCombo($0, formatter: formatter) },
                 isRecording: app.live.recording == kind, refusal: app.live.refusals[kind])
@@ -54,7 +54,7 @@ extension WindowModels {
             guard self.recordingNumber == number else { return }
             live.recording = nil
             guard let binding else { return }
-            if let problem = ShortcutValidation.problem(with: binding, for: kind.action, among: settings.shortcutBindings) {
+            if let problem = ShortcutValidation.problem(with: binding, for: kind.action, among: settings.storedShortcutBindings) {
                 live.refusals[kind] = ShortcutRefusal(problem)
             } else {
                 settings.setShortcut(binding, for: kind.action)
@@ -81,7 +81,7 @@ extension WindowModels {
             settings.setShortcut(nil, for: kind.action)
             return
         }
-        if let problem = ShortcutValidation.problem(with: .function, for: .holdToTalk, among: settings.shortcutBindings) {
+        if let problem = ShortcutValidation.problem(with: .function, for: .holdToTalk, among: settings.storedShortcutBindings) {
             app.live.refusals[kind] = ShortcutRefusal(problem)
         } else {
             settings.setShortcut(.function, for: .holdToTalk)

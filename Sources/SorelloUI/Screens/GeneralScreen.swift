@@ -65,6 +65,8 @@ public final class GeneralModel {
     public var standInMicrophoneName: String?
     /// Each switch's value.
     public var toggles: [GeneralToggle: Bool]
+    /// Whether Sorello may record the screen, which screen notes need.
+    public var screenRecordingGranted = false
     /// Whether the app can update itself, and so shows the switch for its daily check. A build with no update feed
     /// cannot, and has no such switch.
     public var offersUpdates: Bool
@@ -89,6 +91,12 @@ public final class GeneralModel {
 
     /// A switch's value. A switch the app layer has not set reads as off.
     public func isOn(_ toggle: GeneralToggle) -> Bool { toggles[toggle] ?? false }
+
+    /// The line under Record screen notes: the permission they need, while they are off or it is not granted
+    /// (ARCHITECTURE.md, section 14, "Turning them on").
+    public var screenNotesDetail: String? {
+        isOn(.screenNotes) && screenRecordingGranted ? nil : String(localized: "Requires Screen Recording permission")
+    }
 
     /// The line under Microphone: the microphone standing in for a Bluetooth default, if one is.
     public var microphoneDetail: String? {
@@ -139,6 +147,11 @@ public struct GeneralScreen: View {
                     Text("Suggestions need Accessibility, to see the word you fix.")
                 }
             }
+            CardGroup(String(localized: "Screen notes")) {
+                Card {
+                    toggleRow(.screenNotes, detail: model.screenNotesDetail)
+                }
+            }
             CardGroup(String(localized: "App")) {
                 Card(dividerInset: Metrics.wordsInset) {
                     toggleRow(.launchAtLogin)
@@ -150,8 +163,8 @@ public struct GeneralScreen: View {
         }
     }
 
-    private func toggleRow(_ toggle: GeneralToggle) -> some View {
-        ToggleRow(toggle.title, symbol: toggle.symbol, isOn: Binding(
+    private func toggleRow(_ toggle: GeneralToggle, detail: String? = nil) -> some View {
+        ToggleRow(toggle.title, symbol: toggle.symbol, detail: detail, isOn: Binding(
             get: { model.isOn(toggle) },
             set: { value in
                 model.toggles[toggle] = value

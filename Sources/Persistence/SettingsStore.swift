@@ -28,6 +28,21 @@ public final class SettingsStore {
         didSet { Keys.pasteAgainShortcut.write(pasteAgainShortcut, to: defaults) }
     }
 
+    /// Starts or finishes a screen note. ⌥⇧S by default; it works only while `screenNotes` is on.
+    public var screenNoteShortcut: ShortcutBinding? {
+        didSet { Keys.screenNoteShortcut.write(screenNoteShortcut, to: defaults) }
+    }
+
+    /// Pastes the newest screen note. ⌥⇧V by default; it works only while `screenNotes` is on.
+    public var pasteScreenNoteShortcut: ShortcutBinding? {
+        didSet { Keys.pasteScreenNoteShortcut.write(pasteScreenNoteShortcut, to: defaults) }
+    }
+
+    /// Screen notes (ARCHITECTURE.md, section 14). Off by default.
+    public var screenNotes: Bool {
+        didSet { Keys.screenNotes.write(screenNotes, to: defaults) }
+    }
+
     /// Put the user's clipboard back after pasting. On by default.
     public var restoreClipboard: Bool {
         didSet { Keys.restoreClipboard.write(restoreClipboard, to: defaults) }
@@ -95,6 +110,9 @@ public final class SettingsStore {
         holdToTalkShortcut = Keys.holdToTalkShortcut.read(from: defaults)
         tapToToggleShortcut = Keys.tapToToggleShortcut.read(from: defaults)
         pasteAgainShortcut = Keys.pasteAgainShortcut.read(from: defaults)
+        screenNoteShortcut = Keys.screenNoteShortcut.read(from: defaults)
+        pasteScreenNoteShortcut = Keys.pasteScreenNoteShortcut.read(from: defaults)
+        screenNotes = Keys.screenNotes.read(from: defaults)
         restoreClipboard = Keys.restoreClipboard.read(from: defaults)
         spokenNumbers = Keys.spokenNumbers.read(from: defaults)
         spokenDelimiters = Keys.spokenDelimiters.read(from: defaults)
@@ -115,6 +133,8 @@ public final class SettingsStore {
         case .holdToTalk: holdToTalkShortcut
         case .tapToToggle: tapToToggleShortcut
         case .pasteAgain: pasteAgainShortcut
+        case .screenNote: screenNoteShortcut
+        case .pasteScreenNote: pasteScreenNoteShortcut
         }
     }
 
@@ -125,6 +145,8 @@ public final class SettingsStore {
         case .holdToTalk: holdToTalkShortcut = binding
         case .tapToToggle: tapToToggleShortcut = binding
         case .pasteAgain: pasteAgainShortcut = binding
+        case .screenNote: screenNoteShortcut = binding
+        case .pasteScreenNote: pasteScreenNoteShortcut = binding
         }
     }
 }
@@ -136,6 +158,9 @@ enum Keys {
     static let holdToTalkShortcut = CodableKey<ShortcutBinding?>("holdToTalkShortcut", default: .function)
     static let tapToToggleShortcut = CodableKey<ShortcutBinding?>("tapToToggleShortcut", default: nil)
     static let pasteAgainShortcut = CodableKey<ShortcutBinding?>("pasteAgainShortcut", default: nil)
+    static let screenNoteShortcut = CodableKey<ShortcutBinding?>("screenNoteShortcut", default: .screenNote)
+    static let pasteScreenNoteShortcut = CodableKey<ShortcutBinding?>("pasteScreenNoteShortcut", default: .pasteScreenNote)
+    static let screenNotes = PlainKey("screenNotes", default: false)
     static let restoreClipboard = PlainKey("restoreClipboard", default: true)
     static let spokenNumbers = PlainKey("spokenNumbers", default: true)
     static let spokenDelimiters = PlainKey("spokenDelimiters", default: false)

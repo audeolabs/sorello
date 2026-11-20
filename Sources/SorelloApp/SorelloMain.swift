@@ -15,6 +15,8 @@ public enum SorelloMain {
             UpdateSelfTest.run(feed: feed)
         case .transcribeTest(let file, let model, let forcesCPU):
             TranscribeSelfTest.run(file: file, model: model, forcesCPU: forcesCPU)
+        case .screenNoteTest(let directory, let movie):
+            ScreenNoteSelfTest.run(directory: directory, movie: movie)
         case .snapshots(let directory):
             WindowSnapshots.run(into: directory)
         case .usage(let message):
@@ -37,6 +39,9 @@ public enum SorelloMain {
 ///     Sorello --self-test --transcribe [--model <dir>] [--cpu] <file>
 ///                                                  transcribe an audio or video file through the Transcribe screen's
 ///                                                  own model, off screen; print each state and the text; exit 0 or 1
+///     Sorello --self-test --screen-note [--movie <file>] <dir>
+///                                                  make a screen note in `dir` with marks of the test's own, from
+///                                                  three seconds of the screen or from `file`; print its summary
 ///     Sorello --snapshots <dir>                    render the menu-bar item, windows and setup; list the menu
 ///
 /// The app ignores arguments it does not know, because the system can pass its own when it launches an app.
@@ -45,6 +50,7 @@ nonisolated enum LaunchMode: Equatable {
     case selfTest(files: [URL], model: URL?, forcesCPU: Bool, downloads: Bool = false)
     case updateTest(feed: URL)
     case transcribeTest(file: URL, model: URL?, forcesCPU: Bool)
+    case screenNoteTest(directory: URL, movie: URL?)
     case snapshots(URL)
     case usage(String)
 
@@ -53,6 +59,7 @@ nonisolated enum LaunchMode: Equatable {
                Sorello --self-test [--model <bundle-dir> | --download] [--cpu] <file.wav>...
                Sorello --self-test --update <feed-url>
                Sorello --self-test --transcribe [--model <bundle-dir>] [--cpu] <file>
+               Sorello --self-test --screen-note [--movie <file>] <output-directory>
                Sorello --snapshots <output-directory>
         """
 
@@ -70,6 +77,25 @@ nonisolated enum LaunchMode: Equatable {
                 return
             }
             self = .updateTest(feed: feed)
+        case "--self-test" where arguments.count > 1 && arguments[1] == "--screen-note":
+            var rest = arguments.dropFirst(2)
+            var movie: URL?
+            var directories: [URL] = []
+            while let argument = rest.popFirst() {
+                if argument == "--movie", let path = rest.popFirst() {
+                    movie = URL(fileURLWithPath: path)
+                } else if argument.hasPrefix("-") {
+                    self = .usage(Self.usage)
+                    return
+                } else {
+                    directories.append(URL(fileURLWithPath: argument, isDirectory: true))
+                }
+            }
+            guard directories.count == 1, let directory = directories.first else {
+                self = .usage(Self.usage)
+                return
+            }
+            self = .screenNoteTest(directory: directory, movie: movie)
         case "--self-test" where arguments.count > 1 && arguments[1] == "--transcribe":
             // One file, through the window's way in; the model as the other self-test finds it.
             var rest = arguments.dropFirst(2)

@@ -15,6 +15,8 @@ nonisolated public enum GeneralToggle: CaseIterable, Hashable, Sendable {
     case avoidBluetoothMicrophone
     /// Whether the updater checks for a newer version once a day by itself. Only a build that can update itself has it.
     case checkForUpdates
+    /// Screen notes (ARCHITECTURE.md, section 14). Off by default.
+    case screenNotes
 
     /// The switch's name.
     public var title: String {
@@ -28,6 +30,7 @@ nonisolated public enum GeneralToggle: CaseIterable, Hashable, Sendable {
         case .keepRunLog: String(localized: "Keep a Run Log")
         case .avoidBluetoothMicrophone: String(localized: "Avoid Bluetooth microphones")
         case .checkForUpdates: String(localized: "Check for updates automatically")
+        case .screenNotes: String(localized: "Record screen notes")
         }
     }
 
@@ -44,6 +47,7 @@ nonisolated public enum GeneralToggle: CaseIterable, Hashable, Sendable {
         case .keepRunLog: "clock.arrow.circlepath"
         case .avoidBluetoothMicrophone: "headphones"
         case .checkForUpdates: "arrow.down.circle"
+        case .screenNotes: "rectangle.dashed.badge.record"
         }
     }
 }

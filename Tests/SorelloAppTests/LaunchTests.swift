@@ -45,6 +45,18 @@ import Testing
         #expect(LaunchMode(arguments: ["--download"]) == .app(showsSetup: true), "The app itself downloads only when asked")
     }
 
+    /// `--screen-note` makes one note in the directory given, from the screen or from the movie `--movie` gives.
+    @Test func theSelfTestCanMakeAScreenNote() {
+        let directory = URL(fileURLWithPath: "/notes", isDirectory: true), movie = URL(fileURLWithPath: "/m.mov")
+        #expect(LaunchMode(arguments: ["--self-test", "--screen-note", "/notes"])
+                == .screenNoteTest(directory: directory, movie: nil))
+        #expect(LaunchMode(arguments: ["--self-test", "--screen-note", "--movie", "/m.mov", "/notes"])
+                == .screenNoteTest(directory: directory, movie: movie))
+        #expect(LaunchMode(arguments: ["--self-test", "--screen-note"]) == .usage(LaunchMode.usage))
+        #expect(LaunchMode(arguments: ["--self-test", "--screen-note", "/a", "/b"]) == .usage(LaunchMode.usage))
+        #expect(LaunchMode(arguments: ["--self-test", "--screen-note", "--cpu", "/a"]) == .usage(LaunchMode.usage))
+    }
+
     /// `--transcribe` runs one file through the Transcribe screen's model, with the model found as the other self-test finds
     /// it, or the one `--model` gives, and `--cpu` as there.
     @Test func theSelfTestCanTranscribeAFileThroughTheWindow() {

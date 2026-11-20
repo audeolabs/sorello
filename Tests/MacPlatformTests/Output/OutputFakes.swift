@@ -78,6 +78,8 @@ final class FakePasteboard: PasteboardAccess {
         var onRead: (@Sendable () -> Void)?
         /// Runs after each successful write, once the items are on the pasteboard.
         var onWrite: (@Sendable () -> Void)?
+        /// What the last write on demand runs when its data is first read.
+        var onDemandRead: (@Sendable () -> Void)?
     }
 
     let state = Mutex(State())
@@ -117,9 +119,28 @@ final class FakePasteboard: PasteboardAccess {
         }
     }
 
+    /// An app reads what is on the pasteboard: a write on demand learns of its first read.
+    func appReads() {
+        let onRead = state.withLock { state in
+            let onRead = state.onDemandRead
+            state.onDemandRead = nil
+            return onRead
+        }
+        onRead?()
+    }
+
+    func writeOnDemand(_ items: [PasteboardItemData], onRead: @escaping @Sendable () -> Void) -> Bool {
+        write(items, onDemand: onRead)
+    }
+
     func write(_ items: [PasteboardItemData]) -> Bool {
+        write(items, onDemand: nil)
+    }
+
+    private func write(_ items: [PasteboardItemData], onDemand: (@Sendable () -> Void)?) -> Bool {
         log.append(.write(items))
         let hook = state.withLock { state -> (@Sendable () -> Void)?? in
+            state.onDemandRead = onDemand
             state.writeCount += 1
             guard !state.refuseWrites, state.refusedWrite != state.writeCount else { return nil }
             state.items += items

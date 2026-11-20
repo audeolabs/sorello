@@ -24,6 +24,7 @@ extension WindowModels {
             var toggles = Self.toggles(app.settings, login: app.platform.loginItem.state)
             if let updater = app.updater { toggles[.checkForUpdates] = updater.checksAutomatically }
             general.toggles = toggles
+            general.screenRecordingGranted = app.live.screenRecordingGranted
         }
         general.actions = GeneralActions(
             retryModel: { app.runtime.retryPreparation() },
@@ -45,7 +46,8 @@ extension WindowModels {
          .pressEnter: settings.pressEnterCommand,
          .correctionSuggestions: settings.correctionSuggestions,
          .keepRunLog: settings.keepRunLog,
-         .avoidBluetoothMicrophone: settings.avoidBluetoothMicrophone]
+         .avoidBluetoothMicrophone: settings.avoidBluetoothMicrophone,
+         .screenNotes: settings.screenNotes]
     }
 
     func setToggle(_ toggle: GeneralToggle, _ on: Bool) {
@@ -68,6 +70,22 @@ extension WindowModels {
         case .keepRunLog: settings.keepRunLog = on
         case .avoidBluetoothMicrophone: settings.avoidBluetoothMicrophone = on
         case .checkForUpdates: app.updater?.checksAutomatically = on
+        case .screenNotes:
+            settings.screenNotes = on
+            // Off means the screen is no longer recorded: a note recording now is thrown away.
+            if !on { app.notes?.cancel() }
+            // Turning screen notes on is the one time Sorello asks for Screen Recording (ARCHITECTURE.md, section 14).
+            // A shortcut another action already had before screen notes existed stays that action's: screen notes'
+            // action is then left without one, for the user to choose.
+            for action in [ShortcutAction.screenNote, .pasteScreenNote] where on {
+                if let binding = settings.shortcut(for: action),
+                   ShortcutValidation.problem(with: binding, for: action, among: settings.storedShortcutBindings) != nil {
+                    settings.setShortcut(nil, for: action)
+                }
+            }
+            if on, let permission = app.screenNotes?.permission, !permission.isGranted {
+                app.live.screenRecordingGranted = permission.request()
+            }
         }
     }
 

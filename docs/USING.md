@@ -156,6 +156,35 @@ The first time, preparing the model can take a few minutes. It exits with 0 when
 arguments; 65 for a file it can't read; 66 for a file that can't be opened; 69 when the model isn't downloaded;
 and 70 when the model couldn't be loaded or the transcription failed.
 
+## Screen notes
+
+A screen note shows an AI agent a problem instead of describing it. Turn on **Record screen notes** on the General
+screen; Sorello then asks for Screen Recording, which it needs for nothing else.
+
+Press ⌥⇧S (change it on the Shortcuts screen) and Sorello records the screen you're pointing at, with your voice if
+it may use the microphone. Talk, click around, and:
+
+- hold ⇧ (on its own) and move the pointer to draw in red; let go of ⇧ to end the stroke;
+- ⇧-click to drop a numbered pin;
+- on a Mac with a touch screen, draw with a finger and tap to drop a pin, no ⇧ needed. The pointer still clicks
+  through to your apps, and a finger right next to the pointer goes to the app too;
+- press ⌘Z to take back the last stroke or pin.
+
+Press ⌥⇧S again, or Finish on the pill, and Sorello makes the note: a few keyframes with your marks drawn on them, a
+contact sheet of them all with what you said written under each, `summary.md` with what you said beside each
+keyframe, and `note.json`. The summary and the contact sheet go on the clipboard: paste into a terminal for the
+summary, or into an app that takes images for the sheet. Show on the pill opens the note's folder. Escape, or Cancel on the pill, throws a note away.
+
+To give a chat the frames with what you said between them, click where you'd type and press ⌥⇧V (Paste Screen
+Note). Sorello pastes the newest note there one piece at a time: a line about the note, then each keyframe's time
+and words followed by its image. If you drew on the screen, only the frames you drew on are pasted, with the
+other keyframes' words still in place. Chats that take images keep only the image when one paste holds both, which
+is why it is pasted in pieces. Keep that app in front until the pill's "Pasting screen note…" goes away; Escape stops
+it. Both shortcuts can be changed on the Shortcuts screen.
+
+Each note's folder also keeps the recording itself, `recording.mov`, so notes can take some room. They are kept on
+this Mac, in Sorello's folder in Application Support, and only the newest 20. Sorello sends them nowhere.
+
 ## When something is wrong
 
 The menu's first line says what is wrong, and the command under it leads to the fix.
@@ -190,7 +219,7 @@ analytics or crash reporting. It makes two kinds of network connection:
 - **The update check, and an update's download,** from GitHub. The server learns your address and Sorello's name
   and version. An update is installed only if its signature matches the key in the app.
 
-Your audio and transcripts are kept only in the Run Log, on this Mac. A file you transcribe is read where it is,
+Your audio and transcripts are kept only in the Run Log and in screen notes you make, on this Mac. A file you transcribe is read where it is,
 and its text stays in memory until you close Settings, unless you save it. To fit the words, Sorello reads up to
 16 characters either side of the cursor, and to offer a dictionary word it watches what it pasted for up to a
 minute. It never reads a password field, and what it reads stays in memory only while it is needed. What you had

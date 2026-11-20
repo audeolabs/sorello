@@ -7,9 +7,13 @@ import SorelloUI
 /// Hands each shortcut trigger to the session, and lets the correction coordinator see it first. The monitor holds
 /// its handler weakly, so the composition owns this. It decides nothing and calls nothing back into the monitor: it is
 /// called from inside the event tap, and so is `SessionRuntime.handle`, which only reduces and returns.
+///
+/// Screen notes' triggers go to `notes` and never to the session; Escape goes to the session first and to `notes` only
+/// when the session cancelled nothing (ARCHITECTURE.md, section 14, "Recording").
 @MainActor
 final class TriggerRelay: TriggerHandling {
     private weak var runtime: SessionRuntime?
+    weak var notes: ScreenNoteCoordinator?
     /// Sees each trigger before the session does.
     var observer: (@MainActor (TriggerEvent) -> Void)?
     /// Whether a Hold to Talk key is down: a shortcut session is under way, so no suggestion may appear.
@@ -22,12 +26,20 @@ final class TriggerRelay: TriggerHandling {
     @discardableResult
     func handle(_ trigger: TriggerEvent, at time: TimeInterval) -> Bool {
         switch trigger {
+        case .screenNotePressed: return notes?.pressed(at: time) ?? false
+        case .pasteScreenNotePressed: return notes?.paste() ?? false
+        case .undoPressed: return notes?.undo() ?? false
+        default: break
+        }
+        switch trigger {
         case .holdPressed: holdIsDown = true
         case .holdReleased, .holdAbandoned: holdIsDown = false
         default: break
         }
         observer?(trigger)
-        return runtime?.handle(trigger, at: time) ?? false
+        let handled = runtime?.handle(trigger, at: time) ?? false
+        if !handled, trigger == .cancelPressed { return notes?.cancel() ?? false }
+        return handled
     }
 }
 

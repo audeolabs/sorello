@@ -81,7 +81,8 @@ final class AppShell: NSObject, NSApplicationDelegate {
             download: model.map { PinnedDownload(model: $0, version: info.version) },
             // Only a build with an update feed has an updater; it starts with the app.
             updater: Updates.updater(for: info) { SparkleUpdater(info: $0) },
-            modelFitsThisMac: model.map { $0.build != nil } ?? true, pill: overlay, levels: levels)
+            modelFitsThisMac: model.map { $0.build != nil } ?? true, pill: overlay, levels: levels,
+            screenNotes: .system())
         self.app = app
         let models = WindowModels(app: app)
         self.models = models

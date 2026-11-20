@@ -1,3 +1,4 @@
+import AppKit
 import Carbon.HIToolbox
 import DictationCore
 import MacPlatform
@@ -552,5 +553,76 @@ struct RecordingTests {
         _ = keys.matcher.startRecording()
         _ = keys.matcher.interrupt()
         #expect(keys.matcher.isRecording == false)
+    }
+}
+
+@Suite("Screen notes' keys")
+struct ScreenNoteKeyTests {
+    @Test("Only ⇧ alone draws ink: ⇧ with another modifier is a shortcut, such as ⌥⇧S")
+    @MainActor
+    func inkModifier() {
+        #expect(PointerWatcher.drawsInk([.shift]))
+        #expect(PointerWatcher.drawsInk([.shift, .capsLock]))
+        #expect(!PointerWatcher.drawsInk([.shift, .option]))
+        #expect(!PointerWatcher.drawsInk([.shift, .command]))
+        #expect(!PointerWatcher.drawsInk([.shift, .control]))
+        #expect(!PointerWatcher.drawsInk([]))
+    }
+
+    @Test("The Screen Note shortcut is delivered as its own trigger and consumed")
+    func screenNote() {
+        var keys = Keyboard([.screenNote: .screenNote])
+        keys.press(.leftOption)
+        keys.press(.leftShift)
+        #expect(keys.down(kVK_ANSI_S).consume)
+        #expect(keys.up(kVK_ANSI_S).consume)
+        #expect(keys.take() == [.screenNotePressed])
+    }
+
+    @Test("The Paste Screen Note shortcut is delivered as its own trigger and consumed")
+    func pasteScreenNote() {
+        var keys = Keyboard([.screenNote: .screenNote, .pasteScreenNote: .pasteScreenNote])
+        keys.press(.leftOption)
+        keys.press(.leftShift)
+        #expect(keys.down(kVK_ANSI_V).consume)
+        #expect(keys.up(kVK_ANSI_V).consume)
+        #expect(keys.take() == [.pasteScreenNotePressed])
+    }
+
+    @Test("⌘Z is undoPressed, consumed only when the handler undid something")
+    func undo() {
+        var keys = Keyboard([:])
+        keys.press(.leftCommand)
+        keys.handled = false
+        #expect(keys.down(kVK_ANSI_Z).consume == false)
+        #expect(keys.up(kVK_ANSI_Z).consume == false)
+        keys.handled = true
+        #expect(keys.down(kVK_ANSI_Z).consume)
+        #expect(keys.up(kVK_ANSI_Z).consume)
+        #expect(keys.take() == [.undoPressed, .undoPressed])
+    }
+
+    @Test("⌘Z bound to an action reaches it only when there is nothing to undo")
+    func undoBeforeABinding() {
+        var keys = Keyboard([.pasteAgain: .key(code: UInt16(kVK_ANSI_Z), modifiers: .command)])
+        keys.press(.leftCommand)
+        keys.handled = true
+        #expect(keys.down(kVK_ANSI_Z).consume)
+        keys.up(kVK_ANSI_Z)
+        #expect(keys.take() == [.undoPressed])
+        keys.handled = false
+        #expect(keys.down(kVK_ANSI_Z).consume)
+        #expect(keys.take() == [.undoPressed, .pasteAgainPressed])
+    }
+
+    @Test("⌘⇧Z and a plain Z are not undo")
+    func notUndo() {
+        var keys = Keyboard([:])
+        keys.down(kVK_ANSI_Z)
+        keys.up(kVK_ANSI_Z)
+        keys.press(.leftCommand)
+        keys.press(.leftShift)
+        keys.down(kVK_ANSI_Z)
+        #expect(keys.take() == [])
     }
 }
