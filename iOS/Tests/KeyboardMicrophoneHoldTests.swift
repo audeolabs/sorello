@@ -7,6 +7,7 @@ enum KeyboardMicrophoneHoldTests {
             ("holdsWhenEverythingHolds", testHoldsWhenEverythingHolds),
             ("everyConditionIsNeeded", testEveryConditionIsNeeded),
             ("onlyBluetoothOutputsAreHeadphones", testOnlyBluetoothOutputsAreHeadphones),
+            ("headphonesStayForTheGrace", testHeadphonesStayForTheGrace),
         ]
     }
 
@@ -42,5 +43,26 @@ enum KeyboardMicrophoneHoldTests {
         }
         TestSupport.expect(!KeyboardMicrophoneHold.bluetoothHeadphones(in: []), "no output is headphones")
         TestSupport.expect(!KeyboardMicrophoneHold.bluetoothHeadphones(in: [.other]), "the speaker or a wire is headphones")
+    }
+
+    /// Each switch to the iPhone's microphone sends the output through the receiver for about a tenth of a second; the
+    /// hold must not let go for that.
+    private static func testHeadphonesStayForTheGrace() {
+        TestSupport.expectEqual(KeyboardMicrophoneHold.headphonesGrace, 1)
+        var watch = KeyboardMicrophoneHold.HeadphonesWatch()
+        TestSupport.expect(!watch.observe(false, at: 10), "headphones never seen are present")
+        TestSupport.expect(watch.observe(true, at: 10), "headphones in the route are not present")
+        TestSupport.expect(watch.observe(false, at: 10.1), "headphones gone for a tenth of a second are not present")
+        TestSupport.expect(watch.observe(false, at: 10.99), "headphones gone for under the grace are not present")
+        TestSupport.expect(!watch.observe(false, at: 11), "headphones gone for the grace are present")
+        // Back in the route, the grace counts from their last sighting.
+        TestSupport.expect(watch.observe(true, at: 20), "headphones back in the route are not present")
+        TestSupport.expect(watch.observe(true, at: 25), "headphones in the route are not present")
+        TestSupport.expect(watch.observe(false, at: 25.5), "headphones gone for half a second are not present")
+        TestSupport.expect(!watch.observe(false, at: 26.2), "headphones gone past the grace are present")
+        // The keyboard hiding forgets them.
+        _ = watch.observe(true, at: 30)
+        watch.reset()
+        TestSupport.expect(!watch.observe(false, at: 30.1), "headphones seen before the keyboard hid are present")
     }
 }

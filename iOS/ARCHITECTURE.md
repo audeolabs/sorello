@@ -2250,8 +2250,13 @@ unchanged and always wins.
     read as each pass reads it), the shared `useBuiltInMicrophone` read on
     when the keyboard appeared (it changes only in the app, while the
     keyboard is hidden), Bluetooth headphones are in the route (the audio session's current
-    route has a Bluetooth A2DP, LE or hands-free output; read only), and no
-    dictation runs. Holding opens a capture with
+    route has a Bluetooth A2DP, LE or hands-free output; read only) or were
+    within the last `KeyboardMicrophoneHold.headphonesGrace` (1 s), and no
+    dictation runs. The grace is there because each switch to the iPhone's
+    microphone sends the output through the iPhone's receiver for about a
+    tenth of a second (seen on an iPhone 15 Pro with AirPods Max): a hold
+    that let go then opened again and switched again, about once a second.
+    Holding opens a capture with
     `CapturePage.heldMicrophoneHTML`, which chooses the input exactly as
     the built-in microphone page does and starts its audio context, but
     makes no audio processing, so holds no samples, until Swift runs

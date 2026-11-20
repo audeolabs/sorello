@@ -32,5 +32,25 @@ enum KeyboardMicrophoneHold {
     static func bluetoothHeadphones(in outputs: [Output]) -> Bool {
         outputs.contains { $0 != .other }
     }
+
+    /// How long headphones gone from the route still count: each switch to the iPhone's microphone sends the output
+    /// through the iPhone's receiver for about a tenth of a second.
+    static let headphonesGrace: TimeInterval = 1
+
+    /// Bluetooth headphones as the hold sees them: present while in the route, and for `headphonesGrace` after.
+    struct HeadphonesWatch: Equatable, Sendable {
+        private var lastSeen: TimeInterval?
+
+        /// Notes whether they are in the route at `now`, a monotonic clock, and says whether they count as present.
+        mutating func observe(_ inRoute: Bool, at now: TimeInterval) -> Bool {
+            if inRoute { lastSeen = now }
+            return lastSeen.map { now - $0 < KeyboardMicrophoneHold.headphonesGrace } ?? false
+        }
+
+        /// The keyboard hid.
+        mutating func reset() {
+            lastSeen = nil
+        }
+    }
 }
 #endif

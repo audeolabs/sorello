@@ -121,6 +121,8 @@ final class KeyboardDictationClient: ObservableObject {
     private var microphoneGranted = false
     /// The shared `useBuiltInMicrophone`, read when the keyboard appears, for the held microphone; a tap reads it afresh.
     private var useBuiltInMicrophone = true
+    /// Bluetooth headphones as the held microphone sees them, through the receiver's blips at each switch.
+    private var headphones = KeyboardMicrophoneHold.HeadphonesWatch()
     /// The app's `Model/bundle.json` is readable from the keyboard, as of when the keyboard appeared.
     private var modelCarried = false
     /// Set from `viewWillDisappear` until the keyboard appears again: no in-keyboard dictation starts meanwhile.
@@ -190,6 +192,7 @@ final class KeyboardDictationClient: ObservableObject {
     /// Call from `viewWillDisappear`: hiding ends an in-keyboard dictation at once, and its waiting text goes.
     func willHide() {
         hiding = true
+        headphones.reset()
         local?.hide()
         chipLocalAttempt = nil
     }
@@ -545,15 +548,15 @@ final class KeyboardDictationClient: ObservableObject {
     }
 
     /// The held microphone (ARCHITECTURE.md, "In-keyboard dictation (experiment)", Capture, Held microphone), judged at
-    /// every pass. The route is read only when everything else holds.
+    /// every pass. The route is read only while the keyboard is visible with "Use iPhone microphone" on.
     private func updateHeldMicrophone(tapDictatesInKeyboard: Bool) {
         var conditions = KeyboardMicrophoneHold.Conditions(
             visible: isVisible && !hiding, tapDictatesInKeyboard: tapDictatesInKeyboard,
             useBuiltInMicrophone: useBuiltInMicrophone, bluetoothHeadphones: false,
             dictationRunning: local?.isRunning == true, heldCaptureReported: local?.heldCaptureReported == true)
-        if conditions.visible, tapDictatesInKeyboard, useBuiltInMicrophone, !conditions.dictationRunning,
-           !conditions.heldCaptureReported {
-            conditions.bluetoothHeadphones = KeyboardMicrophoneHold.bluetoothHeadphones(in: Self.routeOutputs())
+        if conditions.visible, useBuiltInMicrophone, !conditions.heldCaptureReported {
+            conditions.bluetoothHeadphones = headphones.observe(
+                KeyboardMicrophoneHold.bluetoothHeadphones(in: Self.routeOutputs()), at: ProcessInfo.processInfo.systemUptime)
         }
         if KeyboardMicrophoneHold.shouldHold(conditions) {
             localDictation()?.hold(true)
