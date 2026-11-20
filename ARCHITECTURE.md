@@ -1777,7 +1777,12 @@ builds it, in this order:
    note's length, its marks, its clicks and its words:
    - a moment just after each stroke ends and each pin drops, and 0.3 s
      after each click, so the frame shows what the click did;
-   - the end of each sentence of the narration;
+   - the end of each phrase of the narration. A phrase ends after a word
+     ending in `.`, `?` or `!`, at a pause (the next word starts 1 s or
+     more after the one before it), before a word that would make it
+     longer than 8 s, and at the last word. The model often punctuates a
+     long narration as one sentence, so the pauses are what keep what was
+     said beside what was on the screen as it was said;
    - the first moment and the last;
    - moments closer than 1.5 s are one, the keyframe of the highest
      priority (ink and pins, then clicks, then speech, then the rest)
@@ -1789,19 +1794,22 @@ builds it, in this order:
      always kept, so a note always shows how it began and how it ended.
    Each keyframe owns the time from halfway to the one before it to
    halfway to the one after. The marks and clicks in that span are its
-   own, and so is each sentence of the narration whose last word is in
-   it: a sentence is never split between keyframes.
+   own, and so is each phrase of the narration whose last word is in it:
+   a phrase is never split between keyframes.
 3. **Frames.** Each keyframe is the recording's frame at its time,
    decoded at full size, with the strokes and pins of its span, and every
    stroke still in progress at its time, drawn on it in marker red, pins
    as numbered dots. It is `frames/frame-NN.png`, numbered from 01.
 4. **Contact sheet.** `contact-sheet.png` puts the keyframes in a grid,
    in order, at most four across and 640 px wide each, each labelled
-   with its number and time.
+   with its number and time and, under that, what was said in its span,
+   wrapped and cut with "…" past 10 lines. An app that pastes only the
+   image still gets the narration beside each frame.
 5. **Summary.** `summary.md`, for an agent: what the folder is and where,
    the note's date and length, then one section per keyframe with its
-   time, its file, what was said in its span (quoted) and its marks and
-   clicks, each with its time and its place in pixels of that keyframe.
+   time, its file, what was said in its span (one quoted line per phrase,
+   with the time it began) and its marks and clicks, each with its time
+   and its place in pixels of that keyframe.
 6. **Manifest.** `note.json`: a `version`, the note's start date and
    length, the display's size in points and the frames' in pixels, the
    keyframes (number, time, file, why it was chosen), the words (time and
@@ -1818,7 +1826,7 @@ decoded from the video's own length, which the narration may outlast.
 Then the clipboard gets one item with the summary as text and the contact
 sheet as a PNG, written between insertions (section 6, "Text
 insertion"), never between a dictation's write and its paste or restore, so a terminal pastes the summary and an app that takes
-images pastes the sheet. The pill says "Screen note copied" with Show,
+images pastes the sheet, with the narration under its frames. The pill says "Screen note copied" with Show,
 which reveals the folder in the Finder, for 4 s. If building fails, the
 folder is deleted and the pill shows "Couldn't make the screen note".
 

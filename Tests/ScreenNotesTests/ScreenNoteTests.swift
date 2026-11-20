@@ -30,15 +30,50 @@ import Testing
         #expect(inked.words.map(\.text) == ["This", "toggle."])
     }
 
-    @Test func aSentenceStaysWithTheKeyframeThatHoldsItsEnd() {
-        let words = [NoteWord(time: 1, text: "This"), NoteWord(time: 4, text: "is"), NoteWord(time: 7.5, text: "long."),
-                     NoteWord(time: 15, text: "Then")]
-        let note = Self.note(marks: NoteMarks(clicks: [Click(time: 3, x: 0, y: 0)]), words: words)
+    @Test func aPhraseStaysWithTheKeyframeThatHoldsItsEnd() {
+        // Unbroken speech across a click's keyframe, then a pause.
+        let words = [NoteWord(time: 2, text: "This"), NoteWord(time: 2.6, text: "is"), NoteWord(time: 3.2, text: "one"),
+                     NoteWord(time: 3.8, text: "phrase"), NoteWord(time: 15, text: "Then")]
+        let note = Self.note(marks: NoteMarks(clicks: [Click(time: 2.2, x: 0, y: 0)]), words: words)
         let owners = note.keyframes.indices.filter { !note.content(of: $0).words.isEmpty }
         #expect(owners.count == 2)
-        #expect(note.content(of: owners[0]).words.map(\.text) == ["This", "is", "long."])
+        #expect(note.content(of: owners[0]).words.map(\.text) == ["This", "is", "one", "phrase"])
         #expect(note.content(of: owners[1]).words.map(\.text) == ["Then"])
-        #expect(KeyframePlanner.span(of: owners[0], in: note.keyframes).contains(7.5))
+        #expect(KeyframePlanner.span(of: owners[0], in: note.keyframes).contains(3.8))
+    }
+
+    /// A narration the model punctuates as one sentence, spoken over one long stroke: its pauses keep each part beside
+    /// the frame it was said over.
+    @Test func aLongUnpunctuatedNarrationIsSplitAtItsPauses() {
+        let times = [2.6, 2.9, 3.8, 4.5, 7.0, 7.7, 9.8, 10.7, 11.0, 11.8, 12.1, 12.4, 14.1, 14.3, 14.8, 15.5, 16.1, 17.1]
+        let words = times.enumerated().map { NoteWord(time: $1, text: $0 == times.count - 1 ? "end." : "word\($0)") }
+        let long = Stroke(number: 1, points: stride(from: 1.8, through: 11.4, by: 0.1).map {
+            TimedPoint(t: $0, x: 0.2 + $0 / 20, y: 0.5)
+        })
+        let note = Self.note(marks: NoteMarks(strokes: [long]), words: words, duration: 18.6)
+        let said = note.keyframes.indices.map { note.content(of: $0).words.map(\.time) }
+        #expect(said.flatMap { $0 } == times, "every word once, in order")
+        #expect(said.filter { !$0.isEmpty }.count == 4, "the four parts between pauses")
+        for index in note.keyframes.indices {
+            for time in said[index] where time < 11.4 {
+                #expect(abs(time - note.keyframes[index].time) < 5, "said near the frame it is under")
+            }
+        }
+        #expect(note.keyframes.indices.contains { note.drawing(of: $0).strokes.contains { $0.end < 11.4 } },
+                "a frame during the stroke shows it half drawn")
+    }
+
+    @Test func aPhraseEndsAtAFullStopAPauseOrEightSeconds() {
+        let words = [NoteWord(time: 1, text: "One."), NoteWord(time: 1.3, text: "two"), NoteWord(time: 1.6, text: "three"),
+                     NoteWord(time: 2.6, text: "four")]
+            + stride(from: 5.0, through: 15, by: 0.5).map { NoteWord(time: $0, text: "on") }
+        let phrases = KeyframePlanner.phrases(words).map { $0.map(\.time) }
+        #expect(phrases.count == 5)
+        #expect(phrases[0] == [1])
+        #expect(phrases[1] == [1.3, 1.6])
+        #expect(phrases[2] == [2.6])
+        #expect(phrases[3].first == 5 && phrases[3].last! - 5 <= 8)
+        #expect(phrases[4].last == 15)
     }
 
     @Test func aStrokeInProgressAtAKeyframeIsDrawnUpToItsTime() {
@@ -64,7 +99,7 @@ import Testing
         #expect(summary.contains("- Marks: 1 stroke, 1 pin, 1 click\n"))
         #expect(summary.contains("- Narration: transcribed on this Mac\n"))
         #expect(summary.contains("## 1 · 0:00 · frames/frame-01.png\n"))
-        #expect(summary.contains("> This toggle.\n"))
+        #expect(summary.contains("> 0:06 This toggle.\n"))
         #expect(summary.contains("- 0:03 click at (256, 160)\n"))
         #expect(summary.contains("- 0:07 stroke 1 drawn over (640, 400)–(1920, 800)\n"))
         #expect(summary.contains("- 0:12 pin 1 at (1280, 800)\n"))
@@ -119,6 +154,31 @@ import Testing
         }
         let one = ContactSheetLayout(count: 1, frameSize: CGSize(width: 1000, height: 1000))
         #expect(one.size.width == CGFloat(16 + 640 + 16))
+    }
+
+    @Test func eachKeyframesCaptionIsUnderItsLabelAndARowIsAsTallAsItsLongest() {
+        let layout = ContactSheetLayout(count: 6, frameSize: CGSize(width: 2560, height: 1600),
+                                        captionHeights: [0, 60, 20, 0, 10, 0])
+        #expect(layout.captions.count == 6)
+        for index in 0..<6 {
+            #expect(layout.captions[index].minY == layout.labels[index].maxY)
+            #expect(layout.captions[index].minX == layout.images[index].minX)
+            #expect(layout.captions[index].width == 640)
+        }
+        #expect(layout.captions[1].height == 60)
+        #expect(layout.images[4].minY == layout.captions[1].maxY + 16, "the next row starts below the longest caption")
+        #expect(layout.size.height == layout.captions[4].minY + 10 + 16)
+        for frame in layout.images + layout.labels + layout.captions {
+            #expect(CGRect(origin: .zero, size: layout.size).contains(frame))
+        }
+    }
+
+    @Test func theCaptionIsWhatWasSaidInTheSpan() {
+        let words = [NoteWord(time: 1, text: "Open"), NoteWord(time: 1.4, text: "settings."),
+                     NoteWord(time: 6.2, text: "This"), NoteWord(time: 6.6, text: "toggle.")]
+        let note = Self.note(marks: NoteMarks(strokes: [Self.stroke]), words: words)
+        let captions = note.keyframes.indices.map { note.content(of: $0).said }
+        #expect(captions.filter { !$0.isEmpty } == ["Open settings.", "This toggle."])
     }
 
     @Test func timesReadAsMinutesAndSeconds() {

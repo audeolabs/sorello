@@ -34,8 +34,11 @@ extension ScreenNote {
             let own = content(of: index)
             let keyframe = own.keyframe
             lines += ["", "## \(keyframe.number) · \(Self.clock(keyframe.time)) · \(keyframe.file)", ""]
-            let said = own.words.map(\.text).joined(separator: " ")
-            if !said.isEmpty { lines.append("> \(said)") }
+            let said = own.said
+            for (index, phrase) in own.phrases.enumerated() {
+                if index > 0 { lines.append(">") }
+                lines.append("> \(Self.clock(phrase[0].time)) \(phrase.map(\.text).joined(separator: " "))")
+            }
             var events: [(time: Double, text: String)] = []
             for click in own.clicks {
                 let p = pixels(x: click.x, y: click.y)
@@ -125,7 +128,8 @@ public struct NoteManifest: Codable, Equatable, Sendable {
 }
 
 /// Where each keyframe goes on the contact sheet: a grid, in order, at most `columns` across, each `cellWidth` wide
-/// with its label under it (ARCHITECTURE.md, section 14, "The note", step 4). Pixels, from the sheet's top left.
+/// with its label under it and its caption, what was said, under that; a row is as tall as its tallest caption
+/// (ARCHITECTURE.md, section 14, "The note", step 4). Pixels, from the sheet's top left.
 public struct ContactSheetLayout: Equatable, Sendable {
     public static let columns = 4
     public static let cellWidth: Double = 640
@@ -137,22 +141,32 @@ public struct ContactSheetLayout: Equatable, Sendable {
     public var images: [CGRect]
     /// Each keyframe's label, under its image.
     public var labels: [CGRect]
+    /// Each keyframe's caption, under its label, as tall as it was measured.
+    public var captions: [CGRect]
 
-    public init(count: Int, frameSize: CGSize) {
+    /// `captionHeights` are the captions' measured heights, one per keyframe; missing ones are 0.
+    public init(count: Int, frameSize: CGSize, captionHeights: [Double] = []) {
         let columns = max(min(count, Self.columns), 1)
         let rows = max((count + columns - 1) / columns, 1)
         let aspect = frameSize.width > 0 ? Double(frameSize.height / frameSize.width) : 9.0 / 16
         let imageHeight = (Self.cellWidth * aspect).rounded()
-        let cellHeight = imageHeight + Self.labelHeight
-        size = CGSize(width: Self.gap + Double(columns) * (Self.cellWidth + Self.gap),
-                      height: Self.gap + Double(rows) * (cellHeight + Self.gap))
+        func caption(_ index: Int) -> Double { index < captionHeights.count ? max(captionHeights[index], 0) : 0 }
         images = []
         labels = []
-        for index in 0..<count {
-            let x = Self.gap + Double(index % columns) * (Self.cellWidth + Self.gap)
-            let y = Self.gap + Double(index / columns) * (cellHeight + Self.gap)
-            images.append(CGRect(x: x, y: y, width: Self.cellWidth, height: imageHeight))
-            labels.append(CGRect(x: x, y: y + imageHeight, width: Self.cellWidth, height: Self.labelHeight))
+        captions = []
+        var y = Self.gap
+        for row in 0..<rows {
+            let members = (row * columns)..<min((row + 1) * columns, max(count, 1))
+            let tallest = members.map(caption).max() ?? 0
+            for index in members where index < count {
+                let x = Self.gap + Double(index % columns) * (Self.cellWidth + Self.gap)
+                images.append(CGRect(x: x, y: y, width: Self.cellWidth, height: imageHeight))
+                labels.append(CGRect(x: x, y: y + imageHeight, width: Self.cellWidth, height: Self.labelHeight))
+                captions.append(CGRect(x: x, y: y + imageHeight + Self.labelHeight, width: Self.cellWidth,
+                                       height: caption(index)))
+            }
+            y += imageHeight + Self.labelHeight + tallest + Self.gap
         }
+        size = CGSize(width: Self.gap + Double(columns) * (Self.cellWidth + Self.gap), height: y)
     }
 }

@@ -568,7 +568,7 @@ struct ScreenNoteTests {
 
         let summary = try String(contentsOf: folder.appendingPathComponent(ScreenNote.Files.summary), encoding: .utf8)
         #expect(summary.contains("- Folder: \(folder.path)"))
-        #expect(summary.contains("> This breaks."))
+        #expect(summary.contains("> 0:02 This breaks."))
         #expect(summary.contains("pin 1 at (400, 250)"))
         let manifest = try Data(contentsOf: folder.appendingPathComponent(ScreenNote.Files.manifest))
         #expect(try JSONDecoder().decode(NoteManifest.self, from: manifest).pins.count == 1)

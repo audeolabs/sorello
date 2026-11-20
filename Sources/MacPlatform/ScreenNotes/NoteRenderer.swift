@@ -87,7 +87,10 @@ public struct NoteRenderer: Sendable {
             try Self.writePNG(image, to: frames.appendingPathComponent(Keyframe.fileName(keyframe.number)))
             images.append(image)
         }
-        guard let sheet = Self.contactSheet(images, keyframes: note.keyframes) else { throw .writeFailed }
+        let captions = note.keyframes.indices.map { note.content(of: $0).said }
+        guard let sheet = Self.contactSheet(images, keyframes: note.keyframes, captions: captions) else {
+            throw .writeFailed
+        }
         try Self.writePNG(sheet, to: folder.appendingPathComponent(ScreenNote.Files.contactSheet))
     }
 
@@ -135,10 +138,14 @@ public struct NoteRenderer: Sendable {
         return context.makeImage()
     }
 
-    /// The keyframes in a grid, each labelled with its number and time.
-    static func contactSheet(_ images: [CGImage], keyframes: [Keyframe]) -> CGImage? {
+    /// The keyframes in a grid, each labelled with its number and time, with what was said in its span under that.
+    static func contactSheet(_ images: [CGImage], keyframes: [Keyframe], captions: [String]) -> CGImage? {
         guard let first = images.first else { return nil }
-        let layout = ContactSheetLayout(count: images.count, frameSize: CGSize(width: first.width, height: first.height))
+        let set = images.indices.map { index in
+            index < captions.count ? Caption(captions[index], width: ContactSheetLayout.cellWidth) : nil
+        }
+        let layout = ContactSheetLayout(count: images.count, frameSize: CGSize(width: first.width, height: first.height),
+                                        captionHeights: set.map { $0?.height ?? 0 })
         let width = Int(layout.size.width), height = Int(layout.size.height)
         guard let context = context(width: width, height: height) else { return nil }
         let h = Double(height)
@@ -153,8 +160,58 @@ public struct NoteRenderer: Sendable {
             let text = "\(keyframes[index].number) · \(ScreenNote.clock(keyframes[index].time))"
             draw(text, in: context, centeredAt: CGPoint(x: label.midX, y: h - label.midY), size: 18,
                  color: CGColor(gray: 1, alpha: 1))
+            if let caption = set[index] {
+                let place = layout.captions[index]
+                caption.draw(in: context, at: CGRect(x: place.minX, y: h - place.maxY, width: place.width,
+                                                     height: place.height))
+            }
         }
         return context.makeImage()
+    }
+
+    /// What was said under a keyframe on the contact sheet: wrapped to the cell, and cut with "…" past `lines` lines.
+    struct Caption {
+        static let size: Double = 16
+        static let lines = 10
+        /// Below the text, before the next row's gap.
+        static let padding: Double = 6
+
+        let framesetter: CTFramesetter
+        let height: Double
+
+        init?(_ text: String, width: Double) {
+            let font = CTFontCreateUIFontForLanguage(.system, Self.size, nil)
+                ?? CTFontCreateWithName("Helvetica" as CFString, Self.size, nil)
+            let line = (CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font)).rounded(.up)
+            let limit = CGSize(width: width, height: line * Double(Self.lines) + line / 2)
+            var words = text.split(separator: " ").map(String.init)
+            var shown = text
+            while !words.isEmpty {
+                let attributes = [kCTFontAttributeName: font,
+                                  kCTForegroundColorAttributeName: CGColor(gray: 0.9, alpha: 1)] as [CFString: Any]
+                guard let string = CFAttributedStringCreate(nil, shown as CFString, attributes as CFDictionary)
+                else { return nil }
+                let framesetter = CTFramesetterCreateWithAttributedString(string)
+                var fit = CFRange()
+                let size = CTFramesetterSuggestFrameSizeWithConstraints(framesetter, CFRange(), nil, limit, &fit)
+                if fit.length >= CFAttributedStringGetLength(string) {
+                    self.framesetter = framesetter
+                    height = size.height.rounded(.up) + Self.padding
+                    return
+                }
+                // Too long: a word less each time, until it fits with "…".
+                words.removeLast()
+                shown = words.joined(separator: " ") + " …"
+            }
+            return nil
+        }
+
+        func draw(in context: CGContext, at rect: CGRect) {
+            let path = CGPath(rect: CGRect(x: rect.minX, y: rect.minY + Self.padding, width: rect.width,
+                                           height: rect.height - Self.padding), transform: nil)
+            context.textMatrix = .identity
+            CTFrameDraw(CTFramesetterCreateFrame(framesetter, CFRange(), path, nil), context)
+        }
     }
 
     private static func draw(_ text: String, in context: CGContext, centeredAt center: CGPoint, size: Double,

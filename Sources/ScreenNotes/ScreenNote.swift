@@ -30,38 +30,28 @@ public struct ScreenNote: Equatable, Sendable {
         keyframes = KeyframePlanner.plan(duration: duration, marks: marks, words: words)
     }
 
-    /// What one keyframe owns: the marks, clicks and words in its span.
+    /// What one keyframe owns: the marks, clicks and phrases in its span.
     public struct Content: Equatable, Sendable {
         public var keyframe: Keyframe
-        public var words: [NoteWord]
+        /// The phrases of the narration that end in its span, in order.
+        public var phrases: [[NoteWord]]
+        public var words: [NoteWord] { phrases.flatMap { $0 } }
+        /// What was said in its span, as one line.
+        public var said: String { words.map(\.text).joined(separator: " ") }
         /// Strokes that end in its span.
         public var strokes: [Stroke]
         public var pins: [Pin]
         public var clicks: [Click]
     }
 
-    /// A sentence of the narration stays whole: its words go with the keyframe whose span holds its last word.
+    /// A phrase of the narration stays whole: its words go with the keyframe whose span holds its last word.
     public func content(of index: Int) -> Content {
         let span = KeyframePlanner.span(of: index, in: keyframes)
         return Content(keyframe: keyframes[index],
-                       words: sentences.filter { span.contains($0.last!.time) }.flatMap { $0 },
+                       phrases: KeyframePlanner.phrases(words).filter { span.contains($0.last!.time) },
                        strokes: marks.strokes.filter { span.contains($0.end) },
                        pins: marks.pins.filter { span.contains($0.time) },
                        clicks: marks.clicks.filter { span.contains($0.time) })
-    }
-
-    /// The narration's sentences, each ending in `.`, `?` or `!`, the last one wherever the words end.
-    var sentences: [[NoteWord]] {
-        var sentences: [[NoteWord]] = [], sentence: [NoteWord] = []
-        for word in words {
-            sentence.append(word)
-            if let mark = word.text.last, ".?!".contains(mark) {
-                sentences.append(sentence)
-                sentence = []
-            }
-        }
-        if !sentence.isEmpty { sentences.append(sentence) }
-        return sentences
     }
 
     /// What is drawn on keyframe `index`: the strokes and pins of its span, and every stroke still in progress at its

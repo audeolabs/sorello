@@ -169,9 +169,9 @@ it may use the microphone. Talk, click around, and:
 - press ⌘Z to take back the last stroke or pin.
 
 Press ⌥⇧S again, or Finish on the pill, and Sorello makes the note: a few keyframes with your marks drawn on them, a
-contact sheet of them all, `summary.md` with what you said beside each keyframe, and `note.json`. The summary and
-the contact sheet go on the clipboard: paste into a terminal for the summary, or into an app that takes images for
-the sheet. Show on the pill opens the note's folder. Escape, or Cancel on the pill, throws a note away.
+contact sheet of them all with what you said written under each, `summary.md` with what you said beside each
+keyframe, and `note.json`. The summary and the contact sheet go on the clipboard: paste into a terminal for the
+summary, or into an app that takes images for the sheet. Show on the pill opens the note's folder. Escape, or Cancel on the pill, throws a note away.
 
 Each note's folder also keeps the recording itself, `recording.mov`, so notes can take some room. They are kept on
 this Mac, in Sorello's folder in Application Support, and only the newest 20. Sorello sends them nowhere.

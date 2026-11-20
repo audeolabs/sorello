@@ -27,18 +27,19 @@ import Testing
         #expect(Self.same([frames[0].time], [0.1]), "inside the video, which has no frame at its very end")
     }
 
-    @Test func eachMarkClickAndSentenceGetsAMomentJustAfterIt() {
+    @Test func eachMarkClickAndPhraseGetsAMomentJustAfterIt() {
         let marks = NoteMarks(strokes: [Self.stroke(1, from: 3, to: 4)],
                               pins: [Pin(number: 1, time: 8, x: 0.5, y: 0.5)],
                               clicks: [Click(time: 12, x: 0.5, y: 0.5)])
         let words = [NoteWord(time: 15, text: "This"), NoteWord(time: 15.3, text: "breaks."),
                      NoteWord(time: 15.6, text: "Then")]
         let frames = KeyframePlanner.plan(duration: 20, marks: marks, words: words)
-        #expect(Self.same(frames.map(\.time), [0.3, 4.1, 8.1, 12.3, 15.6, 19.9]))
+        // "Then" is a phrase of its own, the last; its end, 16.1, stands for both, the later on a tie.
+        #expect(Self.same(frames.map(\.time), [0.3, 4.1, 8.1, 12.3, 16.1, 19.9]))
         #expect(frames.map(\.reasons) == [[.start], [.ink], [.pin], [.click], [.speech], [.end]])
     }
 
-    @Test func aSentenceEndsHalfASecondAfterItsLastWordUnlessTheNextStartsSooner() {
+    @Test func aPhraseEndsHalfASecondAfterItsLastWordUnlessTheNextStartsSooner() {
         let words = [NoteWord(time: 5, text: "Look."), NoteWord(time: 9, text: "Here?")]
         let frames = KeyframePlanner.plan(duration: 20, marks: NoteMarks(), words: words)
         #expect(frames.contains { abs($0.time - 5.5) < 1e-9 })

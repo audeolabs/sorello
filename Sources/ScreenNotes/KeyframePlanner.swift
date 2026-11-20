@@ -68,8 +68,12 @@ public enum KeyframePlanner {
     public static let markDelay: Double = 0.1
     /// After a click, so the frame shows what the click did.
     public static let clickDelay: Double = 0.3
-    /// About how long a word lasts, for a sentence's end.
+    /// About how long a word lasts, for a phrase's end.
     public static let wordLength: Double = 0.5
+    /// A word that starts this long after the one before it starts a phrase.
+    public static let pause: Double = 1
+    /// A phrase is never longer than this, from its first word to its last.
+    public static let longestPhrase: Double = 8
     /// Moments closer than this are one.
     public static let mergeWindow: Double = 1.5
     /// A longer stretch with nothing in it gets keyframes of its own.
@@ -101,7 +105,7 @@ public enum KeyframePlanner {
         for click in marks.clicks {
             moments.append(Moment(time: clamp(click.time + clickDelay), reasons: [.click], lead: .click))
         }
-        for end in sentenceEnds(words) {
+        for end in phraseEnds(words) {
             moments.append(Moment(time: clamp(end), reasons: [.speech], lead: .speech))
         }
         moments.sort { $0.time < $1.time }
@@ -114,15 +118,34 @@ public enum KeyframePlanner {
         }
     }
 
-    /// Where each sentence of the narration ends: after its last word, and never after the next word starts.
-    static func sentenceEnds(_ words: [NoteWord]) -> [Double] {
-        var ends: [Double] = []
-        for (index, word) in words.enumerated() {
-            guard let mark = word.text.last, ".?!".contains(mark) else { continue }
-            let next = index + 1 < words.count ? words[index + 1].time : .infinity
-            ends.append(min(word.time + wordLength, next))
+    /// The narration in phrases, in order: each ends after a word ending in `.`, `?` or `!`, before a word that starts
+    /// `pause` or more after the one before it, before a word that would make it longer than `longestPhrase`, and at
+    /// the last word.
+    public static func phrases(_ words: [NoteWord]) -> [[NoteWord]] {
+        var phrases: [[NoteWord]] = [], phrase: [NoteWord] = []
+        for word in words {
+            if let first = phrase.first, let previous = phrase.last,
+               word.time - previous.time >= pause || word.time - first.time > longestPhrase {
+                phrases.append(phrase)
+                phrase = []
+            }
+            phrase.append(word)
+            if let mark = word.text.last, ".?!".contains(mark) {
+                phrases.append(phrase)
+                phrase = []
+            }
         }
-        return ends
+        if !phrase.isEmpty { phrases.append(phrase) }
+        return phrases
+    }
+
+    /// Where each phrase ends: after its last word, and never after the next word starts.
+    static func phraseEnds(_ words: [NoteWord]) -> [Double] {
+        let phrases = phrases(words)
+        return phrases.indices.map { index in
+            let next = index + 1 < phrases.count ? phrases[index + 1][0].time : .infinity
+            return min(phrases[index].last!.time + wordLength, next)
+        }
     }
 
     /// Joins neighbours closer than `mergeWindow`, one pair at a time, the closest first, until none are. The moment
