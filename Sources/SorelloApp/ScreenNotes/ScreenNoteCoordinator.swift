@@ -371,11 +371,37 @@ final class ScreenNoteCoordinator {
             case .pasted:
                 show(nil)
                 Diagnostics.record("screenNote.pasted")
-            case .stopped:
-                show(text: String(localized: "Stopped pasting the screen note"), symbol: "exclamationmark.triangle.fill",
-                     tone: .error, actions: [], linger: Self.resultLinger)
-                Diagnostics.record("screenNote.pasteStopped")
+            case .stopped(let pasted, let why):
+                show(text: Self.stopped(why), symbol: "exclamationmark.triangle.fill", tone: .error, actions: [],
+                     linger: Self.resultLinger)
+                Diagnostics.record("screenNote.pasteStopped", ["pasted": Double(pasted), "why": Self.code(why)])
             }
+        }
+    }
+
+    /// Why a sequence stopped, in the pill's words.
+    private static func stopped(_ why: PasteSequenceStop) -> String {
+        switch why {
+        case .blocked(.modifiersStillDown): String(localized: "Stopped pasting: a key was still held")
+        case .blocked(.targetChanged): String(localized: "Stopped pasting: the app in front changed")
+        case .blocked(.accessibilityMissing): String(localized: "Stopped pasting: Sorello needs Accessibility")
+        case .blocked(.screenLocked): String(localized: "Stopped pasting: the screen locked")
+        case .clipboardChanged: String(localized: "Stopped pasting: something else was copied")
+        case .cancelled: String(localized: "Stopped pasting the screen note")
+        case .failed: String(localized: "Couldn’t paste the screen note")
+        }
+    }
+
+    /// The same, as a number for the diagnostics, which carry no text.
+    private static func code(_ why: PasteSequenceStop) -> Double {
+        switch why {
+        case .blocked(.modifiersStillDown): 1
+        case .blocked(.targetChanged): 2
+        case .blocked(.accessibilityMissing): 3
+        case .blocked(.screenLocked): 4
+        case .clipboardChanged: 5
+        case .cancelled: 6
+        case .failed: 7
         }
     }
 

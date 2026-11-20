@@ -1864,7 +1864,12 @@ sequence of pastes, one piece at a time:
 4. **Stopping.** If the app in front changes, the clipboard changes under
    it (someone else wrote to it), or the user presses Escape or Cancel on
    the pill, the sequence stops before the next piece: what was pasted
-   stays, and the pill says it stopped.
+   stays, and the pill says it stopped and why: "Stopped pasting: a key
+   was still held", "…: the app in front changed", "…: something else
+   was copied", "…: Sorello needs Accessibility", "…: the screen
+   locked", or "Stopped pasting the screen note" after Escape or Cancel.
+   If the clipboard refused a piece or a key could not be posted, it says
+   "Couldn't paste the screen note".
 5. **The clipboard** is put back 1 s after the last paste, under the same
    guards and the same setting ("Restore the clipboard") as an insertion.
 

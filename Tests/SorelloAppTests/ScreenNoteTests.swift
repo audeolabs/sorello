@@ -635,10 +635,20 @@ struct ScreenNoteTests {
         let fixture = try Fixture()
         await fixture.startNote()
         await fixture.finishNote()
-        fixture.inserter.sequenceOutcome = .stopped(pasted: 3, why: .blocked(.targetChanged))
-        fixture.pastePress()
-        await eventually { fixture.coordinator.phase == .idle && fixture.inserter.sequences.count == 1 }
-        #expect(fixture.coordinator.notice?.text == "Stopped pasting the screen note")
+        let reasons: [(PasteSequenceStop, String)] = [
+            (.blocked(.modifiersStillDown), "Stopped pasting: a key was still held"),
+            (.blocked(.targetChanged), "Stopped pasting: the app in front changed"),
+            (.clipboardChanged, "Stopped pasting: something else was copied"),
+            (.blocked(.accessibilityMissing), "Stopped pasting: Sorello needs Accessibility"),
+            (.blocked(.screenLocked), "Stopped pasting: the screen locked"),
+            (.failed, "Couldn’t paste the screen note"),
+        ]
+        for (number, (why, text)) in reasons.enumerated() {
+            fixture.inserter.sequenceOutcome = .stopped(pasted: 3, why: why)
+            fixture.pastePress()
+            await eventually { fixture.coordinator.phase == .idle && fixture.inserter.sequences.count == number + 1 }
+            #expect(fixture.coordinator.notice?.text == text)
+        }
     }
 
     // MARK: - The note
