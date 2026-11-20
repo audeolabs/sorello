@@ -8,12 +8,13 @@ enum KeyboardMicrophoneHoldTests {
             ("everyConditionIsNeeded", testEveryConditionIsNeeded),
             ("onlyBluetoothOutputsAreHeadphones", testOnlyBluetoothOutputsAreHeadphones),
             ("headphonesStayForTheGrace", testHeadphonesStayForTheGrace),
+            ("otherAudioKeepsAHoldFromOpeningOnly", testOtherAudioKeepsAHoldFromOpeningOnly),
         ]
     }
 
     private static let good = KeyboardMicrophoneHold.Conditions(
         visible: true, tapDictatesInKeyboard: true, useBuiltInMicrophone: true, bluetoothHeadphones: true,
-        dictationCapturing: false, heldCaptureReported: false)
+        dictationCapturing: false, heldCaptureReported: false, otherAudioPlaying: false, holding: false)
 
     private static func testHoldsWhenEverythingHolds() {
         TestSupport.expect(KeyboardMicrophoneHold.shouldHold(good), "the keyboard does not hold the microphone")
@@ -43,6 +44,22 @@ enum KeyboardMicrophoneHoldTests {
         }
         TestSupport.expect(!KeyboardMicrophoneHold.bluetoothHeadphones(in: []), "no output is headphones")
         TestSupport.expect(!KeyboardMicrophoneHold.bluetoothHeadphones(in: [.other]), "the speaker or a wire is headphones")
+    }
+
+    /// Music or a podcast playing as the keyboard appears: holding would pause it or drop it to call quality just for
+    /// typing, so no hold opens. A hold already open stays, since its own WebKit audio may count as another app's.
+    private static func testOtherAudioKeepsAHoldFromOpeningOnly() {
+        var playing = good
+        playing.otherAudioPlaying = true
+        TestSupport.expect(!KeyboardMicrophoneHold.shouldHold(playing), "a hold opens while another app plays audio")
+        playing.holding = true
+        TestSupport.expect(KeyboardMicrophoneHold.shouldHold(playing), "an open hold lets go when other audio plays")
+        var held = good
+        held.holding = true
+        TestSupport.expect(KeyboardMicrophoneHold.shouldHold(held), "an open hold lets go")
+        // Every other condition still ends an open hold.
+        held.bluetoothHeadphones = false
+        TestSupport.expect(!KeyboardMicrophoneHold.shouldHold(held), "an open hold stays without headphones")
     }
 
     /// Each switch to the iPhone's microphone sends the output through the receiver for about a tenth of a second; the

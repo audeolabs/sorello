@@ -18,6 +18,10 @@ enum KeyboardMicrophoneHold {
         var dictationCapturing: Bool
         /// A held capture reported something since the keyboard appeared.
         var heldCaptureReported: Bool
+        /// Another app plays audio (`AVAudioSession.isOtherAudioPlaying`): keeps a hold from opening, not one open.
+        var otherAudioPlaying: Bool
+        /// The hold is open.
+        var holding: Bool
     }
 
     /// An output of the audio session's current route, mirrored from `AVAudioSession.Port`.
@@ -28,6 +32,7 @@ enum KeyboardMicrophoneHold {
     static func shouldHold(_ conditions: Conditions) -> Bool {
         conditions.visible && conditions.tapDictatesInKeyboard && conditions.useBuiltInMicrophone
             && conditions.bluetoothHeadphones && !conditions.dictationCapturing && !conditions.heldCaptureReported
+            && (conditions.holding || !conditions.otherAudioPlaying)
     }
 
     static func bluetoothHeadphones(in outputs: [Output]) -> Bool {

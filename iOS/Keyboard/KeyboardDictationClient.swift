@@ -553,11 +553,16 @@ final class KeyboardDictationClient: ObservableObject {
         var conditions = KeyboardMicrophoneHold.Conditions(
             visible: isVisible && !hiding, tapDictatesInKeyboard: tapDictatesInKeyboard,
             useBuiltInMicrophone: useBuiltInMicrophone, bluetoothHeadphones: false,
-            dictationCapturing: local?.isCapturing == true, heldCaptureReported: local?.heldCaptureReported == true)
+            dictationCapturing: local?.isCapturing == true, heldCaptureReported: local?.heldCaptureReported == true,
+            otherAudioPlaying: false, holding: local?.isHolding == true)
         if conditions.visible, tapDictatesInKeyboard, useBuiltInMicrophone, !conditions.dictationCapturing,
            !conditions.heldCaptureReported {
             conditions.bluetoothHeadphones = headphones.observe(
                 KeyboardMicrophoneHold.bluetoothHeadphones(in: Self.routeOutputs()), at: ProcessInfo.processInfo.systemUptime)
+            // Asked only for a hold about to open.
+            if conditions.bluetoothHeadphones, !conditions.holding {
+                conditions.otherAudioPlaying = AVAudioSession.sharedInstance().isOtherAudioPlaying
+            }
         }
         if KeyboardMicrophoneHold.shouldHold(conditions) {
             localDictation()?.hold(true)

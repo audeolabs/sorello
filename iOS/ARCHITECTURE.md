@@ -2252,8 +2252,15 @@ unchanged and always wins.
     when the keyboard appeared (it changes only in the app, while the
     keyboard is hidden), Bluetooth headphones are in the route (the audio session's current
     route has a Bluetooth A2DP, LE or hands-free output; read only) or were
-    within the last `KeyboardMicrophoneHold.headphonesGrace` (1 s), and no
-    dictation's capture is open. A dictation that has stopped recording
+    within the last `KeyboardMicrophoneHold.headphonesGrace` (1 s), no
+    dictation's capture is open, and, for a hold about to open, no other
+    app is playing audio (`AVAudioSession.isOtherAudioPlaying`; read
+    only), because holding puts the headphones in hands-free mode: music
+    or a podcast would pause or drop to call quality as the keyboard
+    appears, just for typing. That tap switches at the tap instead. A hold
+    already open does not let go when other audio starts, because the held
+    page's own WebKit audio may count as another app's, and letting go on
+    it could open and close the hold over and over. A dictation that has stopped recording
     and transcribes does not keep the hold off, so the next hold is
     choosing its input while the text is made, and a second dictation
     soon after the first finds it ready. The grace is there because each switch to the iPhone's

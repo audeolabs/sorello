@@ -68,6 +68,8 @@ final class KeyboardLocalDictation {
     private static var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
 
     var isRunning: Bool { machine.isRunning }
+    /// The held microphone is open.
+    var isHolding: Bool { heldCapture != nil }
     /// A dictation's capture is open: it is starting or recording.
     var isCapturing: Bool { machine.isCaptureOpen }
     var runningAttemptID: UUID? { machine.runningAttemptID }
