@@ -9,6 +9,7 @@ import Foundation
 /// - A click while ⇧ is held, before that hold has drawn ink, drops a pin where the button went down, if the press
 ///   moved less than `pinSlop` and lasted less than `pinDuration`. A click later in the same hold is drawing.
 /// - Any other left click is a click.
+/// - On a touch screen a finger draws without ⇧: a drag is a stroke, a short small tap a pin. One finger at a time.
 /// - `undo` removes the last stroke or pin.
 public struct InkTracker: Sendable {
     /// Shorter than this, in points, a ⇧ hold's path is not ink.
@@ -43,8 +44,21 @@ public struct InkTracker: Sendable {
         var farthest: Double = 0
     }
 
+    /// A finger on the screen.
+    private struct Touch {
+        var path: [TimedPoint]
+        var length: Double = 0
+        /// Where and when it touched.
+        var at: CGPoint
+        var time: Double
+        var last: CGPoint
+        var farthest: Double = 0
+        var isInk: Bool { length >= InkTracker.minimumInk }
+    }
+
     private enum Mark { case stroke, pin }
 
+    private var touch: Touch?
     private var hold: Hold?
     private var press: Press?
     private var last: CGPoint?
@@ -57,8 +71,41 @@ public struct InkTracker: Sendable {
 
     /// The stroke being drawn now, once it is long enough to be ink.
     public var current: [TimedPoint]? {
+        if let touch, touch.isInk { return touch.path }
         guard let hold, hold.isInk else { return nil }
         return hold.path
+    }
+
+    /// A finger touched the screen at `point`. Ignored while another finger is drawing.
+    public mutating func touchBegan(at point: CGPoint, time: Double) {
+        guard touch == nil else { return }
+        touch = Touch(path: [fraction(point, time)], at: point, time: time, last: point)
+    }
+
+    /// The finger drawing moved to `point`.
+    public mutating func touchMoved(at point: CGPoint, time: Double) {
+        guard var touch else { return }
+        touch.farthest = max(touch.farthest, distance(touch.at, point))
+        if point != touch.last {
+            touch.length += distance(touch.last, point)
+            touch.path.append(fraction(point, time))
+            touch.last = point
+        }
+        self.touch = touch
+    }
+
+    /// The finger drawing lifted at `point`: a stroke if it drew ink, a pin if it was a tap, otherwise nothing.
+    public mutating func touchEnded(at point: CGPoint, time: Double) {
+        touchMoved(at: point, time: time)
+        guard let ended = touch else { return }
+        touch = nil
+        if ended.isInk {
+            endTouch(ended, at: time)
+        } else if ended.farthest < Self.pinSlop, time - ended.time < Self.pinDuration {
+            let place = fraction(ended.at, ended.time)
+            pins.append(Pin(number: pins.count + 1, time: ended.time, x: place.x, y: place.y))
+            made.append(.pin)
+        }
     }
 
     /// The pointer is at `point` at `time`, with ⇧ down or not.
@@ -121,6 +168,11 @@ public struct InkTracker: Sendable {
     /// Removes the last stroke or pin. Returns whether there was one.
     @discardableResult
     public mutating func undo() -> Bool {
+        // A finger still drawing is the newest mark; the rest of its path is not drawn.
+        if let touch, touch.isInk {
+            self.touch = nil
+            return true
+        }
         // A stroke still held (⇧ released, but not sampled yet) is the newest mark.
         if let hold, hold.isInk {
             self.hold = nil
@@ -137,6 +189,8 @@ public struct InkTracker: Sendable {
     /// Ends what is in progress, as the note finishes, and returns the marks. A stroke still drawn ends at its last
     /// point.
     public mutating func finish() -> NoteMarks {
+        if let touch, touch.isInk { endTouch(touch, at: nil) }
+        touch = nil
         endHold(at: nil)
         press = nil
         return NoteMarks(strokes: strokes, pins: pins, clicks: clicks)
@@ -151,6 +205,16 @@ public struct InkTracker: Sendable {
             ended.path.append(TimedPoint(t: time, x: lastPoint.x, y: lastPoint.y))
         }
         strokes.append(Stroke(number: strokes.count + 1, points: ended.path))
+        made.append(.stroke)
+    }
+
+    /// Keeps a finger's stroke, ending at `time` where it last was.
+    private mutating func endTouch(_ ended: Touch, at time: Double?) {
+        var path = ended.path
+        if let time, let lastPoint = path.last, time > lastPoint.t {
+            path.append(TimedPoint(t: time, x: lastPoint.x, y: lastPoint.y))
+        }
+        strokes.append(Stroke(number: strokes.count + 1, points: path))
         made.append(.stroke)
     }
 

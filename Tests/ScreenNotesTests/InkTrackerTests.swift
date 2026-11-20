@@ -3,7 +3,8 @@ import Foundation
 import ScreenNotes
 import Testing
 
-/// ARCHITECTURE.md, section 14, "Marks": ink while ⇧ is held, pins from a ⇧-click, plain clicks, and undo.
+/// ARCHITECTURE.md, section 14, "Marks": ink while ⇧ is held, pins from a ⇧-click, plain clicks, a finger on a touch
+/// screen, and undo.
 @Suite struct InkTrackerTests {
     static let display = CGSize(width: 1000, height: 500)
 
@@ -137,6 +138,90 @@ import Testing
     @Test func finishingEndsAStrokeInProgress() {
         var tracker = InkTracker(display: Self.display)
         Self.draw(&tracker, [CGPoint(x: 0, y: 0), CGPoint(x: 50, y: 0)], from: 1)
+        let marks = tracker.finish()
+        #expect(marks.strokes.count == 1)
+    }
+
+    /// Touches a finger down at the first point, moves it along the rest, one sample every 10 ms from `from`, and
+    /// lifts it 10 ms after the last.
+    static func touch(_ tracker: inout InkTracker, _ points: [CGPoint], from: Double) {
+        tracker.touchBegan(at: points[0], time: from)
+        for (index, point) in points.enumerated().dropFirst() {
+            tracker.touchMoved(at: point, time: from + Double(index) * 0.01)
+        }
+        tracker.touchEnded(at: points[points.count - 1], time: from + Double(points.count) * 0.01)
+    }
+
+    @Test func aFingerDragDrawsAStrokeFromWhereItTouchedToWhereItLifted() {
+        var tracker = InkTracker(display: Self.display)
+        tracker.touchBegan(at: CGPoint(x: 100, y: 100), time: 1)
+        tracker.touchMoved(at: CGPoint(x: 150, y: 100), time: 1.1)
+        tracker.touchMoved(at: CGPoint(x: 200, y: 100), time: 1.2)
+        #expect(tracker.current?.count == 3, "it shows while the finger is down")
+        #expect(tracker.strokes.isEmpty)
+        tracker.touchEnded(at: CGPoint(x: 200, y: 100), time: 1.3)
+        #expect(tracker.current == nil)
+        let stroke = try! #require(tracker.strokes.first)
+        #expect(stroke.number == 1)
+        #expect(stroke.points.first == TimedPoint(t: 1, x: 0.1, y: 0.2))
+        #expect(stroke.points.last == TimedPoint(t: 1.3, x: 0.2, y: 0.2))
+        #expect(tracker.clicks.isEmpty && tracker.pins.isEmpty, "a finger's touch is not a click")
+    }
+
+    @Test func aFingerPathUnderTwelvePointsIsNotInk() {
+        var tracker = InkTracker(display: Self.display)
+        Self.touch(&tracker, [CGPoint(x: 100, y: 100), CGPoint(x: 120, y: 100), CGPoint(x: 100, y: 100)], from: 1)
+        #expect(tracker.strokes.count == 1, "40 pt there and back is ink")
+        Self.touch(&tracker, [CGPoint(x: 300, y: 100), CGPoint(x: 305, y: 100), CGPoint(x: 311, y: 100)], from: 2)
+        #expect(tracker.strokes.count == 1, "11 pt is not ink")
+        #expect(tracker.pins.count == 1, "but a short, small touch is a tap")
+    }
+
+    @Test func aFingerTapDropsAPinWhereItTouched() {
+        var tracker = InkTracker(display: Self.display)
+        tracker.touchBegan(at: CGPoint(x: 500, y: 250), time: 1)
+        tracker.touchMoved(at: CGPoint(x: 504, y: 252), time: 1.1)
+        tracker.touchEnded(at: CGPoint(x: 504, y: 252), time: 1.2)
+        #expect(tracker.pins == [Pin(number: 1, time: 1, x: 0.5, y: 0.5)])
+        #expect(tracker.strokes.isEmpty && tracker.clicks.isEmpty)
+    }
+
+    @Test func aFingerHeldTooLongIsNothing() {
+        var tracker = InkTracker(display: Self.display)
+        tracker.touchBegan(at: CGPoint(x: 500, y: 250), time: 1)
+        tracker.touchEnded(at: CGPoint(x: 502, y: 250), time: 2.2)
+        let marks = tracker.finish()
+        #expect(marks == NoteMarks())
+    }
+
+    @Test func aSecondFingerWhileOneIsDownIsIgnored() {
+        var tracker = InkTracker(display: Self.display)
+        tracker.touchBegan(at: CGPoint(x: 100, y: 100), time: 1)
+        tracker.touchMoved(at: CGPoint(x: 200, y: 100), time: 1.1)
+        tracker.touchBegan(at: CGPoint(x: 800, y: 400), time: 1.15)
+        tracker.touchMoved(at: CGPoint(x: 300, y: 100), time: 1.2)
+        tracker.touchEnded(at: CGPoint(x: 300, y: 100), time: 1.3)
+        #expect(tracker.strokes.count == 1)
+        #expect(tracker.strokes.first?.points.first == TimedPoint(t: 1, x: 0.1, y: 0.2))
+        #expect(tracker.pins.isEmpty)
+    }
+
+    @Test func undoTakesBackAFingerStrokeOrPinAndFinishEndsOneInProgress() {
+        var tracker = InkTracker(display: Self.display)
+        Self.touch(&tracker, [CGPoint(x: 0, y: 0), CGPoint(x: 100, y: 0)], from: 1)
+        Self.touch(&tracker, [CGPoint(x: 300, y: 300)], from: 2)
+        #expect(tracker.pins.count == 1)
+        let pinUndone = tracker.undo(), strokeUndone = tracker.undo()
+        #expect(pinUndone && strokeUndone)
+        #expect(tracker.pins.isEmpty && tracker.strokes.isEmpty)
+        tracker.touchBegan(at: CGPoint(x: 0, y: 0), time: 3)
+        tracker.touchMoved(at: CGPoint(x: 100, y: 0), time: 3.1)
+        let drawingUndone = tracker.undo()
+        #expect(drawingUndone, "a stroke still being drawn is the newest mark")
+        tracker.touchEnded(at: CGPoint(x: 100, y: 0), time: 3.2)
+        #expect(tracker.strokes.isEmpty)
+        tracker.touchBegan(at: CGPoint(x: 0, y: 0), time: 4)
+        tracker.touchMoved(at: CGPoint(x: 100, y: 0), time: 4.1)
         let marks = tracker.finish()
         #expect(marks.strokes.count == 1)
     }

@@ -173,8 +173,13 @@ final class FakeInk: InkPresenting {
     private(set) var shownOn: [CGRect] = []
     private(set) var scenes: [InkScene] = []
     private(set) var hides = 0
+    /// What the overlay reports a finger to, when it takes fingers.
+    private(set) var touch: (@MainActor (InkTouch) -> Void)?
 
-    func show(on frame: CGRect) { shownOn.append(frame) }
+    func show(on frame: CGRect, touch: (@MainActor (InkTouch) -> Void)?) {
+        shownOn.append(frame)
+        self.touch = touch
+    }
     func update(_ scene: InkScene) { scenes.append(scene) }
     func hide() { hides += 1 }
 }
@@ -249,13 +254,15 @@ final class NoteFakes {
     var copied: [(summary: String, sheet: URL)] = []
     var revealed: [URL] = []
     static let display = NoteDisplay(id: 7, frame: CGRect(x: 0, y: 0, width: 1440, height: 900), scale: 2)
+    /// The display under the pointer when a note starts.
+    var display = NoteFakes.display
 
     init(clock: ManualClock) { recorder = FakeRecorder(clock: clock) }
 
     var platform: ScreenNotePlatform {
         let ink = self.ink
         return ScreenNotePlatform(
-            permission: permission, displayUnderPointer: { Self.display }, recorder: recorder, pointer: pointer,
+            permission: permission, displayUnderPointer: { [weak self] in self?.display ?? Self.display }, recorder: recorder, pointer: pointer,
             ink: { _ in ink }, renderer: renderer,
             copy: { [weak self] summary, sheet in self?.copied.append((summary, sheet)) },
             reveal: { [weak self] in self?.revealed.append($0) })
@@ -505,6 +512,34 @@ struct ScreenNoteTests {
         await fixture.finishNote()
         #expect(fixture.notes.renderer.rendered.last?.marks.strokes.isEmpty == true)
         #expect(!fixture.app.relay.handle(.undoPressed, at: fixture.clock.now), "and left alone otherwise")
+    }
+
+    @Test func onATouchScreenAFingerDrawsInkAndTapsDropPins() async throws {
+        let fixture = try Fixture()
+        fixture.notes.display = NoteDisplay(id: 7, frame: CGRect(x: 0, y: 0, width: 1440, height: 900), scale: 2,
+                                            takesTouch: true)
+        await fixture.startNote()
+        let touch = try #require(fixture.notes.ink.touch, "the overlay takes fingers on a touch screen")
+        touch(.began(CGPoint(x: 100, y: 100), time: 1))
+        touch(.moved(CGPoint(x: 200, y: 100), time: 1.1))
+        #expect(fixture.notes.ink.scenes.last?.lines.first?.endedAt == nil, "the stroke shows as it is drawn")
+        touch(.ended(CGPoint(x: 200, y: 100), time: 1.2))
+        #expect(fixture.notes.ink.scenes.last?.lines.first?.endedAt == 1.2)
+        touch(.began(CGPoint(x: 720, y: 450), time: 2))
+        touch(.ended(CGPoint(x: 720, y: 450), time: 2.1))
+        #expect(fixture.notes.ink.scenes.last?.pins.count == 1)
+        await fixture.finishNote()
+        let marks = try #require(fixture.notes.renderer.rendered.last?.marks)
+        #expect(marks.strokes.count == 1)
+        #expect(marks.pins == [Pin(number: 1, time: 2, x: 0.5, y: 0.5)])
+        #expect(marks.clicks.isEmpty)
+    }
+
+    @Test func withoutTouchTheOverlayTakesNoFingers() async throws {
+        let fixture = try Fixture()
+        await fixture.startNote()
+        #expect(fixture.notes.ink.shownOn.count == 1)
+        #expect(fixture.notes.ink.touch == nil)
     }
 
     @Test func escapeTheSessionDidNotWantCancelsTheNote() async throws {

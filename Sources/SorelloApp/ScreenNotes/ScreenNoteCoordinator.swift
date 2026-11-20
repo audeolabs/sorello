@@ -269,7 +269,7 @@ final class ScreenNoteCoordinator {
         phase = .recording
         let zero = current.zero, clock = self.clock
         let ink = platform.ink { clock.now - zero }
-        ink.show(on: current.display.frame)
+        ink.show(on: current.display.frame, touch: current.display.takesTouch ? fingers(for: current) : nil)
         current.ink = ink
         platform.pointer.start(display: current.display, startedAt: zero) { [weak self, weak current] event in
             guard let self, let current, self.current === current else { return }
@@ -296,6 +296,19 @@ final class ScreenNoteCoordinator {
              actions: [.init(id: Action.finish, title: String(localized: "Finish"), isPrimary: true),
                        .init(id: Action.cancel, title: String(localized: "Cancel"))])
         Diagnostics.record("screenNote.started")
+    }
+
+    /// What the overlay of a touch screen reports a finger to: the note's marks.
+    private func fingers(for current: Current) -> @MainActor (InkTouch) -> Void {
+        { [weak self, weak current] touch in
+            guard let self, let current, self.current === current else { return }
+            switch touch {
+            case .began(let point, let time): current.tracker.touchBegan(at: point, time: time)
+            case .moved(let point, let time): current.tracker.touchMoved(at: point, time: time)
+            case .ended(let point, let time): current.tracker.touchEnded(at: point, time: time)
+            }
+            self.showInk()
+        }
     }
 
     /// The overlay's scene from the marks so far, in points of the display.
