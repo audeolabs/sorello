@@ -57,6 +57,8 @@ enum CapturePage {
     var sorelloMedia = null;
     var sorelloContext = null;
     var sorelloNodes = [];
+    // Held, its track was muted or its audio context interrupted, and reported: it never records.
+    var sorelloLost = false;
 
     function sorelloPost(message) {
       webkit.messageHandlers.sorelloCapture.postMessage(message);
@@ -70,8 +72,17 @@ enum CapturePage {
     // still chooses its input, as soon as it has chosen.
     function sorelloRecord() {
       if (!sorelloHeld) { return; }
+      var track = sorelloMedia && sorelloMedia.getAudioTracks()[0];
+      if (sorelloLost || (track && track.muted)) { sorelloLose(); return; }
       sorelloHeld = false;
       if (sorelloContext && sorelloMedia && !sorelloStopped) { sorelloConnect(sorelloContext, sorelloMedia); }
+    }
+
+    // Another app's audio, a call or Siri took the held track, and WebKit does not bring it back.
+    function sorelloLose() {
+      if (sorelloStopped || !sorelloHeld) { return; }
+      sorelloLost = true;
+      sorelloPost({ kind: "ended" });
     }
 
     // The dictation that took the page stopped recording: held again, keeping its track and audio context, with no
@@ -113,9 +124,11 @@ enum CapturePage {
       sorelloMedia = media;
       media.getAudioTracks().forEach(function (track) {
         track.onended = function () { if (!sorelloStopped) { sorelloPost({ kind: "ended" }); } };
+        track.onmute = sorelloLose;
       });
       var context = new AudioContext();
       sorelloContext = context;
+      context.onstatechange = function () { if (context.state === "interrupted") { sorelloLose(); } };
       if (context.state === "suspended") { context.resume(); }
       if (!sorelloHeld) { sorelloConnect(context, media); }
     }

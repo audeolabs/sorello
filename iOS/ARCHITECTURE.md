@@ -2286,8 +2286,13 @@ unchanged and always wins.
     or, if the page has not loaded yet, as soon as it has. It records from
     the tap: no audio from before the tap is ever posted. If the record
     script fails, the capture reports `failed`. At the record script, the
-    page resumes its audio context if iOS suspended or interrupted it
-    while held (a call, Siri, another app's audio). The hold ends as soon as a condition stops holding, and when
+    page resumes its audio context if it is not running. While held, a
+    track WebKit mutes or an audio context iOS interrupts (another app's
+    audio, a call, Siri) is reported as `ended`, and so is a muted track
+    at the record script: WebKit does not bring it back, so the held
+    capture would record nothing (seen in TestFlight build 14: music
+    started while held, and no tap recorded until the keyboard was
+    reopened). A muted track while recording is left to the audio gap. The hold ends as soon as a condition stops holding, and when
     the held capture reports anything other than audio (`failed`, `ended`,
     or a malformed message), after which the keyboard does not hold again
     until it next appears. A dictation that took the held capture gives it
