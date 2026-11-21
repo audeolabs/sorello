@@ -2304,7 +2304,8 @@ unchanged and always wins.
     its messages afresh from each hand-over to a dictation. A tap before
     the hold script has finished takes the capture once it has (WebKit
     delivers the page's messages and the script's completion in order), so
-    the last dictation's audio never reaches the next. Every other
+    the last dictation's audio never reaches the next; anything else the
+    page reports meanwhile is the waiting dictation's. Every other
     dictation's capture, and every end other than the seal (Cancel, a
     failure, the keyboard hiding), closes, and the hold then opens a new
     one once the conditions hold. The microphone grant to a held capture also

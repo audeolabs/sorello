@@ -105,10 +105,7 @@ final class WebAudioCapture: NSObject, WKNavigationDelegate, WKUIDelegate {
             let pending = pendingHandOver
             pendingHandOver = nil
             if error != nil {
-                if let pending {
-                    self.mayGrantMicrophone = pending.mayGrantMicrophone
-                    self.onMessage = pending.onMessage
-                }
+                if let pending { (self.mayGrantMicrophone, self.onMessage) = pending }
                 failed(webView)
             } else if let pending {
                 handOver(mayGrantMicrophone: pending.mayGrantMicrophone, onMessage: pending.onMessage)
@@ -134,7 +131,16 @@ final class WebAudioCapture: NSObject, WKNavigationDelegate, WKUIDelegate {
     fileprivate func received(_ message: WKScriptMessage) {
         guard isOpen, let webView, message.webView === webView, message.name == CapturePage.handlerName,
               message.frameInfo.isMainFrame, Self.isCaptureOrigin(message.frameInfo.securityOrigin) else { return }
-        onMessage(reader.read(message.body))
+        let read = reader.read(message.body)
+        // While a hand-over waits for the hold script, the last dictation's audio goes to the hold, which drops it;
+        // anything else is the waiting attempt's, so a track that ended meanwhile ends it.
+        if let pendingHandOver, !Self.isAudio(read) { return pendingHandOver.onMessage(read) }
+        onMessage(read)
+    }
+
+    private static func isAudio(_ message: CaptureMessageReader.Message) -> Bool {
+        if case .audio = message { return true }
+        return false
     }
 
     private static func isCaptureOrigin(_ origin: WKSecurityOrigin) -> Bool {
@@ -184,7 +190,7 @@ final class WebAudioCapture: NSObject, WKNavigationDelegate, WKUIDelegate {
     /// The page could not be shown or its process ended: capture is gone, whatever the phase.
     private func failed(_ webView: WKWebView) {
         guard webView === self.webView, isOpen else { return }
-        onMessage(.failed)
+        (pendingHandOver?.onMessage ?? onMessage)(.failed)
     }
 
     // MARK: WKUIDelegate
