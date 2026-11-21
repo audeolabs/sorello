@@ -2301,7 +2301,10 @@ unchanged and always wins.
     the first words of a tap made in that second (seen in TestFlight build
     14). Audio the page posted before the hold script ran is dropped while
     held. Each dictation's chunks are numbered from 0: the capture reads
-    its messages afresh from each hand-over to a dictation. Every other
+    its messages afresh from each hand-over to a dictation. A tap before
+    the hold script has finished takes the capture once it has (WebKit
+    delivers the page's messages and the script's completion in order), so
+    the last dictation's audio never reaches the next. Every other
     dictation's capture, and every end other than the seal (Cancel, a
     failure, the keyboard hiding), closes, and the hold then opens a new
     one once the conditions hold. The microphone grant to a held capture also
