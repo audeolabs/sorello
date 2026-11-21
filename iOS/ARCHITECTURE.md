@@ -2240,7 +2240,8 @@ unchanged and always wins.
     `CapturePage.builtInMicrophoneHTML`, chosen at the tap while the shared
     `useBuiltInMicrophone` reads on, or `CapturePage.heldMicrophoneHTML`
     (below). The only scripts Swift runs in it are the fixed
-    `CapturePage.stopScript` and `CapturePage.recordScript`.
+    `CapturePage.stopScript`, `CapturePage.recordScript` and
+    `CapturePage.holdScript`.
   - **Held microphone.** With Bluetooth headphones connected, iOS records
     from the headphones first and the switch to the iPhone takes most of a
     second (0.74–1.03 s from the tap on an iPhone 15 Pro with AirPods
@@ -2287,11 +2288,23 @@ unchanged and always wins.
     script fails, the capture reports `failed`. At the record script, the
     page resumes its audio context if iOS suspended or interrupted it
     while held (a call, Siri, another app's audio). The hold ends as soon as a condition stops holding, and when
-    the held capture reports anything (`failed`, `ended`, or a chunk it
-    should not have posted), after which the keyboard does not hold again
-    until it next appears. A dictation's capture is never held: it closes
-    at the stop (or the dictation's end), and the hold then opens a new
-    one if the conditions still hold. The microphone grant to a held capture also
+    the held capture reports anything other than audio (`failed`, `ended`,
+    or a malformed message), after which the keyboard does not hold again
+    until it next appears. A dictation that took the held capture gives it
+    back to the hold when it stops recording (the seal): Swift runs
+    `CapturePage.holdScript`, and the page removes its audio processing
+    but keeps its track and audio context, so it posts nothing until the
+    next record script. The capture is the held one again, and the
+    conditions judge it as an open hold. No capture closed, so the reopen
+    delay does not apply, and the next tap records from the iPhone at
+    once: a hold that closed at the stop and reopened a second later lost
+    the first words of a tap made in that second (seen in TestFlight build
+    14). Audio the page posted before the hold script ran is dropped while
+    held. Each dictation's chunks are numbered from 0: the capture reads
+    its messages afresh from each hand-over to a dictation. Every other
+    dictation's capture, and every end other than the seal (Cancel, a
+    failure, the keyboard hiding), closes, and the hold then opens a new
+    one once the conditions hold. The microphone grant to a held capture also
     asks that the host does not own the microphone.
   - The page's Content-Security-Policy is `default-src 'none'` plus only
     what its inline script needs (`'unsafe-inline'`, and `blob:` for a
@@ -4980,7 +4993,9 @@ merge (AGENTS.md).
   the headphones' microphone covered), off records from the headphones.
   With Bluetooth headphones and the choice on, iOS's microphone indicator
   shows from the keyboard's appearance until it hides, a word spoken right
-  after the tap is transcribed, nothing said before the tap is, and the
+  after the tap is transcribed, nothing said before the tap is, a second
+  dictation tapped as soon as the first stops records its first word with
+  the indicator staying on between them, and the
   indicator goes when the headphones disconnect or the choice is turned
   off. Ideally on iOS 26 and 27 and on iPhones with less
   memory as well; until then, say which were tried.

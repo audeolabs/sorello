@@ -23,6 +23,8 @@ enum CapturePageMicrophoneTests {
             ("heldPagePostsFromTheRecordScript", testHeldPagePostsFromTheRecordScript),
             ("heldPageStoppedBeforeTheTapPostsNothing", testHeldPageStoppedBeforeTheTapPostsNothing),
             ("heldPageResumesAudioInterruptedWhileHeld", testHeldPageResumesAudioInterruptedWhileHeld),
+            ("holdScriptHoldsTheMicrophoneForTheNextTap", testHoldScriptHoldsTheMicrophoneForTheNextTap),
+            ("holdScriptBeforeTheChoiceRecordsNothing", testHoldScriptBeforeTheChoiceRecordsNothing),
         ]
     }
 
@@ -163,8 +165,10 @@ enum CapturePageMicrophoneTests {
     private static func testBuiltInPageReachesNothingOutsideIt() {
         for page in [CapturePage.builtInMicrophoneHTML, CapturePage.heldMicrophoneHTML] { checkReachesNothingOutside(page) }
         let held = CapturePage.heldMicrophoneHTML.lowercased()
-        TestSupport.expect(held.contains("function " + CapturePage.recordScript.lowercased().replacingOccurrences(of: ";", with: "")
-            .replacingOccurrences(of: "()", with: "(")), "the held page has no record function")
+        for script in [CapturePage.recordScript, CapturePage.holdScript, CapturePage.stopScript] {
+            TestSupport.expect(held.contains("function " + script.lowercased().replacingOccurrences(of: ";", with: "")
+                .replacingOccurrences(of: "()", with: "(")), "the held page has no function for \(script)")
+        }
     }
 
     private static func checkReachesNothingOutside(_ source: String) {
@@ -268,6 +272,48 @@ enum CapturePageMicrophoneTests {
         TestSupport.expect((run.firstAudioPostAt ?? -1) >= 2000, "the held page posted before the tap")
     }
 
+    /// The dictation that took the held page gives it back at its stop: the page posts nothing from the hold script on,
+    /// not even from the audio processing it had, keeps the iPhone's track without asking again, and records afresh
+    /// from the next record script, its chunks numbered from 0 with audio processing made then.
+    private static func testHoldScriptHoldsTheMicrophoneForTheNextTap() {
+        let run = Run(page: CapturePage.heldMicrophoneHTML, devices: [iPhone, airPods], systemChoice: airPods,
+                      recordAtMilliseconds: 1000, holdAtMilliseconds: 1450, recordAgainAtMilliseconds: 2000)
+        TestSupport.expectEqual(run.requestedDevices, [nil, iPhone.id])
+        TestSupport.expectEqual(run.liveTracks, [iPhone.label])
+        TestSupport.expectEqual(run.recordingFrom, iPhone.label)
+        TestSupport.expectEqual(run.processorsMadeAt, [1000, 2000])
+        let held = run.audioPosts.filter { $0.at >= 1450 && $0.at < 2000 }
+        TestSupport.expect(held.isEmpty, "the page posted audio at \(held.map(\.at)) ms, between the hold script and the tap")
+        let first = run.audioPosts.filter { $0.at < 1450 }
+        let second = run.audioPosts.filter { $0.at >= 2000 }
+        TestSupport.expect(!first.isEmpty && !second.isEmpty, "the page did not record for both dictations")
+        TestSupport.expectEqual(first.map(\.seq), Array(0 ..< first.count))
+        TestSupport.expectEqual(second.map(\.seq), Array(0 ..< second.count))
+        TestSupport.expect(!run.failed && run.endedPosts == 0, "the page reported while held")
+        // Without a hold script, the first dictation's processing keeps posting: the check above sees it.
+        let unheld = Run(page: CapturePage.heldMicrophoneHTML, devices: [iPhone, airPods], systemChoice: airPods,
+                         recordAtMilliseconds: 1000)
+        TestSupport.expect(unheld.audioPosts.contains { $0.at >= 1450 && $0.at < 2000 }, "the harness delivers no audio")
+        // A stopped page stays stopped.
+        let stopped = Run(page: CapturePage.heldMicrophoneHTML, devices: [iPhone, airPods], systemChoice: airPods,
+                          stopAtMilliseconds: 1200, recordAtMilliseconds: 1000, holdAtMilliseconds: 1450,
+                          recordAgainAtMilliseconds: 2000)
+        TestSupport.expectEqual(stopped.liveTracks, [])
+        TestSupport.expect(!stopped.audioPosts.contains { $0.at >= 1200 }, "a stopped page posted")
+    }
+
+    /// A dictation stopped while the page still chooses its input: the page makes no audio processing once chosen, and
+    /// records only from the next record script.
+    private static func testHoldScriptBeforeTheChoiceRecordsNothing() {
+        let run = Run(page: CapturePage.heldMicrophoneHTML, devices: [iPhone, airPods], systemChoice: iPhone,
+                      renamed: (to: airPods.label, atMilliseconds: 300), recordAtMilliseconds: 100,
+                      holdAtMilliseconds: 200, recordAgainAtMilliseconds: 2000)
+        TestSupport.expectEqual(run.requestedDevices, [nil, iPhone.id])
+        TestSupport.expectEqual(run.processorsMadeAt, [2000])
+        TestSupport.expectEqual(run.firstAudioPostAt.map { $0 >= 2000 }, true)
+        TestSupport.expectEqual(run.firstAudioSequence, 0)
+    }
+
     // MARK: Running a page
 
     struct Device {
@@ -294,6 +340,8 @@ enum CapturePageMicrophoneTests {
         var processorsMade: Int { processorsMadeAt.count }
         /// The distinct `mic` words of the audio posts.
         var audioMics: [String] = []
+        /// Each audio post: the harness's clock then, in milliseconds, and its sequence number.
+        var audioPosts: [(at: Int, seq: Int)] = []
 
         /// `renamed`: WebKit renames the first track that long after the page starts. `stopAtMilliseconds`: Swift
         /// stops the page then.
@@ -301,7 +349,8 @@ enum CapturePageMicrophoneTests {
              refuseSystemAfterFirst: Bool = false, stopAfterFirstGrant: Bool = false,
              renamed: (to: String, atMilliseconds: Int)? = nil, stopAtMilliseconds: Int? = nil,
              endedAtMilliseconds: Int? = nil, recordAtMilliseconds: Int? = nil,
-             interruptedAtMilliseconds: Int? = nil) {
+             interruptedAtMilliseconds: Int? = nil, holdAtMilliseconds: Int? = nil,
+             recordAgainAtMilliseconds: Int? = nil) {
             guard let context = JSContext() else {
                 TestSupport.expect(false, "JavaScriptCore made no context")
                 return
@@ -318,7 +367,8 @@ enum CapturePageMicrophoneTests {
                 "renameAt": renamed?.atMilliseconds ?? NSNull(),
                 "stopAt": stopAtMilliseconds ?? NSNull(),
                 "endAt": endedAtMilliseconds ?? NSNull(),
-                "recordAt": recordAtMilliseconds ?? NSNull(),
+                "recordAt": [recordAtMilliseconds, recordAgainAtMilliseconds].compactMap { $0 },
+                "holdAt": holdAtMilliseconds ?? NSNull(),
                 "interruptAt": interruptedAtMilliseconds ?? NSNull(),
             ]
             context.setObject(config, forKeyedSubscript: "harnessConfig" as NSString)
@@ -347,6 +397,7 @@ enum CapturePageMicrophoneTests {
             firstAudioSequence = object["firstAudioSeq"] as? Int
             processorsMadeAt = object["processorsMadeAt"] as? [Int] ?? []
             audioMics = object["audioMics"] as? [String] ?? []
+            audioPosts = (object["audioPosts"] as? [[String: Int]] ?? []).map { (at: $0["at"] ?? -1, seq: $0["seq"] ?? -1) }
         }
 
         private static func script(of page: String) -> String {
@@ -402,7 +453,9 @@ enum CapturePageMicrophoneTests {
 
         var harnessFirstAudioAt = null;
         var harnessFirstAudioSeq = null;
+        var harnessAudioPosts = [];
         var webkit = { messageHandlers: { sorelloCapture: { postMessage: function (message) {
+          if (message.kind === "audio") { harnessAudioPosts.push({ at: harnessNow, seq: message.seq }); }
           if (message.kind === "audio" && harnessFirstAudioAt === null) {
             harnessFirstAudioAt = harnessNow;
             harnessFirstAudioSeq = message.seq;
@@ -425,9 +478,11 @@ enum CapturePageMicrophoneTests {
           return this.source;
         };
         var harnessProcessorsMadeAt = [];
+        // Every processor a context made, connected or not: a disconnected one may still be called once.
         AudioContext.prototype.createScriptProcessor = function () {
           harnessProcessorsMadeAt.push(harnessNow);
           this.processor = { onaudioprocess: null, connect: function () {}, disconnect: function () {} };
+          this.processors = (this.processors || []).concat([this.processor]);
           return this.processor;
         };
         AudioContext.prototype.resume = function () { this.state = "running"; };
@@ -445,7 +500,8 @@ enum CapturePageMicrophoneTests {
           if (harnessConfig.interruptAt !== null && harnessNow === harnessConfig.interruptAt) {
             harnessContexts.forEach(function (c) { c.state = "interrupted"; });
           }
-          if (harnessConfig.recordAt !== null && harnessNow === harnessConfig.recordAt) { sorelloRecord(); }
+          if (harnessConfig.recordAt.indexOf(harnessNow) >= 0) { sorelloRecord(); }
+          if (harnessConfig.holdAt !== null && harnessNow === harnessConfig.holdAt) { sorelloHold(); }
           if (harnessConfig.endAt !== null && harnessNow === harnessConfig.endAt && harnessTracks.length > 0) {
             var ending = harnessTracks[0];
             ending.readyState = "ended";
@@ -466,10 +522,12 @@ enum CapturePageMicrophoneTests {
         function harnessDeliverAudio() {
           harnessLive().forEach(function (c) {
             // Only a running context renders.
-            if (c.state === "running" && c.processor && c.processor.onaudioprocess) {
+            if (c.state !== "running") { return; }
+            (c.processors || []).forEach(function (processor) {
+              if (!processor.onaudioprocess) { return; }
               var samples = new Float32Array(256);
-              c.processor.onaudioprocess({ inputBuffer: { getChannelData: function () { return samples; } } });
-            }
+              processor.onaudioprocess({ inputBuffer: { getChannelData: function () { return samples; } } });
+            });
           });
         }
 
@@ -490,6 +548,7 @@ enum CapturePageMicrophoneTests {
             firstAudioAt: harnessFirstAudioAt,
             firstAudioSeq: harnessFirstAudioSeq,
             processorsMadeAt: harnessProcessorsMadeAt,
+            audioPosts: harnessAudioPosts,
             audioMics: harnessPosts.filter(function (p) { return p.kind === "audio"; })
               .map(function (p) { return p.mic; })
               .filter(function (m, i, all) { return all.indexOf(m) === i; })

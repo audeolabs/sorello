@@ -1,11 +1,12 @@
 #if SORELLO_KEYBOARD_DICTATION
 import Foundation
 
-/// The keyboard's capture pages (ARCHITECTURE.md, "In-keyboard dictation (experiment)", Capture): two fixed strings,
+/// The keyboard's capture pages (ARCHITECTURE.md, "In-keyboard dictation (experiment)", Capture): three fixed strings,
 /// with nothing interpolated into them, loaded under an `https` origin of a reserved domain that never resolves. Their
 /// policy lets nothing load; their script uses only `getUserMedia`, Web Audio and the one message handler, posting mono
 /// 16-bit chunks of at most 0.25 s as base64. `html` records from the input iOS chooses; `builtInMicrophoneHTML`
-/// switches to the iPhone's own microphone when iOS chose another ("Use iPhone microphone"). Host tests read this
+/// switches to the iPhone's own microphone when iOS chose another ("Use iPhone microphone"); `heldMicrophoneHTML` does
+/// so while the keyboard is up, recording only between `recordScript` and `holdScript`. Host tests read this
 /// source for anything that could reach outside it, and run its script.
 enum CapturePage {
     /// A secure context, so the page may call `getUserMedia`; `.invalid` never resolves.
@@ -17,6 +18,9 @@ enum CapturePage {
     static let stopScript = "sorelloStop();"
     /// What Swift runs at the tap in a held page: it posts audio from then on.
     static let recordScript = "sorelloRecord();"
+    /// What Swift runs when the dictation that took a held page stops recording: it is held again, posting nothing until
+    /// the next `recordScript`.
+    static let holdScript = "sorelloHold();"
 
     /// The page for the shared `useBuiltInMicrophone`, read at the tap.
     static func page(useBuiltInMicrophone: Bool) -> String {
@@ -32,7 +36,7 @@ enum CapturePage {
     static let builtInMicrophoneHTML = opening + "var sorelloPreferBuiltIn = true;\nvar sorelloHeld = false;\n" + script
 
     /// The held microphone's page (Held microphone): chooses the input as `builtInMicrophoneHTML` does and runs Web Audio
-    /// while the keyboard is up, but posts no audio until `recordScript`.
+    /// while the keyboard is up, but posts no audio until `recordScript`, nor after `holdScript`.
     static let heldMicrophoneHTML = opening + "var sorelloPreferBuiltIn = true;\nvar sorelloHeld = true;\n" + script
 
     private static let opening = #"""
@@ -68,6 +72,15 @@ enum CapturePage {
       if (!sorelloHeld) { return; }
       sorelloHeld = false;
       if (sorelloContext && sorelloMedia && !sorelloStopped) { sorelloConnect(sorelloContext, sorelloMedia); }
+    }
+
+    // The dictation that took the page stopped recording: held again, keeping its track and audio context, with no
+    // audio processing until the next record script.
+    function sorelloHold() {
+      if (sorelloStopped) { return; }
+      sorelloHeld = true;
+      sorelloNodes.forEach(function (node) { node.disconnect(); });
+      sorelloNodes = [];
     }
 
     function sorelloStop() {
@@ -108,8 +121,8 @@ enum CapturePage {
     }
 
     // Each chunk is posted, its sequence starting at 0, with whether the track's label names the iPhone as it stands
-    // then (WebKit may rename it), as one of two fixed words. A context iOS suspended or interrupted while held (a call,
-    // Siri, another app's audio) is resumed.
+    // then (WebKit may rename it), as one of two fixed words; only by the current audio processing, so none after a hold
+    // script. A context iOS suspended or interrupted while held (a call, Siri, another app's audio) is resumed.
     function sorelloConnect(context, media) {
       if (context.state !== "running") { context.resume(); }
       var track = media.getAudioTracks()[0];
@@ -119,7 +132,7 @@ enum CapturePage {
       var processor = context.createScriptProcessor(size, 1, 1);
       var sequence = 0;
       processor.onaudioprocess = function (event) {
-        if (sorelloStopped) { return; }
+        if (sorelloStopped || sorelloNodes.indexOf(processor) < 0) { return; }
         var mic = track && sorelloBuiltInLabel.test(track.label) ? "builtIn" : "other";
         sorelloPost({ kind: "audio", seq: sequence, rate: context.sampleRate, mic: mic,
                       pcm: sorelloEncode(event.inputBuffer.getChannelData(0)) });

@@ -44,6 +44,8 @@ final class KeyboardLocalDictation {
     /// opened before the tap, posting nothing until the tap's dictation takes it. Its token names it to its own grants.
     private var heldCapture: WebAudioCapture?
     private var heldToken: UUID?
+    /// The current dictation's capture is the held one it took at its tap, so it may give it back at its stop.
+    private var captureTookHold = false
     /// A held capture reported something since the keyboard appeared: no holding again until it next appears.
     private(set) var heldCaptureReported = false
     private var pipeline: KeyboardAudioPipeline?
@@ -108,21 +110,48 @@ final class KeyboardLocalDictation {
         guard shouldHold, !machine.isCaptureOpen, !heldCaptureReported, capturePageOverride == nil else { return releaseHold() }
         guard heldCapture == nil, let container = hooks.container() else { return }
         let token = UUID()
-        let held = WebAudioCapture(
-            page: CapturePage.heldMicrophoneHTML,
-            mayGrantMicrophone: { [weak self] in
-                guard let self else { return false }
-                return heldToken == token && !machine.isCaptureOpen && !hooks.hostOwnsMicrophone()
-            },
-            // Held, the page posts nothing; anything it reports ends the hold until the keyboard next appears.
-            onMessage: { [weak self] _ in
-                guard let self, heldToken == token else { return }
-                heldCaptureReported = true
-                releaseHold()
-            })
+        let handlers = heldHandlers(token)
+        let held = WebAudioCapture(page: CapturePage.heldMicrophoneHTML, mayGrantMicrophone: handlers.mayGrantMicrophone,
+                                   onMessage: handlers.onMessage)
         heldCapture = held
         heldToken = token
         held.open(in: container)
+    }
+
+    /// A held capture's grants and messages, under its token.
+    private func heldHandlers(_ token: UUID)
+        -> (mayGrantMicrophone: () -> Bool, onMessage: (CaptureMessageReader.Message) -> Void) {
+        ({ [weak self] in
+            guard let self else { return false }
+            return heldToken == token && !machine.isCaptureOpen && !hooks.hostOwnsMicrophone()
+        }, { [weak self] message in
+            // Held, the page posts no audio, beyond what it posted before a dictation gave it back, which goes;
+            // anything else it reports ends the hold until the keyboard next appears.
+            guard let self, heldToken == token else { return }
+            if case .audio = message { return }
+            heldCaptureReported = true
+            releaseHold()
+        })
+    }
+
+    /// The dictation that took the held capture stopped recording: the hold takes it back, so the next tap records at
+    /// once, and the next pass judges it as an open hold. No capture closed, so the reopen delay does not apply. False
+    /// if it cannot be held again; the caller then closes it.
+    private func giveCaptureBack() -> Bool {
+        guard captureTookHold, let capture, capture.isOpen, heldCapture == nil, !heldCaptureReported,
+              capturePageOverride == nil else { return false }
+        let token = UUID()
+        let handlers = heldHandlers(token)
+        heldCapture = capture
+        heldToken = token
+        guard capture.hold(mayGrantMicrophone: handlers.mayGrantMicrophone, onMessage: handlers.onMessage) else {
+            heldCapture = nil
+            heldToken = nil
+            return false
+        }
+        self.capture = nil
+        captureTookHold = false
+        return true
     }
 
     private func releaseHold() {
@@ -210,7 +239,7 @@ final class KeyboardLocalDictation {
         case .loadModel(let id):
             loadModel(id)
         case .seal(let id):
-            closeCapture()
+            if !giveCaptureBack() { closeCapture() }
             pipeline?.seal { [weak self] seconds, rate in
                 Task { @MainActor in self?.sealed(id, seconds: seconds, rate: rate) }
             }
@@ -249,9 +278,11 @@ final class KeyboardLocalDictation {
             heldToken = nil
             held.handOver(mayGrantMicrophone: mayGrantMicrophone, onMessage: onMessage)
             capture = held
+            captureTookHold = true
             return
         }
         releaseHold()
+        captureTookHold = false
         let capture = WebAudioCapture(page: capturePage, mayGrantMicrophone: mayGrantMicrophone, onMessage: onMessage)
         self.capture = capture
         guard let container = hooks.container() else {
@@ -349,6 +380,7 @@ final class KeyboardLocalDictation {
         guard let capture else { return }
         capture.close()
         self.capture = nil
+        captureTookHold = false
         captureClosedAt = Self.now
     }
 
