@@ -11,6 +11,7 @@ extension WindowModels {
         let general = main.general, app = self.app
         general.hardware = ModelHardware(app.speech.compute)
         general.offersUpdates = app.updater != nil
+        general.offersScreenNotes = ScreenNotePlatform.isSupported
         follow { [unowned self] in
             general.modelName = app.info.modelName ?? String(localized: "Speech model",
                                                              comment: "General: the model's row, when it has no name")

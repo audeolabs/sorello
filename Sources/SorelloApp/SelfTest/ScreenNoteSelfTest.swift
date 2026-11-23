@@ -61,7 +61,10 @@ private final class ScreenNoteSelfTestRun {
 
         let clock = SystemSessionClock()
         let permission = ScreenRecordingPermission()
-        var platform = ScreenNotePlatform.system()
+        guard var platform = ScreenNotePlatform.system() else {
+            Console.error("self-test: this system cannot record a screen note")
+            return false
+        }
         platform.copy = { _, sheet in Console.line("clipboard: left alone (would hold the summary and \(sheet.lastPathComponent))") }
         platform.reveal = { _ in }
         platform.pointer = ScriptedPointer()

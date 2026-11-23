@@ -49,7 +49,9 @@ public enum ScreenRecordingFailure: Error, Sendable, Equatable {
 
 /// Records one display into a movie with ScreenCaptureKit (ARCHITECTURE.md, section 14, "Recording"): the whole
 /// display at most 2560 pixels on its long edge, up to 30 frames a second, with the pointer, without this app's own
-/// windows, and with the microphone when asked.
+/// windows, and with the microphone when asked. The movie is written by ScreenCaptureKit's own recording output,
+/// which macOS 15 introduced; before that there are no screen notes.
+@available(macOS 15, *)
 public struct ScreenNoteRecorder: Sendable {
     /// The longest edge of the recording, in pixels.
     public static let longestEdge: Double = 2560
@@ -114,6 +116,7 @@ public struct ScreenNoteRecorder: Sendable {
 
 /// One note's recording in progress.
 // Safe: every mutable field is behind `state`, a Mutex; the stream itself is only started, stopped and released.
+@available(macOS 15, *)
 public final class ScreenNoteRecording: NSObject, SCStreamDelegate, SCRecordingOutputDelegate, @unchecked Sendable {
     /// How long a stop may take to finish the movie before the movie is given up.
     static let finishTimeout: TimeInterval = 5
