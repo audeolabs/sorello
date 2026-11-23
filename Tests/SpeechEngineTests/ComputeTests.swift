@@ -23,6 +23,12 @@ struct ComputeTests {
         #expect(SpeechCompute(devices: []) == .cpu)
     }
 
+    @Test("A system that cannot list its devices goes by the processor: Apple silicon has a Neural Engine, Intel has not")
+    func theProcessorDecidesWhereDevicesCannotBeListed() {
+        #expect(SpeechCompute(appleSilicon: true) == .neuralEngine)
+        #expect(SpeechCompute(appleSilicon: false) == .cpu)
+    }
+
     @Test func theEngineReadsTheHardwareUnlessToldOtherwise() {
         let dictionary: @Sendable (String?) -> DictionarySnapshot = { _ in .empty }
         #expect(SpeechEngine(modelDirectory: nil, storeDirectory: nil, dictionary: dictionary).compute

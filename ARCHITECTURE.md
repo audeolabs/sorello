@@ -405,7 +405,9 @@ tuned there:
   and an Accelerate TDT decoder. English only.
 - Where the encoder runs is read from the hardware once, when the engine
   is made (`MLComputeDevice.allComputeDevices`), never from the
-  architecture the app was built for. On a Mac with a Neural Engine it
+  architecture the app was built for. macOS 13 cannot list its devices,
+  so there the processor answers: every Apple silicon Mac has a Neural
+  Engine and no Intel Mac has one. On a Mac with a Neural Engine it
   runs there (`cpuAndNeuralEngine`). On a Mac without one, which is every
   Intel Mac, Core ML's CPU kernels are the fallback (`cpuOnly`): the same
   model files, the same chunks, front end and decoder, only slower and
@@ -415,6 +417,14 @@ tuned there:
   arithmetic do. The General screen says which one this Mac uses.
   `sorello-transcribe --cpu` and `Sorello --self-test --cpu` force the
   fallback, so it can be proved on any Mac.
+- A build's `bundle.json` says how its encoder is reached. Without the
+  key `multifunction`, the 15 second function is loaded by its name,
+  `b15`, as every build before the key was. `"multifunction": false` says
+  the encoder is a model with one function, the 15 second one, which is
+  loaded without a name. A build for a system before macOS 15 is made
+  that way, because such a system can neither name a function nor read a
+  model that has several (section 15). A build that names its function
+  does not load on such a system.
 - `SpeechEngine` is an actor with its own serial executor. Model loading,
   warm-up and every prediction run there, one at a time. `append` on a
   stream never waits for model work.

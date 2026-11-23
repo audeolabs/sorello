@@ -30,6 +30,25 @@ protocol SpeechModel: AnyObject {
     func decode(_ projection: Projection, offset: Int, bias: BiasGraph?, check: () throws -> Void) throws -> [HeardWord]
 }
 
+/// How a bundle's encoder is reached, as its manifest says (ARCHITECTURE.md, section 5).
+enum EncoderLayout: Equatable {
+    /// A function for each window, named "b" and the window's seconds: "b15". Every manifest that does not say
+    /// otherwise.
+    case named
+    /// One function, the 15 s one, loaded without a name: `"multifunction": false`. A build for a system before
+    /// macOS 15, which cannot name a function, is made this way.
+    case single
+
+    init(manifest: [String: Any]) {
+        self = (manifest["multifunction"] as? Bool) == false ? .single : .named
+    }
+
+    /// The name to load the window's function by; nil when the encoder's one function has none.
+    func functionName(seconds: Int) -> String? {
+        self == .named ? "b\(seconds)" : nil
+    }
+}
+
 /// The speech model: a Core ML encoder holding the 15 s function, run where `compute` says, with the native front end
 /// and decoder. Every file is checked against the manifest's SHA-256 before anything is loaded. The manifest's
 /// `compute_units` says how the bundle was exported; it is not read.
@@ -44,6 +63,7 @@ final class CoreMLSpeechModel: SpeechModel {
     private let frontend: VDSPFrontEnd
     private let math: NativeMath
     private let vocabulary: [String]
+    private let layout: EncoderLayout
     private let models = ModelCache<MLModel>()
 
     /// Verifies the bundle at `directory` and reads its native parts. The encoder is loaded by `prepare`, on
@@ -62,6 +82,7 @@ final class CoreMLSpeechModel: SpeechModel {
               (manifest["buckets_seconds"] as? [Int]).map({ $0.contains(SpeechCore.encoderSeconds) }) ?? true else {
             throw .modelCorrupt
         }
+        layout = EncoderLayout(manifest: manifest)
         for (name, digest) in files {
             guard !name.hasPrefix("/"), !name.split(separator: "/").contains("..") else { throw .modelCorrupt }
             let url = directory.appendingPathComponent(name)
@@ -94,7 +115,12 @@ final class CoreMLSpeechModel: SpeechModel {
     private func loadEncoder(seconds: Int) throws -> MLModel {
         let configuration = MLModelConfiguration()
         configuration.computeUnits = compute.computeUnits
-        configuration.functionName = "b\(seconds)"
+        if let name = layout.functionName(seconds: seconds) {
+            // Naming a function needs macOS 15. The pin offers an older system only a build with one function, so
+            // this refuses a bundle handed over directly that the system cannot load.
+            guard #available(macOS 15, iOS 18, *) else { throw TranscriptionError.invalidModelFile }
+            configuration.functionName = name
+        }
         return try MLModel(contentsOf: directory.appendingPathComponent("Encoder.mlmodelc"), configuration: configuration)
     }
 

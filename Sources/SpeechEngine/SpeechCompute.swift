@@ -15,7 +15,9 @@ public enum SpeechCompute: Sendable, Equatable, CustomStringConvertible {
     /// What this Mac's hardware offers, as Core ML reports it. The engine reads it once, when it is made; a forced
     /// choice (`--cpu` in the verification tools) is passed to the engine instead.
     public static func forThisMac() -> SpeechCompute {
-        SpeechCompute(devices: MLComputeDevice.allComputeDevices.map { device in
+        // Core ML lists its devices from macOS 14. Before that the processor answers the question.
+        guard #available(macOS 14, iOS 17, *) else { return SpeechCompute(appleSilicon: isAppleSilicon) }
+        return SpeechCompute(devices: MLComputeDevice.allComputeDevices.map { device in
             switch device {
             case .cpu: .cpu
             case .gpu: .gpu
@@ -23,6 +25,20 @@ public enum SpeechCompute: Sendable, Equatable, CustomStringConvertible {
             @unknown default: .other
             }
         })
+    }
+
+    /// The choice on a system that cannot list its compute devices, which is macOS 13: every Apple silicon Mac has
+    /// a Neural Engine and no Intel Mac has one.
+    init(appleSilicon: Bool) {
+        self = appleSilicon ? .neuralEngine : .cpu
+    }
+
+    /// Whether this Mac's processor is Apple silicon. It is the hardware's answer, so an Intel build that Rosetta
+    /// runs on an Apple silicon Mac gets true.
+    private static var isAppleSilicon: Bool {
+        var value: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        return sysctlbyname("hw.optional.arm64", &value, &size, nil, 0) == 0 && value == 1
     }
 
     /// A kind of compute device, as Core ML lists them.
