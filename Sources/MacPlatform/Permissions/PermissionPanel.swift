@@ -279,11 +279,12 @@ extension PermissionPanel {
         }
     }
 
-    /// One card surface: a two-layer shadow, frosted Liquid Glass, and the
-    /// content clipped to it. The flight and the docked panel use the same
-    /// class so the hand-off is pixel for pixel.
+    /// One card surface: a two-layer shadow, the frosted backdrop (Liquid
+    /// Glass, or the blurred material before macOS 26), and the content
+    /// clipped to it. The flight and the docked panel use the same class so
+    /// the hand-off is pixel for pixel.
     final class CardSurface: NSView {
-        let glass = NSGlassEffectView()
+        let backdrop: CardBackdrop
         let clip = NSView()
         let frost = Frost()
         let content: NSView
@@ -291,9 +292,11 @@ extension PermissionPanel {
         private let contact = CALayer()
         private let ambient = CALayer()
 
-        init(content: NSView, size: NSSize, frostColor: NSColor) {
+        /// `forcesOlderSurface` gives the card the material macOS 15 draws, on any system (`CardBackdrop`).
+        init(content: NSView, size: NSSize, frostColor: NSColor, forcesOlderSurface: Bool = false) {
             self.content = content
             self.contentSize = size
+            backdrop = CardBackdrop(forcesOlderSurface: forcesOlderSurface)
             super.init(frame: NSRect(origin: .zero, size: size))
             wantsLayer = true
             layer?.masksToBounds = false
@@ -305,8 +308,7 @@ extension PermissionPanel {
             contact.shadowRadius = 1.5
             contact.shadowOffset = CGSize(width: 0, height: -0.5)
             ambient.shadowOffset = CGSize(width: 0, height: -8)
-            glass.style = .regular
-            addSubview(glass)
+            addSubview(backdrop.view)
             clip.wantsLayer = true
             clip.layer?.masksToBounds = true
             clip.layer?.cornerCurve = .continuous
@@ -326,8 +328,7 @@ extension PermissionPanel {
         /// `lift` 0 is docked; 1 is the top of the arc, with a deeper, softer shadow.
         func apply(size: NSSize, radius: CGFloat, lift: CGFloat) {
             let bounds = NSRect(origin: .zero, size: size)
-            glass.frame = bounds
-            glass.cornerRadius = radius
+            backdrop.apply(size: size, radius: radius)
             clip.frame = bounds
             clip.layer?.cornerRadius = radius
             frost.frame = bounds
