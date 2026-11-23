@@ -3,11 +3,10 @@ import DictionaryKit
 import FileTranscription
 import Foundation
 import MacPlatform
-import Observation
 import Persistence
 import SorelloUI
 import SpeechEngine
-import Synchronization
+import SystemCompat
 
 /// Where the app keeps its data: the directory and the settings' defaults. The app's are under its bundle
 /// identifier; tests and the self-test pass temporary ones.
@@ -19,7 +18,7 @@ struct AppStorage {
 /// What the app knows that no store keeps: what the system says now, and what the windows are in the middle of.
 @MainActor
 @Observable
-final class LiveState {
+final class LiveState: Observable {
     /// Whether Sorello is trusted for Accessibility, as last read.
     var accessibilityTrusted = false
     /// The microphones connected now.

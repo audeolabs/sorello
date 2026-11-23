@@ -4,7 +4,7 @@ import CoreGraphics
 import DictationCore
 import Foundation
 @testable import MacPlatform
-import Synchronization
+import SystemCompat
 import Testing
 
 @Suite("Privacy permission words and links")
@@ -14,6 +14,21 @@ struct PrivacyPermissionTests {
         #expect(PrivacyPermission.accessibility.settingsTitle(macOSMajorVersion: 26) == "Accessibility")
         #expect(PrivacyPermission.accessibility.settingsTitle(macOSMajorVersion: 27) == "Device Control and Data Access")
         #expect(PrivacyPermission.microphone.settingsTitle(macOSMajorVersion: 27) == "Microphone")
+    }
+
+    @Test("From macOS 13 to 26 the pane is Accessibility, opened by the same link")
+    func beforeTheRename() {
+        for version in [13, 14, 15] {
+            #expect(PrivacyPermission.accessibility.settingsTitle(macOSMajorVersion: version) == "Accessibility")
+            #expect(PrivacyPermission.microphone.settingsTitle(macOSMajorVersion: version) == "Microphone")
+            #expect(PrivacyPermission.accessibility.enableInstructions(appName: "Synthetic Dictation",
+                                                                       macOSMajorVersion: version)
+                    == "Go to System Settings > Privacy & Security > Accessibility and enable Synthetic Dictation.")
+            #expect(PrivacyPermission.accessibility.alertText(appName: "Synthetic Dictation", macOSMajorVersion: version)
+                    == PrivacyPermission.accessibility.alertText(appName: "Synthetic Dictation", macOSMajorVersion: 26))
+        }
+        #expect(PrivacyPermission.accessibility.settingsURL.absoluteString
+                == "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
     }
 
     @Test("Instructions name the pane for the version")

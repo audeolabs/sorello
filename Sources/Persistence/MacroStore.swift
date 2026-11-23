@@ -1,6 +1,6 @@
 import DictationCore
 import Foundation
-import Observation
+import SystemCompat
 import TextRules
 
 /// The user's voice macros, kept in `macros.json` (ARCHITECTURE.md, section 7). Observable, in the order the user
@@ -12,7 +12,7 @@ import TextRules
 /// over the file until it has been moved.
 @MainActor
 @Observable
-public final class MacroStore {
+public final class MacroStore: Observable {
     /// The macros, in order.
     public private(set) var macros: [VoiceMacro]
 

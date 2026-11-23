@@ -1,5 +1,6 @@
 import AppKit
 import DictationCore
+import MacCompat
 import Persistence
 import SorelloUI
 import SpeechEngine
@@ -98,7 +99,7 @@ final class AppShell: NSObject, NSApplicationDelegate {
                 let alert = NSAlert()
                 alert.messageText = title
                 alert.informativeText = message
-                NSApp.activate()
+                NSApp.comeForward()
                 alert.runModal()
             },
             quit: { [weak self] in self?.quit(nil) })

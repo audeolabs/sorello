@@ -1,6 +1,6 @@
 import DictationCore
 import Foundation
-import Synchronization
+import SystemCompat
 
 /// Where the model's download stands, as the app shows it.
 public enum ModelDownloadState: Sendable, Equatable {

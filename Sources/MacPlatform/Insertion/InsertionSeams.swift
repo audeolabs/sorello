@@ -1,6 +1,6 @@
 import AppKit
 import CoreGraphics
-import Synchronization
+import SystemCompat
 
 /// Whether keys may be posted into this user's session at all. A seam so tests can lock the screen.
 public protocol UserSessionReading: Sendable {

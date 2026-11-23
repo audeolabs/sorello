@@ -1,5 +1,5 @@
 import Foundation
-import Synchronization
+import SystemCompat
 @testable import SpeechEngine
 
 /// A server of the tests' own, in place of the network: it serves invented files by address, and for any address it

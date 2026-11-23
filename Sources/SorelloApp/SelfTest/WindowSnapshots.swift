@@ -277,7 +277,7 @@ private struct MenuBarStrip: View {
         HStack(spacing: 14) {
             Image(systemName: "wifi").foregroundStyle(ink)
             Image(nsImage: SorelloMarkImages.menuBarIcon()).renderingMode(.template).foregroundStyle(ink)
-            Image(systemName: "battery.75percent").foregroundStyle(ink)
+            Image(systemName: SystemSymbol.battery).foregroundStyle(ink)
             Text("9:41").font(.system(size: 13, weight: .medium)).foregroundStyle(ink)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -323,7 +323,7 @@ nonisolated private struct HeardFile: FileTranscribing {
 /// An updater that checks nothing: idle, ready to be asked, with its daily check on, as a build with a feed starts.
 @MainActor
 @Observable
-private final class IdleUpdater: Updating {
+private final class IdleUpdater: Updating, Observable {
     let canCheck = true
     let foundUnseen = false
     var checksAutomatically = true

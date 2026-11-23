@@ -1,6 +1,6 @@
 import DictationCore
 import Foundation
-import Synchronization
+import SystemCompat
 
 /// What the engine reports while it transcribes a file (ARCHITECTURE.md, section 5, "Transcribing a file").
 public enum FileSpeechProgress: Sendable, Equatable {

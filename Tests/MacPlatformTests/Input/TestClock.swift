@@ -1,6 +1,6 @@
 import DictationCore
 import Foundation
-import Synchronization
+import SystemCompat
 
 /// A `SessionClock` that moves only when a test advances it. Sleepers wake, in deadline order, when the clock
 /// reaches their deadline; a cancelled sleeper throws `CancellationError`.

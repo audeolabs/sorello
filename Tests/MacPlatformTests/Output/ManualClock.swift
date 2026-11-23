@@ -1,6 +1,6 @@
 import Foundation
 import DictationCore
-import Synchronization
+import SystemCompat
 import Testing
 
 // A manual clock and helpers for waiting on tasks in tests. Every wait in real time has a limit, so a transaction that

@@ -1,3 +1,4 @@
+import MacCompat
 import SwiftUI
 
 /// A small capsule naming one thing, such as an app a word is limited to. With `onRemove`, it ends in a ✕ that
@@ -111,7 +112,7 @@ private struct PresetSegment: View {
         }
         .buttonStyle(.plain)
         .focused($focused)
-        .focusEffectDisabled()
+        .systemFocusRingHidden()
         .focusRing(Pill(), isFocused: focused)
         .onHover { hovering = $0 }
     }
@@ -135,7 +136,7 @@ public struct SorelloTextField: View {
     }
 
     public var body: some View {
-        TextField(text: $text, prompt: Text(placeholder).foregroundStyle(Theme.secondaryInk)) {
+        TextField(text: $text, prompt: Text(placeholder).inked(Theme.secondaryInk)) {
             Text(placeholder)
         }
         .textFieldStyle(.plain)

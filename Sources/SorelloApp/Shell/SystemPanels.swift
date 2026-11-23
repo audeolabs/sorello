@@ -1,6 +1,7 @@
 import AppKit
 import DesignCore
 import DictationCore
+import MacCompat
 import MacPlatform
 import UniformTypeIdentifiers
 
@@ -19,7 +20,7 @@ enum AppChooser {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.treatsFilePackagesAsDirectories = false
-        NSApp.activate()
+        NSApp.comeForward()
         guard await panel.begin() == .OK, let url = panel.url, let bundle = Bundle(url: url),
               let identifier = bundle.bundleIdentifier else { return nil }
         let name = (bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)

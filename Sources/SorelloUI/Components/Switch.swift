@@ -46,11 +46,15 @@ private struct SwitchKnob: View {
             .onTapGesture { if isEnabled { isOn.toggle() } }
             .focusable(isEnabled)
             .focused($focused)
+            #if SORELLO_LEGACY
+            .modifier(SpaceToggles(isOn: $isOn))
+            #else
             .focusEffectDisabled()
             .onKeyPress(.space) {
                 isOn.toggle()
                 return .handled
             }
+            #endif
             .onHover { hovering = $0 }
             .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.85), value: isOn)
     }
@@ -61,3 +65,25 @@ public extension ToggleStyle where Self == SorelloSwitchStyle {
     /// Sorello's switch.
     static var sorello: SorelloSwitchStyle { SorelloSwitchStyle() }
 }
+
+#if SORELLO_LEGACY
+/// The switch's keyboard half in the build for older Macs: Space toggles it and the system draws no focus ring of
+/// its own, from macOS 14, as in the usual build. macOS 13 has neither call, so there the switch keeps the system's
+/// focus ring and is changed by clicking.
+private struct SpaceToggles: ViewModifier {
+    @Binding var isOn: Bool
+
+    func body(content: Content) -> some View {
+        if #available(macOS 14, *) {
+            content
+                .focusEffectDisabled()
+                .onKeyPress(.space) {
+                    isOn.toggle()
+                    return .handled
+                }
+        } else {
+            content
+        }
+    }
+}
+#endif

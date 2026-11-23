@@ -1,7 +1,7 @@
 @preconcurrency import AVFoundation
 import DictationCore
 @testable import MacPlatform
-import Synchronization
+import SystemCompat
 import Testing
 
 /// A gate a fake blocks on, on the capture's queue, until the test opens it.

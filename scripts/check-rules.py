@@ -220,7 +220,7 @@ OLD_NAMES = re.compile(r"localflow|freeflow|wilderness", re.IGNORECASE)
 WEIGHTS = re.compile(r"\.(mlmodelc|mlpackage|f32bin|f16bin|safetensors|wav|caf|m4a|dmg)(/|$)")
 
 UI_AND_MODEL = {"AppKit", "SwiftUI", "UIKit", "Cocoa", "AVFoundation", "AVFAudio", "CoreML"}
-PURE = ("DictationCore", "TextRules", "DesignCore", "DictionaryKit", "ScreenNotes")
+PURE = ("DictationCore", "TextRules", "DesignCore", "DictionaryKit", "ScreenNotes", "SystemCompat")
 NEUTRAL = {"SpeechEngine": {"AppKit", "SwiftUI", "UIKit", "Cocoa"}, "Persistence": {"AppKit", "SwiftUI", "UIKit", "Cocoa"}}
 # Transcribing a file goes through the engine, which reads the file; this module adds rules and progress to it, and
 # imports no framework that draws or decodes (ARCHITECTURE.md, section 5, "Transcribing a file").

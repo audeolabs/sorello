@@ -1,5 +1,5 @@
 import Foundation
-import Observation
+import SystemCompat
 
 /// Why a file's transcription failed, as the Transcribe screen says it (ARCHITECTURE.md, section 8, "Windows").
 /// None of them carries anything the file holds.
@@ -204,7 +204,7 @@ public struct TranscribeActions {
 
 /// The Transcribe screen's values. The app layer keeps `state` current as the file is transcribed.
 @Observable
-public final class TranscribeModel {
+public final class TranscribeModel: Observable {
     /// The app's name as installed, from the bundle, for the line under a file it cannot read.
     public var appName: String
     /// What the screen shows.

@@ -1,5 +1,5 @@
 import Foundation
-import Observation
+import SystemCompat
 
 /// The adapters the session works through (ARCHITECTURE.md, section 4). The app builds each once and hands them over
 /// together.
@@ -41,7 +41,7 @@ public typealias InsertionHook = @Sendable (DictationID, ProcessedDictation, Ins
 /// releases what it holds.
 @MainActor
 @Observable
-public final class SessionRuntime: TriggerHandling {
+public final class SessionRuntime: TriggerHandling, Observable {
     /// All dictation state. Observable, so the app can follow it.
     public private(set) var state = SessionState()
 

@@ -1,4 +1,4 @@
-import Observation
+import SystemCompat
 
 /// Runs `apply` now, and again after each change to anything observable it read, until `stop` is called. This is how
 /// the composition keeps every window model, the pill and the shortcut monitor current with the stores and the

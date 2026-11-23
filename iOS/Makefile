@@ -208,10 +208,12 @@ HOST_TARGET ?= $(shell uname -m)-apple-macosx26.0
 # $(PACKAGE_BUILD_DIR)/<triple>, built again whenever the package's manifest or a source of those modules changes, and
 # SwiftPM rebuilds only what changed. <triple>.bin-path records where SwiftPM put the libraries and their modules, as
 # SwiftPM says (--show-bin-path). The first build of a checkout fetches the package's one dependency, Sparkle, which
-# only the Mac app links.
+# only the Mac app links. Those modules take the lock, the actor queue and Observation through SystemCompat, which on
+# iOS is Apple's own types and nothing else (../ARCHITECTURE.md, section 15); SwiftPM links it into both libraries.
 PACKAGE_BUILD_DIR ?= build/package
 PACKAGE_SOURCES := ../Package.swift ../Package.resolved \
-	$(call swift_sources,../Sources/DictationCore ../Sources/TextRules ../Sources/DictionaryKit ../Sources/SpeechEngine)
+	$(call swift_sources,../Sources/DictationCore ../Sources/TextRules ../Sources/DictionaryKit ../Sources/SpeechEngine \
+		../Sources/SystemCompat)
 SIMULATOR_TARGET = arm64-apple-ios$(DEPLOYMENT_TARGET)-simulator
 PACKAGE = $(PACKAGE_BUILD_DIR)/$(TARGET).bin-path
 SIMULATOR_PACKAGE = $(PACKAGE_BUILD_DIR)/$(SIMULATOR_TARGET).bin-path

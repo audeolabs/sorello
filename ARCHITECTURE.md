@@ -67,19 +67,22 @@ Sendable` without a comment that says which lock or queue makes it safe.
 
 | Module | Kind | Depends on | Holds |
 |---|---|---|---|
-| `DictationCore` | neutral, pure | nothing | The session state machine, its runtime, the ports every adapter implements, and `Diagnostics` |
+| `SystemCompat` | neutral, pure | nothing | The lock, the actor queue and Observation: Apple's own in the usual build, stand-ins with the same names in the build for older Macs (section 15) |
+| `DictationCore` | neutral, pure | `SystemCompat` | The session state machine, its runtime, the ports every adapter implements, and `Diagnostics` |
 | `TextRules` | neutral, pure | nothing | Numbers, spoken delimiters, macros, prompt tag, insertion-context fitting |
-| `DictionaryKit` | neutral | nothing | Entries, validation, tokenizer, bias graph, casing, correction decisions and the correction watch, the `TextFieldReading` protocol it reads text through, the dictionary file |
+| `DictionaryKit` | neutral | `SystemCompat` | Entries, validation, tokenizer, bias graph, casing, correction decisions and the correction watch, the `TextFieldReading` protocol it reads text through, the dictionary file |
 | `DesignCore` | neutral, pure | nothing | Palette, dot wave, level meter, pill geometry, motion constants, the mark |
-| `SpeechEngine` | neutral | `DictationCore`, `DictionaryKit` | The model's pin, download and store, feature front end, Core ML encoder, decoder, chunked streaming |
-| `Persistence` | neutral | `DictationCore`, `TextRules` | Settings, macros, Run Log |
-| `SorelloUI` | macOS UI | `DesignCore` | The pill, its overlay window, every screen and control |
-| `MacPlatform` | macOS | `DictationCore`, `DictionaryKit`, `DesignCore`, `ScreenNotes` | Shortcuts, audio capture, text insertion, Accessibility reads, permissions, screen notes' recorder and renderer |
+| `SpeechEngine` | neutral | `DictationCore`, `DictionaryKit`, `SystemCompat`, and `NativeEncoder` in the build for older Macs | The model's pin, download and store, feature front end, Core ML encoder, decoder, chunked streaming |
+| `NativeEncoder` | C, the build for older Macs only | nothing | The encoder in Sorello's own code, for an Intel Mac (section 15) |
+| `Persistence` | neutral | `DictationCore`, `TextRules`, `SystemCompat` | Settings, macros, Run Log |
+| `MacCompat` | macOS | nothing | A view's display link and a few AppKit and SwiftUI calls: Apple's own in the usual build, and what answers for them on macOS 13 in the build for older Macs (section 15) |
+| `SorelloUI` | macOS UI | `DesignCore`, `SystemCompat`, `MacCompat` | The pill, its overlay window, every screen and control |
+| `MacPlatform` | macOS | `DictationCore`, `DictionaryKit`, `DesignCore`, `ScreenNotes`, `SystemCompat`, `MacCompat` | Shortcuts, audio capture, text insertion, Accessibility reads, permissions, screen notes' recorder and renderer |
 | `SorelloApp` | macOS | all of the above, and Sparkle | Composition: builds the objects, connects them, owns windows and the menu bar item, and updates the app |
 | `Sorello` | executable | `SorelloApp` | `@main` only |
 | `SorelloSnapshots` | executable | `SorelloUI` | Renders every pill state and screen to PNG files |
 | `FileTranscription` | neutral | `SpeechEngine`, `TextRules`, `DictationCore` | Transcribing one file: reading it, the engine, the text rules, progress. The one path the Transcribe screen and the `sorello` command both take |
-| `SorelloCommand` | macOS | `FileTranscription`, `SpeechEngine`, `Persistence`, `DictionaryKit`, `TextRules`, `DictationCore` | The `sorello` command: its arguments, finding its app and that app's model and saved rules, its output and exit status |
+| `SorelloCommand` | macOS | `FileTranscription`, `SpeechEngine`, `Persistence`, `DictionaryKit`, `TextRules`, `DictationCore`, `SystemCompat` | The `sorello` command: its arguments, finding its app and that app's model and saved rules, its output and exit status |
 | `sorello-command` | executable | `SorelloCommand` | `main` only. Shipped in the app as `Contents/Helpers/sorello` (section 10, "The command") |
 | `ScreenNotes` | pure, Mac only | nothing | Screen notes' rules: marks, keyframes, the summary and the manifest (section 14) |
 | `sorello-transcribe` | executable | `SpeechEngine` | For verification only, never shipped: transcribes files with a model bundle given directly, and downloads the model as the app does |
@@ -404,7 +407,9 @@ tuned there:
   and an Accelerate TDT decoder. English only.
 - Where the encoder runs is read from the hardware once, when the engine
   is made (`MLComputeDevice.allComputeDevices`), never from the
-  architecture the app was built for. On a Mac with a Neural Engine it
+  architecture the app was built for. macOS 13 cannot list its devices,
+  so there the processor answers: every Apple silicon Mac has a Neural
+  Engine and no Intel Mac has one. On a Mac with a Neural Engine it
   runs there (`cpuAndNeuralEngine`). On a Mac without one, which is every
   Intel Mac, Core ML's CPU kernels are the fallback (`cpuOnly`): the same
   model files, the same chunks, front end and decoder, only slower and
@@ -414,6 +419,14 @@ tuned there:
   arithmetic do. The General screen says which one this Mac uses.
   `sorello-transcribe --cpu` and `Sorello --self-test --cpu` force the
   fallback, so it can be proved on any Mac.
+- A build's `bundle.json` says how its encoder is reached. Without the
+  key `multifunction`, the 15 second function is loaded by its name,
+  `b15`, as every build before the key was. `"multifunction": false` says
+  the encoder is a model with one function, the 15 second one, which is
+  loaded without a name. A build for a system before macOS 15 is made
+  that way, because such a system can neither name a function nor read a
+  model that has several (section 15). A build that names its function
+  does not load on such a system.
 - `SpeechEngine` is an actor with its own serial executor. Model loading,
   warm-up and every prediction run there, one at a time. `append` on a
   stream never waits for model work.
@@ -1555,6 +1568,13 @@ the model the app has downloaded, whether the app is running or not.
   file, and a dictation while it runs. The command from a link on
   the PATH, in a release installed from its disk image, before and after
   the app has been opened once.
+- **System symbols.** A symbol name the system does not have draws
+  nothing, and the compiler cannot tell. `SystemSymbolTests` reads the
+  system's own record of when each symbol appeared and checks every
+  string literal in `Sources` that the record knows as a symbol against
+  the build's minimum system, so a symbol's name is written as a literal,
+  never built from parts. A symbol the system renamed is named through
+  `SystemSymbol`, which gives the name the running system has.
 
 ## 12. Provenance
 
@@ -1681,6 +1701,11 @@ part in a module the iPhone app links is `SpeechEngine`'s
   their bindings), the Shortcuts screen does not show them, and no
   screen-recording API is called. The menu lists them only while they
   have keys, so only while screen notes are on.
+- **Only where the system can record one.** The movie is written by
+  ScreenCaptureKit's recording output, which macOS 15 introduced. On an
+  older system, which only the build for older Macs reaches (section
+  15), General has no Screen notes card, the switch stays off, and
+  nothing of screen notes runs.
 - **The permission.** Screen notes need Screen Recording. Under the
   switch, the line "Requires Screen Recording permission" is shown while
   the switch is off or the permission is not granted, and not otherwise.
@@ -1934,3 +1959,158 @@ clearing the Run Log does not delete them.
 
 `ScreenNotes` imports only Foundation and CoreGraphics types, like the
 pure modules of section 2, and is linked only by the Mac app.
+
+## 15. The build for older Macs
+
+Sorello needs macOS 26. One switch builds the same source for macOS 13 and
+later, for Macs that cannot run macOS 26: `SORELLO_LEGACY=1` in the
+environment of `swift build`. `Package.swift` then lowers the Mac's
+minimum system to macOS 13 and defines `SORELLO_LEGACY` for every module.
+Without the variable the package is the usual one: no source file
+compiles differently, and the app is the app described in the rest of
+this document. The build for older Macs is a second app made from the
+same commit, never a replacement for the first.
+
+It is on its own branch and has not been released. The whole package
+builds under the switch, and every test passes against that build on the
+Mac that builds it. What it does on macOS 13 itself is known only as far
+as "What has been checked", below, says.
+
+How one source serves both:
+
+- **Checks at run time need no switch.** Where a newer system offers
+  something an older one lacks, the code asks with `#available` and does
+  the older thing otherwise. Both builds compile both paths.
+- **`SystemCompat` holds what cannot be asked at run time**, because the
+  type itself is missing on macOS 13. Each name there is Apple's own type
+  in the usual build and a stand-in in the other, so the code that uses
+  it is one text:
+  - `Mutex` is `Synchronization.Mutex` (macOS 15), or a lock with the
+    same initializer and `withLock`.
+  - `SerialActorQueue` is `DispatchSerialQueue` (macOS 14) as an actor's
+    executor, or a serial executor over a dispatch queue.
+  - Observation (macOS 14). An `@Observable` class says that it conforms
+    to `Observable`. In the usual build that is Apple's protocol and
+    changes nothing. In the other, `@Observable` is the compiler's own
+    macro declared again without its macOS 14 floor, for the one thing it
+    does to a class's members, and `Observable` supplies what those
+    members call: the class is an `ObservableObject` that announces a
+    change to any tracked property, once, before it happens, and
+    `withObservationTracking` follows the properties its closure read, as
+    Observation's does. Each module with such classes declares the macro names
+    in its own `ObservationStandIn.swift`, where they win over the names
+    SwiftUI brings in. The stand-in depends on what the compiler's macro
+    expands to. `Tests/SystemCompatTests` holds that contract in both
+    builds, so a compiler that changed it fails the build for older Macs
+    or its tests, never the usual build.
+- **`MacCompat` does the same for AppKit and SwiftUI.** `FrameLink` is
+  `CADisplayLink`, which a view can make from macOS 14, or before that a
+  timer at the rate asked for, which the pill and the drag card animate
+  on. Its other names are single calls: each is the newer call in the
+  usual build, and in the other the newer call where the system has it.
+- **Where an older call is retired, the switch chooses.** A call that a
+  later system deprecates cannot be written in the usual build, which
+  allows no warnings, so it sits under `#if SORELLO_LEGACY`, with the
+  usual build's line unchanged in the `#else`.
+- **The model has a build of its own.** macOS 13 reads only Core ML's
+  oldest program format, which has one function and no 1-bit weight with
+  its scale inside, so that build's encoder has one unnamed function and
+  applies each row's scale after the product (section 5). macOS 13
+  unpacks the weights when it loads them, into about 2.5 GB of memory.
+  An Intel Mac runs that build with Sorello's own encoder instead
+  ("The encoder on an Intel Mac", below).
+  The pin lists the build once it has been tested and published; until
+  then it is given with `SORELLO_MODEL_DIR` or `--model`.
+- **An executable records the SDK it was built with.** SwiftPM's link
+  records the minimum system instead, which would give the app the
+  behaviour AppKit keeps for apps built against the macOS 13 SDK, so the
+  build for older Macs tells the linker the SDK.
+
+What an older system does differently, all of it only in this build:
+
+| Before | What differs |
+|---|---|
+| macOS 26 | The Accessibility drag card is the system's blurred material, not Liquid Glass (section 6) |
+| macOS 15 | No screen notes: no card in General, and nothing of them runs (section 14). A card's rows are laid out through SwiftUI's own layout root, to the same picture |
+| macOS 14 | The pill and the drag card animate on a timer, not the display's refresh. The menu's headings are items that cannot be chosen, and a row's keys are set at its far edge as text, not as a badge. A control that draws its own focus ring shows the system's as well, and Space does not change a switch that has the focus; a click does. A copied row's symbol cross-fades. Sorello takes the front outright when it must, as apps did then. Where the encoder runs is decided by the processor (section 5) |
+| macOS 13.3 | A page that fits its window still bounces when scrolled |
+
+It is built into its own directory, `.build-legacy`, so the two builds
+never disturb each other:
+
+```sh
+make legacy-check   # builds it, and runs every test against it on this Mac
+make legacy-app     # build/legacy/Sorello Dev.app, for macOS 13 and later
+```
+
+It has the development identity only: no update feed, and so no
+updater.
+
+### The encoder on an Intel Mac
+
+Core ML's CPU kernels take one to three seconds for a 15 second chunk of
+the build for macOS 13 on an Intel Mac, and unpack it into about 2.5 GB.
+So in the build for older Macs an Intel Mac runs the encoder with
+Sorello's own code instead: `NativeEncoder`, a C module that only this
+build has. The usual build has none of what follows.
+
+- **Where.** Where the encoder runs is `nativeCPU` on a Mac without a
+  Neural Engine whose processor is Intel with AVX2 and FMA, which every
+  Intel Mac that runs macOS 13 has. The General screen says the
+  processor, as it does for `cpu`. Every other Mac chooses as section 5
+  says. `sorello-transcribe --native` forces it on any Mac, as `--cpu`
+  forces Core ML's CPU kernels, and says which kernel ran.
+- **The same model.** It runs the build the pin lists for this Mac (or
+  that `--model` gives) from the same store, after the same checks. The
+  build's `Encoder.mlmodelc/model.mil` names every weight and says where
+  it is in `weights/weight.bin`; the native encoder reads those two files
+  and nothing else, with the 1-bit weights left packed. A program that
+  lacks a weight the encoder needs, gives it another shape, or points
+  outside `weight.bin` is not run natively: the engine runs that build
+  with Core ML's CPU kernels, as before.
+- **The arithmetic.** The input of each of the 240 1-bit projections is
+  rounded to 8-bit integers, with one scale for every 64 consecutive
+  values (every 32 for the second projection of each feed-forward block
+  and of the convolution block, whose inputs are the least even), and
+  multiplied by the ±1 weights exactly, in integers; the sum is scaled in
+  32-bit floating point by both scales. Everything else in the encoder
+  is 32-bit floating point. The decoder that runs with it keeps the
+  matrices of its prediction network and joint as 8-bit integers, one
+  scale for each row of each matrix, multiplied by 32-bit inputs, so
+  that what each word needs (about 6 MB, a quarter of the 32-bit
+  matrices) stays in the processor's cache; the table of its first layer
+  stays 32-bit. On the research repository's 12 test clips the encoder's
+  outputs are within gate 4's ceilings of the macOS 26 build's (relative
+  0.02, absolute 0.25), and the transcripts are the same. Each processor
+  runs the fastest of its kernels that it has; every kernel gives the
+  same integers.
+- **Only the audio there is.** It encodes the frames the chunk's audio
+  fills and none of the zeros that pad a shorter chunk to 15 seconds.
+  Padded frames are masked out of every frame the model keeps, so the
+  frames are the same, and a 3 second dictation costs a fifth of a 15
+  second one.
+- **Threads.** One per core (`hw.physicalcpu`), at the priority of
+  work someone is waiting for. They work only while a chunk is encoded,
+  waiting briefly for the next step before they sleep; the decoder runs
+  on the engine's own thread.
+- **Memory.** About 250 MB while the model is loaded.
+
+Its tests run in `make legacy-check`. Without the model: the program
+reader finds every weight in an invented program and refuses one that
+lacks a weight, gives it another shape or points outside its file; each
+kernel this processor can run gives exactly the arithmetic above on
+invented inputs; on invented weights that 8 bits per row hold exactly,
+the decoder computes what the 32-bit decoder computes; and `nativeCPU` is
+chosen exactly where the first bullet says. With the model (`SORELLO_MODEL_DIR`): the native
+encoder and Core ML's CPU kernels give the same text for the same
+synthetic speech, with encoder outputs within gate 4's ceilings of each
+other. An Apple silicon Mac runs the portable kernel, so the Intel
+kernels are tested only on an Intel processor.
+
+### What has been checked
+
+Nothing that builds Sorello runs macOS 13, so what is known about that
+system comes from running the build there: in a macOS 13 virtual machine
+on an Apple silicon Mac, natively and as Intel code under Rosetta. A
+virtual machine has no Neural Engine and no Intel processor; those are
+checked on real hardware, and so far have not been.

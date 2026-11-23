@@ -1,5 +1,5 @@
 import AppKit
-import Synchronization
+import SystemCompat
 
 /// One type's data on a pasteboard item.
 public struct PasteboardRepresentation: Sendable, Equatable {

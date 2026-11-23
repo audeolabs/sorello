@@ -1,8 +1,7 @@
 import DictationCore
 import Foundation
-import Observation
 import Persistence
-import Synchronization
+import SystemCompat
 import Testing
 
 /// Every setting over a `UserDefaults` suite of the test's own.

@@ -47,7 +47,7 @@ nonisolated public enum ModelHardware: Sendable, Equatable {
 
 /// The General screen's values.
 @Observable
-public final class GeneralModel {
+public final class GeneralModel: Observable {
     /// The speech model's name, as the pin gives it.
     public var modelName: String
     /// The model and permissions, as every window shows them.
@@ -70,6 +70,9 @@ public final class GeneralModel {
     /// Whether the app can update itself, and so shows the switch for its daily check. A build with no update feed
     /// cannot, and has no such switch.
     public var offersUpdates: Bool
+    /// Whether this system can record a screen note, and so shows the Screen notes card. A system before macOS 15
+    /// cannot (ARCHITECTURE.md, section 14, "Turning them on").
+    public var offersScreenNotes: Bool
     /// What the screen asks of the app layer.
     public var actions: GeneralActions
 
@@ -77,7 +80,7 @@ public final class GeneralModel {
     public init(modelName: String, status: AppStatus, hardware: ModelHardware = .neuralEngine,
                 microphones: [MicrophoneOption], selectedMicrophoneID: String?,
                 defaultMicrophoneName: String?, toggles: [GeneralToggle: Bool], offersUpdates: Bool = false,
-                actions: GeneralActions = GeneralActions()) {
+                offersScreenNotes: Bool = true, actions: GeneralActions = GeneralActions()) {
         self.modelName = modelName
         self.status = status
         self.hardware = hardware
@@ -86,6 +89,7 @@ public final class GeneralModel {
         self.defaultMicrophoneName = defaultMicrophoneName
         self.toggles = toggles
         self.offersUpdates = offersUpdates
+        self.offersScreenNotes = offersScreenNotes
         self.actions = actions
     }
 
@@ -147,9 +151,11 @@ public struct GeneralScreen: View {
                     Text("Suggestions need Accessibility, to see the word you fix.")
                 }
             }
-            CardGroup(String(localized: "Screen notes")) {
-                Card {
-                    toggleRow(.screenNotes, detail: model.screenNotesDetail)
+            if model.offersScreenNotes {
+                CardGroup(String(localized: "Screen notes")) {
+                    Card {
+                        toggleRow(.screenNotes, detail: model.screenNotesDetail)
+                    }
                 }
             }
             CardGroup(String(localized: "App")) {
@@ -332,9 +338,9 @@ struct AccessibilityPermissionRow: View {
     var body: some View {
         switch status {
         case .granted:
-            PermissionRow(title: String(localized: "Accessibility"), symbol: "accessibility", state: .granted)
+            PermissionRow(title: String(localized: "Accessibility"), symbol: SystemSymbol.accessibility, state: .granted)
         case .missing:
-            PermissionRow(title: String(localized: "Accessibility"), symbol: "accessibility",
+            PermissionRow(title: String(localized: "Accessibility"), symbol: SystemSymbol.accessibility,
                           detail: String(localized: "Needed for the shortcuts and for pasting. Until then, text is left on the clipboard."),
                           state: .missing,
                           fix: offersFix ? (String(localized: "Open System Settings"), actions.openAccessibilitySettings) : nil)

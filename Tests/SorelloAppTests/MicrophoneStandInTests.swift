@@ -1,7 +1,7 @@
 import DictationCore
 import MacPlatform
 import SorelloUI
-import Synchronization
+import SystemCompat
 import Testing
 @testable import SorelloApp
 

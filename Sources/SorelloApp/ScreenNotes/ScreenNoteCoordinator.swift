@@ -1,18 +1,18 @@
 import DictationCore
 import Foundation
 import MacPlatform
-import Observation
 import Persistence
 import ScreenNotes
 import SorelloUI
 import SpeechEngine
+import SystemCompat
 
 /// Screen notes' one state machine (ARCHITECTURE.md, section 14): idle, starting, recording, building, pasting. It
 /// takes the Screen Note and Paste Screen Note shortcuts, ⌘Z and an Escape the session did not want, records through
 /// the platform, tracks the marks, builds the note when it finishes, and pastes the newest note when asked. What it shows goes to the pill as the app's own notice, `notice`.
 @MainActor
 @Observable
-final class ScreenNoteCoordinator {
+final class ScreenNoteCoordinator: Observable {
     /// A press this soon after the start is ignored, so a double press does not make an empty note.
     static let finishGuard: TimeInterval = 0.4
     /// A note this long finishes by itself.

@@ -1,3 +1,4 @@
+import MacCompat
 import SwiftUI
 
 /// What the Macros screen asks of the app layer, which keeps the macros.
@@ -39,7 +40,7 @@ public struct MacroDraft: Equatable, Sendable {
 
 /// The Macros screen's values.
 @Observable
-public final class MacrosModel {
+public final class MacrosModel: Observable {
     /// The macros, in the order they are kept.
     public var macros: [MacroItem]
     /// The macro open in the editor, if any. Opening, closing or changing it clears `refusal`.
@@ -171,7 +172,7 @@ private struct MacroEditor: View {
                     .accessibilityLabel(String(localized: "When I say"))
             }
             field(String(localized: "Paste")) {
-                TextField(text: binding(\.text), prompt: Text("The text to paste").foregroundStyle(Theme.secondaryInk),
+                TextField(text: binding(\.text), prompt: Text("The text to paste").inked(Theme.secondaryInk),
                           axis: .vertical) {
                     Text("Paste")
                 }

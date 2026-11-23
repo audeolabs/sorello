@@ -1,6 +1,6 @@
 import AppKit
 import DesignCore
-import Observation
+import SystemCompat
 
 /// The menu-bar item's menu (ARCHITECTURE.md, section 8, "Windows"): an ordinary `NSMenu`, which the system opens,
 /// places, highlights, tracks and closes, in its own material and in the menu bar's light or dark appearance. This
@@ -92,9 +92,33 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
     private static func item(for row: StatusMenuRow) -> NSMenuItem {
         switch row.kind {
         case .separator: .separator()
-        case .heading: .sectionHeader(title: row.title)
+        case .heading: heading(row.title)
         case .information, .command: NSMenuItem()
         }
+    }
+
+    /// A heading: the system's section header from macOS 14, and before that an item that cannot be chosen, which
+    /// is how a menu's headings were made.
+    private static func heading(_ title: String) -> NSMenuItem {
+        if #available(macOS 14, *) { return .sectionHeader(title: title) }
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        return item
+    }
+
+    /// An item's title with `trailing` at its far edge in secondary ink, for systems before macOS 14, whose menu
+    /// items have no badge.
+    private static func title(_ title: String, trailing: String) -> NSAttributedString {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.tabStops = [NSTextTab(textAlignment: .right, location: 240)]
+        let text = NSMutableAttributedString(string: title + "\t", attributes: [
+            .font: NSFont.menuFont(ofSize: 0), .paragraphStyle: paragraph,
+        ])
+        text.append(NSAttributedString(string: trailing, attributes: [
+            .font: NSFont.menuFont(ofSize: 0), .paragraphStyle: paragraph,
+            .foregroundColor: NSColor.secondaryLabelColor,
+        ]))
+        return text
     }
 
     private func apply(_ row: StatusMenuRow, to item: NSMenuItem) {
@@ -114,7 +138,11 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
             // hides a menu item's image unless asked to show it.
             item.preferredImageVisibility = row.image == nil ? .automatic : .visible
         }
-        item.badge = row.trailing.map { NSMenuItemBadge(string: $0) }
+        if #available(macOS 14, *) {
+            item.badge = row.trailing.map { NSMenuItemBadge(string: $0) }
+        } else {
+            item.attributedTitle = row.trailing.map { Self.title(row.title, trailing: $0) }
+        }
         item.keyEquivalent = row.keyEquivalent ?? ""
         item.keyEquivalentModifierMask = row.keyEquivalent == nil ? [] : .command
         item.target = row.command == nil ? nil : self
@@ -180,11 +208,12 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
     public var text: String {
         let lines: [[String]] = shown.map { row, item in
             if item.isSeparatorItem { return ["separator"] }
-            let role = item.isSectionHeader ? "heading"
+            let role = row.kind == .heading ? "heading"
                 : item.action == nil ? "not a command"
                 : item.isEnabled ? "command" : "unavailable"
-            let trailing = item.badge?.stringValue ?? Self.keyEquivalentLabel(item)
-            return [role, row.image.map(Self.describe) ?? "", item.title, trailing]
+            let trailing = row.trailing ?? Self.keyEquivalentLabel(item)
+            // The row's title, not the item's: before macOS 14 the item's holds its trailing keys as well.
+            return [role, row.image.map(Self.describe) ?? "", row.title, trailing]
         }
         let widths = (0..<3).map { column in lines.map { $0.count > column ? $0[column].count : 0 }.max() ?? 0 }
         return lines.map { fields in

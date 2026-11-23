@@ -11,6 +11,9 @@
 #                         which is fetched from Apple while signing. Sparkle's framework, its installer and its
 #                         helper app are signed with the same identity, inside out, before the app
 #   BUILD_DIR             default build
+#   SORELLO_LEGACY        1 makes the build for older Macs (ARCHITECTURE.md, section 15): the same app for
+#                         LEGACY_MINIMUM_SYSTEM and later, built in .build-legacy and put in build/legacy unless
+#                         BUILD_DIR says otherwise. It has the development identity only, so no update feed
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # shellcheck disable=SC1091
@@ -58,6 +61,15 @@ if [ -n "$FEED" ]; then
       "$UPDATE_PUBLIC_KEY" 2>/dev/null \
     || { echo "build-app: UPDATE_PUBLIC_KEY must be an Ed25519 public key, 32 bytes in base64" >&2; exit 64; }
 fi
+# The build for older Macs has its own minimum system, its own SwiftPM directory, so the two builds never rebuild each
+# other, and its own place for the app.
+SWIFT_BUILD=(swift build -c release)
+if [ "${SORELLO_LEGACY:-}" = 1 ]; then
+  [ "$CHANNEL" = dev ] || { echo "build-app: the build for older Macs has no $CHANNEL identity yet" >&2; exit 64; }
+  MINIMUM_SYSTEM=$LEGACY_MINIMUM_SYSTEM
+  SWIFT_BUILD+=(--scratch-path .build-legacy)
+  BUILD_DIR=${BUILD_DIR:-build/legacy}
+fi
 BUILD_DIR=${BUILD_DIR:-build}
 CODESIGN_IDENTITY=${CODESIGN_IDENTITY:--}
 APP="$BUILD_DIR/$NAME.app"
@@ -86,9 +98,9 @@ trap 'rm -rf "$SLICES"' EXIT
 set --
 COMMANDS=()
 for arch in $WANTED; do
-  swift build -c release --arch "$arch" --product Sorello
-  swift build -c release --arch "$arch" --product sorello-command
-  PRODUCTS=$(swift build -c release --arch "$arch" --show-bin-path)
+  "${SWIFT_BUILD[@]}" --arch "$arch" --product Sorello
+  "${SWIFT_BUILD[@]}" --arch "$arch" --product sorello-command
+  PRODUCTS=$("${SWIFT_BUILD[@]}" --arch "$arch" --show-bin-path)
   cp "$PRODUCTS/Sorello" "$SLICES/Sorello-$arch"
   cp "$PRODUCTS/sorello-command" "$SLICES/command-$arch"
   [ -d "$SLICES/Sparkle.framework" ] || ditto "$PRODUCTS/Sparkle.framework" "$SLICES/Sparkle.framework"

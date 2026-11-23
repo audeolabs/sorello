@@ -1,6 +1,6 @@
 import DictationCore
 import Foundation
-import Synchronization
+import SystemCompat
 import Testing
 
 /// `SessionRuntime` with fake ports and a manual clock: whole dictations end to end, including cancellation reaching

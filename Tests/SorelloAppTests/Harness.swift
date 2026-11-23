@@ -2,11 +2,10 @@ import DictationCore
 import DictionaryKit
 import Foundation
 import MacPlatform
-import Observation
 import Persistence
 import SorelloUI
 import SpeechEngine
-import Synchronization
+import SystemCompat
 import Testing
 @testable import SorelloApp
 
@@ -203,7 +202,7 @@ final class FakeTrust: AccessibilityTrust {
 
 @MainActor
 @Observable
-final class FakeShortcuts: ShortcutService {
+final class FakeShortcuts: ShortcutService, Observable {
     var status: ShortcutMonitor.Status = .stopped
     @ObservationIgnored weak var handler: (any TriggerHandling)?
     @ObservationIgnored var bindings: [[ShortcutAction: ShortcutBinding]] = []
@@ -246,7 +245,7 @@ final class FakeShortcuts: ShortcutService {
 
 @MainActor
 @Observable
-final class FakeLoginItem: LoginItemControlling {
+final class FakeLoginItem: LoginItemControlling, Observable {
     var state: LoginItem.State = .disabled
     func refresh() {}
     func setEnabled(_ enabled: Bool) throws { state = enabled ? .enabled : .disabled }
@@ -267,7 +266,7 @@ struct FakeMicrophones: MicrophoneListing {
 /// General follow it.
 @MainActor
 @Observable
-final class FakeUpdater: Updating {
+final class FakeUpdater: Updating, Observable {
     var canCheck = true
     var foundUnseen = false
     var checksAutomatically = true

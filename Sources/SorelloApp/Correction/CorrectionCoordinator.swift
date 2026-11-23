@@ -2,9 +2,9 @@ import DictationCore
 import DictionaryKit
 import Foundation
 import MacPlatform
-import Observation
 import Persistence
 import SorelloUI
+import SystemCompat
 
 /// Correction suggestions from end to end (ARCHITECTURE.md, sections 4 and 5; docs/dictionary/DESIGN.md, sections
 /// 3.4 to 3.6): when the user fixes a word right after dictating it, Sorello can offer to add the word.
@@ -25,7 +25,7 @@ import SorelloUI
 /// and releases the audio; turning suggestions off or a dictionary change also withdraws a visible suggestion.
 @MainActor
 @Observable
-final class CorrectionCoordinator {
+final class CorrectionCoordinator: Observable {
     /// The notice the pill shows for the app, when the session has nothing to show: a suggestion, or a word that
     /// could not be added.
     private(set) var notice: PillDisplay.Notice?

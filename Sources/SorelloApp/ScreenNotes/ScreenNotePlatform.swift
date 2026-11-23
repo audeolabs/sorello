@@ -23,6 +23,7 @@ protocol NoteRecorderStarting: Sendable {
         async throws(ScreenRecordingFailure) -> any NoteRecordingSession
 }
 
+@available(macOS 15, *)
 extension ScreenNoteRecorder: NoteRecorderStarting {
     func startRecording(display: NoteDisplay, file: URL, narrate: Bool, microphone: String?)
         async throws(ScreenRecordingFailure) -> any NoteRecordingSession {
@@ -39,6 +40,7 @@ protocol NoteRecordingSession: AnyObject, Sendable {
     func cancel() async
 }
 
+@available(macOS 15, *)
 extension ScreenNoteRecording: NoteRecordingSession {}
 
 /// The pointer, ⇧ and the left button while a note records.
@@ -84,8 +86,15 @@ struct ScreenNotePlatform {
     /// Shows a folder in the Finder.
     var reveal: @MainActor (URL) -> Void
 
-    static func system() -> ScreenNotePlatform {
-        ScreenNotePlatform(
+    /// Whether this system can record a screen note: from macOS 15, whose ScreenCaptureKit writes the movie.
+    static var isSupported: Bool {
+        if #available(macOS 15, *) { true } else { false }
+    }
+
+    /// The real adapters; nil where the system cannot record a note, and the app then has no screen notes.
+    static func system() -> ScreenNotePlatform? {
+        guard #available(macOS 15, *) else { return nil }
+        return ScreenNotePlatform(
             permission: ScreenRecordingPermission(),
             displayUnderPointer: { NoteDisplay.underPointer() },
             recorder: ScreenNoteRecorder(),

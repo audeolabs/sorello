@@ -1,7 +1,7 @@
 import DictationCore
 import DictionaryKit
 import Foundation
-import Synchronization
+import SystemCompat
 @testable import SpeechEngine
 
 /// What a fake model did, readable from the test while the engine works.

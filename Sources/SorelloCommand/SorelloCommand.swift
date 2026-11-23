@@ -4,7 +4,7 @@ import FileTranscription
 import Foundation
 import Persistence
 import SpeechEngine
-import Synchronization
+import SystemCompat
 import TextRules
 
 /// What the transcriber is made from: the app's model, and the dictionary's words to decode with.

@@ -1,6 +1,6 @@
 import DictationCore
 import Foundation
-import Observation
+import SystemCompat
 
 /// One dictation in the Run Log. It holds what was heard and inserted, and how it ended; never the app it went to.
 public struct HistoryEntry: Identifiable, Codable, Sendable, Equatable {
@@ -40,7 +40,7 @@ public struct HistoryEntry: Identifiable, Codable, Sendable, Equatable {
 ///   thrown: the Run Log never interrupts dictation.
 @MainActor
 @Observable
-public final class HistoryStore: HistoryRecording {
+public final class HistoryStore: HistoryRecording, Observable {
     /// The most entries the log keeps.
     public static let capacity = 20
 
@@ -180,7 +180,7 @@ actor HistoryWriter {
 
     private let directory: URL
     private let capacity: Int
-    private let queue = DispatchSerialQueue(label: "sorello.history-writer")
+    private let queue = SerialActorQueue(label: "sorello.history-writer")
     /// Nil until the index has been read, and again after a clear that left files behind.
     private var entries: [HistoryEntry]? {
         didSet { if let entries { lastKnown = entries } }

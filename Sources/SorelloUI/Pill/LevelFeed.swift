@@ -1,6 +1,6 @@
 import DesignCore
 import Foundation
-import Synchronization
+import SystemCompat
 
 /// How loud the voice is now, for the pill's wave (ARCHITECTURE.md, section 8, "Listening"). The audio path hands it
 /// every captured chunk with the chunk's time and the number of the capture it belongs to; the pill reads the level

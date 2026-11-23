@@ -1,7 +1,7 @@
 import FileTranscription
 import Foundation
 import SorelloUI
-import Synchronization
+import SystemCompat
 import Testing
 import TextRules
 @testable import SorelloApp

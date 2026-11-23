@@ -5,7 +5,7 @@ import FileTranscription
 import Foundation
 import SorelloCommand
 import SpeechEngine
-import Synchronization
+import SystemCompat
 import Testing
 import TextRules
 

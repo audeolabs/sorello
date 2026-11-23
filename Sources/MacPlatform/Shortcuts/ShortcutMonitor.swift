@@ -1,7 +1,7 @@
 import Carbon.HIToolbox
 import DictationCore
 import Foundation
-import Observation
+import SystemCompat
 
 /// The global shortcuts (ARCHITECTURE.md, section 6, "Shortcuts"). It owns the one keyboard event tap, feeds what
 /// the tap reads to a `ShortcutMatcher`, and delivers the matcher's triggers to its handler, consuming Escape only
@@ -14,7 +14,7 @@ import Observation
 /// Accessibility has been granted.
 @MainActor
 @Observable
-public final class ShortcutMonitor {
+public final class ShortcutMonitor: Observable {
     public enum Status: Sendable, Equatable {
         /// Not started, or stopped.
         case stopped

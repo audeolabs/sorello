@@ -1,13 +1,13 @@
 import Foundation
-import Observation
 import ServiceManagement
+import SystemCompat
 
 /// Launch at login, through `SMAppService.mainApp`. The state shown is always read back from the system after a
 /// change, because the user can also change it in System Settings > General > Login Items, and a registration can
 /// need their approval there.
 @MainActor
 @Observable
-public final class LoginItem {
+public final class LoginItem: Observable {
     public enum State: Sendable, Equatable {
         case enabled
         case disabled

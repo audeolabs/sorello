@@ -14,7 +14,9 @@ and the iPhone app.
 - `builds` lists the builds of the model. Each names its `directory` under `source`, the `manifest_sha256` of its
   `bundle.json`, its size in `bytes`, and what it `requires`: the lowest `macos`, the lowest `ios`, or both. A Mac
   reads only `macos` and an iPhone only `ios`, and a build fits only a system it names. `bundle.json` lists every
-  file of the build with its own SHA-256, so the pin fixes every byte.
+  file of the build with its own SHA-256, so the pin fixes every byte. `bundle.json` also says how the encoder is
+  reached: by its function's name, `b15`, unless it says `"multifunction": false`, which a build for a system before
+  macOS 15 does (ARCHITECTURE.md, sections 5 and 15).
 - `export_sha256` records which training export the builds were converted from.
 
 The app takes the first build whose requirements the Mac or the iPhone meets (ARCHITECTURE.md, section 5). Today

@@ -2,7 +2,7 @@ import DictationCore
 import DictionaryKit
 import Dispatch
 import Foundation
-import Synchronization
+import SystemCompat
 
 /// What the probe read around the insertion point: the context for the text rules and the field it came from.
 public struct ProbedField: Sendable {

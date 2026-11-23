@@ -1,3 +1,4 @@
+import MacCompat
 import SwiftUI
 
 /// The main window's sections, in sidebar order.
@@ -43,7 +44,7 @@ public enum MainSection: CaseIterable, Hashable, Sendable {
 
 /// The main window's values: which section shows, and each section's model.
 @Observable
-public final class MainWindowModel {
+public final class MainWindowModel: Observable {
     /// The section showing. The app layer sets it to open the window at a section.
     public var section: MainSection
     /// General's values.
@@ -145,7 +146,7 @@ private struct Sidebar: View {
         .frame(maxHeight: .infinity, alignment: .top)
         .focusable()
         .focused($focused)
-        .focusEffectDisabled()
+        .systemFocusRingHidden()
         .onMoveCommand { direction in
             let all = MainSection.allCases
             guard let index = all.firstIndex(of: model.section) else { return }

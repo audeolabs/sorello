@@ -55,7 +55,7 @@ public struct DictionaryDraft: Equatable, Sendable {
 
 /// The Dictionary screen's values.
 @Observable
-public final class DictionaryModel {
+public final class DictionaryModel: Observable {
     /// The entries, in the dictionary's order.
     public var words: [DictionaryWord]
     /// Words that are never suggested.
@@ -212,7 +212,7 @@ private struct AddWordCard: View {
 /// One word: its text and app limits, its strength as a menu of presets, its limits menu, and delete.
 private struct WordRow: View {
     let word: DictionaryWord
-    let model: DictionaryModel
+    @Bindable var model: DictionaryModel
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {

@@ -3,7 +3,7 @@ import DictionaryKit
 import FileTranscription
 import Foundation
 import SpeechEngine
-import Synchronization
+import SystemCompat
 @testable import SorelloApp
 
 // Test doubles with no platform behind them: a clock moved by hand and an engine that hears what it is told.

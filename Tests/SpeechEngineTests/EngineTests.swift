@@ -1,7 +1,7 @@
 import DictationCore
 import DictionaryKit
 import Foundation
-import Synchronization
+import SystemCompat
 import Testing
 @testable import SpeechEngine
 
@@ -19,7 +19,11 @@ struct EngineTests {
 
     func engine(_ log: ModelLog, snapshot: DictionarySnapshot = .empty, loader: ModelLoader? = nil,
                 lifetime: TimeInterval = 90) -> SpeechEngine {
-        SpeechEngine(loader: loader ?? fakeLoader(log), dictionary: { _ in snapshot }, retainedLifetime: lifetime)
+        // Not `loader ?? fakeLoader(log)`: `??` is generic code, which a function that throws one type cannot be
+        // handed before macOS 15.
+        var chosen = fakeLoader(log)
+        if let loader { chosen = loader }
+        return SpeechEngine(loader: chosen, dictionary: { _ in snapshot }, retainedLifetime: lifetime)
     }
 
     func elapsed(since start: ContinuousClock.Instant) -> Duration { ContinuousClock.now - start }

@@ -1,5 +1,6 @@
 import AppKit
 import DesignCore
+import MacCompat
 import SorelloUI
 import SwiftUI
 
@@ -50,7 +51,7 @@ struct SystemDock: DockPresence {
 
     func leaveDock() { NSApp.setActivationPolicy(.accessory) }
 
-    func activate() { NSApp.activate() }
+    func activate() { NSApp.comeForward() }
 
     func bringForward(_ window: NSWindow) {
         if window.isMiniaturized { window.deminiaturize(nil) }
@@ -67,6 +68,13 @@ extension NSRunningApplication: FrontApp {
     /// Cooperative activation, as Apple documents it: Sorello first lets the app make itself active, then asks for it
     /// to be activated from Sorello. Either may be refused; then Sorello simply stays in front.
     @MainActor func takeFront() {
+        #if SORELLO_LEGACY
+        guard #available(macOS 14, *) else {
+            // Before macOS 14 there is no yielding: one app activates another outright.
+            _ = activate(options: [.activateIgnoringOtherApps])
+            return
+        }
+        #endif
         NSApp.yieldActivation(to: self)
         _ = activate(from: .current)
     }
