@@ -1,6 +1,6 @@
 import DictationCore
 import Foundation
-import Synchronization
+import SystemCompat
 import Testing
 
 // Fakes for every port the runtime uses. Each records what was asked of it, and the ones whose answers take time

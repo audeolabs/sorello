@@ -4,7 +4,7 @@ import CoreMedia
 import DictationCore
 import Foundation
 @preconcurrency import ScreenCaptureKit
-import Synchronization
+import SystemCompat
 
 /// A display a note records: its identifier, its frame in the global AppKit space (points, from the bottom left of
 /// the main screen) and its scale.

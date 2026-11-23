@@ -1,6 +1,6 @@
 import DictionaryKit
 import Foundation
-import Synchronization
+import SystemCompat
 
 // A text field in another app, for the probe and the inserter. All text is invented.
 

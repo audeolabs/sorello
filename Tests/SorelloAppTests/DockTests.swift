@@ -2,7 +2,7 @@ import AppKit
 import DictationCore
 import Foundation
 import SorelloUI
-import Synchronization
+import SystemCompat
 import Testing
 @testable import SorelloApp
 

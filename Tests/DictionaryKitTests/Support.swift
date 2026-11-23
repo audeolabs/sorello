@@ -1,5 +1,5 @@
 import Foundation
-import Synchronization
+import SystemCompat
 import Testing
 @testable import DictionaryKit
 

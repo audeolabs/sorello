@@ -7,7 +7,7 @@ import Observation
 import Persistence
 import SorelloUI
 import SpeechEngine
-import Synchronization
+import SystemCompat
 
 /// Where the app keeps its data: the directory and the settings' defaults. The app's are under its bundle
 /// identifier; tests and the self-test pass temporary ones.

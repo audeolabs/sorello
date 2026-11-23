@@ -1,5 +1,5 @@
 import Foundation
-import Synchronization
+import SystemCompat
 
 /// A held lock on a store's downloads; closing it releases the lock.
 final class DownloadLock: Sendable {

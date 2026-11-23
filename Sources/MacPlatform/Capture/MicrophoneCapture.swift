@@ -1,6 +1,6 @@
 @preconcurrency import AVFoundation
 import DictationCore
-import Synchronization
+import SystemCompat
 
 /// The microphone (ARCHITECTURE.md, section 6, "Audio capture"; the `AudioCapturing` port).
 ///

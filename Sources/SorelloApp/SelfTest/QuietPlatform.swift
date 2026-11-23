@@ -4,7 +4,7 @@ import DictionaryKit
 import Foundation
 import MacPlatform
 import Observation
-import Synchronization
+import SystemCompat
 
 // The adapters the self-test and the snapshots use in place of the ones that reach outside the app: no event tap, no
 // login item, no field reads, nothing on the pasteboard. They need no permission, so the whole app can be proven

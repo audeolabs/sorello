@@ -1,7 +1,7 @@
 import DictationCore
 import DictionaryKit
 import Foundation
-import Synchronization
+import SystemCompat
 
 /// One piece of a pasted sequence (ARCHITECTURE.md, section 14, "Pasting a note").
 public enum PastePiece: Sendable, Equatable {

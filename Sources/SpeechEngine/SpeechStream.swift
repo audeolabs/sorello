@@ -1,7 +1,7 @@
 import DictationCore
 import DictionaryKit
 import Foundation
-import Synchronization
+import SystemCompat
 
 /// One dictation's audio on its way to the engine (ARCHITECTURE.md, section 4, "Speech"). The ingress is a lock, not
 /// the engine, so `append` and `cancel` are plain calls that return at once from any thread, including the audio

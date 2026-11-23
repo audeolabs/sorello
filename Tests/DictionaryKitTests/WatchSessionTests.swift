@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 @testable import DictionaryKit
-import Synchronization
+import SystemCompat
 
 /// One watched paste, driven by hand with invented times (DESIGN §3.5).
 struct WatchSessionTests {

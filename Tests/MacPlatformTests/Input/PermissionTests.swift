@@ -4,7 +4,7 @@ import CoreGraphics
 import DictationCore
 import Foundation
 @testable import MacPlatform
-import Synchronization
+import SystemCompat
 import Testing
 
 @Suite("Privacy permission words and links")

@@ -2,7 +2,7 @@
 // (ARCHITECTURE.md, sections 9 and 13), so on iOS this file compiles to nothing.
 #if os(macOS)
 import Foundation
-import Synchronization
+import SystemCompat
 
 /// The one place Sorello opens a network connection (ARCHITECTURE.md, section 9, invariant 1): the model's download,
 /// over one session that keeps no cookies, no cache and no credentials. It only carries requests and hands back what

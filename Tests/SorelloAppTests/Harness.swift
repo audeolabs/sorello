@@ -6,7 +6,7 @@ import Observation
 import Persistence
 import SorelloUI
 import SpeechEngine
-import Synchronization
+import SystemCompat
 import Testing
 @testable import SorelloApp
 

@@ -1,5 +1,5 @@
 import Foundation
-import Synchronization
+import SystemCompat
 
 // The correction watch (DESIGN §3.5): after a dictation is pasted, the pasted span is followed in the destination
 // field for up to 60 s, and each settled edit is reported so the app can check it against the dictation's audio.
@@ -59,7 +59,7 @@ public actor CorrectionWatcher {
     public static let startAttempts: [TimeInterval] = [0.15, 0.4, 1, 2]
     public static let pollInterval: TimeInterval = 0.5
 
-    private let queue = DispatchSerialQueue(label: "sorello.correction-watch", qos: .utility)
+    private let queue = SerialActorQueue(label: "sorello.correction-watch", qos: .utility)
     private let reader: any TextFieldReading
     private let attempts: [TimeInterval]
     private let generation = CorrectionWatchGeneration()

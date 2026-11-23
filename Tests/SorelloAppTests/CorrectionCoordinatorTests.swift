@@ -4,7 +4,7 @@ import Foundation
 import MacPlatform
 import Persistence
 import SorelloUI
-import Synchronization
+import SystemCompat
 import Testing
 @testable import SorelloApp
 

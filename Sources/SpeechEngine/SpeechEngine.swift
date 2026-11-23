@@ -1,7 +1,7 @@
 import DictationCore
 import DictionaryKit
 import Foundation
-import Synchronization
+import SystemCompat
 
 /// Loads the model on the engine's executor, or says why it cannot.
 typealias ModelLoader = @Sendable () throws(EngineFailure) -> any SpeechModel
@@ -23,7 +23,7 @@ public actor SpeechEngine: SpeechTranscribing {
     /// Retained audio over this size is not kept; the dictation is still transcribed.
     static let retainedBytesLimit = 16 << 20
 
-    private let queue = DispatchSerialQueue(label: "sorello.speech", qos: .userInitiated)
+    private let queue = SerialActorQueue(label: "sorello.speech", qos: .userInitiated)
     /// Where the encoder runs, chosen when the engine was made. The General screen says which one this Mac uses.
     public nonisolated let compute: SpeechCompute
     private let locate: ModelLocator
@@ -72,8 +72,10 @@ public actor SpeechEngine: SpeechTranscribing {
     ///   check the same files and share one store.
     public init(modelDirectory: URL?, storeDirectory: URL?, compute: SpeechCompute = .forThisMac(),
                 dictionary: @escaping @Sendable (String?) -> DictionarySnapshot) {
-        let loader = modelDirectory.map { bundle in
-            Self.loader(bundle: bundle, store: storeDirectory.map { ModelStore(root: $0) }, compute: compute)
+        // Not `modelDirectory.map`: handing generic code a function that throws one type needs macOS 15.
+        var loader: ModelLoader?
+        if let bundle = modelDirectory {
+            loader = Self.loader(bundle: bundle, store: storeDirectory.map { ModelStore(root: $0) }, compute: compute)
         }
         self.init(loader: loader, compute: compute, dictionary: dictionary)
     }
@@ -82,7 +84,9 @@ public actor SpeechEngine: SpeechTranscribing {
     init(loader: ModelLoader?, compute: SpeechCompute = .neuralEngine,
          dictionary: @escaping @Sendable (String?) -> DictionarySnapshot,
          retainedLifetime: TimeInterval = 90, beforeDelivery: (@Sendable (UInt64) -> Void)? = nil) {
-        self.init(locate: { loader }, present: loader != nil, compute: compute, dictionary: dictionary,
+        // Not `loader != nil`, for the same reason as above: the comparison is generic code.
+        let present = if case .some = loader { true } else { false }
+        self.init(locate: { loader }, present: present, compute: compute, dictionary: dictionary,
                   retainedLifetime: retainedLifetime, beforeDelivery: beforeDelivery)
     }
 

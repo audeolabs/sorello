@@ -1,6 +1,6 @@
 import DictationCore
 import Foundation
-import Synchronization
+import SystemCompat
 
 /// One GET, as the download sends it: an address and every header Sorello sets.
 struct DownloadRequest: Sendable, Equatable {

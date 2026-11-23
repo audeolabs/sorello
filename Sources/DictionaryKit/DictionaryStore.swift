@@ -1,5 +1,5 @@
 import Foundation
-import Synchronization
+import SystemCompat
 
 // DESIGN refers to docs/dictionary/DESIGN.md; pins to docs/dictionary/DESIGN-pins.md.
 

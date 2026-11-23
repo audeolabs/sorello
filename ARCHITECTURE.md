@@ -67,19 +67,20 @@ Sendable` without a comment that says which lock or queue makes it safe.
 
 | Module | Kind | Depends on | Holds |
 |---|---|---|---|
-| `DictationCore` | neutral, pure | nothing | The session state machine, its runtime, the ports every adapter implements, and `Diagnostics` |
+| `SystemCompat` | neutral, pure | nothing | The lock, the actor queue and Observation: Apple's own in the usual build, stand-ins with the same names in the build for older Macs (section 15) |
+| `DictationCore` | neutral, pure | `SystemCompat` | The session state machine, its runtime, the ports every adapter implements, and `Diagnostics` |
 | `TextRules` | neutral, pure | nothing | Numbers, spoken delimiters, macros, prompt tag, insertion-context fitting |
-| `DictionaryKit` | neutral | nothing | Entries, validation, tokenizer, bias graph, casing, correction decisions and the correction watch, the `TextFieldReading` protocol it reads text through, the dictionary file |
+| `DictionaryKit` | neutral | `SystemCompat` | Entries, validation, tokenizer, bias graph, casing, correction decisions and the correction watch, the `TextFieldReading` protocol it reads text through, the dictionary file |
 | `DesignCore` | neutral, pure | nothing | Palette, dot wave, level meter, pill geometry, motion constants, the mark |
-| `SpeechEngine` | neutral | `DictationCore`, `DictionaryKit` | The model's pin, download and store, feature front end, Core ML encoder, decoder, chunked streaming |
-| `Persistence` | neutral | `DictationCore`, `TextRules` | Settings, macros, Run Log |
-| `SorelloUI` | macOS UI | `DesignCore` | The pill, its overlay window, every screen and control |
-| `MacPlatform` | macOS | `DictationCore`, `DictionaryKit`, `DesignCore`, `ScreenNotes` | Shortcuts, audio capture, text insertion, Accessibility reads, permissions, screen notes' recorder and renderer |
+| `SpeechEngine` | neutral | `DictationCore`, `DictionaryKit`, `SystemCompat` | The model's pin, download and store, feature front end, Core ML encoder, decoder, chunked streaming |
+| `Persistence` | neutral | `DictationCore`, `TextRules`, `SystemCompat` | Settings, macros, Run Log |
+| `SorelloUI` | macOS UI | `DesignCore`, `SystemCompat` | The pill, its overlay window, every screen and control |
+| `MacPlatform` | macOS | `DictationCore`, `DictionaryKit`, `DesignCore`, `ScreenNotes`, `SystemCompat` | Shortcuts, audio capture, text insertion, Accessibility reads, permissions, screen notes' recorder and renderer |
 | `SorelloApp` | macOS | all of the above, and Sparkle | Composition: builds the objects, connects them, owns windows and the menu bar item, and updates the app |
 | `Sorello` | executable | `SorelloApp` | `@main` only |
 | `SorelloSnapshots` | executable | `SorelloUI` | Renders every pill state and screen to PNG files |
 | `FileTranscription` | neutral | `SpeechEngine`, `TextRules`, `DictationCore` | Transcribing one file: reading it, the engine, the text rules, progress. The one path the Transcribe screen and the `sorello` command both take |
-| `SorelloCommand` | macOS | `FileTranscription`, `SpeechEngine`, `Persistence`, `DictionaryKit`, `TextRules`, `DictationCore` | The `sorello` command: its arguments, finding its app and that app's model and saved rules, its output and exit status |
+| `SorelloCommand` | macOS | `FileTranscription`, `SpeechEngine`, `Persistence`, `DictionaryKit`, `TextRules`, `DictationCore`, `SystemCompat` | The `sorello` command: its arguments, finding its app and that app's model and saved rules, its output and exit status |
 | `sorello-command` | executable | `SorelloCommand` | `main` only. Shipped in the app as `Contents/Helpers/sorello` (section 10, "The command") |
 | `ScreenNotes` | pure, Mac only | nothing | Screen notes' rules: marks, keyframes, the summary and the manifest (section 14) |
 | `sorello-transcribe` | executable | `SpeechEngine` | For verification only, never shipped: transcribes files with a model bundle given directly, and downloads the model as the app does |
@@ -1934,3 +1935,71 @@ clearing the Run Log does not delete them.
 
 `ScreenNotes` imports only Foundation and CoreGraphics types, like the
 pure modules of section 2, and is linked only by the Mac app.
+
+## 15. The build for older Macs
+
+Sorello needs macOS 26. One switch builds the same source for macOS 13 and
+later, for Macs that cannot run macOS 26: `SORELLO_LEGACY=1` in the
+environment of `swift build`. `Package.swift` then lowers the Mac's
+minimum system to macOS 13 and defines `SORELLO_LEGACY` for every module.
+Without the variable the package is the usual one: no source file
+compiles differently, and the app is the app described in the rest of
+this document. The build for older Macs is a second app made from the
+same commit, never a replacement for the first.
+
+It is under construction on its branch. Today the switch builds
+`SystemCompat`, the pure modules, `DictionaryKit`, `SpeechEngine` and
+`sorello-transcribe`. The Mac app's own modules do not build under it
+yet.
+
+How one source serves both:
+
+- **Checks at run time need no switch.** Where a newer system offers
+  something an older one lacks, the code asks with `#available` and does
+  the older thing otherwise. Both builds compile both paths.
+- **`SystemCompat` holds what cannot be asked at run time**, because the
+  type itself is missing on macOS 13. Each name there is Apple's own type
+  in the usual build and a stand-in in the other, so the code that uses
+  it is one text:
+  - `Mutex` is `Synchronization.Mutex` (macOS 15), or a lock with the
+    same initializer and `withLock`.
+  - `SerialActorQueue` is `DispatchSerialQueue` (macOS 14) as an actor's
+    executor, or a serial executor over a dispatch queue.
+  - Observation (macOS 14). An `@Observable` class says that it conforms
+    to `Observable`. In the usual build that is Apple's protocol and
+    changes nothing. In the other, `@Observable` is the compiler's own
+    macro declared again without its macOS 14 floor, for the one thing it
+    does to a class's members, and `Observable` supplies what those
+    members call: the class is an `ObservableObject` that announces a
+    change to any tracked property, once, before it happens.
+    `withObservationTracking` there follows whole objects, not single
+    properties. Each module with such classes declares the macro names
+    in its own `ObservationStandIn.swift`, where they win over the names
+    SwiftUI brings in. The stand-in depends on what the compiler's macro
+    expands to. `Tests/SystemCompatTests` holds that contract in both
+    builds, so a compiler that changed it fails the build for older Macs
+    or its tests, never the usual build.
+- **The model has a build of its own.** macOS 13 reads only Core ML's
+  oldest program format, which has one function and no 1-bit weight with
+  its scale inside, so that build's encoder has one unnamed function and
+  applies each row's scale after the product (section 5). macOS 13
+  unpacks the weights when it loads them, into about 2.5 GB of memory.
+  The pin lists the build once it has been tested and published; until
+  then it is given with `SORELLO_MODEL_DIR` or `--model`.
+- **An executable records the SDK it was built with.** SwiftPM's link
+  records the minimum system instead, which would give the app the
+  behaviour AppKit keeps for apps built against the macOS 13 SDK, so the
+  build for older Macs tells the linker the SDK.
+
+It is built into its own directory, `.build-legacy`, so the two builds
+never disturb each other:
+
+```sh
+SORELLO_LEGACY=1 swift build --scratch-path .build-legacy --product sorello-transcribe
+```
+
+Nothing that builds Sorello runs macOS 13, so what is known about that
+system comes from running the build there: in a macOS 13 virtual machine
+on an Apple silicon Mac, natively and as Intel code under Rosetta. A
+virtual machine has no Neural Engine and no Intel processor; those are
+checked on real hardware.

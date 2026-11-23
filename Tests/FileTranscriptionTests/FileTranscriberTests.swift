@@ -2,7 +2,7 @@ import AVFoundation
 import DictationCore
 import Foundation
 import SpeechEngine
-import Synchronization
+import SystemCompat
 import Testing
 import TextRules
 @testable import FileTranscription

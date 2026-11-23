@@ -2,7 +2,7 @@ import DictationCore
 import DictionaryKit
 import Foundation
 import MacPlatform
-import Synchronization
+import SystemCompat
 
 // Fakes for the output side of MacPlatform. None of them touches the system: no key is posted and no real pasteboard
 // is read or written. All text is invented.

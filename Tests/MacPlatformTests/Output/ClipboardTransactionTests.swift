@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 import MacPlatform
-import Synchronization
+import SystemCompat
 import Testing
 
 /// Putting the text on the clipboard and the previous contents back, against a fake pasteboard and, once, a real
