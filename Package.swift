@@ -20,6 +20,13 @@ let linkedSDK: [LinkerSetting] = legacy ? (Context.environment["SDKROOT"].map {
     [.unsafeFlags(["-Xclang-linker", "-isysroot", "-Xclang-linker", $0])]
 } ?? []) : []
 
+// Sorello's own encoder for an Intel Mac, a C module only the build for older Macs has (ARCHITECTURE.md, section 15,
+// "The encoder on an Intel Mac"). It is optimized in every configuration: unoptimized, one chunk takes minutes, which
+// the tests that run it with the model cannot wait for.
+let nativeEncoder: [Target] = legacy ? [.target(name: "NativeEncoder", cSettings: [.unsafeFlags(["-O3"])])] : []
+let speechEngineDependencies: [Target.Dependency] = ["DictationCore", "DictionaryKit", "SystemCompat"]
+    + (legacy ? ["NativeEncoder"] : [])
+
 let package = Package(
     name: "Sorello",
     // iOS is here for the iPhone app, which links the two libraries below (ARCHITECTURE.md, section 13).
@@ -50,12 +57,12 @@ let package = Package(
         .target(name: "DesignCore", swiftSettings: strict),
         // Screen notes' rules, pure but for the Mac app only (ARCHITECTURE.md, section 14).
         .target(name: "ScreenNotes", swiftSettings: strict),
-        .target(name: "SpeechEngine", dependencies: ["DictationCore", "DictionaryKit", "SystemCompat"],
-                swiftSettings: strict),
+        .target(name: "SpeechEngine", dependencies: speechEngineDependencies, swiftSettings: strict),
         .target(name: "Persistence", dependencies: ["DictationCore", "TextRules", "SystemCompat"], swiftSettings: strict),
         .target(name: "FileTranscription", dependencies: ["SpeechEngine", "TextRules", "DictationCore"],
                 swiftSettings: strict),
 
+    ] + nativeEncoder + [
         // macOS.
         // AppKit's display link, or its stand-in in the build for older Macs.
         .target(name: "MacCompat", swiftSettings: strict),
