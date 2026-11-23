@@ -2,7 +2,7 @@ import AppKit
 import DictationCore
 import DictionaryKit
 import MacPlatform
-import Observation
+import SystemCompat
 
 // The macOS adapters the app is built from, behind the few protocols the composition needs, so the whole graph can
 // be built in a test with fakes: nothing in a test posts a key, reads the pasteboard, opens a panel or asks for a

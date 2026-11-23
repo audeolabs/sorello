@@ -43,7 +43,7 @@ public enum MainSection: CaseIterable, Hashable, Sendable {
 
 /// The main window's values: which section shows, and each section's model.
 @Observable
-public final class MainWindowModel {
+public final class MainWindowModel: Observable {
     /// The section showing. The app layer sets it to open the window at a section.
     public var section: MainSection
     /// General's values.

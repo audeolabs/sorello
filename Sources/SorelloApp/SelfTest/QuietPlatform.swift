@@ -3,7 +3,6 @@ import DictationCore
 import DictionaryKit
 import Foundation
 import MacPlatform
-import Observation
 import SystemCompat
 
 // The adapters the self-test and the snapshots use in place of the ones that reach outside the app: no event tap, no
@@ -131,7 +130,7 @@ nonisolated struct FixedTrust: AccessibilityTrust {
 /// Shortcuts that never start: the self-test's hold is synthetic.
 @MainActor
 @Observable
-final class NoShortcuts: ShortcutService {
+final class NoShortcuts: ShortcutService, Observable {
     var status: ShortcutMonitor.Status = .stopped
     @ObservationIgnored weak var handler: (any TriggerHandling)?
     func start() {}
@@ -143,7 +142,7 @@ final class NoShortcuts: ShortcutService {
 
 @MainActor
 @Observable
-final class NoLoginItem: LoginItemControlling {
+final class NoLoginItem: LoginItemControlling, Observable {
     var state: LoginItem.State = .disabled
     func refresh() {}
     func setEnabled(_ enabled: Bool) throws {}

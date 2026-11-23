@@ -19,7 +19,7 @@ public struct NoticeItem: Identifiable, Equatable, Sendable {
 
 /// The About screen's values. Name, version and copyright come from the bundle.
 @Observable
-public final class AboutModel {
+public final class AboutModel: Observable {
     /// The app's name as installed.
     public var appName: String
     /// "0.0.1".
@@ -73,7 +73,7 @@ nonisolated enum AboutCopy {
 
 /// About: the name and version, the promise that nothing said leaves the Mac, the model's notice and everyone else's.
 public struct AboutScreen: View {
-    private let model: AboutModel
+    @Bindable private var model: AboutModel
 
     /// The About screen drawn from `model`.
     public init(model: AboutModel) {

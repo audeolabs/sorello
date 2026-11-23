@@ -1,6 +1,6 @@
 import AppKit
 import DesignCore
-import Observation
+import SystemCompat
 
 /// The menu-bar item's menu (ARCHITECTURE.md, section 8, "Windows"): an ordinary `NSMenu`, which the system opens,
 /// places, highlights, tracks and closes, in its own material and in the menu bar's light or dark appearance. This

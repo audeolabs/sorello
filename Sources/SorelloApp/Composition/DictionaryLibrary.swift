@@ -1,7 +1,7 @@
 import DictationCore
 import DictionaryKit
 import Foundation
-import Observation
+import SystemCompat
 
 /// The one way the app changes the dictionary (docs/dictionary/DESIGN.md, section 3.3). It passes each change to
 /// `DictionaryStore`, which validates, writes and publishes it, then shows the published dictionary to the windows
@@ -11,7 +11,7 @@ import Observation
 /// This keeps a main-actor copy that changes only when the store's revision does.
 @MainActor
 @Observable
-final class DictionaryLibrary {
+final class DictionaryLibrary: Observable {
     /// The store the engine reads its snapshots from.
     @ObservationIgnored let store: DictionaryStore
     /// The speech model's vocabulary, for validating what is typed; nil until the model is on this Mac.

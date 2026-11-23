@@ -1,8 +1,8 @@
 import AppKit
 import ApplicationServices
 import CoreGraphics
-import Observation
 import SwiftUI
+import SystemCompat
 
 // The drag card itself. It opens the permission's pane in System Settings,
 // waits for the window to settle, flies from the Grant Access button and docks
@@ -41,7 +41,7 @@ extension PermissionPanel {
 extension PermissionPanel {
     @MainActor
     @Observable
-    final class CardModel {
+    final class CardModel: Observable {
         enum Phase { case instruction, waiting, granted }
         var phase = Phase.instruction
         var hovering = false
@@ -53,7 +53,7 @@ extension PermissionPanel {
     }
 
     struct CardContent: View {
-        let model: CardModel
+        @Bindable var model: CardModel
         let style: PermissionCardStyle
         let paneTitle: String
         let layout: Layout

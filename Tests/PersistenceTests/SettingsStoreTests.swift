@@ -1,6 +1,5 @@
 import DictationCore
 import Foundation
-import Observation
 import Persistence
 import SystemCompat
 import Testing

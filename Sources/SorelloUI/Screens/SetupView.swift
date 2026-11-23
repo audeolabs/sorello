@@ -37,7 +37,7 @@ public struct SetupActions {
 
 /// Setup's values.
 @Observable
-public final class SetupModel {
+public final class SetupModel: Observable {
     /// The app's name as installed.
     public var appName: String
     /// The step showing. The view moves it; the app layer may set it.
@@ -278,7 +278,7 @@ private struct Promise: View {
 /// The speech model: how large the download is, and that nothing said leaves the Mac; then how much has arrived, why
 /// it stopped, or that it is here. The download goes on behind the later steps once it has started.
 private struct ModelStep: View {
-    let model: SetupModel
+    @Bindable var model: SetupModel
 
     var body: some View {
         StepLayout(symbol: "arrow.down.circle", title: String(localized: "Speech model"),
@@ -324,7 +324,7 @@ private struct ModelStep: View {
 }
 
 private struct MicrophoneStep: View {
-    let model: SetupModel
+    @Bindable var model: SetupModel
 
     var body: some View {
         StepLayout(symbol: "mic", title: String(localized: "Allow the microphone"),
@@ -337,7 +337,7 @@ private struct MicrophoneStep: View {
 }
 
 private struct AccessibilityStep: View {
-    let model: SetupModel
+    @Bindable var model: SetupModel
 
     var body: some View {
         StepLayout(symbol: "accessibility", title: String(localized: "Allow Accessibility"),
@@ -386,7 +386,7 @@ private struct NumberedStep: View {
 }
 
 private struct ShortcutStep: View {
-    let model: SetupModel
+    @Bindable var model: SetupModel
 
     var body: some View {
         StepLayout(symbol: "keyboard", title: String(localized: "Choose your shortcut"),

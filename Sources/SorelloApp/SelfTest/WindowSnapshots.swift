@@ -323,7 +323,7 @@ nonisolated private struct HeardFile: FileTranscribing {
 /// An updater that checks nothing: idle, ready to be asked, with its daily check on, as a build with a feed starts.
 @MainActor
 @Observable
-private final class IdleUpdater: Updating {
+private final class IdleUpdater: Updating, Observable {
     let canCheck = true
     let foundUnseen = false
     var checksAutomatically = true

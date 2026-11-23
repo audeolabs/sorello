@@ -47,7 +47,7 @@ nonisolated public enum ModelHardware: Sendable, Equatable {
 
 /// The General screen's values.
 @Observable
-public final class GeneralModel {
+public final class GeneralModel: Observable {
     /// The speech model's name, as the pin gives it.
     public var modelName: String
     /// The model and permissions, as every window shows them.

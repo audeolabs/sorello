@@ -1,6 +1,5 @@
 import DictationCore
 import Foundation
-import Observation
 import SystemCompat
 
 /// One dictation in the Run Log. It holds what was heard and inserted, and how it ended; never the app it went to.
@@ -41,7 +40,7 @@ public struct HistoryEntry: Identifiable, Codable, Sendable, Equatable {
 ///   thrown: the Run Log never interrupts dictation.
 @MainActor
 @Observable
-public final class HistoryStore: HistoryRecording {
+public final class HistoryStore: HistoryRecording, Observable {
     /// The most entries the log keeps.
     public static let capacity = 20
 

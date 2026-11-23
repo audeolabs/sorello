@@ -34,7 +34,7 @@ public struct RunLogActions {
 
 /// The Run Log's values.
 @Observable
-public final class RunLogModel {
+public final class RunLogModel: Observable {
     /// Newest first; at most 20.
     public var items: [RunLogItem]
     /// The entry whose audio is playing.
@@ -70,7 +70,7 @@ public final class RunLogModel {
 /// Run Log: the last 20 dictations with their audio, to play, transcribe again, copy or delete. It all stays on
 /// this Mac.
 public struct RunLogScreen: View {
-    private let model: RunLogModel
+    @Bindable private var model: RunLogModel
     @State private var confirmingClear = false
 
     /// The Run Log drawn from `model`.

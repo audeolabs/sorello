@@ -1,5 +1,5 @@
 import Foundation
-import Observation
+import SystemCompat
 
 /// What choosing a command in the menu-bar item's menu asks the app to do.
 nonisolated public enum StatusMenuCommand: Hashable, Sendable {
@@ -99,7 +99,7 @@ public struct StatusMenuActions {
 /// The values the menu-bar item's menu is made from. The app layer keeps them current; the menu reads them each time
 /// it opens and follows them while it is open.
 @Observable
-public final class StatusMenuModel {
+public final class StatusMenuModel: Observable {
     /// The app's name as installed, from the bundle, for Quit.
     public var appName: String
     /// The model and permissions, for the state line.

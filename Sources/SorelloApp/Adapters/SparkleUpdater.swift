@@ -1,8 +1,8 @@
 import AppKit
 import DictationCore
 import Foundation
-import Observation
 import Sparkle
+import SystemCompat
 
 /// The app's updater, over Sparkle (ARCHITECTURE.md, section 6, "Updates"). The only source file that imports Sparkle.
 ///
@@ -14,7 +14,7 @@ import Sparkle
 /// update session ends; choosing it brings Sparkle's window for it forward.
 @MainActor
 @Observable
-final class SparkleUpdater: Updating {
+final class SparkleUpdater: Updating, Observable {
     private(set) var canCheck = false
     private(set) var foundUnseen = false
     var checksAutomatically: Bool {

@@ -1,6 +1,6 @@
 import DictationCore
 import Foundation
-import Observation
+import SystemCompat
 
 /// Every user setting, typed, over a `UserDefaults` the caller supplies (ARCHITECTURE.md, section 7). The app passes
 /// its own defaults; tests pass a suite of their own, so they never touch real settings.
@@ -10,7 +10,7 @@ import Observation
 /// unaffected. Observable, so a screen or the session's settings follow a change at once.
 @MainActor
 @Observable
-public final class SettingsStore {
+public final class SettingsStore: Observable {
     @ObservationIgnored private let defaults: UserDefaults
 
     /// Records while held. Defaults to Fn. Nil means the user removed it.

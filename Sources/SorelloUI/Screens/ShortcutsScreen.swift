@@ -34,7 +34,7 @@ nonisolated public enum DoubleTapChoice: CaseIterable, Hashable, Sendable {
 
 /// The Shortcuts screen's values.
 @Observable
-public final class ShortcutsModel {
+public final class ShortcutsModel: Observable {
     /// Each action's recorder.
     public var recorders: [ShortcutKind: ShortcutRecorderState]
     /// What tapping Hold to Talk twice does.
