@@ -2038,6 +2038,14 @@ What an older system does differently, all of it only in this build:
 | macOS 14 | The pill and the drag card animate on a timer, not the display's refresh. The menu's headings are items that cannot be chosen, and a row's keys are set at its far edge as text, not as a badge. A control that draws its own focus ring shows the system's as well, and Space does not change a switch that has the focus; a click does. A copied row's symbol cross-fades. Sorello takes the front outright when it must, as apps did then. Where the encoder runs is decided by the processor (section 5) |
 | macOS 13.3 | A page that fits its window still bounces when scrolled |
 
+One more difference is not tied to a version. Before the model's download
+Sorello asks how much room the disk has for files the user needs, and
+stops with "the disk is full" when there is less than the build. macOS 13
+can answer 0 to that question on a disk with room: it does outside a login
+session, and whether it ever does inside one is not known. The build for
+older Macs takes a 0 to mean the answer is unknown and asks for the disk's
+plain free space instead. A real answer is used as it is.
+
 It is built into its own directory, `.build-legacy`, so the two builds
 never disturb each other:
 

@@ -201,9 +201,27 @@ public final class ModelDownload: Sendable {
         }
     }
 
+    #if SORELLO_LEGACY
+    /// The bytes free on the volume holding `url`, for files the user needs, when the system says.
+    static func freeSpace(at url: URL) -> Int64? {
+        let keys: Set<URLResourceKey> = [.volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey]
+        let values = try? url.resourceValues(forKeys: keys)
+        return freeSpace(important: values?.volumeAvailableCapacityForImportantUsage,
+                         available: values?.volumeAvailableCapacity)
+    }
+
+    /// What is free for files the user needs, from the system's two answers. macOS 13 can answer 0 for important
+    /// files on a volume with room, so a 0 there gives way to the volume's plain free space (ARCHITECTURE.md,
+    /// section 15).
+    static func freeSpace(important: Int64?, available: Int?) -> Int64? {
+        guard let important, important > 0 else { return available.map(Int64.init) ?? important }
+        return important
+    }
+    #else
     /// The bytes free on the volume holding `url`, for files the user needs, when the system says.
     static func freeSpace(at url: URL) -> Int64? {
         (try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?
             .volumeAvailableCapacityForImportantUsage
     }
+    #endif
 }
