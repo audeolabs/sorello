@@ -123,6 +123,20 @@ enum KeyboardDictationAudioTests {
         TestSupport.expectEqual(reader.read(chunk(2, samples: longest)), .audio(samples: longest.map { Float($0) / 32_768 }, rate: 48_000))
         TestSupport.expectEqual(reader.read(["kind": "failed"]), .failed)
         TestSupport.expectEqual(reader.read(["kind": "ended"]), .ended)
+        // The microphone the page believed it recorded from: one of two fixed words, or none.
+        var named = CaptureMessageReader()
+        var builtIn = chunk(0)
+        builtIn["mic"] = "builtIn"
+        TestSupport.expectEqual(named.read(builtIn), .audio(samples: [0, 0.5, -1, 32_767 / 32_768], rate: 48_000, input: .builtIn))
+        var other = chunk(1)
+        other["mic"] = "other"
+        TestSupport.expectEqual(named.read(other), .audio(samples: [0, 0.5, -1, 32_767 / 32_768], rate: 48_000, input: .other))
+        for bad: Any in ["iPhone Microphone", "", NSNumber(value: true), NSNumber(value: 1)] {
+            var reader = CaptureMessageReader()
+            var body = chunk(0)
+            body["mic"] = bad
+            TestSupport.expectEqual(reader.read(body), .malformed)
+        }
     }
 
     private static func testRefusesMalformedMessages() {

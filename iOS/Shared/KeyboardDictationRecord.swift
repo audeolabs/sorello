@@ -64,6 +64,9 @@ struct KeyboardDictationRecord: Codable, Equatable, Sendable {
     /// Where the text came from.
     enum TextSource: String, Codable, Sendable { case stream, batch }
 
+    /// The microphone the capture page believed it recorded from: whether the track's label named the iPhone.
+    enum CaptureInput: String, Codable, Sendable { case builtIn, other }
+
     struct StepRecord: Codable, Equatable, Sendable {
         var step: Step
         /// Since the tap, on the monotonic clock.
@@ -87,6 +90,7 @@ struct KeyboardDictationRecord: Codable, Equatable, Sendable {
     var leastAvailableMB: Double?
     var audioSeconds: Double?
     var captureSampleRate: Double?
+    var captureInput: CaptureInput?
     /// The loudest and the median captured chunk's RMS over the sealed recording, in whole dBFS.
     var inputLoudestDBFS: Int?
     var inputTypicalDBFS: Int?
@@ -108,7 +112,7 @@ struct KeyboardDictationRecord: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case schema, attemptID, processID, tappedAt, iosVersion, warm, steps, peakFootprintMB, leastAvailableMB, audioSeconds,
-             captureSampleRate, preparationMilliseconds, stopToTextMilliseconds, stopToInsertionMilliseconds,
+             captureSampleRate, captureInput, preparationMilliseconds, stopToTextMilliseconds, stopToInsertionMilliseconds,
              textSource, memoryWarnings, outcome, inputLoudestDBFS, inputTypicalDBFS
     }
 
@@ -125,6 +129,7 @@ struct KeyboardDictationRecord: Codable, Equatable, Sendable {
         leastAvailableMB = try values.decodeIfPresent(Double.self, forKey: .leastAvailableMB)
         audioSeconds = try values.decodeIfPresent(Double.self, forKey: .audioSeconds)
         captureSampleRate = try values.decodeIfPresent(Double.self, forKey: .captureSampleRate)
+        captureInput = try values.decodeIfPresent(CaptureInput.self, forKey: .captureInput)
         inputLoudestDBFS = try values.decodeIfPresent(Int.self, forKey: .inputLoudestDBFS)
         inputTypicalDBFS = try values.decodeIfPresent(Int.self, forKey: .inputTypicalDBFS)
         preparationMilliseconds = try values.decodeIfPresent(Double.self, forKey: .preparationMilliseconds)

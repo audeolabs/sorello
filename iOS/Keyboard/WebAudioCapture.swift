@@ -5,7 +5,8 @@ import WebKit
 /// One in-keyboard dictation's capture (ARCHITECTURE.md, "In-keyboard dictation (experiment)", Capture): a hidden web
 /// view whose fixed page records through `getUserMedia`, since iOS refuses AVFoundation recording in a keyboard. WebKit
 /// records in its own process, under the containing app's microphone permission. The web view is made for one
-/// dictation, 1×1 pt and fully transparent, and torn down with its message handler when it ends.
+/// dictation, or for the held microphone and then handed to the tap's dictation (`handOver`) and back (`hold`), 1×1 pt
+/// and fully transparent, and torn down with its message handler when it ends.
 ///
 /// Locked down: a non-persistent data store; the initial load of the fixed page only, every other navigation, new
 /// window and download cancelled; the microphone granted only to that page's main frame in this capture's web view,
@@ -13,17 +14,27 @@ import WebKit
 /// only from that main frame while open, and read strictly (`CaptureMessageReader`). Nothing is sent into the page.
 @MainActor
 final class WebAudioCapture: NSObject, WKNavigationDelegate, WKUIDelegate {
-    /// Asked right before WebKit's microphone grant: the attempt still runs and the host does not own the microphone.
-    private let mayGrantMicrophone: () -> Bool
+    /// Asked right before WebKit's microphone grant: the attempt still runs (or the hold still holds) and the host does
+    /// not own the microphone.
+    private var mayGrantMicrophone: () -> Bool
     /// Each message read from the page, while open.
-    private let onMessage: (CaptureMessageReader.Message) -> Void
-    /// Always `CapturePage.html` in the keyboard; a verification harness, never the keyboard, passes a synthetic source.
+    private var onMessage: (CaptureMessageReader.Message) -> Void
+    /// One of `CapturePage`'s fixed pages in the keyboard; a verification harness, never the keyboard, passes a
+    /// synthetic source.
     private let page: String
     private var webView: WKWebView?
     private var reader = CaptureMessageReader()
     private var initialLoadAllowed = false
     private var initialResponseAllowed = false
     private(set) var isOpen = false
+    /// The page has loaded, so its script, `sorelloRecord` included, is defined.
+    private var isLoaded = false
+    /// Handed over before the page loaded: the record script runs once it has.
+    private var recordPending = false
+    /// The hold script has not yet finished: a hand-over waits for it.
+    private var holdPending = false
+    /// A dictation's grants and messages, handed over while the hold script had not finished.
+    private var pendingHandOver: (mayGrantMicrophone: () -> Bool, onMessage: (CaptureMessageReader.Message) -> Void)?
 
     init(page: String = CapturePage.html, mayGrantMicrophone: @escaping () -> Bool,
          onMessage: @escaping (CaptureMessageReader.Message) -> Void) {
@@ -55,6 +66,54 @@ final class WebAudioCapture: NSObject, WKNavigationDelegate, WKUIDelegate {
         webView.loadHTMLString(page, baseURL: CapturePage.baseURL)
     }
 
+    /// The tap's dictation takes a held capture: its grants and messages are the attempt's from now on, read afresh
+    /// (its chunks are numbered from 0), and the page records from now on (`CapturePage.recordScript`), or from when it
+    /// has loaded. Given back by a dictation whose hold script has not finished, it is taken once it has: WebKit
+    /// delivers the page's messages and the script's completion in order, so everything the last dictation's audio
+    /// processing posted goes to the hold, never to this attempt. A record script that fails is `failed`.
+    func handOver(mayGrantMicrophone: @escaping () -> Bool, onMessage: @escaping (CaptureMessageReader.Message) -> Void) {
+        guard isOpen else { return }
+        if holdPending {
+            pendingHandOver = (mayGrantMicrophone, onMessage)
+            return
+        }
+        self.mayGrantMicrophone = mayGrantMicrophone
+        self.onMessage = onMessage
+        reader = CaptureMessageReader()
+        if isLoaded { runRecordScript() } else { recordPending = true }
+    }
+
+    private func runRecordScript() {
+        guard let webView else { return }
+        webView.evaluateJavaScript(CapturePage.recordScript) { [weak self, weak webView] _, error in
+            guard error != nil, let self, let webView else { return }
+            failed(webView)
+        }
+    }
+
+    /// The dictation that took it stopped recording: the hold takes it back, its grants and messages the hold's from
+    /// now on, and the page posts nothing more (`CapturePage.holdScript`). False, changing nothing, if the page has not
+    /// loaded or its record script still waits for it. A hold script that fails is `failed`, to whoever has it then.
+    func hold(mayGrantMicrophone: @escaping () -> Bool, onMessage: @escaping (CaptureMessageReader.Message) -> Void) -> Bool {
+        guard isOpen, isLoaded, !recordPending, !holdPending, let webView else { return false }
+        self.mayGrantMicrophone = mayGrantMicrophone
+        self.onMessage = onMessage
+        holdPending = true
+        webView.evaluateJavaScript(CapturePage.holdScript) { [weak self, weak webView] _, error in
+            guard let self, let webView, webView === self.webView else { return }
+            holdPending = false
+            let pending = pendingHandOver
+            pendingHandOver = nil
+            if error != nil {
+                if let pending { (self.mayGrantMicrophone, self.onMessage) = pending }
+                failed(webView)
+            } else if let pending {
+                handOver(mayGrantMicrophone: pending.mayGrantMicrophone, onMessage: pending.onMessage)
+            }
+        }
+        return true
+    }
+
     /// Stops every track and the audio context, and tears the web view down at once; nothing it posts later is read.
     func close() {
         isOpen = false
@@ -72,7 +131,16 @@ final class WebAudioCapture: NSObject, WKNavigationDelegate, WKUIDelegate {
     fileprivate func received(_ message: WKScriptMessage) {
         guard isOpen, let webView, message.webView === webView, message.name == CapturePage.handlerName,
               message.frameInfo.isMainFrame, Self.isCaptureOrigin(message.frameInfo.securityOrigin) else { return }
-        onMessage(reader.read(message.body))
+        let read = reader.read(message.body)
+        // While a hand-over waits for the hold script, the last dictation's audio goes to the hold, which drops it;
+        // anything else is the waiting attempt's, so a track that ended meanwhile ends it.
+        if let pendingHandOver, !Self.isAudio(read) { return pendingHandOver.onMessage(read) }
+        onMessage(read)
+    }
+
+    private static func isAudio(_ message: CaptureMessageReader.Message) -> Bool {
+        if case .audio = message { return true }
+        return false
     }
 
     private static func isCaptureOrigin(_ origin: WKSecurityOrigin) -> Bool {
@@ -98,6 +166,15 @@ final class WebAudioCapture: NSObject, WKNavigationDelegate, WKUIDelegate {
         decisionHandler(initial ? .allow : .cancel)
     }
 
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard webView === self.webView, isOpen else { return }
+        isLoaded = true
+        if recordPending {
+            recordPending = false
+            runRecordScript()
+        }
+    }
+
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         failed(webView)
     }
@@ -113,7 +190,7 @@ final class WebAudioCapture: NSObject, WKNavigationDelegate, WKUIDelegate {
     /// The page could not be shown or its process ended: capture is gone, whatever the phase.
     private func failed(_ webView: WKWebView) {
         guard webView === self.webView, isOpen else { return }
-        onMessage(.failed)
+        (pendingHandOver?.onMessage ?? onMessage)(.failed)
     }
 
     // MARK: WKUIDelegate
