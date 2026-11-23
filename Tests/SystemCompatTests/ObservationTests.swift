@@ -6,8 +6,8 @@ import Combine
 #endif
 
 /// What Sorello relies on from an `@Observable` class, in both builds (ARCHITECTURE.md, section 15): Apple's
-/// Observation in the usual one, the stand-in over `ObservableObject` in the build for older Macs. The last tests
-/// hold the stand-in to what its file promises, and to the one place it is coarser than Observation.
+/// Observation in the usual one, the stand-in over `ObservableObject` in the build for older Macs. The last test
+/// holds the stand-in to what it adds: it publishes as an `ObservableObject`, which is how SwiftUI follows it there.
 @Observable
 private final class Tally: Observable {
     struct Pair: Equatable { var left = 0, right = 0 }
@@ -72,6 +72,18 @@ private final class Tally: Observable {
         #expect(seen.withLock { $0 } == 0)
     }
 
+    @Test("Only the properties that were read are followed")
+    func unreadPropertiesAreQuiet() {
+        #expect(announcements(reading: { _ = $0.count }, { $0.label = "b" }) == 0)
+        #expect(announcements(reading: { _ = $0.count }, { $0.label = "b"; $0.count = 1 }) == 1)
+    }
+
+    @Test("Two objects are followed apart")
+    func objectsAreFollowedApart() {
+        let other = Tally()
+        #expect(announcements(reading: { _ = $0.count }, { _ in other.count = 9 }) == 0)
+    }
+
     #if SORELLO_LEGACY
     @Test("In the build for older Macs an observable class is an ObservableObject that publishes each change once")
     func publishesAsAnObservableObject() {
@@ -87,16 +99,6 @@ private final class Tally: Observable {
         _ = tally.count
         watch.cancel()
         #expect(fired == 4)
-    }
-
-    @Test("There, a change to any tracked property of an object that was read is announced")
-    func theStandInFollowsWholeObjects() {
-        #expect(announcements(reading: { _ = $0.count }, { $0.label = "b" }) == 1)
-    }
-    #else
-    @Test("Observation follows only the properties that were read")
-    func observationFollowsProperties() {
-        #expect(announcements(reading: { _ = $0.count }, { $0.label = "b" }) == 0)
     }
     #endif
 }
