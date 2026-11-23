@@ -65,6 +65,14 @@ final class CoreMLSpeechModel: SpeechModel {
     private let vocabulary: [String]
     private let layout: EncoderLayout
     private let models = ModelCache<MLModel>()
+    #if SORELLO_LEGACY
+    /// Sorello's own encoder, when the engine runs on `nativeCPU` and the build's program has what it needs.
+    private var native: NativeEncoderRunner?
+    /// The decoder with 8-bit matrices that runs with it, so that what each word needs stays in the processor's cache.
+    private var nativeDecoder: NativeDecoder?
+    /// The projection kernel Sorello's own encoder runs, once prepared; nil when Core ML runs the encoder.
+    var nativeKernel: String? { native?.kernel }
+    #endif
 
     /// Verifies the bundle at `directory` and reads its native parts. The encoder is loaded by `prepare`, on
     /// `compute`.
@@ -105,6 +113,17 @@ final class CoreMLSpeechModel: SpeechModel {
     /// Loads the 15 s encoder function where `compute` says and warms it with invented zero features. No audio or
     /// user content is read.
     func prepare() throws(EngineFailure) {
+        #if SORELLO_LEGACY
+        // Sorello's own encoder, warmed with a full chunk of invented zero features. A build it cannot read runs on
+        // Core ML's CPU kernels instead (ARCHITECTURE.md, section 15).
+        if compute == .nativeCPU, native == nil,
+           let runner = try? NativeEncoderRunner(directory: directory, threads: NativeEncoderRunner.threadsForThisMac),
+           (try? runner.encode(features: [Float](repeating: 0, count: 128 * 1501), stride: 1501, valid: 1500)) != nil {
+            native = runner
+            nativeDecoder = NativeDecoder(math)
+        }
+        if native != nil { return }
+        #endif
         do {
             try models.prepare(load: loadEncoder, warm: Self.warm)
         } catch {
@@ -134,12 +153,29 @@ final class CoreMLSpeechModel: SpeechModel {
     }
 
     func project(_ input: [Float], check: () throws -> Void) throws -> Projection? {
+        guard let frames = try encoderFrames(input, check: check) else { return nil }
+        let projection = FloatBuffer(count: frames.count * NativeWeights.hidden)
+        math.project(frames, length: frames.count, into: projection.pointer)
+        return Projection(buffer: projection, frames: frames.count,
+                          bytes: frames.count * NativeWeights.hidden * MemoryLayout<Float>.size)
+    }
+
+    /// The encoder's output for one chunk of at most 15 s; nil for digital silence.
+    func encoderFrames(_ input: [Float], check: () throws -> Void) throws -> EncoderFrames? {
         try check()
         guard input.allSatisfy(\.isFinite) else { throw TranscriptionError.invalidAudio }
         if input.allSatisfy({ $0 == 0 }) { return nil }
         // NeMo's unbiased per-feature normalization needs at least two frames.
         let pcm = input.count < 480 ? input + [Float](repeating: 0, count: 480 - input.count) : input
         let seconds = try SpeechCore.bucket(samples: pcm.count)
+        #if SORELLO_LEGACY
+        if let native {
+            try check()
+            let features = frontend.compute(pcm)
+            let output = try native.encode(features: features.features, stride: features.frames, valid: features.valid)
+            return EncoderFrames(native: output.values, count: output.frames)
+        }
+        #endif
         let model = try models.model(load: loadEncoder)
         try check()
         let features = frontend.compute(pcm)
@@ -160,11 +196,7 @@ final class CoreMLSpeechModel: SpeechModel {
               let valid = result.featureValue(for: "encoder_length")?.multiArrayValue else {
             throw TranscriptionError.invalidModelOutput
         }
-        let frames = try EncoderFrames(output, validLength: valid[0].intValue)
-        let projection = FloatBuffer(count: frames.count * NativeWeights.hidden)
-        math.project(frames, length: frames.count, into: projection.pointer)
-        return Projection(buffer: projection, frames: frames.count,
-                          bytes: frames.count * NativeWeights.hidden * MemoryLayout<Float>.size)
+        return try EncoderFrames(output, validLength: valid[0].intValue)
     }
 
     func decode(_ projection: Projection, offset: Int, bias: BiasGraph?, check: () throws -> Void) throws -> [HeardWord] {
@@ -173,12 +205,30 @@ final class CoreMLSpeechModel: SpeechModel {
         var h = [Float](repeating: 0, count: 2 * hidden), c = h
         var g = [Float](repeating: 0, count: hidden), z = g
         let logits = FloatBuffer(count: outputs)
+        let math = math
+        #if SORELLO_LEGACY
+        let nativeDecoder = nativeDecoder
+        #endif
+        let predict = { (token: Int) in
+            #if SORELLO_LEGACY
+            if let nativeDecoder { return nativeDecoder.predict(token, h: &h, c: &c, g: &g) }
+            #endif
+            math.predict(token, h: &h, c: &c, g: &g)
+        }
+        let joint = { (frame: Int) -> (Int, Int) in
+            #if SORELLO_LEGACY
+            if let nativeDecoder {
+                return nativeDecoder.joint(f: f.pointer + frame * hidden, g: g, logits: logits.pointer)
+            }
+            #endif
+            return math.joint(f: f.pointer + frame * hidden, g: &g, z: &z, logits: logits.pointer)
+        }
         let tokens: [DecodedToken]
         if let bias {
             tokens = try SpeechCore.decode(length: projection.frames, bias: bias, predict: { token in
-                math.predict(token, h: &h, c: &c, g: &g)
+                predict(token)
             }, joint: { frame in
-                let decision = math.joint(f: f.pointer + frame * hidden, g: &g, z: &z, logits: logits.pointer)
+                let decision = joint(frame)
                 guard UnsafeBufferPointer(start: logits.pointer, count: outputs).allSatisfy(\.isFinite) else {
                     throw TranscriptionError.invalidModelOutput
                 }
@@ -187,9 +237,9 @@ final class CoreMLSpeechModel: SpeechModel {
         } else {
             // No dictionary: exactly the unbiased decoding path.
             tokens = try SpeechCore.decode(length: projection.frames, predict: { token in
-                math.predict(token, h: &h, c: &c, g: &g)
+                predict(token)
             }, joint: { frame in
-                let decision = math.joint(f: f.pointer + frame * hidden, g: &g, z: &z, logits: logits.pointer)
+                let decision = joint(frame)
                 guard UnsafeBufferPointer(start: logits.pointer, count: outputs).allSatisfy(\.isFinite) else {
                     throw TranscriptionError.invalidModelOutput
                 }

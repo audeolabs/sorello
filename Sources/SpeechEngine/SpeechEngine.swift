@@ -263,6 +263,15 @@ public actor SpeechEngine: SpeechTranscribing {
         return model
     }
 
+    #if SORELLO_LEGACY
+    /// The projection kernel Sorello's own encoder runs once the model is ready, for the verification tools; nil when
+    /// Core ML runs the encoder, or the model is not ready (ARCHITECTURE.md, section 15).
+    public func nativeKernel() async -> String? {
+        guard let model = try? await readyModel() else { return nil }
+        return (model as? CoreMLSpeechModel)?.nativeKernel
+    }
+    #endif
+
     // MARK: - Streams
 
     /// Opens a stream for one dictation, taking the dictionary snapshot for its app now. Starting a recording

@@ -44,3 +44,43 @@ struct ComputeTests {
         #expect(SpeechCompute.cpu.description == "CPU")
     }
 }
+
+#if SORELLO_LEGACY
+/// The build for older Macs runs Sorello's own encoder on an Intel Mac (ARCHITECTURE.md, section 15, "The encoder on an
+/// Intel Mac"). The processors are invented, so every kind is covered on whichever Mac runs this.
+struct NativeComputeTests {
+    let intel = NativeEncoderSupport(avx2: true, fma: true)
+
+    @Test("An Intel processor with AVX2 and FMA runs Sorello's own encoder where Core ML's CPU kernels would run")
+    func anIntelMacRunsTheNativeEncoder() {
+        #expect(SpeechCompute(devices: [.cpu, .gpu]).preferringNative(intel) == .nativeCPU)
+        #expect(SpeechCompute(devices: []).preferringNative(intel) == .nativeCPU)
+        #expect(SpeechCompute(appleSilicon: false).preferringNative(intel) == .nativeCPU, "macOS 13, which lists no devices")
+    }
+
+    @Test func aNeuralEngineStillComesFirst() {
+        #expect(SpeechCompute(devices: [.cpu, .gpu, .neuralEngine]).preferringNative(intel) == .neuralEngine)
+        #expect(SpeechCompute(appleSilicon: true).preferringNative(intel) == .neuralEngine,
+                "Rosetta may report AVX2, but the Mac has a Neural Engine")
+    }
+
+    @Test("Without AVX2 or FMA, Core ML's CPU kernels run, as before")
+    func aProcessorWithoutAVX2OrFMAKeepsCoreML() {
+        for support in [NativeEncoderSupport(avx2: false, fma: true), NativeEncoderSupport(avx2: true, fma: false),
+                        NativeEncoderSupport(avx2: false, fma: false)] {
+            #expect(SpeechCompute(devices: [.cpu, .gpu]).preferringNative(support) == .cpu)
+            #expect(SpeechCompute(appleSilicon: false).preferringNative(support) == .cpu)
+        }
+    }
+
+    @Test func thisMacsChoiceFollowsItsProcessor() {
+        let compute = SpeechCompute.forThisMac()
+        #expect(compute != .cpu || !NativeEncoderSupport.thisProcessor.isSupported)
+        #expect(compute != .nativeCPU || NativeEncoderSupport.thisProcessor.isSupported)
+    }
+
+    @Test func itSaysWhatItIs() {
+        #expect(SpeechCompute.nativeCPU.description == "CPU, Sorello's own encoder")
+    }
+}
+#endif

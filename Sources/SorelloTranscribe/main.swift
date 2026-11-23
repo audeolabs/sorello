@@ -9,6 +9,16 @@ import SpeechEngine
 // given and writes only the model store it is pointed at. With --download it fetches this Mac's build of the model
 // into that store as the app does, from the pin's address or, to stage a failure, from --source.
 
+// Top-level constants are set in order, so this comes before the usage that reads it.
+#if SORELLO_LEGACY
+let nativeUsage = """
+
+      --native    run Sorello's own encoder on the processor, as the build for older Macs does on an Intel Mac
+    """
+#else
+let nativeUsage = ""
+#endif
+
 let usage = """
     usage: sorello-transcribe --model <bundle-dir> [--store <dir>] [options] <file>...
            sorello-transcribe --download --pin <file> --store <dir> [--source <address>] [options] <file>...
@@ -21,7 +31,7 @@ let usage = """
       --word      a dictionary word, with an optional strength (default 1); repeat for more
       --realtime  hand the audio over at the speed it would be recorded, and time only the wait after the end
       --cpu       run the encoder on Core ML's CPU kernels, as on a Mac without a Neural Engine
-    """
+    """ + nativeUsage
 
 func fail(_ message: String) -> Never {
     FileHandle.standardError.write(Data((message + "\n").utf8))
@@ -35,6 +45,7 @@ var pinFile: URL?
 var source: URL?
 var realtime = false
 var forcesCPU = false
+var forcesNative = false
 var words: [DictionaryEntry] = []
 var files: [URL] = []
 var arguments = CommandLine.arguments.dropFirst()
@@ -69,6 +80,10 @@ while let argument = arguments.popFirst() {
         realtime = true
     case "--cpu":
         forcesCPU = true
+    #if SORELLO_LEGACY
+    case "--native":
+        forcesNative = true
+    #endif
     case "-h", "--help":
         print(usage)
         exit(0)
@@ -78,7 +93,7 @@ while let argument = arguments.popFirst() {
     }
 }
 guard !files.isEmpty, downloads ? (model == nil && pinFile != nil && store != nil) : (model != nil && pinFile == nil),
-      source == nil || downloads else { fail(usage) }
+      source == nil || downloads, !(forcesCPU && forcesNative) else { fail(usage) }
 
 func seconds(_ duration: Duration) -> String {
     let value = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
@@ -128,7 +143,10 @@ func download(pinFile: URL, store: URL, source: URL?) async -> PinnedModel {
 }
 
 let snapshot = DictionarySnapshot(revision: 1, entries: words)
-let compute = forcesCPU ? SpeechCompute.cpu : .forThisMac()
+var compute = forcesCPU ? SpeechCompute.cpu : .forThisMac()
+#if SORELLO_LEGACY
+if forcesNative { compute = .nativeCPU }
+#endif
 let engine: SpeechEngine
 if downloads, let pinFile, let store {
     engine = SpeechEngine(model: await download(pinFile: pinFile, store: store, source: source), compute: compute,
@@ -136,7 +154,7 @@ if downloads, let pinFile, let store {
 } else {
     engine = SpeechEngine(modelDirectory: model, storeDirectory: store, compute: compute, dictionary: { _ in snapshot })
 }
-let reason = forcesCPU ? "forced by --cpu" : "this Mac's hardware"
+let reason = forcesCPU ? "forced by --cpu" : forcesNative ? "forced by --native" : "this Mac's hardware"
 FileHandle.standardError.write(Data("encoder: \(engine.compute) (\(reason))\n".utf8))
 let clock = ContinuousClock()
 let prepared = clock.now
@@ -149,6 +167,13 @@ func currentReadiness(of engine: SpeechEngine) async -> EngineReadiness? {
 let state = await currentReadiness(of: engine)
 FileHandle.standardError.write(Data("preparation: \(seconds(clock.now - prepared)) (\(String(describing: state ?? .preparing)))\n".utf8))
 guard state == .ready else { exit(1) }
+#if SORELLO_LEGACY
+if engine.compute == .nativeCPU {
+    let kernel = await engine.nativeKernel().map { "Sorello's own, kernel \($0)" }
+        ?? "Core ML's CPU kernels: Sorello's own cannot run this build"
+    FileHandle.standardError.write(Data("encoder code: \(kernel)\n".utf8))
+}
+#endif
 
 var failed = false
 for file in files {
