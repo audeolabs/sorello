@@ -341,7 +341,7 @@ private struct AccessibilityStep: View {
     @Bindable var model: SetupModel
 
     var body: some View {
-        StepLayout(symbol: "accessibility", title: String(localized: "Allow Accessibility"),
+        StepLayout(symbol: SystemSymbol.accessibility, title: String(localized: "Allow Accessibility"),
                    line: String(localized: "It lets the shortcut work in every app and puts your words at the cursor.")) {
             VStack(spacing: 12) {
                 if model.accessibility == .missing {

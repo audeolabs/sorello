@@ -1567,6 +1567,13 @@ the model the app has downloaded, whether the app is running or not.
   file, and a dictation while it runs. The command from a link on
   the PATH, in a release installed from its disk image, before and after
   the app has been opened once.
+- **System symbols.** A symbol name the system does not have draws
+  nothing, and the compiler cannot tell. `SystemSymbolTests` reads the
+  system's own record of when each symbol appeared and checks every
+  string literal in `Sources` that the record knows as a symbol against
+  the build's minimum system, so a symbol's name is written as a literal,
+  never built from parts. A symbol the system renamed is named through
+  `SystemSymbol`, which gives the name the running system has.
 
 ## 12. Provenance
 

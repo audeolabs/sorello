@@ -212,7 +212,8 @@ public final class StatusMenuController: NSObject, NSMenuDelegate {
                 : item.action == nil ? "not a command"
                 : item.isEnabled ? "command" : "unavailable"
             let trailing = row.trailing ?? Self.keyEquivalentLabel(item)
-            return [role, row.image.map(Self.describe) ?? "", item.title, trailing]
+            // The row's title, not the item's: before macOS 14 the item's holds its trailing keys as well.
+            return [role, row.image.map(Self.describe) ?? "", row.title, trailing]
         }
         let widths = (0..<3).map { column in lines.map { $0.count > column ? $0[column].count : 0 }.max() ?? 0 }
         return lines.map { fields in

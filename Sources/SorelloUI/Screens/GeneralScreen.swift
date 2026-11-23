@@ -338,9 +338,9 @@ struct AccessibilityPermissionRow: View {
     var body: some View {
         switch status {
         case .granted:
-            PermissionRow(title: String(localized: "Accessibility"), symbol: "accessibility", state: .granted)
+            PermissionRow(title: String(localized: "Accessibility"), symbol: SystemSymbol.accessibility, state: .granted)
         case .missing:
-            PermissionRow(title: String(localized: "Accessibility"), symbol: "accessibility",
+            PermissionRow(title: String(localized: "Accessibility"), symbol: SystemSymbol.accessibility,
                           detail: String(localized: "Needed for the shortcuts and for pasting. Until then, text is left on the clipboard."),
                           state: .missing,
                           fix: offersFix ? (String(localized: "Open System Settings"), actions.openAccessibilitySettings) : nil)
