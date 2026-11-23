@@ -106,13 +106,20 @@ import Testing
         #expect(harness.system.copied == [text])
     }
 
-    /// General says where the engine runs the model, as the engine chose it from the hardware.
-    @Test(arguments: [(SpeechCompute.neuralEngine, ModelHardware.neuralEngine), (.cpu, .processor)])
+    /// General says where the engine runs the model, as the engine chose it from the hardware. Sorello's own encoder,
+    /// in the build for older Macs, runs on the processor too.
+    @Test(arguments: [(SpeechCompute.neuralEngine, ModelHardware.neuralEngine), (.cpu, .processor)] + nativeHardware)
     func generalSaysWhereTheModelRuns(compute: SpeechCompute, hardware: ModelHardware) throws {
         let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()
         let harness = Harness(directory: directory.url, defaults: suite.defaults, compute: compute)
         #expect(harness.windows.main.general.hardware == hardware)
     }
+
+    #if SORELLO_LEGACY
+    nonisolated static let nativeHardware: [(SpeechCompute, ModelHardware)] = [(.nativeCPU, .processor)]
+    #else
+    nonisolated static let nativeHardware: [(SpeechCompute, ModelHardware)] = []
+    #endif
 
     @Test func theWindowsShowTheRealStoresAndChangeThem() async throws {
         let directory = try TemporaryDirectory(), suite = try TemporaryDefaults()

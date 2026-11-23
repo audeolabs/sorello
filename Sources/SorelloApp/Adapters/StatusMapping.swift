@@ -48,6 +48,9 @@ extension ModelHardware {
         switch compute {
         case .neuralEngine: self = .neuralEngine
         case .cpu: self = .processor
+        #if SORELLO_LEGACY
+        case .nativeCPU: self = .processor
+        #endif
         }
     }
 }
