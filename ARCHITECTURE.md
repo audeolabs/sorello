@@ -72,7 +72,8 @@ Sendable` without a comment that says which lock or queue makes it safe.
 | `TextRules` | neutral, pure | nothing | Numbers, spoken delimiters, macros, prompt tag, insertion-context fitting |
 | `DictionaryKit` | neutral | `SystemCompat` | Entries, validation, tokenizer, bias graph, casing, correction decisions and the correction watch, the `TextFieldReading` protocol it reads text through, the dictionary file |
 | `DesignCore` | neutral, pure | nothing | Palette, dot wave, level meter, pill geometry, motion constants, the mark |
-| `SpeechEngine` | neutral | `DictationCore`, `DictionaryKit`, `SystemCompat` | The model's pin, download and store, feature front end, Core ML encoder, decoder, chunked streaming |
+| `SpeechEngine` | neutral | `DictationCore`, `DictionaryKit`, `SystemCompat`, and `NativeEncoder` in the build for older Macs | The model's pin, download and store, feature front end, Core ML encoder, decoder, chunked streaming |
+| `NativeEncoder` | C, the build for older Macs only | nothing | The encoder in Sorello's own code, for an Intel Mac (section 15) |
 | `Persistence` | neutral | `DictationCore`, `TextRules`, `SystemCompat` | Settings, macros, Run Log |
 | `MacCompat` | macOS | nothing | A view's display link and a few AppKit and SwiftUI calls: Apple's own in the usual build, and what answers for them on macOS 13 in the build for older Macs (section 15) |
 | `SorelloUI` | macOS UI | `DesignCore`, `SystemCompat`, `MacCompat` | The pill, its overlay window, every screen and control |
@@ -2016,6 +2017,8 @@ How one source serves both:
   its scale inside, so that build's encoder has one unnamed function and
   applies each row's scale after the product (section 5). macOS 13
   unpacks the weights when it loads them, into about 2.5 GB of memory.
+  An Intel Mac runs that build with Sorello's own encoder instead
+  ("The encoder on an Intel Mac", below).
   The pin lists the build once it has been tested and published; until
   then it is given with `SORELLO_MODEL_DIR` or `--model`.
 - **An executable records the SDK it was built with.** SwiftPM's link
@@ -2042,6 +2045,67 @@ make legacy-app     # build/legacy/Sorello Dev.app, for macOS 13 and later
 
 It has the development identity only: no update feed, and so no
 updater.
+
+### The encoder on an Intel Mac
+
+Core ML's CPU kernels take one to three seconds for a 15 second chunk of
+the build for macOS 13 on an Intel Mac, and unpack it into about 2.5 GB.
+So in the build for older Macs an Intel Mac runs the encoder with
+Sorello's own code instead: `NativeEncoder`, a C module that only this
+build has. The usual build has none of what follows.
+
+- **Where.** Where the encoder runs is `nativeCPU` on a Mac without a
+  Neural Engine whose processor is Intel with AVX2 and FMA, which every
+  Intel Mac that runs macOS 13 has. The General screen says the
+  processor, as it does for `cpu`. Every other Mac chooses as section 5
+  says. `sorello-transcribe --native` forces it on any Mac, as `--cpu`
+  forces Core ML's CPU kernels, and says which kernel ran.
+- **The same model.** It runs the build the pin lists for this Mac (or
+  that `--model` gives) from the same store, after the same checks. The
+  build's `Encoder.mlmodelc/model.mil` names every weight and says where
+  it is in `weights/weight.bin`; the native encoder reads those two files
+  and nothing else, with the 1-bit weights left packed. A program that
+  lacks a weight the encoder needs, gives it another shape, or points
+  outside `weight.bin` is not run natively: the engine runs that build
+  with Core ML's CPU kernels, as before.
+- **The arithmetic.** The input of each of the 240 1-bit projections is
+  rounded to 8-bit integers, with one scale for every 64 consecutive
+  values (every 32 for the second projection of each feed-forward block
+  and of the convolution block, whose inputs are the least even), and
+  multiplied by the ±1 weights exactly, in integers; the sum is scaled in
+  32-bit floating point by both scales. Everything else in the encoder
+  is 32-bit floating point. The decoder that runs with it keeps the
+  matrices of its prediction network and joint as 8-bit integers, one
+  scale for each row of each matrix, multiplied by 32-bit inputs, so
+  that what each word needs (about 6 MB, a quarter of the 32-bit
+  matrices) stays in the processor's cache; the table of its first layer
+  stays 32-bit. On the research repository's 12 test clips the encoder's
+  outputs are within gate 4's ceilings of the macOS 26 build's (relative
+  0.02, absolute 0.25), and the transcripts are the same. Each processor
+  runs the fastest of its kernels that it has; every kernel gives the
+  same integers.
+- **Only the audio there is.** It encodes the frames the chunk's audio
+  fills and none of the zeros that pad a shorter chunk to 15 seconds.
+  Padded frames are masked out of every frame the model keeps, so the
+  frames are the same, and a 3 second dictation costs a fifth of a 15
+  second one.
+- **Threads.** One per core (`hw.physicalcpu`), at the priority of
+  work someone is waiting for. They work only while a chunk is encoded,
+  waiting briefly for the next step before they sleep; the decoder runs
+  on the engine's own thread.
+- **Memory.** About 250 MB while the model is loaded.
+
+Its tests run in `make legacy-check`. Without the model: the program
+reader finds every weight in an invented program and refuses one that
+lacks a weight, gives it another shape or points outside its file; each
+kernel this processor can run gives exactly the arithmetic above on
+invented inputs; on invented weights that 8 bits per row hold exactly,
+the decoder computes what the 32-bit decoder computes; and `nativeCPU` is
+chosen exactly where the first bullet says. With the model (`SORELLO_MODEL_DIR`): the native
+encoder and Core ML's CPU kernels give the same text for the same
+synthetic speech, with encoder outputs within gate 4's ceilings of each
+other. An Apple silicon Mac runs the portable kernel, so the Intel
+kernels are tested only on an Intel processor.
 
 ### What has been checked
 
