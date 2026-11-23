@@ -2,13 +2,19 @@
   "model": "kea-b-0.1",
   "export_sha256": "ec05526ed7aa7c742ee970c09724b1b8ccfaef6eb10f2ff1a11b031e9dfc4995",
   "manifest": "bundle.json",
-  "source": "https://huggingface.co/audeolabs/kea-b-0.1-coreml/resolve/414d59d9c8159970da10e75d6088fac3448f067e",
+  "source": "https://huggingface.co/audeolabs/kea-b-0.1-coreml/resolve/aae47649e63c36688ac19a38d3931e768b3bee32",
   "builds": [
     {
       "directory": "macos26",
       "manifest_sha256": "84d9aea06797cb2d08c77c1514edca0885f179a48a5d5e16ee72d47d1d4c870c",
       "bytes": 138084560,
       "requires": { "macos": "26.0", "ios": "26.0" }
+    },
+    {
+      "directory": "macos13",
+      "manifest_sha256": "c93a9e1c760bd32ddfca38dcde459f6b82f18b2c28d28e2f686a133ba614d643",
+      "bytes": 138211676,
+      "requires": { "macos": "13.0" }
     }
   ]
 }

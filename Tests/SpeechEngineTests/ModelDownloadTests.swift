@@ -642,3 +642,28 @@ final class SteppedClock: SessionClock {
         for sleeper in due { sleeper.continuation.resume() }
     }
 }
+
+#if SORELLO_LEGACY
+/// The room the download asks for, in the build for older Macs: macOS 13 can answer 0 for important files on a disk
+/// with room, and a 0 there gives way to the disk's plain free space (ARCHITECTURE.md, section 15).
+struct LegacyFreeSpaceTests {
+    @Test func aRealAnswerIsUsedAsItIs() {
+        #expect(ModelDownload.freeSpace(important: 5_000_000_000, available: 9_000_000_000) == 5_000_000_000)
+        #expect(ModelDownload.freeSpace(important: 1000, available: 9_000_000_000) == 1000, "A nearly full disk stays full")
+    }
+
+    @Test func zeroForImportantFilesGivesWayToThePlainFreeSpace() {
+        #expect(ModelDownload.freeSpace(important: 0, available: 21_511_909_376) == 21_511_909_376)
+        #expect(ModelDownload.freeSpace(important: nil, available: 21_511_909_376) == 21_511_909_376)
+    }
+
+    @Test func noAnswerAtAllIsNoAnswer() {
+        #expect(ModelDownload.freeSpace(important: nil, available: nil) == nil)
+        #expect(ModelDownload.freeSpace(important: 0, available: nil) == 0)
+    }
+
+    @Test func thisMacsDiskReportsRoom() {
+        #expect((ModelDownload.freeSpace(at: FileManager.default.temporaryDirectory) ?? 0) > 0)
+    }
+}
+#endif

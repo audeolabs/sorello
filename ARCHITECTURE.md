@@ -524,13 +524,16 @@ version of Sorello does not know, or gives a version it cannot read, for
 either system, is passed over on both: a Mac does not take a build whose
 `ios` it cannot read. So a later pin can list builds for other Macs (an
 older system, a Mac without a Neural Engine) and an app that has never
-heard of them takes none of them by mistake. One build is listed today,
-for macOS 26 or later and for iOS 26 or later; a Mac without a Neural
-Engine runs that same build on its processor until it has a build of its
-own. Builds for other Macs wait on other branches of the model's
-repository until they have been tested, and join the list then: nothing
-else in Sorello changes when one does. When no build fits this Mac,
-Sorello says so and offers no download.
+heard of them takes none of them by mistake. Two builds are listed
+today: the first for macOS 26 or later and for iOS 26 or later, and the
+second for macOS 13 or later, which the build for older Macs uses on a
+system before macOS 26 (section 15). A Mac on macOS 26 takes the first
+whichever app it runs; one without a Neural Engine runs that build on its
+processor until it has a build of its own. A build for other Macs is
+made on its own branch of the model's repository, and the pin's `source`
+names the revision of that branch that holds it with the builds already
+listed: nothing else in Sorello changes when one joins. When no build
+fits this Mac, Sorello says so and offers no download.
 
 Where the engine looks, in order: the store; then the app itself, when it
 was built with `SORELLO_MODEL_DIR` and so carries a build the pin lists
@@ -2019,8 +2022,8 @@ How one source serves both:
   unpacks the weights when it loads them, into about 2.5 GB of memory.
   An Intel Mac runs that build with Sorello's own encoder instead
   ("The encoder on an Intel Mac", below).
-  The pin lists the build once it has been tested and published; until
-  then it is given with `SORELLO_MODEL_DIR` or `--model`.
+  The pin lists it for macOS 13 or later, so the app downloads it when
+  it is set up, as it downloads the other build (section 5).
 - **An executable records the SDK it was built with.** SwiftPM's link
   records the minimum system instead, which would give the app the
   behaviour AppKit keeps for apps built against the macOS 13 SDK, so the
@@ -2034,6 +2037,14 @@ What an older system does differently, all of it only in this build:
 | macOS 15 | No screen notes: no card in General, and nothing of them runs (section 14). A card's rows are laid out through SwiftUI's own layout root, to the same picture |
 | macOS 14 | The pill and the drag card animate on a timer, not the display's refresh. The menu's headings are items that cannot be chosen, and a row's keys are set at its far edge as text, not as a badge. A control that draws its own focus ring shows the system's as well, and Space does not change a switch that has the focus; a click does. A copied row's symbol cross-fades. Sorello takes the front outright when it must, as apps did then. Where the encoder runs is decided by the processor (section 5) |
 | macOS 13.3 | A page that fits its window still bounces when scrolled |
+
+One more difference is not tied to a version. Before the model's download
+Sorello asks how much room the disk has for files the user needs, and
+stops with "the disk is full" when there is less than the build. macOS 13
+can answer 0 to that question on a disk with room: it does outside a login
+session, and whether it ever does inside one is not known. The build for
+older Macs takes a 0 to mean the answer is unknown and asks for the disk's
+plain free space instead. A real answer is used as it is.
 
 It is built into its own directory, `.build-legacy`, so the two builds
 never disturb each other:
