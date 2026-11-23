@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import CoreGraphics
+import MacCompat
 import SwiftUI
 import SystemCompat
 
@@ -120,7 +121,7 @@ extension PermissionPanel {
         }
 
         private func emphasized(_ text: String) -> Text {
-            Text(text).foregroundStyle(style.ink.color).fontWeight(.medium)
+            Text(text).inked(style.ink.color).fontWeight(.medium)
         }
 
         private var appRow: some View {
@@ -775,7 +776,7 @@ extension PermissionPanel {
         let window: OverlayPanel
         var onFirstFrame: () -> Void = {}
         private var done: @MainActor () -> Void = {}
-        private var link: CADisplayLink?
+        private var link: FrameLink?
         private var startTime: CFTimeInterval = 0
         private let control: CGPoint
 
@@ -806,7 +807,7 @@ extension PermissionPanel {
             onFirstFrame()
             onFirstFrame = {}
             startTime = CACurrentMediaTime()
-            let link = surface.displayLink(target: self, selector: #selector(tick(_:)))
+            let link = surface.makeFrameLink(target: self, selector: #selector(tick(_:)))
             link.add(to: .main, forMode: .common)
             self.link = link
         }
@@ -820,7 +821,7 @@ extension PermissionPanel {
             window.orderOut(nil)
         }
 
-        @objc private func tick(_ link: CADisplayLink) {
+        @objc private func tick(_ link: FrameLink) {
             let t = link.targetTimestamp - startTime
             if t >= spring.settleTime {
                 step(at: spring.settleTime)

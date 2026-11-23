@@ -58,8 +58,14 @@ public struct AudioInputDevices: Sendable {
 
     /// The input devices now, in the system's order.
     public func current() -> [AudioInputDevice] {
-        let discovery = AVCaptureDevice.DiscoverySession(deviceTypes: [.microphone, .external], mediaType: .audio,
-                                                         position: .unspecified)
+        #if SORELLO_LEGACY
+        // macOS 13 has the same two kinds of device under names that later systems retired.
+        let kinds: [AVCaptureDevice.DeviceType] =
+            if #available(macOS 14, *) { [.microphone, .external] } else { [.builtInMicrophone, .externalUnknown] }
+        #else
+        let kinds: [AVCaptureDevice.DeviceType] = [.microphone, .external]
+        #endif
+        let discovery = AVCaptureDevice.DiscoverySession(deviceTypes: kinds, mediaType: .audio, position: .unspecified)
         let defaultID = AVCaptureDevice.default(for: .audio)?.uniqueID
         let lidClosed = Self.lidClosed()
         return discovery.devices.map { device in

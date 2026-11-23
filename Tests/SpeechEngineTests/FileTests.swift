@@ -128,7 +128,10 @@ struct FileTests {
 
     func engine(_ log: ModelLog, loader: ModelLoader? = nil, dictionary: @escaping @Sendable (String?) -> DictionarySnapshot = { _ in .empty })
         -> SpeechEngine {
-        SpeechEngine(loader: loader ?? fakeLoader(log), dictionary: dictionary)
+        // Not `loader ?? fakeLoader(log)`: `??` is generic code, which a function that throws one type cannot be
+        // handed before macOS 15.
+        if let loader { return SpeechEngine(loader: loader, dictionary: dictionary) }
+        return SpeechEngine(loader: fakeLoader(log), dictionary: dictionary)
     }
 
     /// Transcribes `source` within a time limit: its text, its failure, or nil when it hung. Cancelling the caller

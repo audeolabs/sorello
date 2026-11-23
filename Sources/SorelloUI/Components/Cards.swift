@@ -1,3 +1,4 @@
+import MacCompat
 import SwiftUI
 
 /// Rows in a card, with a hairline between each pair, inset to where the words start. The card colour sits on the
@@ -13,6 +14,32 @@ public struct Card<Content: View>: View {
         self.dividerInset = dividerInset
     }
 
+    #if SORELLO_LEGACY
+    // `Group(subviews:)` came with macOS 15. Before that the rows are taken apart through the layout root SwiftUI
+    // itself builds its containers on, which every system has.
+    public var body: some View {
+        Group {
+            if #available(macOS 15, *) {
+                Group(subviews: content) { rows in
+                    VStack(spacing: 0) {
+                        ForEach(rows) { row in
+                            if row.id != rows.first?.id { divider }
+                            row
+                        }
+                    }
+                }
+            } else {
+                _VariadicView.Tree(DividedRows(divider: divider)) { content }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardSurface()
+    }
+
+    private var divider: some View {
+        Rectangle().fill(Theme.separator).frame(height: 1).padding(.leading, dividerInset)
+    }
+    #else
     public var body: some View {
         Group(subviews: content) { rows in
             VStack(spacing: 0) {
@@ -27,7 +54,24 @@ public struct Card<Content: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardSurface()
     }
+    #endif
 }
+
+#if SORELLO_LEGACY
+/// A card's rows in a column with a hairline between each two, for systems before macOS 15.
+private struct DividedRows<Divider: View>: _VariadicView_UnaryViewRoot {
+    let divider: Divider
+
+    func body(children: _VariadicView.Children) -> some View {
+        VStack(spacing: 0) {
+            ForEach(children) { row in
+                if row.id != children.first?.id { divider }
+                row
+            }
+        }
+    }
+}
+#endif
 
 /// A group: its title above, then its card, then an optional footnote below in secondary ink.
 public struct CardGroup<Content: View, Footer: View>: View {
@@ -219,7 +263,7 @@ public struct ScreenPage<Content: View, Trailing: View>: View {
             .padding(.bottom, Metrics.pagePadding)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .scrollBounceBehavior(.basedOnSize)
+        .bouncesOnlyWhenScrollable()
         .scrollContentBackground(.hidden)
     }
 }

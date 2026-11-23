@@ -1,3 +1,4 @@
+import MacCompat
 import SwiftUI
 
 /// What the Run Log asks of the app layer.
@@ -156,7 +157,7 @@ private struct RunLogRow: View {
                     actions.copy(item.id)
                     flashCopied()
                 } label: {
-                    Image(systemName: copied ? "checkmark" : "doc.on.doc").contentTransition(.symbolEffect(.replace))
+                    Image(systemName: copied ? "checkmark" : "doc.on.doc").symbolReplaceTransition()
                 }
                 .buttonStyle(IconButtonStyle())
                 .disabled(!item.canCopy)

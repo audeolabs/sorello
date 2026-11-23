@@ -57,15 +57,18 @@ let package = Package(
                 swiftSettings: strict),
 
         // macOS.
-        .target(name: "SorelloUI", dependencies: ["DesignCore", "SystemCompat"], swiftSettings: mainActor),
+        // AppKit's display link, or its stand-in in the build for older Macs.
+        .target(name: "MacCompat", swiftSettings: strict),
+        .target(name: "SorelloUI", dependencies: ["DesignCore", "SystemCompat", "MacCompat"], swiftSettings: mainActor),
         .target(name: "MacPlatform",
-                dependencies: ["DictationCore", "DictionaryKit", "DesignCore", "ScreenNotes", "SystemCompat"],
+                dependencies: ["DictationCore", "DictionaryKit", "DesignCore", "ScreenNotes", "SystemCompat",
+                               "MacCompat"],
                 swiftSettings: strict),
         .target(
             name: "SorelloApp",
             dependencies: ["DictationCore", "TextRules", "DictionaryKit", "DesignCore", "SpeechEngine", "Persistence",
                            "FileTranscription", "SorelloUI", "MacPlatform", "ScreenNotes", "SystemCompat",
-                           .product(name: "Sparkle", package: "Sparkle")],
+                           "MacCompat", .product(name: "Sparkle", package: "Sparkle")],
             swiftSettings: mainActor
         ),
         .executableTarget(name: "Sorello", dependencies: ["SorelloApp"], swiftSettings: mainActor,
@@ -84,6 +87,7 @@ let package = Package(
         // Tests.
         .target(name: "TestSupport", path: "Tests/TestSupport", swiftSettings: strict),
         .testTarget(name: "SystemCompatTests", dependencies: ["SystemCompat"], swiftSettings: strict),
+        .testTarget(name: "MacCompatTests", dependencies: ["MacCompat"], swiftSettings: strict),
         .testTarget(name: "DictationCoreTests", dependencies: ["DictationCore", "SystemCompat", "TestSupport"], swiftSettings: strict),
         .testTarget(name: "TextRulesTests", dependencies: ["TextRules", "TestSupport"], swiftSettings: strict),
         .testTarget(name: "DictionaryKitTests", dependencies: ["DictionaryKit", "SystemCompat", "TestSupport"], swiftSettings: strict),

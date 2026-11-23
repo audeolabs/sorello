@@ -1,3 +1,4 @@
+import MacCompat
 import SwiftUI
 
 /// The main window's sections, in sidebar order.
@@ -145,7 +146,7 @@ private struct Sidebar: View {
         .frame(maxHeight: .infinity, alignment: .top)
         .focusable()
         .focused($focused)
-        .focusEffectDisabled()
+        .systemFocusRingHidden()
         .onMoveCommand { direction in
             let all = MainSection.allCases
             guard let index = all.firstIndex(of: model.section) else { return }

@@ -1,3 +1,4 @@
+import MacCompat
 import SwiftUI
 
 /// What setup asks of the app layer.
@@ -412,7 +413,7 @@ private struct TestStep: View {
                    line: SetupCopy.testInstruction(hold: model.holdToTalk.keys ?? .function)) {
             VStack(alignment: .leading, spacing: 12) {
                 TextField(text: $model.testText,
-                          prompt: Text("Your words appear here").foregroundStyle(Theme.secondaryInk), axis: .vertical) {
+                          prompt: Text("Your words appear here").inked(Theme.secondaryInk), axis: .vertical) {
                     Text("Test field")
                 }
                 .textFieldStyle(.plain)

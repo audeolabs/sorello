@@ -1,5 +1,6 @@
 import AppKit
 import DesignCore
+import MacCompat
 
 /// Draws the pill (ARCHITECTURE.md, section 8, "The pill"): the body that drops down from the band and morphs between
 /// forms on the spring, the cancel bud joined to it, and what each form holds, which fades out before the next fades
@@ -63,7 +64,7 @@ final class PillView: NSView {
     private let glyph = CAShapeLayer()
     private var current: PillContent?
     private var leaving: [PillContent] = []
-    private var link: CADisplayLink?
+    private var link: FrameLink?
     private var timeTimer: Timer?
 
     /// `levels` feeds the wave, read at `clock()`, the session's monotonic time, which the displays' start times are
@@ -439,7 +440,7 @@ final class PillView: NSView {
         let wanted: Float = reduceMotion && body?.isSettled(at: now) == true ? 15 : 60
         if let link, link.preferredFrameRateRange.maximum == wanted { return }
         stopLink()
-        let link = displayLink(target: PillTick(self), selector: #selector(PillTick.tick(_:)))
+        let link = makeFrameLink(target: PillTick(self), selector: #selector(PillTick.tick(_:)))
         link.preferredFrameRateRange = CAFrameRateRange(minimum: min(wanted, 30), maximum: wanted, preferred: wanted)
         link.add(to: .main, forMode: .common)
         self.link = link
@@ -450,7 +451,7 @@ final class PillView: NSView {
         link = nil
     }
 
-    fileprivate func tick(_ link: CADisplayLink) {
+    fileprivate func tick(_ link: FrameLink) {
         let now = link.targetTimestamp
         render(at: now)
         if !needsFrames(at: now) {
@@ -495,7 +496,7 @@ private final class PillTick: NSObject {
         self.view = view
     }
 
-    @objc func tick(_ link: CADisplayLink) {
+    @objc func tick(_ link: FrameLink) {
         MainActor.assumeIsolated {
             guard let view else { return link.invalidate() }
             view.tick(link)

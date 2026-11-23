@@ -74,8 +74,9 @@ Sendable` without a comment that says which lock or queue makes it safe.
 | `DesignCore` | neutral, pure | nothing | Palette, dot wave, level meter, pill geometry, motion constants, the mark |
 | `SpeechEngine` | neutral | `DictationCore`, `DictionaryKit`, `SystemCompat` | The model's pin, download and store, feature front end, Core ML encoder, decoder, chunked streaming |
 | `Persistence` | neutral | `DictationCore`, `TextRules`, `SystemCompat` | Settings, macros, Run Log |
-| `SorelloUI` | macOS UI | `DesignCore`, `SystemCompat` | The pill, its overlay window, every screen and control |
-| `MacPlatform` | macOS | `DictationCore`, `DictionaryKit`, `DesignCore`, `ScreenNotes`, `SystemCompat` | Shortcuts, audio capture, text insertion, Accessibility reads, permissions, screen notes' recorder and renderer |
+| `MacCompat` | macOS | nothing | A view's display link and a few AppKit and SwiftUI calls: Apple's own in the usual build, and what answers for them on macOS 13 in the build for older Macs (section 15) |
+| `SorelloUI` | macOS UI | `DesignCore`, `SystemCompat`, `MacCompat` | The pill, its overlay window, every screen and control |
+| `MacPlatform` | macOS | `DictationCore`, `DictionaryKit`, `DesignCore`, `ScreenNotes`, `SystemCompat`, `MacCompat` | Shortcuts, audio capture, text insertion, Accessibility reads, permissions, screen notes' recorder and renderer |
 | `SorelloApp` | macOS | all of the above, and Sparkle | Composition: builds the objects, connects them, owns windows and the menu bar item, and updates the app |
 | `Sorello` | executable | `SorelloApp` | `@main` only |
 | `SorelloSnapshots` | executable | `SorelloUI` | Renders every pill state and screen to PNG files |
@@ -1692,6 +1693,11 @@ part in a module the iPhone app links is `SpeechEngine`'s
   their bindings), the Shortcuts screen does not show them, and no
   screen-recording API is called. The menu lists them only while they
   have keys, so only while screen notes are on.
+- **Only where the system can record one.** The movie is written by
+  ScreenCaptureKit's recording output, which macOS 15 introduced. On an
+  older system, which only the build for older Macs reaches (section
+  15), General has no Screen notes card, the switch stays off, and
+  nothing of screen notes runs.
 - **The permission.** Screen notes need Screen Recording. Under the
   switch, the line "Requires Screen Recording permission" is shown while
   the switch is off or the permission is not granted, and not otherwise.
@@ -1957,10 +1963,10 @@ compiles differently, and the app is the app described in the rest of
 this document. The build for older Macs is a second app made from the
 same commit, never a replacement for the first.
 
-It is under construction on its branch. Today the switch builds
-`SystemCompat`, the pure modules, `DictionaryKit`, `SpeechEngine` and
-`sorello-transcribe`. The Mac app's own modules do not build under it
-yet.
+It is on its own branch and has not been released. The whole package
+builds under the switch, and every test passes against that build on the
+Mac that builds it. What it does on macOS 13 itself is known only as far
+as "What has been checked", below, says.
 
 How one source serves both:
 
@@ -1981,14 +1987,23 @@ How one source serves both:
     macro declared again without its macOS 14 floor, for the one thing it
     does to a class's members, and `Observable` supplies what those
     members call: the class is an `ObservableObject` that announces a
-    change to any tracked property, once, before it happens.
-    `withObservationTracking` there follows whole objects, not single
-    properties. Each module with such classes declares the macro names
+    change to any tracked property, once, before it happens, and
+    `withObservationTracking` follows the properties its closure read, as
+    Observation's does. Each module with such classes declares the macro names
     in its own `ObservationStandIn.swift`, where they win over the names
     SwiftUI brings in. The stand-in depends on what the compiler's macro
     expands to. `Tests/SystemCompatTests` holds that contract in both
     builds, so a compiler that changed it fails the build for older Macs
     or its tests, never the usual build.
+- **`MacCompat` does the same for AppKit and SwiftUI.** `FrameLink` is
+  `CADisplayLink`, which a view can make from macOS 14, or before that a
+  timer at the rate asked for, which the pill and the drag card animate
+  on. Its other names are single calls: each is the newer call in the
+  usual build, and in the other the newer call where the system has it.
+- **Where an older call is retired, the switch chooses.** A call that a
+  later system deprecates cannot be written in the usual build, which
+  allows no warnings, so it sits under `#if SORELLO_LEGACY`, with the
+  usual build's line unchanged in the `#else`.
 - **The model has a build of its own.** macOS 13 reads only Core ML's
   oldest program format, which has one function and no 1-bit weight with
   its scale inside, so that build's encoder has one unnamed function and
@@ -2001,15 +2016,30 @@ How one source serves both:
   behaviour AppKit keeps for apps built against the macOS 13 SDK, so the
   build for older Macs tells the linker the SDK.
 
+What an older system does differently, all of it only in this build:
+
+| Before | What differs |
+|---|---|
+| macOS 26 | The Accessibility drag card is the system's blurred material, not Liquid Glass (section 6) |
+| macOS 15 | No screen notes: no card in General, and nothing of them runs (section 14). A card's rows are laid out through SwiftUI's own layout root, to the same picture |
+| macOS 14 | The pill and the drag card animate on a timer, not the display's refresh. The menu's headings are items that cannot be chosen, and a row's keys are set at its far edge as text, not as a badge. A control that draws its own focus ring shows the system's as well, and Space does not change a switch that has the focus; a click does. A copied row's symbol cross-fades. Sorello takes the front outright when it must, as apps did then. Where the encoder runs is decided by the processor (section 5) |
+| macOS 13.3 | A page that fits its window still bounces when scrolled |
+
 It is built into its own directory, `.build-legacy`, so the two builds
 never disturb each other:
 
 ```sh
-SORELLO_LEGACY=1 swift build --scratch-path .build-legacy --product sorello-transcribe
+make legacy-check   # builds it, and runs every test against it on this Mac
+make legacy-app     # build/legacy/Sorello Dev.app, for macOS 13 and later
 ```
+
+It has the development identity only: no update feed, and so no
+updater.
+
+### What has been checked
 
 Nothing that builds Sorello runs macOS 13, so what is known about that
 system comes from running the build there: in a macOS 13 virtual machine
 on an Apple silicon Mac, natively and as Intel code under Rosetta. A
 virtual machine has no Neural Engine and no Intel processor; those are
-checked on real hardware.
+checked on real hardware, and so far have not been.
