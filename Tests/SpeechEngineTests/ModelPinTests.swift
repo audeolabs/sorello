@@ -46,18 +46,26 @@ struct ModelPinTests {
                 == "https://models.example.com/resolve/0123abcd/macos26/Encoder.mlmodelc/weights/weight.bin")
     }
 
-    /// The repository's own pin reads, and gives this Mac (macOS 26 or later, as the package requires) its build, and
-    /// an iPhone on iOS 26 or later the same one.
-    @Test func theRepositorysPinGivesThisMacItsBuild() throws {
+    /// The repository's own pin reads, and gives this Mac (macOS 26 or later, as the usual build requires) its build,
+    /// and an iPhone on iOS 26 or later the same one. A Mac from macOS 13 to 15 gets the build for older systems, and
+    /// one before macOS 13 nothing (ARCHITECTURE.md, section 5, "Getting the model").
+    @Test func theRepositorysPinGivesEachSystemItsBuild() throws {
         let file = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Models/model.lock.json")
         let pin = try ModelPin(contentsOf: file)
-        let build = try #require(pin.build(for: .current()))
+        let build = try #require(pin.build(for: try Self.mac("26.0")))
         #expect(build.directory == "macos26")
         #expect(build.bytes == 138_084_560)
-        #expect(pin.build(for: try Self.mac("15.7")) == nil)
+        #expect(pin.build(for: try Self.mac("27.2")) == build)
         #expect(pin.build(for: try Self.iPhone("26.0")) == build)
         #expect(pin.build(for: try Self.iPhone("18.6")) == nil)
+        for system in ["13.0", "13.7.8", "14.8", "15.7"] {
+            let older = try #require(pin.build(for: try Self.mac(system)), "macOS \(system)")
+            #expect(older.directory == "macos13")
+            #expect(older.manifestSHA256 == "c93a9e1c760bd32ddfca38dcde459f6b82f18b2c28d28e2f686a133ba614d643")
+            #expect(older.bytes == 138_211_676)
+        }
+        #expect(pin.build(for: try Self.mac("12.7")) == nil)
     }
 
     /// The tests run on a Mac, which describes itself as one.
